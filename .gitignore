@@ -1,0 +1,55 @@
+node_modules/
+dist/
+.env
+.env.example
+.docker-compose.yml
+.docker-compose.dev.yml
+.CHANGELOG.md
+*.log
+backups/
+.DS_Store
+.gstack/
+
+# Local dev artifacts — không commit
+.backfill*.sql
+.diag.sql
+# DB dump / backup tạm ở root (predeup/tagbackup/autotag...) — KHÔNG commit
+/*.sql
+_merge-backup/
+*-merge-backup-*.json
+TODO.local.md
+.zalo-icon-preview.html
+.zalo-phase6-preview.html
+.zalo-filter-mockup.html
+/frontend/public/chat-smax-*.html
+/frontend/public/chat-perpair-context.html
+/frontend/public/contacts-approach-*.html
+/frontend/public/contacts-layout-mockups.html
+/frontend/public/friends-v2.html
+/frontend/public/Giao Diện Tính Năng*.xlsx
+backend/static/
+
+# Dev/AI tooling + artifacts (không commit) — 2026-06-05
+.claude/
+.understand-anything/
+screenshots/
+inspect-log.mjs
+inspect-*.mjs
+/plans/
+AGENTS.md
+TODOS.md
+frontend/public/mockups/
+
+# Dev tools tự gắn (Anh)
+frontend/.capture-submit.js
+CLAUDE.md
+_chat_ui_backups/
+
+# Firebase service account & secrets (KHÔNG commit)
+secrets/
+.gitnexus
+.env.bak*
+
+# Telegram
+public-key-telegram
+public-key-telegram-product

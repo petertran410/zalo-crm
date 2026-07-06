@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -e
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Remove copied .env files (don't leak secrets in worktrees)
+rm -f "$REPO_ROOT/.env"
+rm -f "$REPO_ROOT/backend/.env"
+rm -f "$REPO_ROOT/frontend/.env"
+
+echo "ZaloCRM workspace cleaned up"

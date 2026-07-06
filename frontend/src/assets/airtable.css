@@ -1,0 +1,568 @@
+/* Phase 7 Marketing — Airtable-design-analysis CSS variables.
+ * Source spec: DESIGN.md `Airtable-design-analysis` v=alpha.
+ * Imported once via BotAutoShell.vue so all child views inherit the tokens.
+ *
+ * Rules:
+ *   - Primary CTA = near-black (#181d26), NOT link blue.
+ *   - White canvas hero, no gradient.
+ *   - Section vertical rhythm: 96px.
+ *   - Display type weight 400, sub-titles/buttons 500. Never 700.
+ *   - No hover state on solid CTAs (spec policy); pressed-state only.
+ */
+
+/* ── Breakpoints (matches DESIGN.md responsive table) ─────────────────────
+ *   Mobile  < 768px   : single-column, drawer nav, touch targets ≥44
+ *   Tablet  768-1023  : 2-up grids, icon-only sidebar rail
+ *   Desktop 1024-1439 : 3-up grids, full sidebar 240px
+ *   Wide    ≥ 1440px  : max-width 1280px, outer margin grows
+ */
+
+.airtable-scope {
+  /* HS re-skin 2026-06-05 — map --at-* (Airtable palette cũ) sang token HS
+     Holding (--brand/--ink/--surface…). Giữ NGUYÊN tên biến → 12 view trong
+     cụm Marketing tự đổi giao diện, không phải sửa template. Spacing + radius
+     giữ nguyên (đã hợp HD-first). */
+  /* Colors */
+  --at-primary: var(--ink, #141a24);            /* CTA header near-black → navy HS */
+  --at-primary-active: #0b0f16;
+  --at-ink: var(--ink, #141a24);
+  --at-body: var(--ink-2, #475066);
+  --at-muted: var(--ink-3, #6b7488);
+  --at-hairline: var(--line, #e7eaf0);
+  --at-border-strong: #cdd4e0;
+
+  --at-canvas: var(--surface, #ffffff);
+  --at-surface-soft: var(--surface-3, #f1f4f9);
+  --at-surface-strong: #e0e3ea;
+  --at-surface-dark: var(--ink, #141a24);
+
+  /* Accent palette cũ (coral/forest/cream…) → map sang ngữ nghĩa HS gần nhất.
+     Các view Marketing chỉ dùng coral (1-2 chỗ) + forest/cream lẻ tẻ. */
+  --at-coral: var(--error, #f04438);
+  --at-forest: var(--success, #12b76a);
+  --at-cream: var(--brand-softer, #f2f8fc);
+  --at-peach: #fcab79;
+  --at-mint: var(--success-soft, #a8d8c4);
+  --at-yellow: var(--warning, #f4d35e);
+  --at-mustard: var(--warning, #d9a441);
+
+  --at-link: var(--brand, #1786be);
+  --at-link-active: var(--brand-700, #0b5880);
+  --at-info-border: var(--brand-bright, #5bb8e5);
+  --at-success: var(--success, #12b76a);
+
+  --at-on-primary: #ffffff;
+  --at-on-dark: #ffffff;
+
+  /* Radius */
+  --at-r-xs: 2px;
+  --at-r-sm: 6px;
+  --at-r-md: 10px;
+  --at-r-lg: 12px;
+  --at-r-pill: 9999px;
+
+  /* Spacing */
+  --at-s-xxs: 4px;
+  --at-s-xs: 8px;
+  --at-s-sm: 12px;
+  --at-s-md: 16px;
+  --at-s-lg: 24px;
+  --at-s-xl: 32px;
+  --at-s-xxl: 48px;
+  --at-s-section: 96px;
+
+  /* Default surface for the scope */
+  background: var(--at-canvas);
+  color: var(--at-body);
+}
+
+/* ── Typography roles ─────────────────────────────────────────────────── */
+.at-display-lg { font-size: 40px; font-weight: 400; line-height: 1.2; letter-spacing: 0; color: var(--at-ink); }
+.at-display-md { font-size: 32px; font-weight: 400; line-height: 1.2; letter-spacing: 0; color: var(--at-ink); }
+.at-title-lg   { font-size: 24px; font-weight: 400; line-height: 1.35; letter-spacing: 0.12px; color: var(--at-ink); }
+.at-title-md   { font-size: 20px; font-weight: 400; line-height: 1.5;  letter-spacing: 0; color: var(--at-ink); }
+.at-title-sm   { font-size: 18px; font-weight: 500; line-height: 1.4;  letter-spacing: 0; color: var(--at-ink); }
+.at-label-md   { font-size: 16px; font-weight: 500; line-height: 1.4;  letter-spacing: 0; color: var(--at-ink); }
+.at-body-md    { font-size: 14px; font-weight: 400; line-height: 1.25; letter-spacing: 0; color: var(--at-body); }
+.at-caption    { font-size: 14px; font-weight: 500; line-height: 1.35; letter-spacing: 0.16px; color: var(--at-muted); }
+
+/* ── Buttons (signature pair) ─────────────────────────────────────────── */
+.at-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.4;
+  border-radius: var(--at-r-lg);
+  padding: 12px 20px;
+  cursor: pointer;
+  border: 0;
+  transition: background-color 0.08s;
+  font-family: inherit;
+}
+.at-btn--primary {
+  background: var(--at-primary);
+  color: var(--at-on-primary);
+}
+.at-btn--primary:active { background: var(--at-primary-active); }
+.at-btn--secondary {
+  background: var(--at-canvas);
+  color: var(--at-ink);
+  border: 1px solid var(--at-hairline);
+}
+.at-btn--secondary:active { background: var(--at-surface-soft); }
+.at-btn--ghost {
+  background: transparent;
+  color: var(--at-ink);
+  padding: 8px 12px;
+}
+.at-btn--ghost:active { background: var(--at-surface-soft); }
+.at-btn--sm { padding: 8px 14px; font-size: 14px; }
+.at-btn--xs { padding: 6px 10px; font-size: 13px; }
+.at-btn[disabled],
+.at-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Page header pattern ──────────────────────────────────────────────── */
+.at-page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.at-page-title {
+  font-size: 32px;
+  font-weight: 400;
+  line-height: 1.2;
+  margin: 0 0 8px;
+  color: var(--at-ink);
+}
+.at-page-subtitle {
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--at-body);
+  max-width: 640px;
+  margin: 0;
+}
+
+/* ── Card primitives ──────────────────────────────────────────────────── */
+.at-card {
+  background: var(--at-canvas);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-md);
+  padding: var(--at-s-md);
+}
+.at-card--lg {
+  border-radius: var(--at-r-lg);
+  padding: var(--at-s-xl);
+}
+.at-card--cream {
+  background: var(--at-cream);
+  border-color: transparent;
+}
+.at-card--soft {
+  background: var(--at-surface-soft);
+  border-color: transparent;
+}
+.at-card--dark {
+  background: var(--at-surface-dark);
+  color: var(--at-on-dark);
+  border-color: transparent;
+}
+.at-card--coral {
+  background: var(--at-coral);
+  color: var(--at-on-primary);
+  border-color: transparent;
+}
+.at-card--forest {
+  background: var(--at-forest);
+  color: var(--at-on-dark);
+  border-color: transparent;
+}
+
+/* ── Chip ─────────────────────────────────────────────────────────────── */
+.at-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--at-r-pill);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  background: var(--at-surface-soft);
+  color: var(--at-body);
+  border: 1px solid var(--at-hairline);
+}
+.at-chip--solid {
+  background: var(--at-primary);
+  color: var(--at-on-primary);
+  border-color: var(--at-primary);
+}
+
+/* ── Input ────────────────────────────────────────────────────────────── */
+.at-input {
+  background: var(--at-canvas);
+  color: var(--at-ink);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-sm);
+  padding: 10px 14px;
+  height: 44px;
+  font-size: 14px;
+  width: 100%;
+  font-family: inherit;
+}
+.at-input:focus {
+  outline: none;
+  border-color: var(--at-info-border);
+}
+
+/* ── Hairline divider ─────────────────────────────────────────────────── */
+.at-hairline {
+  border: 0;
+  border-top: 1px solid var(--at-hairline);
+  margin: 0;
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+ * ATLAS v1 (2026-06-04) — Append-only design system extension.
+ *
+ * SPEC RESPECT (theo airtable.css line 6-10):
+ *   - --at-primary = #181d26 (near-black) cho HEADER CTA, KHÔNG đổi.
+ *   - --at-action = #0068ff cho ACTION BUTTON nội bộ (vd "Tạo Mục tiêu",
+ *     "+ Tạo Khối mới") — Anh chốt 2026-06-04 phân biệt rõ với header CTA đen.
+ *   - No hover state on solid CTAs → chỉ dùng :active (pressed).
+ *   - Display weight 400, button/sub-title 500. KHÔNG dùng 600/700.
+ *
+ * NAMING RULES:
+ *   - Atlas tokens dùng prefix --at-atlas-* để KHÔNG đè token cũ (vd --at-success cũ = #006400).
+ *   - Atlas chip variant dùng --at-chip--{success|warning|danger|purple|info|filter-active}
+ *     KHÔNG dùng --at-chip--active (đã có ở AppointmentsView local scope).
+ *   - Atlas card accent dùng .at-card--accent-{blue|green|purple|orange|danger}
+ *     extend trên .at-card cũ (KHÔNG tạo .at-card-v2).
+ *   - Atlas KHÔNG add .at-btn--md (đã có .at-btn--sm). Default Atlas = .at-btn--sm cũ.
+ *
+ * APPEND, DO NOT REDEFINE.
+ * ══════════════════════════════════════════════════════════════════════ */
+
+.airtable-scope {
+  /* Atlas action color — phân biệt rõ với --at-primary #181d26 (CTA header).
+     Anh chốt 2026-06-04: action button trong page body dùng xanh sáng. */
+  /* HS re-skin — action button trong page body = brand HS metallic blue
+     (thay #0068ff Atlassian). active/soft theo brand-700/brand-soft. */
+  --at-action: var(--brand, #1786be);
+  --at-action-active: var(--brand-700, #0b5880);
+  --at-action-soft: var(--brand-soft, #e4f1f8);
+
+  /* Atlas semantic → HS semantic. prefix -atlas- vẫn giữ tên, chỉ đổi giá trị. */
+  --at-atlas-success: var(--success, #12b76a);
+  --at-atlas-success-soft: var(--success-soft, #e7f7ef);
+  --at-atlas-warning: var(--warning, #f5a524);
+  --at-atlas-warning-soft: var(--warning-soft, #fdf3e2);
+  --at-atlas-danger: var(--error, #f04438);
+  --at-atlas-danger-soft: #fdeceb;
+  --at-atlas-purple: #6554c0;
+  --at-atlas-purple-soft: #eae6ff;
+
+  /* Atlas surfaces extension */
+  --at-hint: var(--ink-4, #97a0b3);
+  --at-shadow-card: 0 1px 2px rgba(20, 26, 36, 0.05);
+  --at-shadow-card-hover: 0 4px 12px rgba(20, 26, 36, 0.10);
+}
+
+/* ─── Atlas action button (mới — coexist với .at-btn--primary đen cũ) ──── */
+.at-btn--action {
+  background: var(--at-action);
+  color: #fff;
+}
+.at-btn--action:active { background: var(--at-action-active); }
+
+/* Atlas danger button — outline style, NOT solid (no hover, only active per spec) */
+.at-btn--danger {
+  background: var(--at-canvas);
+  color: var(--at-atlas-danger);
+  border: 1px solid var(--at-hairline);
+}
+.at-btn--danger:active {
+  background: var(--at-atlas-danger-soft);
+  border-color: var(--at-atlas-danger);
+}
+
+/* Atlas icon button — kích thước 30px chuẩn cho row actions */
+.at-btn-icon {
+  width: 30px; height: 30px;
+  padding: 0;
+  border-radius: var(--at-r-sm);
+  background: transparent;
+  border: 0;
+  color: var(--at-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-family: inherit;
+}
+.at-btn-icon:active { background: var(--at-surface-soft); color: var(--at-ink); }
+
+/* ─── Atlas card accent — EXTEND .at-card cũ với border-left modifier ──── */
+.at-card--accent-blue   { border-left: 4px solid var(--at-action); }
+.at-card--accent-green  { border-left: 4px solid var(--at-atlas-success); }
+.at-card--accent-purple { border-left: 4px solid var(--at-atlas-purple); }
+.at-card--accent-orange { border-left: 4px solid var(--at-atlas-warning); }
+.at-card--accent-danger { border-left: 4px solid var(--at-atlas-danger); }
+.at-card--accent-teal   { border-left: 4px solid #0891b2; } /* MucTieuDetailView legacy color */
+
+/* Atlas card interactive — hover border + shadow (cards aren't solid CTAs, spec OK) */
+.at-card-interactive {
+  cursor: pointer;
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+.at-card-interactive:hover {
+  border-color: var(--at-action);
+  box-shadow: var(--at-shadow-card-hover);
+}
+
+/* ─── Atlas chip variants — KHÔNG dùng .at-chip--active (conflict scoped) */
+.at-chip--filter-active {
+  background: var(--at-action-soft);
+  color: var(--at-action);
+  border-color: #93c5fd;
+  font-weight: 600;
+}
+.at-chip--success {
+  background: var(--at-atlas-success-soft);
+  color: #1b6b46;
+  border-color: #86efac;
+}
+.at-chip--warning {
+  background: var(--at-atlas-warning-soft);
+  color: #92400e;
+  border-color: #fcd34d;
+}
+.at-chip--danger {
+  background: var(--at-atlas-danger-soft);
+  color: var(--at-atlas-danger);
+  border-color: #fca5a5;
+}
+.at-chip--purple {
+  background: var(--at-atlas-purple-soft);
+  color: #6d28d9;
+  border-color: #c4b5fd;
+}
+.at-chip--info {
+  background: var(--at-action-soft);
+  color: var(--at-action);
+  border-color: #93c5fd;
+}
+.at-chip--neutral {
+  background: var(--at-surface-soft);
+  color: var(--at-muted);
+}
+.at-chip--dark {
+  background: var(--at-ink);
+  color: #fff;
+}
+
+/* ─── Atlas KPI tile — dùng cho dashboard list views ───────────────────── */
+.at-kpi-tile {
+  background: var(--at-canvas);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-lg);
+  padding: 14px 16px;
+}
+.at-kpi-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--at-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.at-kpi-value {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--at-ink);
+  margin-top: 4px;
+  line-height: 1;
+  /* số liệu KPI dùng mono (Roboto Mono). */
+  font-family: var(--mono, "Roboto Mono", ui-monospace, monospace);
+  font-variant-numeric: tabular-nums;
+}
+.at-kpi-delta {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--at-atlas-success);
+  margin-top: 4px;
+}
+.at-kpi-delta--down { color: var(--at-atlas-danger); }
+
+/* ─── Atlas data table — dùng cho list views ───────────────────────────── */
+.at-table {
+  width: 100%;
+  background: var(--at-canvas);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-lg);
+  overflow: hidden;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.at-table thead { background: var(--at-surface-soft); }
+.at-table th {
+  padding: 10px 14px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--at-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  border-bottom: 1px solid var(--at-hairline);
+}
+.at-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--at-hairline);
+  color: var(--at-body);
+}
+.at-table tr:last-child td { border-bottom: 0; }
+.at-table tbody tr:hover { background: var(--at-surface-soft); }
+
+/* ─── Atlas wizard stepper ─────────────────────────────────────────────── */
+.at-wizard-stepper {
+  display: flex;
+  background: var(--at-canvas);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-lg);
+  overflow: hidden;
+}
+.at-wizard-step {
+  flex: 1;
+  padding: 14px 18px;
+  border-right: 1px solid var(--at-hairline);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.at-wizard-step:last-child { border-right: 0; }
+.at-wizard-step-num {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  background: var(--at-surface-soft);
+  color: var(--at-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.at-wizard-step.is-active .at-wizard-step-num { background: var(--at-action); color: #fff; }
+.at-wizard-step.is-done .at-wizard-step-num { background: var(--at-atlas-success); color: #fff; }
+.at-wizard-step.is-error .at-wizard-step-num { background: var(--at-atlas-danger); color: #fff; }
+.at-wizard-step-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--at-muted);
+}
+.at-wizard-step.is-active .at-wizard-step-label { color: var(--at-ink); }
+
+/* ─── Atlas page topbar — dùng chung mọi marketing view ────────────────── */
+.at-page-topbar {
+  background: var(--at-canvas);
+  border-bottom: 1px solid var(--at-hairline);
+  padding: var(--at-s-md) var(--at-s-lg);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  gap: var(--at-s-sm);
+}
+.at-page-topbar__title {
+  display: flex;
+  align-items: center;
+  gap: var(--at-s-xs);
+}
+.at-page-topbar__actions {
+  display: flex;
+  gap: var(--at-s-xs);
+  align-items: center;
+}
+
+/* ═══════════════════ END ATLAS v1 ═══════════════════════════════════════ */
+
+/* ── Empty state ──────────────────────────────────────────────────────── */
+.at-empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: var(--at-muted);
+}
+.at-empty__title {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--at-ink);
+  margin: 16px 0 4px;
+}
+.at-empty__desc {
+  font-size: 14px;
+  color: var(--at-body);
+  margin: 0 auto 24px;
+  max-width: 360px;
+  line-height: 1.5;
+}
+
+/* ── Vuetify overrides scoped to airtable-scope ───────────────────────── */
+.airtable-scope .v-btn--variant-elevated,
+.airtable-scope .v-btn[color="primary"] {
+  background-color: var(--at-primary) !important;
+  color: var(--at-on-primary) !important;
+  box-shadow: none !important;
+}
+.airtable-scope .v-snackbar__content {
+  font-weight: 500;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+ * RESPONSIVE
+ * HD-first (anh chốt): target 1366×768, min 1280. Helper visibility mobile/tablet
+ * (.at-hide-mobile/.at-only-*) đã GỠ 2026-06-06 — không view nào dùng + vi phạm
+ * HD-first. Giữ lại touch-target 44px + page-header stacking cho an toàn module
+ * Lịch hẹn (dùng chung airtable.css).
+ * ──────────────────────────────────────────────────────────────────────── */
+
+/* Touch targets ≥44px on mobile (WCAG AAA recommendation) */
+@media (max-width: 767px) {
+  .airtable-scope .at-btn { min-height: 44px; padding: 10px 18px; }
+  .airtable-scope .at-btn--sm { min-height: 44px; padding: 10px 16px; }
+  .airtable-scope .at-btn--xs { min-height: 44px; padding: 10px 12px; }
+  .airtable-scope .at-input  { height: 48px; padding: 12px 16px; }
+  .airtable-scope .filter-chip { min-height: 36px; padding: 8px 14px; }
+}
+
+/* Page-level layout adjustments */
+@media (max-width: 1023px) {
+  .airtable-scope .at-page-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--at-s-md);
+  }
+  .airtable-scope .at-page-title { font-size: 24px; }
+}
+
+@media (max-width: 767px) {
+  .airtable-scope .at-page-title { font-size: 22px; }
+  .airtable-scope .at-page-subtitle { font-size: 13px; }
+}
+
+/* Container helpers used across views */
+.at-container { max-width: 1280px; margin: 0 auto; }
+@media (min-width: 1440px) {
+  .at-container { max-width: 1280px; }
+}
+

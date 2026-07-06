@@ -1,0 +1,220 @@
+version: "3.8"
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    container_name: zalo-crm-app
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-3080}:3000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://${DB_USER:-crmuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-zalocrm}
+      # STORAGE 2026-06-20: storage config (STORAGE_DRIVER, S3_*, LOCAL_PUBLIC_URL,
+      # APP_URL) đến từ env_file .env — KHÔNG override ở đây nữa để keys R2 không bị
+      # ghi đè bằng MINIO_ROOT_*. Mặc định STORAGE_DRIVER=local (lưu vào volume bên dưới).
+      # Phase 7 overnight test: STUB mode prevents Zalo SDK calls.
+      # Set to 'false' or remove for REAL mode.
+      - AUTOMATION_STUB_MODE=${AUTOMATION_STUB_MODE:-false}
+      # Friend Invite Queue test mode: 60s tick delay instead of 20-40min.
+      - FRIEND_INVITE_TEST_MODE=${FRIEND_INVITE_TEST_MODE:-true}
+      # ── Luồng Mục Tiêu M1 (2026-06-01) ── BullMQ Redis URL
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      # ── GĐ13b (2026-06-13) Antivirus ClamAV ── mặc định TẮT (fail-open). Bật bằng
+      # MEDIA_AV_ENABLED=1 trong .env SAU khi service clamav 'healthy' (tải DB virus xong ~vài phút).
+      - MEDIA_AV_ENABLED=${MEDIA_AV_ENABLED:-0}
+      - MEDIA_AV_FAIL_CLOSED=${MEDIA_AV_FAIL_CLOSED:-0}
+      - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
+      - CLAMAV_PORT=${CLAMAV_PORT:-3310}
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - file_storage:/var/lib/zalo-crm/files
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    # FIX 2026-06-08: log driver json-file CŨ bị đóng băng (docker logs kẹt 1 mốc, không
+    # stream log mới) → không debug được worker. Giới hạn + rotate để tránh corrupt/đầy.
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  db:
+    image: postgres:16-alpine
+    container_name: zalo-crm-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-crmuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME:-zalocrm}
+      # TZ giờ VN cho OS container + log. Storage vẫn UTC (xem -c timezone bên dưới).
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:${DB_PORT:-5433}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-crmuser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # ── Timezone (Cách 2 — giờ VN cho ops/log, 2026-06-14) ──────────────────────
+    #   log_timezone=Asia/Ho_Chi_Minh → log Postgres hiện giờ VN, dễ đối chiếu UI.
+    #   timezone=UTC (GIỮ NGUYÊN)     → CURRENT_TIMESTAMP / @default(now()) lưu UTC.
+    #   ĐỪNG đổi timezone sang Asia/Ho_Chi_Minh: Prisma đọc cột timestamp như UTC
+    #   → toàn bộ mốc thời gian sẽ lệch +7h (xem notes/claude-memory timezone).
+    command: >
+      postgres
+      -c shared_buffers=128MB
+      -c effective_cache_size=256MB
+      -c max_connections=50
+      -c timezone=UTC
+      -c log_timezone=Asia/Ho_Chi_Minh
+
+  redis:
+    image: redis:7-alpine
+    container_name: zalo-crm-redis
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Ho_Chi_Minh   # log Redis giờ VN (Cách 2); Redis không lưu thời gian nghiệp vụ
+    # ── Luồng Mục Tiêu M1 (2026-06-01) ──
+    # AOF every 1s (Issue #5 5A — crash recovery survive: BullMQ jobs delayed/waiting
+    # persist even if container kill -9). Verified POC spike 5/5 PASS 2026-06-01.
+    # maxmemory 256MB cho 35K jobs cumulative (memory scale_target: 5K KH/day × 7 days).
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+    volumes:
+      - redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    # profiles: redis  ← REMOVED M1 2026-06-01: Redis là dependency cứng của BullMQ
+
+  minio:
+    image: minio/minio:latest
+    container_name: zalo-crm-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      # SECURITY: no defaults — deploy MUST set MINIO_ROOT_USER and
+      # MINIO_ROOT_PASSWORD in .env. Previously fell back to minioadmin/
+      # minioadmin which let anyone with network access pop the admin console.
+      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
+      TZ: Asia/Ho_Chi_Minh   # log MinIO giờ VN (Cách 2)
+    volumes:
+      - minio_data:/data
+    ports:
+      # Port 9000 (S3 API) MUST stay reachable from Zalo CDN — Zalo's servers
+      # fetch attachment URLs we send via zca-js sendImage/sendVideo, so we
+      # can't bind to loopback. In production this MUST sit behind a TLS
+      # reverse proxy (nginx/Caddy) on the host that:
+      #   - serves /<bucket>/<key> with HTTPS
+      #   - rate-limits per IP
+      #   - keeps the admin console (:9001) firewalled to ops VPN only.
+      # The :9001 admin console IS bound to 127.0.0.1 below — never expose it.
+      - "${MINIO_PORT:-9000}:9000"
+      - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: zalo-crm-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD};
+      mc mb --ignore-existing local/${S3_BUCKET:-zalocrm-attachments};
+      mc anonymous set download local/${S3_BUCKET:-zalocrm-attachments};
+      exit 0;
+      "
+    # Anonymous DOWNLOAD on the bucket is intentional: Zalo's CDN fetches
+    # attachment URLs we hand to zca-js. Keys are random UUIDs (see
+    # backend/src/shared/storage/minio-client.ts: `${date}/${randomUUID()}${ext}`)
+    # so listing is disabled and enumeration is infeasible.
+    # Anonymous UPLOAD is NOT enabled — only the backend can write via
+    # access-key auth.
+    environment:
+      # Same hard-fail pattern as minio service — no default credentials.
+      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
+      S3_BUCKET: ${S3_BUCKET:-zalocrm-attachments}
+
+  backup:
+    image: prodrigestivill/postgres-backup-local
+    container_name: zalo-crm-backup
+    restart: unless-stopped
+    volumes:
+      - ./backups:/backups
+    environment:
+      # TZ giờ VN → SCHEDULE '@daily' chạy 00:00 giờ VN (trước đây UTC = 07:00 sáng VN);
+      # tên file backup cũng theo giờ VN. Dữ liệu dump vẫn là UTC y như DB lưu.
+      TZ: Asia/Ho_Chi_Minh
+      POSTGRES_HOST: db
+      POSTGRES_DB: ${DB_NAME:-zalocrm}
+      POSTGRES_USER: ${DB_USER:-crmuser}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      SCHEDULE: "@daily"
+      BACKUP_KEEP_DAYS: 7
+      BACKUP_KEEP_WEEKS: 4
+      BACKUP_KEEP_MONTHS: 3
+    depends_on:
+      - db
+
+  # ── GĐ13b (2026-06-13) Antivirus — quét virus file upload (clamd INSTREAM TCP 3310) ──
+  # App KHÔNG depends_on service này (fail-open): app chạy bình thường kể cả khi clamav
+  # đang tải DB virus (~vài phút sau khi start) hoặc tắt. App chỉ THẬT SỰ quét khi
+  # MEDIA_AV_ENABLED=1. Chưa bật → scanBuffer trả 'skipped' ngay, 0 kết nối.
+  clamav:
+    image: clamav/clamav:1.4
+    container_name: zalo-crm-clamav
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Ho_Chi_Minh   # log ClamAV giờ VN (Cách 2)
+    # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
+    volumes:
+      - clamav_data:/var/lib/clamav   # giữ DB virus qua restart (đỡ tải lại mỗi lần)
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s   # lần đầu freshclam tải DB virus có thể vài phút
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pg_data:
+  file_storage:
+  redis_data:
+  minio_data:
+  clamav_data:

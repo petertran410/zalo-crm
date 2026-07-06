@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -e
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+# Copy .env from main worktree (share API keys, DB config)
+if [ ! -f "$REPO_ROOT/.env" ]; then
+  MAIN_WORKTREE="$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
+  if [ -n "$MAIN_WORKTREE" ] && [ "$MAIN_WORKTREE" != "$REPO_ROOT" ] && [ -f "$MAIN_WORKTREE/.env" ]; then
+    cp "$MAIN_WORKTREE/.env" "$REPO_ROOT/.env"
+    echo "Copied .env from main worktree"
+  fi
+fi
+
+# Copy backend/.env if exists in main worktree
+if [ ! -f "$REPO_ROOT/backend/.env" ]; then
+  MAIN_WORKTREE="$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
+  if [ -n "$MAIN_WORKTREE" ] && [ "$MAIN_WORKTREE" != "$REPO_ROOT" ] && [ -f "$MAIN_WORKTREE/backend/.env" ]; then
+    cp "$MAIN_WORKTREE/backend/.env" "$REPO_ROOT/backend/.env"
+    echo "Copied backend/.env from main worktree"
+  fi
+fi
+
+# Copy frontend/.env if exists in main worktree
+if [ ! -f "$REPO_ROOT/frontend/.env" ]; then
+  MAIN_WORKTREE="$(git -C "$REPO_ROOT" worktree list --porcelain 2>/dev/null | head -1 | sed 's/^worktree //')"
+  if [ -n "$MAIN_WORKTREE" ] && [ "$MAIN_WORKTREE" != "$REPO_ROOT" ] && [ -f "$MAIN_WORKTREE/frontend/.env" ]; then
+    cp "$MAIN_WORKTREE/frontend/.env" "$REPO_ROOT/frontend/.env"
+    echo "Copied frontend/.env from main worktree"
+  fi
+fi
+
+# Install backend dependencies
+if [ ! -d "$REPO_ROOT/backend/node_modules" ]; then
+  echo "Installing backend dependencies..."
+  (cd "$REPO_ROOT/backend" && npm install)
+fi
+
+# Install frontend dependencies
+if [ ! -d "$REPO_ROOT/frontend/node_modules" ]; then
+  echo "Installing frontend dependencies..."
+  (cd "$REPO_ROOT/frontend" && npm install --legacy-peer-deps)
+fi
+
+echo "ZaloCRM workspace ready"

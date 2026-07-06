@@ -1,0 +1,137 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Roboto+Mono:wght@400;500;600&display=swap');
+
+/* ════════════════════════════════════════════════════════════
+   Global app styles — Smax design language (mockup chat-smax-v3).
+   Theme-specific tokens live in tokens.css.
+   Legacy navy/cyan glass effects retained only behind .v-theme--legacy-dark.
+   ════════════════════════════════════════════════════════════ */
+
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden; /* khoá cuộn cấp trang — chỉ vùng tin nhắn/list bên trong cuộn (fix 2026-06-14) */
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Plus Jakarta Sans", Roboto, sans-serif;
+  scroll-behavior: smooth;
+  background: var(--smax-grey-100);
+  color: var(--smax-text);
+  font-size: var(--smax-font-base);
+  line-height: var(--smax-line-height);
+}
+
+#app { height: 100%; }
+
+/* ════════ Smax light theme — defaults for v-* components ════════ */
+.v-theme--smax-light .v-card {
+  background: var(--smax-bg) !important;
+  border: 1px solid var(--smax-grey-200) !important;
+  backdrop-filter: none;
+}
+
+.v-theme--smax-light ::-webkit-scrollbar { width: 8px; height: 8px; }
+.v-theme--smax-light ::-webkit-scrollbar-track { background: transparent; }
+.v-theme--smax-light ::-webkit-scrollbar-thumb {
+  background: var(--smax-grey-300);
+  border-radius: 4px;
+}
+.v-theme--smax-light ::-webkit-scrollbar-thumb:hover { background: var(--smax-grey-700); }
+
+.v-theme--smax-light .v-list-item:hover {
+  background: var(--smax-grey-50) !important;
+}
+.v-theme--smax-light .v-list-item--active {
+  background: var(--smax-primary-soft) !important;
+  color: var(--smax-primary);
+}
+
+/* Form fields — light, square corners (mockup uses 7-9px radius) */
+.v-theme--smax-light .v-field { border-radius: 7px !important; }
+.v-theme--smax-light .v-field--focused {
+  border-color: var(--smax-primary) !important;
+  box-shadow: 0 0 0 3px rgba(33,150,243,0.10);
+}
+
+/* Buttons — flat, no animation */
+.v-theme--smax-light .v-btn--variant-flat {
+  border-radius: 7px !important;
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* Chips — pill */
+.v-theme--smax-light .v-chip {
+  border-radius: 12px !important;
+  font-weight: 500;
+}
+
+/* Data table — flat surface */
+.v-theme--smax-light .v-data-table { background: transparent !important; }
+.v-theme--smax-light .v-data-table .v-table__wrapper {
+  background: var(--smax-bg);
+  border-radius: 7px;
+  border: 1px solid var(--smax-grey-200);
+}
+
+/* Status dot animation */
+.status-dot { box-shadow: 0 0 8px currentColor; }
+
+/* Fade slide for messages (carry-over from old, applies to both themes) */
+@keyframes fade-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.message-bubble { animation: fade-slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ════════ Legacy dark theme (kept for fallback) ════════ */
+.v-theme--legacy-dark {
+  --navy-deep: #0A192F;
+  --navy-light: #112240;
+  --cyan-electric: #00F2FF;
+  --card-glass: rgba(17, 34, 64, 0.7);
+  --liquid-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --border-glow: rgba(0, 242, 255, 0.1);
+}
+
+.v-theme--legacy-dark.liquid-bg {
+  background: linear-gradient(-45deg, #0A192F, #112240, #004d7a, #008fb3) !important;
+  background-size: 400% 400% !important;
+  animation: flow-bg 15s ease infinite;
+}
+@keyframes flow-bg {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+@keyframes liquid-morph {
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  50% { border-radius: 30% 60% 70% 30% / 50% 60% 30% 50%; }
+}
+.v-theme--legacy-dark .ai-core-orb {
+  animation: liquid-morph 8s infinite var(--liquid-ease);
+  box-shadow: 0 0 30px rgba(0, 242, 255, 0.2);
+}
+
+.v-theme--legacy-dark .v-card {
+  background: var(--card-glass) !important;
+  border: 1px solid var(--border-glow) !important;
+  backdrop-filter: blur(12px);
+}
+.v-theme--legacy-dark ::-webkit-scrollbar { width: 4px; }
+.v-theme--legacy-dark ::-webkit-scrollbar-thumb {
+  background: rgba(0, 242, 255, 0.2); border-radius: 10px;
+}
+.v-theme--legacy-dark ::-webkit-scrollbar-thumb:hover { background: rgba(0, 242, 255, 0.4); }
+.v-theme--legacy-dark .v-list-item:hover { background: rgba(0, 242, 255, 0.05) !important; }
+.v-theme--legacy-dark .v-list-item--active {
+  background: rgba(0, 242, 255, 0.08) !important;
+  border-left: 3px solid var(--cyan-electric);
+}
+.v-theme--legacy-dark .v-field { border-radius: 16px !important; }
+.v-theme--legacy-dark .v-field--focused {
+  border-color: var(--cyan-electric) !important;
+  box-shadow: 0 0 12px rgba(0, 242, 255, 0.15);
+}
+.v-theme--legacy-dark .v-btn--variant-flat:hover {
+  box-shadow: 0 0 16px rgba(0, 242, 255, 0.2);
+  transform: translateY(-1px);
+}

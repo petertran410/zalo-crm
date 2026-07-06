@@ -1,0 +1,32 @@
+version: "3.8"
+
+# Development-only compose: starts only the database.
+# Run the backend with: cd backend && npm run dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: zalo-crm-db-dev
+    environment:
+      POSTGRES_USER: crmuser
+      POSTGRES_PASSWORD: devpassword
+      POSTGRES_DB: zalocrm
+      TZ: Asia/Ho_Chi_Minh
+    # Cùng quy ước với prod: log giờ VN, NHƯNG timezone=UTC để @default(now()) lưu UTC
+    # (Prisma đọc cột timestamp như UTC — đổi sang ICT sẽ lệch +7h).
+    command: >
+      postgres
+      -c timezone=UTC
+      -c log_timezone=Asia/Ho_Chi_Minh
+    ports:
+      - "5433:5432"
+    volumes:
+      - pg_data_dev:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crmuser"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  pg_data_dev:

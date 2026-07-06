@@ -1,0 +1,19 @@
+# Chuẩn hoá xuống dòng — quan trọng để script .sh chạy đúng trên Windows (Git Bash/WSL).
+* text=auto
+
+# Bash scripts LUÔN dùng LF (CRLF sẽ làm bash báo lỗi `\r`).
+*.sh    text eol=lf
+*.bash  text eol=lf
+
+# PowerShell giữ CRLF (chuẩn Windows).
+*.ps1   text eol=crlf
+
+# Nhị phân — không đụng eol.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.webp  binary
+*.zip   binary
+*.pdf   binary
