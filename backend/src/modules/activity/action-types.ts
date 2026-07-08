@@ -13,6 +13,7 @@ export type ActivityCategory =
   | 'status_care'     // Care status (Contact.statusId / Friend.statusId)
   | 'score'           // Lead score (Contact.leadScore / Friend.leadScore)
   | 'appointment'    // Lịch hẹn: create / update / complete / cancel / reschedule
+  | 'task'            // Công việc (Task V1 2026-07-07): create / update / complete / reopen / delete
   | 'interaction'     // Tổng hợp interaction (first_inbound, silent_30d...) — KHÔNG log từng msg
   | 'system'          // contact_link_parent, merge, import, migration
   | 'automation'      // Bot actions (auto-tag, auto-score...)
@@ -68,6 +69,13 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   appointment_cancel: 'appointment',
   appointment_reschedule: 'appointment',
   appointment_no_show: 'appointment',
+
+  // task (Công việc V1 2026-07-07)
+  task_create: 'task',
+  task_update: 'task',
+  task_complete: 'task',
+  task_reopen: 'task',
+  task_delete: 'task',
 
   // interaction
   first_inbound: 'interaction',

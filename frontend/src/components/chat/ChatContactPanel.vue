@@ -443,6 +443,13 @@
           @refresh="reloadAppointments"
         />
 
+        <!-- Công việc (Task V1 2026-07-07) — cùng "việc phải làm cho KH" với Lịch hẹn -->
+        <TasksSection
+          v-if="props.contactId"
+          :contact-id="props.contactId"
+          :contact-name="headerFullName"
+        />
+
         <!-- Empty state khi không có gì trong tab -->
         <div v-if="!hasAnyActivity" class="tab-empty">
           <p>Chưa có hoạt động — sau khi có conv tin nhắn, AI sẽ tự tóm tắt + phân tích cảm xúc.</p>
@@ -584,6 +591,7 @@ import type { AiSentiment } from '@/composables/use-chat';
 import { useChatContactPanel } from '@/composables/use-chat-contact-panel';
 import { displayPhone, displayPhoneIntl } from '@/composables/use-phone-format';
 import ChatAppointments from './ChatAppointments.vue';
+import TasksSection from '@/components/tasks/TasksSection.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';

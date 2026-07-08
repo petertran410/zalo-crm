@@ -78,6 +78,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/AppointmentsView.vue'),
     meta: { requiresAuth: true },
   },
+  {
+    path: '/tasks',
+    name: 'Tasks',
+    component: () => import('@/views/TasksView.vue'),
+    meta: { requiresAuth: true },
+  },
   // ════════ Module Báo cáo — shell + 7 màn (2026-06-17) ════════
   {
     path: '/reports',
@@ -334,6 +340,7 @@ const ROUTE_TITLES: Record<string, string> = {
   Media: 'Kho phương tiện',
   Profile: 'Hồ sơ cá nhân',
   Appointments: 'Lịch hẹn',
+  Tasks: 'Công việc',
   Reports: 'Báo cáo',
   'Reports.Overview': 'Báo cáo · Tổng quan điều hành',
   'Reports.Nick': 'Báo cáo · Vận hành Nick Zalo',

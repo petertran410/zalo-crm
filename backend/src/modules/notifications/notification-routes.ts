@@ -8,6 +8,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { getZaloScope } from '../zalo/zalo-scope.js';
 import { getContactScope } from '../contacts/contact-scope.js';
+import { startOfTodayOrgUtc } from '../tasks/task-time.js';
 
 interface NotificationItem {
   id: string;
@@ -101,6 +102,47 @@ export async function notificationRoutes(app: FastifyInstance) {
         title: `${tmrApts} lịch hẹn ngày mai`,
         detail: 'Chuẩn bị cho ngày mai',
         createdAt: new Date().toISOString(),
+      });
+    }
+
+    // 3.5 Công việc của TÔI: quá hạn (gộp 1 dòng) + đến hạn hôm nay (tối đa 5).
+    // Task V1 2026-07-07 — biên "hôm nay" theo múi giờ ORG (offset cố định), không phải server.
+    // Chỉ task mình được giao → không cần contact scope.
+    const org = await prisma.organization.findUnique({
+      where: { id: user.orgId },
+      select: { timezone: true },
+    });
+    const taskTodayStart = startOfTodayOrgUtc(org?.timezone || '+07:00');
+    const taskTodayEnd = new Date(taskTodayStart.getTime() + 24 * 3600_000);
+    const [overdueTasks, dueTodayTasks] = await Promise.all([
+      prisma.task.count({
+        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { lt: taskTodayStart } },
+      }),
+      prisma.task.findMany({
+        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { gte: taskTodayStart, lt: taskTodayEnd } },
+        include: { contact: { select: { fullName: true } } },
+        orderBy: { dueAt: 'asc' },
+        take: 5,
+      }),
+    ]);
+    if (overdueTasks > 0) {
+      notifications.push({
+        id: 'tasks-overdue',
+        type: 'warning',
+        priority: 'high',
+        title: `${overdueTasks} công việc quá hạn`,
+        detail: 'Mở trang Công việc để xử lý',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    for (const t of dueTodayTasks) {
+      notifications.push({
+        id: `task-${t.id}`,
+        type: 'info',
+        priority: 'medium',
+        title: `Công việc: ${t.title}`,
+        detail: t.contact?.fullName || 'Đến hạn hôm nay',
+        createdAt: t.dueAt!.toISOString(),
       });
     }
 

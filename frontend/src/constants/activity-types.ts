@@ -17,6 +17,7 @@ export type ActivityCategory =
   | 'status_care'
   | 'score'
   | 'appointment'
+  | 'task'
   | 'interaction'
   | 'system'
   | 'automation';
@@ -35,6 +36,7 @@ export const CATEGORY_META: Record<ActivityCategory, CategoryMeta> = {
   status_care:   { label: 'Trạng thái',    icon: '🔄', color: '#388E3C', defaultVisible: true },
   score:         { label: 'Điểm số',       icon: '📈', color: '#F57C00', defaultVisible: true },
   appointment:   { label: 'Lịch hẹn',      icon: '📅', color: '#C2185B', defaultVisible: true },
+  task:          { label: 'Công việc',     icon: '✅', color: '#1565C0', defaultVisible: true },
   interaction:   { label: 'Tương tác',     icon: '💬', color: '#5D4037', defaultVisible: false }, // nhiều event
   system:        { label: 'Hệ thống',      icon: '⚙️', color: '#546E7A', defaultVisible: false },
   automation:    { label: 'Tự động (Bot)', icon: '🤖', color: '#00897B', defaultVisible: true }, // bao gồm auto_tag_change — sale cần thấy KH state change
@@ -85,6 +87,13 @@ export const ACTION_META: Record<string, ActionMeta> = {
   appointment_reschedule: { label: 'Dời lịch', icon: '🔁' },
   appointment_no_show:    { label: 'Vắng mặt', icon: '😶' },
 
+  // task (Công việc V1 2026-07-07)
+  task_create:   { label: 'Tạo công việc', icon: '✨' },
+  task_update:   { label: 'Sửa công việc' },
+  task_complete: { label: 'Hoàn thành công việc', icon: '✅' },
+  task_reopen:   { label: 'Mở lại công việc', icon: '🔁' },
+  task_delete:   { label: 'Xóa công việc', icon: '🗑️' },
+
   // interaction
   first_inbound:           { label: 'KH nhắn lần đầu', icon: '📩' },
   first_outbound:          { label: 'Mình nhắn lần đầu', icon: '📤' },
@@ -131,6 +140,8 @@ export function categoryOf(action: string, fallback: ActivityCategory = 'system'
     appointment_create: 'appointment', appointment_update: 'appointment',
     appointment_complete: 'appointment', appointment_cancel: 'appointment',
     appointment_reschedule: 'appointment', appointment_no_show: 'appointment',
+    task_create: 'task', task_update: 'task', task_complete: 'task',
+    task_reopen: 'task', task_delete: 'task',
     first_inbound: 'interaction', first_outbound: 'interaction',
     silent_30d: 'interaction', call_logged: 'interaction', meeting_logged: 'interaction',
     contact_link_parent: 'system', contact_unlink_parent: 'system',

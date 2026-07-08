@@ -41,6 +41,7 @@ model Organization {
   contactAccess               ContactAccess[]
   conversations               Conversation[]
   appointments                Appointment[]
+  tasks                       Task[]
   activityLogs                ActivityLog[]
   dailyStats                  DailyMessageStat[]
   settings                    AppSetting[]
@@ -269,6 +270,10 @@ model User {
   contactAccess             ContactAccess[]
   appointments              Appointment[]
   statusChangedAppointments Appointment[]                @relation("AppointmentStatusChanger")
+  // Công việc (Task V1) 2026-07-07
+  assignedTasks             Task[]                       @relation("TaskAssignee")
+  createdTasks              Task[]                       @relation("TaskCreatedBy")
+  doneTasks                 Task[]                       @relation("TaskDoneBy")
   repliedMessages           Message[]                    @relation("RepliedMessages")
   activityLogs              ActivityLog[]
   messageTemplates          MessageTemplate[]
@@ -634,6 +639,8 @@ model Contact {
   // bảng này thay vì chỉ assignedUserId.
   contactAccess     ContactAccess[]
   contactNotes      Note[]
+  // Công việc (Task V1) 2026-07-07 — to-do link KH, SetNull khi purge KH
+  tasks             Task[]
   // Phase 7 — Automation framework
   // automationTasks   AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
   // Phase Lead Pool 2026-05-24
@@ -1138,6 +1145,42 @@ model AppointmentActionLink {
 
   @@index([appointmentId])
   @@map("appointment_action_links")
+}
+
+// Công việc (to-do) V1 — 2026-07-07: title + assignee bắt buộc, hạn + link KH tùy chọn.
+// KHÔNG liên quan AutomationTask cũ (đã xóa 2026-06-01) — entity mới, đơn giản, thủ công.
+// dueAt là UTC instant; wall-clock hiển thị theo Organization.timezone (offset cố định).
+// dueHasTime=false = hạn "cả ngày" (dueAt = 00:00 org-midnight của ngày đó).
+// status String 'open' | 'done' (convention String, không enum — giống Appointment.status).
+// FK: contact SetNull (purge KH không được xóa to-do của sale — title/description vẫn có
+// giá trị standalone); assignee Cascade (user chỉ soft-deactivate trong app flow, Cascade
+// giữ org-delete order an toàn — Restrict sẽ deadlock cascade org → users → tasks).
+model Task {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  title           String
+  description     String?   @db.Text
+  assigneeUserId  String    @map("assignee_user_id")
+  createdByUserId String?   @map("created_by_user_id")
+  contactId       String?   @map("contact_id")
+  dueAt           DateTime? @map("due_at")
+  dueHasTime      Boolean   @default(false) @map("due_has_time")
+  status          String    @default("open") // open | done
+  doneAt          DateTime? @map("done_at")
+  doneByUserId    String?   @map("done_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignee  User         @relation("TaskAssignee", fields: [assigneeUserId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("TaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  doneBy    User?        @relation("TaskDoneBy", fields: [doneByUserId], references: [id], onDelete: SetNull)
+  contact   Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, assigneeUserId, status, dueAt]) // query chính: my open tasks theo hạn
+  @@index([orgId, contactId]) // contact-panel list
+  @@index([orgId, status, dueAt]) // view "Tất cả" + notification scan
+  @@map("tasks")
 }
 
 // CRM-style notes on a contact — Facebook-comment-like with flat thread (parentNoteId nullable, depth=1).
