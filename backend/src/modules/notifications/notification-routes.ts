@@ -8,7 +8,6 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { getZaloScope } from '../zalo/zalo-scope.js';
 import { getContactScope } from '../contacts/contact-scope.js';
-import { startOfTodayOrgUtc } from '../tasks/task-time.js';
 
 interface NotificationItem {
   id: string;
@@ -105,21 +104,25 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
-    // 3.5 Công việc của TÔI: quá hạn (gộp 1 dòng) + đến hạn hôm nay (tối đa 5).
-    // Task V1 2026-07-07 — biên "hôm nay" theo múi giờ ORG (offset cố định), không phải server.
-    // Chỉ task mình được giao → không cần contact scope.
-    const org = await prisma.organization.findUnique({
-      where: { id: user.orgId },
-      select: { timezone: true },
-    });
-    const taskTodayStart = startOfTodayOrgUtc(org?.timezone || '+07:00');
-    const taskTodayEnd = new Date(taskTodayStart.getTime() + 24 * 3600_000);
-    const [overdueTasks, dueTodayTasks] = await Promise.all([
+    // 3.5 Công việc của TÔI: quá hạn (gộp 1 dòng) + cảnh báo theo tầng <1h/<6h/<24h.
+    // Path A 2026-07-08 (anh chốt): KHÔNG cron, KHÔNG lưu trạng thái "đã bắn tầng nào" —
+    // tính "khoảng cách tới hạn" tương đối so với NOW mỗi lần bell fetch (giống pattern
+    // overdue/due-today cũ). Nhờ vậy task tạo gần hạn (vd còn 1h) tự động rơi đúng tầng
+    // <1h ngay lần đầu — không cần logic "bỏ qua tầng đã lỡ" như cron-based reminder.
+    // detail text đổi theo tầng → FE (NotificationBell) tự phát hiện "tầng leo thang" để
+    // phát âm thanh lại dù id giữ nguyên (xem key() trong NotificationBell.vue).
+    const nowMs = Date.now();
+    const [overdueTasks, upcomingTasks] = await Promise.all([
       prisma.task.count({
-        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { lt: taskTodayStart } },
+        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { lt: new Date(nowMs) } },
       }),
       prisma.task.findMany({
-        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { gte: taskTodayStart, lt: taskTodayEnd } },
+        where: {
+          orgId: user.orgId,
+          assigneeUserId: user.id,
+          status: 'open',
+          dueAt: { gte: new Date(nowMs), lt: new Date(nowMs + 24 * 3600_000) },
+        },
         include: { contact: { select: { fullName: true } } },
         orderBy: { dueAt: 'asc' },
         take: 5,
@@ -135,13 +138,15 @@ export async function notificationRoutes(app: FastifyInstance) {
         createdAt: new Date().toISOString(),
       });
     }
-    for (const t of dueTodayTasks) {
+    for (const t of upcomingTasks) {
+      const hoursLeft = (t.dueAt!.getTime() - nowMs) / 3600_000;
+      const tierLabel = hoursLeft < 1 ? 'trong 1 giờ tới' : hoursLeft < 6 ? 'trong 6 giờ tới' : 'trong 24 giờ tới';
       notifications.push({
         id: `task-${t.id}`,
         type: 'info',
-        priority: 'medium',
+        priority: hoursLeft < 6 ? 'high' : 'medium',
         title: `Công việc: ${t.title}`,
-        detail: t.contact?.fullName || 'Đến hạn hôm nay',
+        detail: `Đến hạn ${tierLabel}${t.contact?.fullName ? ' · ' + t.contact.fullName : ''}`,
         createdAt: t.dueAt!.toISOString(),
       });
     }
