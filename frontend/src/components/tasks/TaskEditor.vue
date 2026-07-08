@@ -8,12 +8,12 @@
 -->
 <template>
   <Teleport to="body">
-    <div v-if="modelValue" class="editor-backdrop" @click.self="close">
-      <div class="editor" @keydown.escape="close" @keydown.ctrl.enter="submit" tabindex="-1">
+    <div v-if="modelValue" class="editor-backdrop" @click.self="requestClose">
+      <div class="editor" @keydown.escape="requestClose" @keydown.ctrl.enter="submit" tabindex="-1">
         <!-- Header -->
         <div class="editor-head">
           <h2><v-icon size="19" class="head-ic">mdi-checkbox-marked-outline</v-icon> {{ isEdit ? 'Sửa công việc' : 'Tạo công việc' }}</h2>
-          <button class="close" @click="close" title="Đóng (Esc)"><v-icon size="18">mdi-close</v-icon></button>
+          <button class="close" @click="requestClose" title="Đóng (Esc)"><v-icon size="18">mdi-close</v-icon></button>
         </div>
 
         <!-- Body -->
@@ -137,8 +137,11 @@ import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { api } from '@/api/index';
 import { useAuthStore } from '@/stores/auth';
 import { useUsers } from '@/composables/use-users';
+import { useConfirm } from '@/composables/use-confirm';
 import { orgWallClockToUtc, orgDayKey, getOrgParts } from '@/composables/use-org-timezone';
 import type { Task, TaskContactLite } from '@/composables/use-tasks';
+
+const { confirm } = useConfirm();
 
 const props = defineProps<{
   modelValue: boolean;
@@ -325,6 +328,25 @@ async function submit() {
 
 function close() {
   emit('update:modelValue', false);
+}
+
+/** Có nội dung chưa lưu? Chỉ tính tiêu đề/mô tả — các field khác (hạn, người phụ
+ *  trách, KH) hiếm khi tự đổi nếu user chưa gõ gì. */
+const hasUnsavedChanges = computed(() => !!form.title.trim() || !!form.description.trim());
+
+/** Đóng có xác nhận nếu đang gõ dở — chặn tình huống click ra ngoài / Esc / nút X
+ *  làm mất nội dung mà không hỏi lại (anh báo 2026-07-08). */
+async function requestClose() {
+  if (!hasUnsavedChanges.value) {
+    close();
+    return;
+  }
+  const ok = await confirm({
+    title: 'Bỏ công việc đang tạo?',
+    message: 'Nội dung bạn vừa nhập sẽ không được lưu.',
+    tone: 'danger',
+  });
+  if (ok) close();
 }
 </script>
 
