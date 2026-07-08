@@ -140,7 +140,11 @@ export async function notificationRoutes(app: FastifyInstance) {
     }
     for (const t of upcomingTasks) {
       const hoursLeft = (t.dueAt!.getTime() - nowMs) / 3600_000;
-      const tierLabel = hoursLeft < 1 ? 'trong 1 giờ tới' : hoursLeft < 6 ? 'trong 6 giờ tới' : 'trong 24 giờ tới';
+      const tierLabel =
+        hoursLeft < 0.5 ? 'trong 30 phút tới'
+        : hoursLeft < 1 ? 'trong 1 giờ tới'
+        : hoursLeft < 6 ? 'trong 6 giờ tới'
+        : 'trong 24 giờ tới';
       notifications.push({
         id: `task-${t.id}`,
         type: 'info',
