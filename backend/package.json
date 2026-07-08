@@ -5,7 +5,7 @@
   "main": "dist/app.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/app.ts",
+    "dev": "tsx watch --env-file=.env src/app.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "db:migrate": "prisma migrate dev",
