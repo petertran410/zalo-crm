@@ -300,10 +300,10 @@ export async function userRoutes(app: FastifyInstance) {
     const { id: fromUserId } = request.params as { id: string };
     const body = (request.body ?? {}) as {
       toUserId?: string;
-      transfer?: { contacts?: boolean; nicks?: boolean; appointments?: boolean; tasks?: boolean };
+      transfer?: { contacts?: boolean; nicks?: boolean; appointments?: boolean; tasks?: boolean; tickets?: boolean };
     };
     const toUserId = body.toUserId;
-    const t = body.transfer ?? { contacts: true, nicks: true, appointments: true, tasks: true };
+    const t = body.transfer ?? { contacts: true, nicks: true, appointments: true, tasks: true, tickets: true };
 
     if (!toUserId) return reply.status(400).send({ error: 'Thiếu người nhận bàn giao' });
     if (toUserId === fromUserId) return reply.status(400).send({ error: 'Không thể bàn giao cho chính người đó' });
@@ -318,7 +318,7 @@ export async function userRoutes(app: FastifyInstance) {
     if (!toU.isActive) return reply.status(400).send({ error: 'Người nhận đang bị vô hiệu, chọn người khác' });
 
     const result = await prisma.$transaction(async (tx) => {
-      let contacts = 0, nicks = 0, appointments = 0, accesses = 0, tasks = 0;
+      let contacts = 0, nicks = 0, appointments = 0, accesses = 0, tasks = 0, tickets = 0;
       if (t.contacts) {
         contacts = (await tx.contact.updateMany({
           where: { orgId: currentUser.orgId, assignedUserId: fromUserId },
@@ -362,12 +362,20 @@ export async function userRoutes(app: FastifyInstance) {
           data: { assigneeUserId: toUserId },
         })).count;
       }
-      return { contacts, nicks, appointments, accesses, tasks };
+      // Ticket V1 2026-07-09: chỉ chuyển ticket CHƯA resolved — resolved giữ nguyên
+      // resolvedByUserId làm audit trail lịch sử (giống pattern task done ở trên).
+      if (t.tickets !== false) {
+        tickets = (await tx.ticket.updateMany({
+          where: { orgId: currentUser.orgId, assigneeUserId: fromUserId, status: { in: ['open', 'in_progress'] } },
+          data: { assigneeUserId: toUserId },
+        })).count;
+      }
+      return { contacts, nicks, appointments, accesses, tasks, tickets };
     });
 
     logger.info(
       `[handoff] ${currentUser.email} bàn giao ${fromU.fullName}→${toU.fullName}: ` +
-      `${result.contacts} KH, ${result.nicks} nick, ${result.appointments} lịch hẹn, ${result.tasks} công việc, ${result.accesses} quyền xem`,
+      `${result.contacts} KH, ${result.nicks} nick, ${result.appointments} lịch hẹn, ${result.tasks} công việc, ${result.tickets} ticket, ${result.accesses} quyền xem`,
     );
     await writeAudit(currentUser, 'user.handoff', fromUserId, {
       fromName: fromU.fullName, toUserId, toName: toU.fullName, ...result,

@@ -14,6 +14,7 @@ export type ActivityCategory =
   | 'score'           // Lead score (Contact.leadScore / Friend.leadScore)
   | 'appointment'    // Lịch hẹn: create / update / complete / cancel / reschedule
   | 'task'            // Công việc (Task V1 2026-07-07): create / update / complete / reopen / delete
+  | 'ticket'          // Ticket (KH complaint/request V1 2026-07-09): create / update / status_change / resolve / delete
   | 'interaction'     // Tổng hợp interaction (first_inbound, silent_30d...) — KHÔNG log từng msg
   | 'system'          // contact_link_parent, merge, import, migration
   | 'automation'      // Bot actions (auto-tag, auto-score...)
@@ -76,6 +77,14 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   task_complete: 'task',
   task_reopen: 'task',
   task_delete: 'task',
+
+  // ticket (Ticket V1 2026-07-09)
+  ticket_create: 'ticket',
+  ticket_update: 'ticket',
+  ticket_status_change: 'ticket',
+  ticket_resolve: 'ticket',
+  ticket_reopen: 'ticket',
+  ticket_delete: 'ticket',
 
   // interaction
   first_inbound: 'interaction',

@@ -1,10 +1,12 @@
 <!--
-  TaskEditor.vue — modal create + edit Công việc (Task V1, 2026-07-07).
+  WorkItemEditor.vue — modal hợp nhất tạo/sửa "Công việc" (V2, 2026-07-10).
 
-  Cấu trúc rút gọn từ AppointmentEditor.vue (Teleport backdrop, editor-head/body/foot,
-  Esc đóng / Ctrl+Enter lưu) nhưng đơn giản hơn nhiều: KHÔNG wheel picker — HTML
-  date/time input là đủ cho to-do. Hạn build bằng orgWallClockToUtc (KHÔNG bao giờ
-  new Date('YYYY-MM-DD') — trap UTC-midnight repo đã document).
+  Gộp Task (to-do nội bộ) + Ticket (khiếu nại/yêu cầu KH) vào MỘT modal: khi tạo mới,
+  người dùng chọn loại ("Công việc thường" / "Khiếu nại") bằng toggle ở đầu form —
+  chọn xong thì field tương ứng hiện ra. Khi sửa, loại đã cố định (ẩn toggle).
+
+  KHÔNG có bước AI draft trong bản này (chưa có API key AI provider — bỏ theo yêu cầu
+  2026-07-10). Field vẫn giữ contact-autocomplete pattern rút gọn từ TaskEditor/TicketEditor cũ.
 -->
 <template>
   <Teleport to="body">
@@ -12,12 +14,27 @@
       <div class="editor" @keydown.escape="requestClose" @keydown.ctrl.enter="submit" tabindex="-1">
         <!-- Header -->
         <div class="editor-head">
-          <h2><v-icon size="19" class="head-ic">mdi-checkbox-marked-outline</v-icon> {{ isEdit ? 'Sửa công việc' : 'Tạo công việc' }}</h2>
+          <h2>
+            <v-icon size="19" class="head-ic">{{ kind === 'task' ? 'mdi-checkbox-marked-outline' : 'mdi-ticket-outline' }}</v-icon>
+            {{ headTitle }}
+          </h2>
           <button class="close" @click="requestClose" title="Đóng (Esc)"><v-icon size="18">mdi-close</v-icon></button>
         </div>
 
         <!-- Body -->
         <div class="editor-body">
+          <!-- Toggle loại (chỉ khi tạo mới) -->
+          <div v-if="!isEdit" class="kind-toggle">
+            <button
+              type="button" class="kind-btn" :class="{ active: kind === 'task' }"
+              @click="kind = 'task'"
+            ><v-icon size="15">mdi-checkbox-marked-outline</v-icon> Công việc thường</button>
+            <button
+              type="button" class="kind-btn" :class="{ active: kind === 'complaint' }"
+              @click="kind = 'complaint'"
+            ><v-icon size="15">mdi-ticket-outline</v-icon> Khiếu nại</button>
+          </div>
+
           <!-- Tiêu đề -->
           <div class="tfield">
             <span class="tfield-label">Tiêu đề</span>
@@ -27,23 +44,64 @@
               class="title-input"
               type="text"
               maxlength="300"
-              placeholder="Vd: Gửi báo giá cho khách, gọi xác nhận lịch..."
+              :placeholder="kind === 'task' ? 'Vd: Gửi báo giá cho khách, gọi xác nhận lịch...' : 'Vd: KH khiếu nại giao hàng chậm...'"
             />
           </div>
 
-          <!-- Mô tả -->
-          <div class="tfield">
-            <span class="tfield-label">Mô tả (tuỳ chọn)</span>
-            <textarea
-              v-model="form.description"
-              class="desc-area"
-              rows="2"
-              placeholder="Chi tiết thêm về công việc..."
-            ></textarea>
-          </div>
+          <!-- ── Field riêng: Công việc thường ── -->
+          <template v-if="kind === 'task'">
+            <div class="tfield">
+              <span class="tfield-label">Mô tả (tuỳ chọn)</span>
+              <textarea v-model="form.description" class="desc-area" rows="2" placeholder="Chi tiết thêm về công việc..."></textarea>
+            </div>
+            <div class="row-2">
+              <div class="tfield">
+                <span class="tfield-label">Người phụ trách</span>
+                <select v-model="form.assigneeUserId" class="assignee-select">
+                  <option v-for="u in users" :key="u.id" :value="u.id">
+                    {{ u.fullName || u.email }}{{ u.id === currentUserId ? ' (tôi)' : '' }}
+                  </option>
+                </select>
+              </div>
+              <div class="tfield">
+                <span class="tfield-label">Hạn (tuỳ chọn)</span>
+                <div class="due-row">
+                  <input v-model="form.dueDate" class="due-date" type="date" />
+                  <button
+                    v-if="form.dueDate" type="button" class="due-clear" title="Bỏ hạn"
+                    @click="form.dueDate = ''; form.dueTime = ''; form.hasTime = false"
+                  ><v-icon size="14">mdi-close</v-icon></button>
+                </div>
+                <label v-if="form.dueDate" class="time-toggle">
+                  <input type="checkbox" v-model="form.hasTime" />
+                  Giờ cụ thể
+                  <input v-if="form.hasTime" v-model="form.dueTime" class="due-time" type="time" />
+                </label>
+              </div>
+            </div>
+          </template>
 
-          <!-- Người phụ trách + Hạn (2 cols) -->
-          <div class="row-2">
+          <!-- ── Field riêng: Khiếu nại ── -->
+          <template v-else>
+            <div class="tfield">
+              <span class="tfield-label">Mô tả vấn đề</span>
+              <textarea v-model="form.summary" class="desc-area" rows="4" maxlength="5000" placeholder="Chi tiết vấn đề của khách hàng..."></textarea>
+            </div>
+            <div class="row-2">
+              <div class="tfield">
+                <span class="tfield-label">Mức ưu tiên</span>
+                <select v-model="form.priority" class="assignee-select">
+                  <option v-for="p in PRIORITIES" :key="p" :value="p">{{ PRIORITY_META[p].label }}</option>
+                </select>
+              </div>
+              <div class="tfield">
+                <span class="tfield-label">Phân loại khiếu nại</span>
+                <select v-model="form.category" class="assignee-select">
+                  <option value="">— Chưa phân loại —</option>
+                  <option v-for="c in COMPLAINT_CATEGORIES" :key="c" :value="c">{{ COMPLAINT_CATEGORY_META[c].label }}</option>
+                </select>
+              </div>
+            </div>
             <div class="tfield">
               <span class="tfield-label">Người phụ trách</span>
               <select v-model="form.assigneeUserId" class="assignee-select">
@@ -52,29 +110,12 @@
                 </option>
               </select>
             </div>
-            <div class="tfield">
-              <span class="tfield-label">Hạn (tuỳ chọn)</span>
-              <div class="due-row">
-                <input v-model="form.dueDate" class="due-date" type="date" />
-                <button
-                  v-if="form.dueDate"
-                  type="button"
-                  class="due-clear"
-                  title="Bỏ hạn"
-                  @click="form.dueDate = ''; form.dueTime = ''; form.hasTime = false"
-                ><v-icon size="14">mdi-close</v-icon></button>
-              </div>
-              <label v-if="form.dueDate" class="time-toggle">
-                <input type="checkbox" v-model="form.hasTime" />
-                Giờ cụ thể
-                <input v-if="form.hasTime" v-model="form.dueTime" class="due-time" type="time" />
-              </label>
-            </div>
-          </div>
+          </template>
 
-          <!-- Liên kết KH — copy pattern cust-suggest từ AppointmentEditor -->
+          <!-- Liên kết KH — bắt buộc với khiếu nại (không thể xử lý khiếu nại không rõ KH nào),
+               tuỳ chọn với công việc thường. -->
           <div class="tfield">
-            <span class="tfield-label">Liên kết khách hàng (tuỳ chọn)</span>
+            <span class="tfield-label">Liên kết khách hàng{{ kind === 'task' ? ' (tuỳ chọn)' : '' }}</span>
             <div v-if="selectedContact" class="linked-kh-row">
               <span class="av" :style="!selectedContact.avatarUrl ? { background: contactColor(selectedContact.id) } : {}">
                 <img v-if="selectedContact.avatarUrl" :src="selectedContact.avatarUrl" alt="" @error="onAvatarError" />
@@ -84,17 +125,19 @@
                 <span class="name">{{ selectedContact.fullName || 'Khách hàng' }}</span>
                 <span v-if="selectedContact.phone" class="phone-row">{{ selectedContact.phone }}</span>
               </div>
-              <button type="button" class="remove" @click="selectedContact = null" title="Bỏ link KH"><v-icon size="13">mdi-close</v-icon></button>
+              <button
+                v-if="kind === 'task'" type="button" class="remove"
+                @click="selectedContact = null" title="Bỏ link KH"
+              ><v-icon size="13">mdi-close</v-icon></button>
+              <button
+                v-else type="button" class="remove" title="Đổi khách hàng"
+                @click="selectedContact = null; openCustSuggest()"
+              ><v-icon size="13">mdi-pencil-outline</v-icon></button>
             </div>
             <div v-else-if="custSuggestOpen" class="cust-suggest">
               <input
-                ref="custSearchInputRef"
-                v-model="custQuery"
-                class="cust-suggest-search"
-                type="text"
-                placeholder="Tìm tên / SĐT..."
-                autocomplete="off"
-                @input="onCustSearch"
+                ref="custSearchInputRef" v-model="custQuery" class="cust-suggest-search" type="text"
+                placeholder="Tìm tên / SĐT..." autocomplete="off" @input="onCustSearch"
               />
               <div v-if="custSearching" class="cust-loading">Đang tìm...</div>
               <div v-for="c in custSuggestions" :key="c.id" class="cust-item" @mousedown.prevent="pickContact(c)">
@@ -108,7 +151,7 @@
               <div v-if="!custSearching && custQuery && custSuggestions.length === 0" class="cust-empty">
                 Không tìm thấy KH "{{ custQuery }}"
               </div>
-              <div class="cust-item skip" @mousedown.prevent="custSuggestOpen = false">→ Không gắn khách</div>
+              <div v-if="kind === 'task'" class="cust-item skip" @mousedown.prevent="custSuggestOpen = false">→ Không gắn khách</div>
             </div>
             <button v-else type="button" class="link-kh-btn" @click="openCustSuggest">+ Liên kết khách hàng</button>
           </div>
@@ -123,7 +166,7 @@
             <button type="button" class="btn btn--secondary" @click="close">Huỷ</button>
             <button type="button" class="btn btn--primary" :disabled="!canSubmit || saving" @click="submit">
               <v-icon v-if="!saving" size="16">mdi-check</v-icon>
-              {{ saving ? 'Đang lưu...' : (isEdit ? 'Cập nhật' : 'Tạo công việc') }}
+              {{ saving ? 'Đang lưu...' : (isEdit ? 'Cập nhật' : (kind === 'task' ? 'Tạo công việc' : 'Tạo khiếu nại')) }}
             </button>
           </div>
         </div>
@@ -139,27 +182,43 @@ import { useAuthStore } from '@/stores/auth';
 import { useUsers } from '@/composables/use-users';
 import { useConfirm } from '@/composables/use-confirm';
 import { orgWallClockToUtc, orgDayKey, getOrgParts } from '@/composables/use-org-timezone';
-import type { Task, TaskContactLite } from '@/composables/use-tasks';
+import { useTasks, type Task, type TaskContactLite } from '@/composables/use-tasks';
+import { useTickets, PRIORITY_META, COMPLAINT_CATEGORY_META, type Ticket, type TicketPriority, type ComplaintCategory } from '@/composables/use-tickets';
 
 const { confirm } = useConfirm();
+const { createTask, updateTask } = useTasks();
+const { createTicket, updateTicket } = useTickets();
+
+const PRIORITIES: TicketPriority[] = ['low', 'normal', 'high', 'urgent'];
+const COMPLAINT_CATEGORIES: ComplaintCategory[] = ['refund', 'return', 'quality', 'shipping', 'other'];
+
+export type WorkEditItem = { kind: 'task'; data: Task } | { kind: 'complaint'; data: Ticket };
 
 const props = defineProps<{
   modelValue: boolean;
-  /** Truyền task → edit mode; null/absent → create */
-  task?: Task | null;
+  /** Truyền → edit mode (loại cố định theo item.kind); null/absent → create */
+  editItem?: WorkEditItem | null;
+  /** Loại mặc định khi tạo mới (mở từ nút "+ Khiếu nại" riêng chẳng hạn) */
+  defaultKind?: 'task' | 'complaint';
   /** Prefill KH khi mở từ panel chat */
   prefillContact?: TaskContactLite | null;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:modelValue', v: boolean): void;
-  (e: 'created', t: Task): void;
-  (e: 'updated', t: Task): void;
+  (e: 'created', item: WorkEditItem): void;
+  (e: 'updated', item: WorkEditItem): void;
 }>();
 
-const isEdit = computed(() => !!props.task);
+const isEdit = computed(() => !!props.editItem);
+const kind = ref<'task' | 'complaint'>('task');
 const titleInputRef = ref<HTMLInputElement | null>(null);
 const custSearchInputRef = ref<HTMLInputElement | null>(null);
+
+const headTitle = computed(() => {
+  if (kind.value === 'task') return isEdit.value ? 'Sửa công việc' : 'Tạo công việc';
+  return isEdit.value ? 'Sửa khiếu nại' : 'Tạo khiếu nại';
+});
 
 const auth = useAuthStore();
 const { users: fetchedUsers, fetchUsers } = useUsers();
@@ -175,16 +234,22 @@ const users = computed(() => {
 
 const form = reactive({
   title: '',
+  // task
   description: '',
-  assigneeUserId: '' as string,
-  dueDate: '',   // "YYYY-MM-DD" theo org wall-clock
-  dueTime: '',   // "HH:mm"
+  dueDate: '',
+  dueTime: '',
   hasTime: false,
+  // complaint
+  summary: '',
+  priority: 'normal' as TicketPriority,
+  category: '' as ComplaintCategory | '',
+  // shared
+  assigneeUserId: '' as string,
 });
 const saving = ref(false);
 const error = ref('');
 
-// ── Contact autocomplete (rút gọn từ AppointmentEditor cust-suggest) ─────────
+// ── Contact autocomplete ──────────────────────────────────────────────────
 const selectedContact = ref<TaskContactLite | null>(null);
 const custSuggestOpen = ref(false);
 const custQuery = ref('');
@@ -252,41 +317,62 @@ watch(() => props.modelValue, (open) => {
   custQuery.value = '';
   if (!fetchedUsers.value.length) fetchUsers().catch(() => {});
 
-  if (props.task) {
-    const t = props.task;
-    form.title = t.title;
-    form.description = t.description || '';
-    form.assigneeUserId = t.assigneeUserId;
-    if (t.dueAt) {
-      form.dueDate = orgDayKey(t.dueAt);
-      form.hasTime = t.dueHasTime;
-      if (t.dueHasTime) {
-        const p = getOrgParts(t.dueAt);
-        form.dueTime = p ? `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}` : '';
+  if (props.editItem) {
+    kind.value = props.editItem.kind;
+    if (props.editItem.kind === 'task') {
+      const t = props.editItem.data;
+      form.title = t.title;
+      form.description = t.description || '';
+      form.assigneeUserId = t.assigneeUserId;
+      if (t.dueAt) {
+        form.dueDate = orgDayKey(t.dueAt);
+        form.hasTime = t.dueHasTime;
+        if (t.dueHasTime) {
+          const p = getOrgParts(t.dueAt);
+          form.dueTime = p ? `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}` : '';
+        } else {
+          form.dueTime = '';
+        }
       } else {
+        form.dueDate = '';
         form.dueTime = '';
+        form.hasTime = false;
       }
+      selectedContact.value = t.contact
+        ? { id: t.contact.id, fullName: t.contact.fullName, phone: t.contact.phone, avatarUrl: t.contact.avatarUrl ?? null }
+        : null;
     } else {
-      form.dueDate = '';
-      form.dueTime = '';
-      form.hasTime = false;
+      const t = props.editItem.data;
+      form.title = t.title;
+      form.summary = t.summary;
+      form.priority = t.priority;
+      form.category = t.category || '';
+      form.assigneeUserId = t.assigneeUserId;
+      selectedContact.value = t.contact
+        ? { id: t.contact.id, fullName: t.contact.fullName, phone: t.contact.phone, avatarUrl: t.contact.avatarUrl ?? null }
+        : null;
     }
-    selectedContact.value = t.contact
-      ? { id: t.contact.id, fullName: t.contact.fullName, phone: t.contact.phone, avatarUrl: t.contact.avatarUrl ?? null }
-      : null;
   } else {
+    kind.value = props.defaultKind || 'task';
     form.title = '';
     form.description = '';
-    form.assigneeUserId = currentUserId.value || '';
     form.dueDate = '';
     form.dueTime = '';
     form.hasTime = false;
+    form.summary = '';
+    form.priority = 'normal';
+    form.category = '';
+    form.assigneeUserId = currentUserId.value || '';
     selectedContact.value = props.prefillContact ? { ...props.prefillContact } : null;
   }
   nextTick(() => titleInputRef.value?.focus());
 });
 
-const canSubmit = computed(() => !!form.title.trim() && !!form.assigneeUserId);
+const canSubmit = computed(() => {
+  if (!form.title.trim() || !form.assigneeUserId) return false;
+  if (kind.value === 'complaint' && (!form.summary.trim() || !selectedContact.value)) return false;
+  return true;
+});
 
 /** Build dueAt UTC-instant từ wall-clock org. Không giờ cụ thể → 00:00 org-midnight. */
 function buildDueAt(): string | null {
@@ -297,30 +383,48 @@ function buildDueAt(): string | null {
 
 async function submit() {
   if (!canSubmit.value) {
-    error.value = 'Điền tiêu đề trước khi lưu';
+    error.value = kind.value === 'complaint' ? 'Điền tiêu đề, mô tả và liên kết khách hàng trước khi lưu' : 'Điền tiêu đề trước khi lưu';
     return;
   }
   saving.value = true;
   error.value = '';
   try {
-    const payload = {
-      title: form.title.trim(),
-      description: form.description.trim() || null,
-      assigneeUserId: form.assigneeUserId,
-      contactId: selectedContact.value?.id ?? null,
-      dueAt: buildDueAt(),
-      dueHasTime: !!form.dueDate && form.hasTime && !!form.dueTime,
-    };
-    if (isEdit.value && props.task) {
-      const res = await api.put(`/tasks/${props.task.id}`, payload);
-      emit('updated', res.data.task);
+    if (kind.value === 'task') {
+      const payload = {
+        title: form.title.trim(),
+        description: form.description.trim() || null,
+        assigneeUserId: form.assigneeUserId,
+        contactId: selectedContact.value?.id ?? null,
+        dueAt: buildDueAt(),
+        dueHasTime: !!form.dueDate && form.hasTime && !!form.dueTime,
+      };
+      if (isEdit.value && props.editItem?.kind === 'task') {
+        const t = await updateTask(props.editItem.data.id, payload);
+        if (t) emit('updated', { kind: 'task', data: t });
+      } else {
+        const t = await createTask(payload);
+        if (t) emit('created', { kind: 'task', data: t });
+      }
     } else {
-      const res = await api.post('/tasks', payload);
-      emit('created', res.data.task);
+      const payload = {
+        title: form.title.trim(),
+        summary: form.summary.trim(),
+        priority: form.priority,
+        category: form.category || null,
+        assigneeUserId: form.assigneeUserId,
+        contactId: selectedContact.value?.id ?? null,
+      };
+      if (isEdit.value && props.editItem?.kind === 'complaint') {
+        const t = await updateTicket(props.editItem.data.id, payload);
+        if (t) emit('updated', { kind: 'complaint', data: t });
+      } else {
+        const t = await createTicket(payload);
+        if (t) emit('created', { kind: 'complaint', data: t });
+      }
     }
     close();
   } catch (err: any) {
-    error.value = err?.response?.data?.error || 'Không lưu được công việc';
+    error.value = err?.response?.data?.error || 'Không lưu được';
   } finally {
     saving.value = false;
   }
@@ -330,19 +434,15 @@ function close() {
   emit('update:modelValue', false);
 }
 
-/** Có nội dung chưa lưu? Chỉ tính tiêu đề/mô tả — các field khác (hạn, người phụ
- *  trách, KH) hiếm khi tự đổi nếu user chưa gõ gì. */
-const hasUnsavedChanges = computed(() => !!form.title.trim() || !!form.description.trim());
+const hasUnsavedChanges = computed(() => !!form.title.trim() || !!form.summary.trim() || !!form.description.trim());
 
-/** Đóng có xác nhận nếu đang gõ dở — chặn tình huống click ra ngoài / Esc / nút X
- *  làm mất nội dung mà không hỏi lại (anh báo 2026-07-08). */
 async function requestClose() {
   if (!hasUnsavedChanges.value) {
     close();
     return;
   }
   const ok = await confirm({
-    title: 'Bỏ công việc đang tạo?',
+    title: kind.value === 'task' ? 'Bỏ công việc đang tạo?' : 'Bỏ khiếu nại đang tạo?',
     message: 'Nội dung bạn vừa nhập sẽ không được lưu.',
     tone: 'danger',
   });
@@ -406,6 +506,17 @@ async function requestClose() {
 .btn--primary { background: #2563eb; border-color: #2563eb; color: #fff; }
 .btn--primary:disabled { opacity: 0.55; cursor: not-allowed; }
 
+.kind-toggle {
+  display: flex; gap: 4px;
+  background: #f1f5f9; border-radius: 10px; padding: 3px;
+}
+.kind-btn {
+  flex: 1; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; font-weight: 500;
+  border: none; background: transparent; color: #64748b; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+}
+.kind-btn.active { background: #fff; color: #1a1d24; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+
 .tfield { display: flex; flex-direction: column; gap: 5px; }
 .tfield-label {
   font-size: 11.5px; font-weight: 500; color: #6b7280;
@@ -455,7 +566,6 @@ async function requestClose() {
   font-family: inherit; font-size: 12.5px;
 }
 
-/* Linked KH — rút gọn từ AppointmentEditor */
 .linked-kh-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 10px;

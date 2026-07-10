@@ -56,7 +56,7 @@
         data-fly-target="activity-tab"
         @click="activeTab = 'activity'"
       >
-        <span class="ic"><CalendarClockIcon :size="15" :stroke-width="2" /></span> Lịch hẹn
+        <span class="ic"><CalendarClockIcon :size="15" :stroke-width="2" /></span> Việc &amp; Lịch hẹn
         <span v-if="activityBadgeCount || pendingAptBump" class="tab-badge">{{ (activityBadgeCount ?? 0) + pendingAptBump }}</span>
       </button>
       <button
@@ -443,8 +443,8 @@
           @refresh="reloadAppointments"
         />
 
-        <!-- Công việc (Task V1 2026-07-07) — cùng "việc phải làm cho KH" với Lịch hẹn -->
-        <TasksSection
+        <!-- Công việc (V2 2026-07-10) — gộp Task + Ticket (khiếu nại) vào 1 section -->
+        <WorkSection
           v-if="props.contactId"
           :contact-id="props.contactId"
           :contact-name="headerFullName"
@@ -591,7 +591,7 @@ import type { AiSentiment } from '@/composables/use-chat';
 import { useChatContactPanel } from '@/composables/use-chat-contact-panel';
 import { displayPhone, displayPhoneIntl } from '@/composables/use-phone-format';
 import ChatAppointments from './ChatAppointments.vue';
-import TasksSection from '@/components/tasks/TasksSection.vue';
+import WorkSection from '@/components/work/WorkSection.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';

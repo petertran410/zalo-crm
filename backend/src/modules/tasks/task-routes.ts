@@ -145,7 +145,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   // ── POST /api/v1/tasks ─────────────────────────────────────────────────────
   app.post('/api/v1/tasks', async (request: FastifyRequest<{
-    Body: { title?: string; description?: string; assigneeUserId?: string; contactId?: string | null; dueAt?: string | null; dueHasTime?: boolean };
+    Body: { title?: string; description?: string; assigneeUserId?: string; contactId?: string | null; ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean };
   }>, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -185,6 +185,15 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         if (!contact) return reply.status(404).send({ error: 'Contact not found' });
       }
 
+      // Spawn từ ticket (Ticket V1 2026-07-09) — chỉ kiểm tồn tại cùng org, giống mức
+      // kiểm contactId ở trên (không cần canMutateTicket — tạo task từ 1 ticket mình
+      // đang xem là hành động tự nhiên, không phải sửa/xóa ticket đó).
+      const ticketId = request.body?.ticketId || null;
+      if (ticketId) {
+        const ticket = await prisma.ticket.findFirst({ where: { id: ticketId, orgId: user.orgId }, select: { id: true } });
+        if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
+      }
+
       const task = await prisma.task.create({
         data: {
           orgId: user.orgId,
@@ -193,6 +202,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
           assigneeUserId,
           createdByUserId: user.id,
           contactId,
+          ticketId,
           dueAt,
           dueHasTime: dueAt ? Boolean(request.body?.dueHasTime) : false,
         },

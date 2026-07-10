@@ -42,6 +42,7 @@ model Organization {
   conversations               Conversation[]
   appointments                Appointment[]
   tasks                       Task[]
+  tickets                     Ticket[]
   activityLogs                ActivityLog[]
   dailyStats                  DailyMessageStat[]
   settings                    AppSetting[]
@@ -274,6 +275,10 @@ model User {
   assignedTasks             Task[]                       @relation("TaskAssignee")
   createdTasks              Task[]                       @relation("TaskCreatedBy")
   doneTasks                 Task[]                       @relation("TaskDoneBy")
+  // Ticket V1 2026-07-09
+  assignedTickets           Ticket[]                     @relation("TicketAssignee")
+  createdTickets            Ticket[]                     @relation("TicketCreatedBy")
+  resolvedTickets           Ticket[]                     @relation("TicketResolvedBy")
   repliedMessages           Message[]                    @relation("RepliedMessages")
   activityLogs              ActivityLog[]
   messageTemplates          MessageTemplate[]
@@ -641,6 +646,8 @@ model Contact {
   contactNotes      Note[]
   // Công việc (Task V1) 2026-07-07 — to-do link KH, SetNull khi purge KH
   tasks             Task[]
+  // Ticket V1 2026-07-09 — ticket link KH, SetNull khi purge KH
+  tickets           Ticket[]
   // Phase 7 — Automation framework
   // automationTasks   AutomationTask[]  ← REMOVED 2026-06-01 Luồng Mục Tiêu M0
   // Phase Lead Pool 2026-05-24
@@ -811,6 +818,8 @@ model Conversation {
   pins          PinnedConversation[]
   // 2026-06-18 — Cầu Telegram: 1 hội thoại = 1 forum topic (định tuyến reply).
   telegramTopic TelegramTopicMap?
+  // Ticket V1 2026-07-09 — ticket tạo từ hội thoại này (nút "Tạo ticket" trong chat panel)
+  tickets       Ticket[]
 
   @@unique([zaloAccountId, externalThreadId])
   @@index([orgId, zaloAccountId, isReplied, lastMessageAt])
@@ -1163,6 +1172,9 @@ model Task {
   assigneeUserId  String    @map("assignee_user_id")
   createdByUserId String?   @map("created_by_user_id")
   contactId       String?   @map("contact_id")
+  // Ticket V1 2026-07-09 — task sinh ra từ 1 ticket (nút "Tạo task" trong TicketEditor).
+  // SetNull khi ticket bị xóa: task vẫn còn giá trị standalone, không kéo theo xóa.
+  ticketId        String?   @map("ticket_id")
   dueAt           DateTime? @map("due_at")
   dueHasTime      Boolean   @default(false) @map("due_has_time")
   status          String    @default("open") // open | done
@@ -1176,11 +1188,57 @@ model Task {
   createdBy User?        @relation("TaskCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
   doneBy    User?        @relation("TaskDoneBy", fields: [doneByUserId], references: [id], onDelete: SetNull)
   contact   Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  ticket    Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
 
   @@index([orgId, assigneeUserId, status, dueAt]) // query chính: my open tasks theo hạn
   @@index([orgId, contactId]) // contact-panel list
   @@index([orgId, status, dueAt]) // view "Tất cả" + notification scan
+  @@index([orgId, ticketId]) // task list trong TicketEditor
   @@map("tasks")
+}
+
+// Ticket (KH complaint/request) V1 2026-07-09 — quy trình: NV (hoặc AI đọc hội thoại)
+// tóm tắt vấn đề KH → tạo ticket → theo dõi đến khi resolved.
+// Lifecycle CHỐT (anh quyết định): open → in_progress → resolved là TERMINAL — không
+// reopen. Vấn đề mới phát sinh trên ticket cũ → tạo ticket MỚI thủ công, không mở lại
+// ticket cũ (giữ lịch sử mỗi ticket = 1 vấn đề, audit trail rõ ràng). Không auto-close.
+// status hợp lệ enforce ở route (PATCH /:id/status), không phải DB constraint.
+// summary: AI draft (gọi lại generateAiOutput type='summary' có sẵn từ module ai) hoặc
+// NV tự gõ — aiGenerated đánh dấu nguồn gốc, KHÔNG khoá NV sửa lại sau khi AI tạo.
+// priority: NV luôn tự chọn ở V1 (AI KHÔNG đề xuất priority — xem ONBOARDING/plan review
+// 2026-07-09, giữ đơn giản, tái dùng nguyên endpoint summarize có sẵn thay vì prompt mới).
+// FK: contact/conversation SetNull (xóa nguồn không được xóa ticket — vẫn còn giá trị
+// standalone làm hồ sơ); assignee Cascade giống Task (user chỉ soft-deactivate trong app).
+model Ticket {
+  id               String    @id @default(uuid())
+  orgId            String    @map("org_id")
+  title            String
+  summary          String    @db.Text
+  status           String    @default("open") // open | in_progress | resolved (terminal)
+  priority         String    @default("normal") // low | normal | high | urgent
+  category         String?   // phân loại khiếu nại: refund | return | quality | shipping | other (FE-owned enum)
+  assigneeUserId   String    @map("assignee_user_id")
+  createdByUserId  String?   @map("created_by_user_id")
+  resolvedByUserId String?   @map("resolved_by_user_id")
+  resolvedAt       DateTime? @map("resolved_at")
+  contactId        String?   @map("contact_id")
+  conversationId   String?   @map("conversation_id")
+  aiGenerated      Boolean   @default(false) @map("ai_generated")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  org          Organization  @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  assignee     User          @relation("TicketAssignee", fields: [assigneeUserId], references: [id], onDelete: Cascade)
+  createdBy    User?         @relation("TicketCreatedBy", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  resolvedBy   User?         @relation("TicketResolvedBy", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+  contact      Contact?      @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  conversation Conversation? @relation(fields: [conversationId], references: [id], onDelete: SetNull)
+  tasks        Task[]
+
+  @@index([orgId, assigneeUserId, status]) // query chính: my open/in_progress tickets
+  @@index([orgId, contactId]) // contact-panel list
+  @@index([orgId, status, priority]) // view "Tất cả" + notification scan
+  @@map("tickets")
 }
 
 // CRM-style notes on a contact — Facebook-comment-like with flat thread (parentNoteId nullable, depth=1).
