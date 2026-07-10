@@ -1,19 +1,20 @@
 /**
- * ticket-permissions.ts — Luật quyền + lifecycle thuần cho Ticket (V1, 2026-07-09).
- * Pure function, không import gì — unit-test trực tiếp (backend/tests/ticket-permissions.test.ts).
+ * ticket-permissions.ts — Luật quyền + lifecycle cho Ticket (V1, 2026-07-09).
+ * Quyền dùng chung với Task qua assignable-entity-permissions.ts (anh chốt
+ * "follow same permission flow as tasks") — unit-test trực tiếp
+ * (backend/tests/ticket-permissions.test.ts).
  *
- * Quyền mirror Task V1 (anh chốt "follow same permission flow as tasks"):
  *   - Sửa/đổi status: admin/owner ∨ assignee ∨ người tạo.
  *   - Xóa: CHỈ người tạo hoặc admin/owner.
  */
+import { canMutateAssignedEntity, canDeleteCreatedEntity } from '../../shared/utils/assignable-entity-permissions.js';
 
 /** Ai được SỬA/ĐỔI STATUS ticket: admin/owner ∨ người được giao ∨ người tạo. */
 export function canMutateTicket(
   user: { id: string; role: string },
   ticket: { assigneeUserId: string; createdByUserId: string | null },
 ): boolean {
-  if (user.role === 'owner' || user.role === 'admin') return true;
-  return user.id === ticket.assigneeUserId || user.id === ticket.createdByUserId;
+  return canMutateAssignedEntity(user, ticket);
 }
 
 /** Ai được XÓA ticket: CHỈ người tạo hoặc admin/owner. */
@@ -21,8 +22,7 @@ export function canDeleteTicket(
   user: { id: string; role: string },
   ticket: { createdByUserId: string | null },
 ): boolean {
-  if (user.role === 'owner' || user.role === 'admin') return true;
-  return ticket.createdByUserId !== null && user.id === ticket.createdByUserId;
+  return canDeleteCreatedEntity(user, ticket);
 }
 
 export const TICKET_STATUSES = ['open', 'in_progress', 'resolved'] as const;

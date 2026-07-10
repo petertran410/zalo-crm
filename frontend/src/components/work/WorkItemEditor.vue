@@ -182,6 +182,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUsers } from '@/composables/use-users';
 import { useConfirm } from '@/composables/use-confirm';
 import { orgWallClockToUtc, orgDayKey, getOrgParts } from '@/composables/use-org-timezone';
+import { initials } from '@/composables/appointment-helpers';
 import { useTasks, type Task, type TaskContactLite } from '@/composables/use-tasks';
 import { useTickets, PRIORITY_META, COMPLAINT_CATEGORY_META, type Ticket, type TicketPriority, type ComplaintCategory } from '@/composables/use-tickets';
 
@@ -292,13 +293,6 @@ function onAvatarError() {
   if (selectedContact.value?.avatarUrl) {
     selectedContact.value = { ...selectedContact.value, avatarUrl: null };
   }
-}
-
-function initials(name: string | null | undefined): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 const PALETTE = ['#aa2d00', '#0a2e0e', '#d9a441', '#fcab79', '#a8d8c4', '#1b61c9'];
