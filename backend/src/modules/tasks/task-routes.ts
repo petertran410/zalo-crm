@@ -15,6 +15,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { assertContactVisible, getContactScope } from '../contacts/contact-scope.js';
+import { resolveWorkItemFromMessage } from '../chat/work-from-message.js';
 import { canMutateTask, canDeleteTask } from './task-permissions.js';
 
 const TASK_INCLUDE = {
@@ -145,7 +146,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   // ── POST /api/v1/tasks ─────────────────────────────────────────────────────
   app.post('/api/v1/tasks', async (request: FastifyRequest<{
-    Body: { title?: string; description?: string; assigneeUserId?: string; contactId?: string | null; ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean };
+    Body: { title?: string; description?: string; assigneeUserId?: string; contactId?: string | null; ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean; sourceMessageId?: string | null };
   }>, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -174,9 +175,17 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         if (!assignee) return reply.status(400).send({ error: 'Người phụ trách không hợp lệ' });
       }
 
-      // Link KH (tùy chọn): chỉ link KH mình thấy được
-      const contactId = request.body?.contactId || null;
-      if (contactId) {
+      // Link KH: 2 đường.
+      //  (A) Tạo từ tin nhắn chat nhóm (sourceMessageId) — quyền = ở-trong-nhóm; tin của KH →
+      //      resolve + tự cấp access (helper). Task: contact TÙY CHỌN (tin nhân viên → không gắn KH).
+      //  (B) Tạo thường — contactId từ body, chỉ link KH mình thấy được.
+      let contactId = request.body?.contactId || null;
+      const sourceMessageId = request.body?.sourceMessageId || null;
+      if (sourceMessageId) {
+        const src = await resolveWorkItemFromMessage(request, reply, sourceMessageId);
+        if (!src) return; // reply đã gửi
+        if (src.contactId) contactId = src.contactId; // đã cấp quyền trong helper → bỏ qua visibility
+      } else if (contactId) {
         const visible = await assertContactVisible({
           userId: user.id, orgId: user.orgId, legacyRole: user.role, contactId,
         });
@@ -203,6 +212,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
           createdByUserId: user.id,
           contactId,
           ticketId,
+          sourceMessageId,
           dueAt,
           dueHasTime: dueAt ? Boolean(request.body?.dueHasTime) : false,
         },

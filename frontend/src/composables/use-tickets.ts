@@ -65,6 +65,8 @@ export interface TicketPayload {
   contactId?: string | null;
   conversationId?: string | null;
   aiGenerated?: boolean;
+  /** Tạo từ tin nhắn chat nhóm — BE resolve KH từ người gửi + tự cấp quyền (2026-07-10). */
+  sourceMessageId?: string | null;
 }
 
 export const PRIORITY_META: Record<TicketPriority, { label: string; color: string; bg: string }> = {

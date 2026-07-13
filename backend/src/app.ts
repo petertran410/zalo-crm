@@ -47,6 +47,7 @@ import { appointmentPublicRoutes } from './modules/contacts/appointment-public-r
 import { notesRoutes } from './modules/contacts/notes-routes.js';
 import { tasksRoutes } from './modules/tasks/task-routes.js';
 import { ticketsRoutes } from './modules/tickets/ticket-routes.js';
+import { facebookWebhookRoutes, facebookChannelRoutes } from './modules/channels/facebook/facebook-routes.js';
 import { startInteractionCron } from './modules/contacts/interaction-cron.js';
 import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
 import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
@@ -274,6 +275,8 @@ async function bootstrap() {
   await app.register(notesRoutes);
   await app.register(tasksRoutes); // Công việc (Task V1) 2026-07-07
   await app.register(ticketsRoutes); // Ticket V1 2026-07-09
+  await app.register(facebookWebhookRoutes); // Multi-channel Phase 2 — Meta webhook (public, no auth)
+  await app.register(facebookChannelRoutes); // Multi-channel Phase 2 — FB config/pages (authed)
   await app.register(crmTagRoutes);
   await app.register(crmTagGroupRoutes);
   // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 2026-05-31

@@ -22,6 +22,22 @@
           <span class="ctx-item__label">Trả lời</span>
         </button>
 
+        <!-- Tạo công việc / khiếu nại từ tin (CRM group chat 2026-07-10).
+             Khiếu nại chỉ hiện trên tin của KH (không phải tin nhân viên gửi). -->
+        <button class="ctx-item is-primary" role="menuitem" @click="onAction('create-task')">
+          <svg class="ctx-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          <span class="ctx-item__label">Tạo công việc</span>
+        </button>
+        <button v-if="!isSelf" class="ctx-item is-primary" role="menuitem" @click="onAction('create-complaint')">
+          <svg class="ctx-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span class="ctx-item__label">Tạo khiếu nại</span>
+        </button>
+        <div class="ctx-divider"></div>
+
         <!-- Chỉnh sửa (self + text) -->
         <button
           v-if="isSelf && message?.contentType === 'text'"
@@ -137,6 +153,8 @@ const emit = defineEmits<{
   'save-media': [visibility: 'private' | 'public'];
   'favorite-media': [];
   'download-media': [];
+  'create-task': [];
+  'create-complaint': [];
 }>();
 
 // Tin có media (ảnh/video/tệp) → hiện "Lưu vào Media". Phase Media Library 2026-06-11.
@@ -232,16 +250,18 @@ onBeforeUnmount(() => {
 function close() {
   emit('update:modelValue', false);
 }
-function onAction(name: 'reply' | 'edit' | 'forward' | 'undo' | 'delete' | 'favorite-media' | 'download-media') {
+function onAction(name: 'reply' | 'edit' | 'forward' | 'undo' | 'delete' | 'favorite-media' | 'download-media' | 'create-task' | 'create-complaint') {
   // Switch để TS narrow đúng từng emit signature (union không inferr được)
   switch (name) {
-    case 'reply':          emit('reply');          break;
-    case 'edit':           emit('edit');           break;
-    case 'forward':        emit('forward');        break;
-    case 'undo':           emit('undo');           break;
-    case 'delete':         emit('delete');         break;
-    case 'favorite-media': emit('favorite-media'); break;
-    case 'download-media': emit('download-media'); break;
+    case 'reply':            emit('reply');            break;
+    case 'edit':             emit('edit');             break;
+    case 'forward':          emit('forward');          break;
+    case 'undo':             emit('undo');             break;
+    case 'delete':           emit('delete');           break;
+    case 'favorite-media':   emit('favorite-media');   break;
+    case 'download-media':   emit('download-media');   break;
+    case 'create-task':      emit('create-task');      break;
+    case 'create-complaint': emit('create-complaint'); break;
   }
   close();
 }

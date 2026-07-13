@@ -115,8 +115,18 @@
           <!-- Liên kết KH — bắt buộc với khiếu nại (không thể xử lý khiếu nại không rõ KH nào),
                tuỳ chọn với công việc thường. -->
           <div class="tfield">
-            <span class="tfield-label">Liên kết khách hàng{{ kind === 'task' ? ' (tuỳ chọn)' : '' }}</span>
-            <div v-if="selectedContact" class="linked-kh-row">
+            <span class="tfield-label">
+              Liên kết khách hàng{{ fromMessageState ? ' (từ tin nhắn)' : (kind === 'task' ? ' (tuỳ chọn)' : '') }}
+            </span>
+            <!-- Chế độ từ tin nhắn chat nhóm: KH khoá theo người gửi, BE tự resolve + cấp quyền. -->
+            <div v-if="fromMessageState" class="from-msg-row">
+              <v-icon size="16" class="from-msg-ic">mdi-message-reply-text-outline</v-icon>
+              <div class="linked-info">
+                <span class="name">{{ fromMessageState.senderName || 'Khách hàng trong nhóm' }}</span>
+                <span class="phone-row">{{ fromMessageState.senderIsCustomer ? 'Tự động gắn từ người gửi tin' : 'Người gửi không phải KH — chỉ tạo công việc' }}</span>
+              </div>
+            </div>
+            <div v-else-if="selectedContact" class="linked-kh-row">
               <span class="av" :style="!selectedContact.avatarUrl ? { background: contactColor(selectedContact.id) } : {}">
                 <img v-if="selectedContact.avatarUrl" :src="selectedContact.avatarUrl" alt="" @error="onAvatarError" />
                 <template v-else>{{ initials(selectedContact.fullName) }}</template>
@@ -203,6 +213,15 @@ const props = defineProps<{
   defaultKind?: 'task' | 'complaint';
   /** Prefill KH khi mở từ panel chat */
   prefillContact?: TaskContactLite | null;
+  /** Tạo từ 1 tin nhắn chat nhóm (2026-07-10). KH resolve ở BE từ người gửi → không dùng picker;
+   *  hiện chip khoá "Từ tin nhắn của: {senderName}". senderIsCustomer=false ⇒ chỉ tạo task được. */
+  fromMessage?: {
+    kind: 'task' | 'complaint';
+    text: string;
+    sourceMessageId: string;
+    senderName: string | null;
+    senderIsCustomer: boolean;
+  } | null;
 }>();
 
 const emit = defineEmits<{
@@ -249,6 +268,10 @@ const form = reactive({
 });
 const saving = ref(false);
 const error = ref('');
+
+// ── Chế độ "từ tin nhắn" (chat nhóm) ──────────────────────────────────────
+// Khi set: KH resolve ở BE từ sourceMessageId (không dùng picker). Giữ trong session modal.
+const fromMessageState = ref<{ sourceMessageId: string; senderName: string | null; senderIsCustomer: boolean } | null>(null);
 
 // ── Contact autocomplete ──────────────────────────────────────────────────
 const selectedContact = ref<TaskContactLite | null>(null);
@@ -309,6 +332,7 @@ watch(() => props.modelValue, (open) => {
   saving.value = false;
   custSuggestOpen.value = false;
   custQuery.value = '';
+  fromMessageState.value = null;
   if (!fetchedUsers.value.length) fetchUsers().catch(() => {});
 
   if (props.editItem) {
@@ -346,6 +370,25 @@ watch(() => props.modelValue, (open) => {
         ? { id: t.contact.id, fullName: t.contact.fullName, phone: t.contact.phone, avatarUrl: t.contact.avatarUrl ?? null }
         : null;
     }
+  } else if (props.fromMessage) {
+    // Tạo từ tin nhắn chat nhóm — KH resolve ở BE, prefill nội dung tin làm mô tả/summary.
+    const fm = props.fromMessage;
+    kind.value = fm.kind;
+    form.title = '';
+    form.description = fm.kind === 'task' ? fm.text : '';
+    form.summary = fm.kind === 'complaint' ? fm.text : '';
+    form.dueDate = '';
+    form.dueTime = '';
+    form.hasTime = false;
+    form.priority = 'normal';
+    form.category = '';
+    form.assigneeUserId = currentUserId.value || '';
+    selectedContact.value = null;
+    fromMessageState.value = {
+      sourceMessageId: fm.sourceMessageId,
+      senderName: fm.senderName,
+      senderIsCustomer: fm.senderIsCustomer,
+    };
   } else {
     kind.value = props.defaultKind || 'task';
     form.title = '';
@@ -364,7 +407,12 @@ watch(() => props.modelValue, (open) => {
 
 const canSubmit = computed(() => {
   if (!form.title.trim() || !form.assigneeUserId) return false;
-  if (kind.value === 'complaint' && (!form.summary.trim() || !selectedContact.value)) return false;
+  if (kind.value === 'complaint') {
+    if (!form.summary.trim()) return false;
+    // KH: chế độ "từ tin nhắn" dựa vào người gửi là KH (BE resolve); chế độ thường cần picker.
+    const hasContact = fromMessageState.value ? fromMessageState.value.senderIsCustomer : !!selectedContact.value;
+    if (!hasContact) return false;
+  }
   return true;
 });
 
@@ -388,9 +436,12 @@ async function submit() {
         title: form.title.trim(),
         description: form.description.trim() || null,
         assigneeUserId: form.assigneeUserId,
-        contactId: selectedContact.value?.id ?? null,
         dueAt: buildDueAt(),
         dueHasTime: !!form.dueDate && form.hasTime && !!form.dueTime,
+        // Từ tin nhắn → gửi sourceMessageId (BE resolve + gắn KH); thường → contactId từ picker.
+        ...(fromMessageState.value
+          ? { sourceMessageId: fromMessageState.value.sourceMessageId }
+          : { contactId: selectedContact.value?.id ?? null }),
       };
       if (isEdit.value && props.editItem?.kind === 'task') {
         const t = await updateTask(props.editItem.data.id, payload);
@@ -406,7 +457,9 @@ async function submit() {
         priority: form.priority,
         category: form.category || null,
         assigneeUserId: form.assigneeUserId,
-        contactId: selectedContact.value?.id ?? null,
+        ...(fromMessageState.value
+          ? { sourceMessageId: fromMessageState.value.sourceMessageId }
+          : { contactId: selectedContact.value?.id ?? null }),
       };
       if (isEdit.value && props.editItem?.kind === 'complaint') {
         const t = await updateTicket(props.editItem.data.id, payload);
@@ -566,6 +619,17 @@ async function requestClose() {
   background: #eff6ff; border: 1px solid #bfdbfe;
   border-radius: 8px; min-height: 52px;
 }
+/* Chế độ từ tin nhắn — KH khoá, không cho đổi (BE resolve theo người gửi). */
+.from-msg-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  background: #f5f3ff; border: 1px solid #ddd6fe;
+  border-radius: 8px; min-height: 52px;
+}
+.from-msg-row .from-msg-ic { color: #7c3aed; flex-shrink: 0; }
+.from-msg-row .linked-info { display: flex; flex-direction: column; gap: 1px; flex: 1; min-width: 0; }
+.from-msg-row .name { font-weight: 500; font-size: 13.5px; }
+.from-msg-row .phone-row { font-size: 11.5px; color: #6b7280; }
 .linked-kh-row .av,
 .cust-item .av {
   width: 36px; height: 36px; border-radius: 50%;

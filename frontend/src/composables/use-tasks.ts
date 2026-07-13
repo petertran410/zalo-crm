@@ -58,6 +58,8 @@ export interface TaskPayload {
   contactId?: string | null;
   dueAt?: string | null;
   dueHasTime?: boolean;
+  /** Tạo từ tin nhắn chat nhóm — BE resolve KH từ người gửi + tự cấp quyền (2026-07-10). */
+  sourceMessageId?: string | null;
 }
 
 /** Quá hạn = đang mở + có hạn + NGÀY hạn (org TZ) < NGÀY hôm nay (org TZ). */

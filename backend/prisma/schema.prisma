@@ -791,6 +791,12 @@ model Conversation {
   orgId             String    @map("org_id")
   zaloAccountId     String    @map("zalo_account_id")
   contactId         String?   @map("contact_id")
+  // ── Multi-channel V1 (2026-07-10) ── Kênh hội thoại. Mặc định 'zalo' → mọi row cũ backfill
+  // 'zalo', code Zalo cũ KHÔNG đổi. Kênh mới (facebook | tiktok_shop) set tường minh khi tạo.
+  // GIỮ zaloAccountId non-null ở phase này để tránh ripple type khắp 901 call site; row FB
+  // dùng facebookPageAccountId + nới zaloAccountId → nullable ở phase 2 khi THỰC chèn conv FB.
+  channel               String    @default("zalo") @map("channel")
+  facebookPageAccountId String?   @map("facebook_page_account_id")
   threadType        String    @default("user") // user, group
   externalThreadId  String?   @map("external_thread_id")
   // Group-specific (chỉ set khi threadType=group; resolve qua getGroupInfo từ zca-js)
@@ -812,6 +818,8 @@ model Conversation {
 
   org           Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
   zaloAccount   ZaloAccount          @relation(fields: [zaloAccountId], references: [id], onDelete: Cascade)
+  // Multi-channel V1 — conv thuộc 1 Page Facebook (khi channel='facebook'). Cascade: gỡ Page → xoá conv của nó.
+  facebookPageAccount FacebookPageAccount? @relation(fields: [facebookPageAccountId], references: [id], onDelete: Cascade)
   contact       Contact?             @relation(fields: [contactId], references: [id])
   messages      Message[]
   aiSuggestions AiSuggestion[]
@@ -822,6 +830,8 @@ model Conversation {
   tickets       Ticket[]
 
   @@unique([zaloAccountId, externalThreadId])
+  // Multi-channel V1 — dedup thread theo Page FB (rỗng tới phase 2; null không đụng constraint Zalo).
+  @@unique([facebookPageAccountId, externalThreadId])
   @@index([orgId, zaloAccountId, isReplied, lastMessageAt])
   @@index([orgId, zaloAccountId, lastMessageAt])
   @@index([orgId, tab, lastMessageAt])
@@ -840,6 +850,9 @@ model Message {
   id                  String    @id @default(uuid())
   conversationId      String    @map("conversation_id")
   zaloMsgId           String?   @map("zalo_msg_id")
+  // Multi-channel V1 (2026-07-10) — id tin theo kênh KHÔNG-Zalo (FB mid, TikTok msg id) để
+  // dedup webhook echo. Tin Zalo để null (dùng zaloMsgId). Cả 2 null với tin local/virtual.
+  externalMsgId       String?   @map("external_msg_id")
   // Numeric Snowflake từ Zalo server — primary sort key (match 100% Zalo Web).
   // sentAt giữ làm display + fallback cho CRM-sent chưa echo. KHÔNG dùng sentAt làm
   // primary order vì self-listen events đôi khi thiếu `ts` → Date.now() fallback lệch ~30s.
@@ -907,6 +920,8 @@ model Message {
   reactions    MessageReaction[]
 
   @@unique([conversationId, zaloMsgId])
+  // Multi-channel V1 — dedup tin kênh khác (FB/TikTok) theo externalMsgId. Null (tin Zalo/local) không đụng.
+  @@unique([conversationId, externalMsgId])
   // BE-3 idempotency — 1 echoId duy nhất / conversation. Multiple NULL cho phép (tin cũ).
   @@unique([conversationId, clientEchoId])
   @@index([conversationId, albumKey])
@@ -1175,6 +1190,8 @@ model Task {
   // Ticket V1 2026-07-09 — task sinh ra từ 1 ticket (nút "Tạo task" trong TicketEditor).
   // SetNull khi ticket bị xóa: task vẫn còn giá trị standalone, không kéo theo xóa.
   ticketId        String?   @map("ticket_id")
+  // Group chat 2026-07-10 — tin nhắn nguồn khi tạo task từ chat nhóm (provenance). Scalar, không FK.
+  sourceMessageId String?   @map("source_message_id")
   dueAt           DateTime? @map("due_at")
   dueHasTime      Boolean   @default(false) @map("due_has_time")
   status          String    @default("open") // open | done
@@ -1223,6 +1240,9 @@ model Ticket {
   resolvedAt       DateTime? @map("resolved_at")
   contactId        String?   @map("contact_id")
   conversationId   String?   @map("conversation_id")
+  // Group chat 2026-07-10 — tin nhắn nguồn khi tạo khiếu nại từ chat nhóm (provenance,
+  // jump-to-message). Scalar (không FK vào Message — bảng nóng); tin xóa → id "dangling", FE xử lý mềm.
+  sourceMessageId  String?   @map("source_message_id")
   aiGenerated      Boolean   @default(false) @map("ai_generated")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
@@ -3578,7 +3598,9 @@ model FacebookPageAccount {
   createdAt            DateTime  @default(now()) @map("created_at")
   updatedAt            DateTime  @updatedAt @map("updated_at")
 
-  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  org           Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Multi-channel V1 (2026-07-10) — hội thoại Messenger thuộc Page này (channel='facebook').
+  conversations Conversation[]
 
   @@index([orgId, isActive])
   @@map("facebook_page_accounts")

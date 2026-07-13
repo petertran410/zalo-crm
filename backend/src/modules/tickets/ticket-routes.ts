@@ -27,6 +27,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { assertContactVisible, getContactScope } from '../contacts/contact-scope.js';
 import { assertConversationReadAccess, assertPrivacyAllowsAi } from '../ai/ai-routes.js';
+import { resolveWorkItemFromMessage } from '../chat/work-from-message.js';
 import { generateAiOutput } from '../ai/ai-service.js';
 import {
   canMutateTicket, canDeleteTicket, isValidTicketTransition, TICKET_STATUSES,
@@ -211,6 +212,7 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
     Body: {
       title?: string; summary?: string; priority?: string; category?: string | null; assigneeUserId?: string;
       contactId?: string | null; conversationId?: string | null; aiGenerated?: boolean;
+      sourceMessageId?: string | null;
     };
   }>, reply: FastifyReply) => {
     try {
@@ -240,20 +242,38 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         if (!assignee) return reply.status(400).send({ error: 'Người phụ trách không hợp lệ' });
       }
 
-      // Liên kết KH bắt buộc (2026-07-10): ticket không rõ KH thì không ai xử lý được.
-      const contactId = request.body?.contactId || null;
-      if (!contactId) return reply.status(400).send({ error: 'Liên kết khách hàng là bắt buộc' });
-      const contactVisible = await assertContactVisible({
-        userId: user.id, orgId: user.orgId, legacyRole: user.role, contactId,
-      });
-      if (!contactVisible) return reply.status(404).send({ error: 'Contact not found' });
-      const contact = await prisma.contact.findFirst({ where: { id: contactId, orgId: user.orgId }, select: { id: true } });
-      if (!contact) return reply.status(404).send({ error: 'Contact not found' });
+      // KH + hội thoại: 2 đường.
+      //  (A) Tạo từ tin nhắn chat nhóm (sourceMessageId) — anh chốt: quyền = ở-trong-nhóm, KH
+      //      resolve từ người gửi + tự cấp access (resolveWorkItemFromMessage). Khiếu nại BẮT BUỘC
+      //      từ tin của KH (không phải tin nhân viên).
+      //  (B) Tạo thường — contactId từ body, bắt buộc + kiểm visibility.
+      let contactId: string | null;
+      let conversationId: string | null = request.body?.conversationId || null;
+      const sourceMessageId = request.body?.sourceMessageId || null;
 
-      const conversationId = request.body?.conversationId || null;
-      if (conversationId) {
-        const conv = await assertConversationReadAccess(request, reply, conversationId);
-        if (!conv) return;
+      if (sourceMessageId) {
+        const src = await resolveWorkItemFromMessage(request, reply, sourceMessageId);
+        if (!src) return; // reply đã gửi (404/403)
+        if (!src.senderIsCustomer || !src.contactId) {
+          return reply.status(400).send({ error: 'Khiếu nại phải tạo từ tin nhắn của khách hàng' });
+        }
+        contactId = src.contactId;       // đã resolve + cấp quyền trong helper → bỏ qua assertContactVisible
+        conversationId = src.conversationId;
+      } else {
+        // Liên kết KH bắt buộc (2026-07-10): ticket không rõ KH thì không ai xử lý được.
+        contactId = request.body?.contactId || null;
+        if (!contactId) return reply.status(400).send({ error: 'Liên kết khách hàng là bắt buộc' });
+        const contactVisible = await assertContactVisible({
+          userId: user.id, orgId: user.orgId, legacyRole: user.role, contactId,
+        });
+        if (!contactVisible) return reply.status(404).send({ error: 'Contact not found' });
+        const contact = await prisma.contact.findFirst({ where: { id: contactId, orgId: user.orgId }, select: { id: true } });
+        if (!contact) return reply.status(404).send({ error: 'Contact not found' });
+
+        if (conversationId) {
+          const conv = await assertConversationReadAccess(request, reply, conversationId);
+          if (!conv) return;
+        }
       }
 
       const ticket = await prisma.ticket.create({
@@ -268,6 +288,7 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
           createdByUserId: user.id,
           contactId,
           conversationId,
+          sourceMessageId,
           aiGenerated: Boolean(request.body?.aiGenerated),
         },
         include: TICKET_INCLUDE,

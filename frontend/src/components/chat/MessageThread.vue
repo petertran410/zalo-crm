@@ -757,7 +757,16 @@
       @save-media="onSaveToMedia"
       @favorite-media="onFavoriteFromChat"
       @download-media="onDownloadMedia"
+      @create-task="onCreateWorkFromMessage('task')"
+      @create-complaint="onCreateWorkFromMessage('complaint')"
       @copy="() => {}"
+    />
+
+    <!-- Tạo công việc / khiếu nại từ tin nhắn (group chat 2026-07-10) -->
+    <WorkItemEditor
+      v-model="showWorkEditor"
+      :from-message="workFromMessage"
+      @created="onWorkFromMessageCreated"
     />
 
     <!-- Menu chuột phải cho ảnh trong ALBUM (3 mức: 1 tấm / cả album / chọn nhiều) -->
@@ -1014,6 +1023,7 @@ import StickerPicker from '@/components/chat/StickerPicker.vue';
 import ZaloUserInfoDialog from '@/components/chat/ZaloUserInfoDialog.vue';
 import LinkParentDialog from '@/components/chat/LinkParentDialog.vue';
 import MessageContextMenu from '@/components/chat/message-context-menu.vue';
+import WorkItemEditor from '@/components/work/WorkItemEditor.vue';
 import TypingIndicator from '@/components/chat/typing-indicator.vue';
 import ReplyPreviewBar from '@/components/chat/reply-preview-bar.vue';
 import ForwardDialog from '@/components/chat/forward-dialog.vue';
@@ -1203,6 +1213,48 @@ function onMessageCallback(_msg: Message) {
 // Context menu state
 const showContextMenu = ref(false);
 const contextMsg = ref<Message | null>(null);
+
+// ── Tạo công việc/khiếu nại từ tin nhắn (group chat 2026-07-10) ──
+const showWorkEditor = ref(false);
+const workFromMessage = ref<{
+  kind: 'task' | 'complaint';
+  text: string;
+  sourceMessageId: string;
+  senderName: string | null;
+  senderIsCustomer: boolean;
+} | null>(null);
+
+/** Trích text hiển thị "sạch" từ content để prefill — tin rich/rtf lưu dạng JSON
+ *  {title, action, params}, lấy title (giữ nguyên xuống dòng) thay vì show raw JSON. */
+function messagePlainText(m: Message): string {
+  const content = m.content || '';
+  if (m.contentType === 'text') return content;
+  if (content.startsWith('{')) {
+    try {
+      const p = JSON.parse(content);
+      if (typeof p?.title === 'string') return p.title;
+    } catch { /* not json → rơi xuống dưới */ }
+    return ''; // JSON đặc biệt (ảnh/gọi/…) không có title → không prefill rác
+  }
+  return content;
+}
+
+function onCreateWorkFromMessage(kind: 'task' | 'complaint') {
+  const m = contextMsg.value;
+  if (!m) return;
+  workFromMessage.value = {
+    kind,
+    text: messagePlainText(m),
+    sourceMessageId: m.id,
+    senderName: m.senderName,
+    senderIsCustomer: m.senderType !== 'self' && !!m.senderUid,
+  };
+  showWorkEditor.value = true;
+}
+
+function onWorkFromMessageCreated() {
+  toast.push(workFromMessage.value?.kind === 'complaint' ? 'Đã tạo khiếu nại' : 'Đã tạo công việc', 'success');
+}
 const contextPos = ref({ x: 0, y: 0 });
 const showForwardDialog = ref(false);
 const showLinkParentDialog = ref(false);
