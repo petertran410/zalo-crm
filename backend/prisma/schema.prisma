@@ -180,6 +180,8 @@ model Organization {
   mediaAssets             MediaAsset[]
   mediaAlbums             MediaAlbum[]
   mediaUsageEvents        MediaUsageEvent[]
+  posCustomers            PosCustomer[]
+  posProducts             PosProduct[]
 
   @@map("organizations")
 }
@@ -257,6 +259,7 @@ model User {
   // null = chưa từng login (phối hợp với passwordChangedAt=null để hiện "Chưa kích hoạt").
   lastLoginAt                  DateTime?            @map("last_login_at")
   isActive                     Boolean              @default(true) @map("is_active")
+  customGrants                 Json?                @map("custom_grants")
   createdAt                    DateTime             @default(now()) @map("created_at")
   updatedAt                    DateTime             @updatedAt @map("updated_at")
 
@@ -554,6 +557,8 @@ model Contact {
   leadScore        Int       @default(0) @map("lead_score")
   lastActivity     DateTime? @map("last_activity")
   mergedInto       String?   @map("merged_into")
+  posCustomerId   Int?      @map("pos_customer_id")
+  posCustomerCode String?   @map("pos_customer_code")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -713,6 +718,7 @@ model Contact {
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
+  @@index([orgId, posCustomerId])
   @@index([orgId, phoneNormalized])
   @@index([orgId, zaloUid])
   // Default sort cho ContactsView list: tương tác mới nhất lên đầu.
@@ -4058,4 +4064,47 @@ model MediaUsageEvent {
   @@index([mediaAssetId])
   @@index([orgId, createdAt])
   @@map("media_usage_events")
+}
+
+// Read Model cho Khách hàng từ POS
+model PosCustomer {
+  id               String   @id @default(uuid())
+  posId            Int      @unique @map("pos_id")
+  code             String?
+  name             String
+  phone            String?
+  address          String?
+  customerType     String?  @map("customer_type")
+  assignedSaleName String?  @map("assigned_sale_name")
+  status           String?
+  tags             Json     @default("[]") // mảng string tag của POS
+  orgId            String   @map("org_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([phone])
+  @@index([createdAt])
+  @@map("pos_customers")
+}
+
+// Read Model cho Sản phẩm từ POS
+model PosProduct {
+  id               String   @id @default(uuid())
+  posId            Int      @unique @map("pos_id")
+  code             String   @unique
+  name             String
+  basePrice        Float?   @map("base_price") // giá gốc hiển thị
+  orgId            String   @map("org_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId])
+  @@index([code])
+  @@index([createdAt])
+  @@map("pos_products")
 }

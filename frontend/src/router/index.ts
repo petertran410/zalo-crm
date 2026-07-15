@@ -44,6 +44,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/channels',
+    name: 'ChannelConnections',
+    component: () => import('@/views/ChannelConnectionsView.vue'),
+    meta: { requiresAuth: true, resource: 'zalo_account' },
+  },
+  {
     path: '/chat/:convId?',
     name: 'Chat',
     component: () => import('@/views/ChatView.vue'),
@@ -134,6 +140,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'rbac/departments',       name: 'Settings.RbacDepartments',       component: () => import('@/views/rbac/DepartmentsView.vue'), meta: { resource: 'department' } },
       { path: 'rbac/permission-groups', name: 'Settings.RbacPermissionGroups',  component: () => import('@/views/rbac/PermissionGroupsView.vue'), meta: { resource: 'permission_group' } },
       { path: 'rbac/users',             name: 'Settings.RbacUsers',             component: () => import('@/views/rbac/UsersRbacView.vue'), meta: { resource: 'user' } },
+      { path: 'rbac/network',           name: 'Settings.RbacNetwork',           component: () => import('@/views/rbac/NetworkPermissionView.vue'), meta: { resource: 'permission_group' } },
       // Phase Riêng Tư: trang /settings/privacy GỠ 2026-06-06 (trùng với tab Privacy
       // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 
@@ -233,6 +240,24 @@ const routes: RouteRecordRaw[] = [
   // Open-core: extension top-level routes (empty in Community edition).
   ...eeTopRoutes,
   {
+    path: '/pos',
+    name: 'POS.Hub',
+    component: () => import('@/views/pos/PosHubView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/pos/products',
+    name: 'POS.Products',
+    component: () => import('@/views/pos/PosProductsView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/pos/customers',
+    name: 'POS.Customers',
+    component: () => import('@/views/pos/PosCustomersView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'NotFound',
     component: () => import('@/views/NotFoundView.vue'),
@@ -329,6 +354,7 @@ const ROUTE_TITLES: Record<string, string> = {
   Setup: 'Khởi tạo',
   SetupPassword: 'Đổi mật khẩu',
   Dashboard: 'Tổng quan',
+  ChannelConnections: 'Kênh Kết Nối',
   Chat: 'Hội thoại',
   Contacts: 'Khách hàng',
   Media: 'Kho phương tiện',
@@ -364,6 +390,7 @@ const ROUTE_TITLES: Record<string, string> = {
   'Settings.RbacDepartments': 'Phòng ban',
   'Settings.RbacPermissionGroups': 'Nhóm quyền',
   'Settings.RbacUsers': 'Người dùng',
+  'Settings.RbacNetwork': 'Phân quyền mạng lưới',
   'Settings.Statuses': 'Trạng thái',
   'Settings.Tags': 'Thẻ (tag)',
   'Settings.TagsV2': 'Thẻ (taxonomy)',

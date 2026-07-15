@@ -78,6 +78,7 @@ import { startContactIntelligence } from './modules/contacts/contact-intelligenc
 import { analyticsRoutes } from './modules/analytics/analytics-routes.js';
 import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
+import { posRoutes } from './modules/pos/pos-routes.js';
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
 // Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
@@ -316,6 +317,7 @@ async function bootstrap() {
   await app.register(analyticsRoutes);
   await app.register(savedReportRoutes);
   await app.register(integrationRoutes);
+  await app.register(posRoutes);
   // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
   await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core

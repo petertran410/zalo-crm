@@ -1,0 +1,17 @@
+FROM node:20-alpine
+
+RUN apk add --no-cache tini ffmpeg tzdata vips vips-cpp build-base python3 && \
+    cp /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime && \
+    echo "Asia/Ho_Chi_Minh" > /etc/timezone
+ENV TZ=Asia/Ho_Chi_Minh
+
+WORKDIR /app/backend
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm install --no-audit --no-fund
+
+COPY backend/prisma ./prisma
+RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma generate
+
+EXPOSE 3000
+CMD ["npm", "run", "dev"]

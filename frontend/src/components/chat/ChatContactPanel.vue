@@ -200,6 +200,119 @@
           Lưu thất bại, thử lại.
         </v-alert>
 
+        <!-- ──── KiotViet POS Integration Section ──── -->
+        <section v-if="props.contactId" class="ip-section px-3 py-2">
+          <div class="d-flex justify-space-between align-center mb-2">
+            <span class="text-subtitle-2 font-weight-bold slate-dark">
+              🛒 KiotViet POS
+            </span>
+            <v-chip
+              v-if="posLinkStatus.linked"
+              size="x-small"
+              color="success"
+              variant="flat"
+              class="text-caption font-mono"
+            >
+              {{ posLinkStatus.posCustomerCode || 'Đã liên kết' }}
+            </v-chip>
+            <v-chip
+              v-else
+              size="x-small"
+              color="grey"
+              variant="flat"
+              class="text-caption"
+            >
+              Chưa liên kết
+            </v-chip>
+          </div>
+
+          <v-card variant="flat" class="border pa-3 rounded-lg bg-grey-lighten-5">
+            <div v-if="loadingStatus" class="d-flex align-center justify-center py-2">
+              <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
+              <span class="text-caption text-grey-darken-1">Đang kiểm tra POS...</span>
+            </div>
+
+            <div v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer" class="pos-linked-info">
+              <div class="d-flex justify-space-between align-start">
+                <div>
+                  <div class="text-subtitle-2 font-weight-bold slate-dark">
+                    {{ posLinkStatus.posCustomer.name }}
+                  </div>
+                  <div class="text-caption text-grey-darken-1 font-mono">
+                    SĐT: {{ posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber || '—' }}
+                  </div>
+                  <div v-if="posLinkStatus.posCustomer.address" class="text-caption text-grey-darken-2 mt-1">
+                    📍 {{ posLinkStatus.posCustomer.address }}
+                  </div>
+                </div>
+                <v-btn
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  density="comfortable"
+                  class="text-none ml-2"
+                  @click="openEditCustomerForm"
+                >
+                  Sửa
+                </v-btn>
+              </div>
+            </div>
+
+            <div v-else-if="posLinkStatus.autoSuggest && posLinkStatus.posCustomer" class="pos-suggest-info">
+              <div class="text-caption text-blue-darken-3 mb-2 bg-blue-lighten-5 pa-2 rounded">
+                Tìm thấy trùng SĐT trên POS:
+                <div class="font-weight-bold mt-1">{{ posLinkStatus.posCustomer.name }} ({{ posLinkStatus.posCustomer.code }})</div>
+              </div>
+              <div class="d-flex justify-space-between align-center">
+                <v-btn
+                  size="small"
+                  color="primary"
+                  variant="flat"
+                  class="text-none"
+                  @click="performQuickLink"
+                  :loading="linking"
+                >
+                  Liên kết ngay
+                </v-btn>
+                <v-btn
+                  size="small"
+                  variant="text"
+                  color="grey-darken-1"
+                  class="text-none"
+                  @click="openCreateCustomerForm"
+                >
+                  Tạo mới
+                </v-btn>
+              </div>
+            </div>
+
+            <div v-else class="pos-not-linked-info text-center py-1">
+              <p class="text-caption text-grey-darken-1 mb-2">
+                Khách hàng này chưa có trên POS.
+              </p>
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                prepend-icon="mdi-plus"
+                class="text-none"
+                style="background-color: #0284c7; color: white;"
+                @click="openCreateCustomerForm"
+              >
+                Tạo khách hàng POS
+              </v-btn>
+            </div>
+          </v-card>
+        </section>
+
+        <!-- Customer Form Dialog -->
+        <PosCustomerForm
+          v-model="customerFormOpen"
+          :contact-id="props.contactId"
+          :customer-data="selectedPosCustomer"
+          @success="onCustomerFormSuccess"
+        />
+
         <!-- Tag CRM section moved to MessageThread chat input bar (Smax-style) -->
 
         <!-- ──── Customer Timeline (Notes + Activity unified) ──── -->
@@ -584,6 +697,8 @@ import type { AiSentiment } from '@/composables/use-chat';
 import { useChatContactPanel } from '@/composables/use-chat-contact-panel';
 import { displayPhone, displayPhoneIntl } from '@/composables/use-phone-format';
 import ChatAppointments from './ChatAppointments.vue';
+import { usePosCommands } from '@/composables/use-pos-commands';
+import PosCustomerForm from '@/components/pos/PosCustomerForm.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';
@@ -659,6 +774,97 @@ const {
   () => props.contact,
   () => emit('saved'),
 );
+
+// ════════ KiotViet POS Integration ════════
+const { getLinkStatus, linkContactToPos } = usePosCommands();
+// Dùng chung biến toast đã khai báo ở bên dưới
+const loadingStatus = ref(false);
+const linking = ref(false);
+const customerFormOpen = ref(false);
+const posLinkStatus = ref<{
+  linked: boolean;
+  autoSuggest: boolean;
+  posCustomerId?: number;
+  posCustomerCode?: string;
+  posCustomer?: any;
+}>({ linked: false, autoSuggest: false });
+
+const selectedPosCustomer = ref<any>(null);
+
+async function checkPosStatus() {
+  if (!props.contactId) return;
+  loadingStatus.value = true;
+  try {
+    const res = await getLinkStatus(props.contactId);
+    if (res) {
+      posLinkStatus.value = res;
+    }
+  } catch (err) {
+    console.error('checkPosStatus failed:', err);
+  } finally {
+    loadingStatus.value = false;
+  }
+}
+
+watch(
+  () => props.contactId,
+  (newId) => {
+    if (newId) {
+      checkPosStatus();
+    }
+  },
+  { immediate: true }
+);
+
+function openCreateCustomerForm() {
+  selectedPosCustomer.value = {
+    name: props.contact?.fullName || props.contact?.crmName || '',
+    phone: props.contact?.phone || '',
+    email: props.contact?.email || '',
+    address: props.contact?.addressLine || '',
+  };
+  customerFormOpen.value = true;
+}
+
+function openEditCustomerForm() {
+  if (posLinkStatus.value.linked && posLinkStatus.value.posCustomer) {
+    selectedPosCustomer.value = {
+      id: posLinkStatus.value.posCustomerId,
+      code: posLinkStatus.value.posCustomerCode,
+      name: posLinkStatus.value.posCustomer.name,
+      phone: posLinkStatus.value.posCustomer.phone || posLinkStatus.value.posCustomer.contactNumber,
+      email: posLinkStatus.value.posCustomer.email || '',
+      address: posLinkStatus.value.posCustomer.address || '',
+    };
+    customerFormOpen.value = true;
+  }
+}
+
+async function performQuickLink() {
+  if (!props.contactId || !posLinkStatus.value.posCustomer?.id) return;
+  linking.value = true;
+  try {
+    const res = await linkContactToPos(
+      props.contactId,
+      posLinkStatus.value.posCustomer.id,
+      posLinkStatus.value.posCustomer.code
+    );
+    if (res && res.success) {
+      toast.success('Liên kết khách hàng thành công!');
+      checkPosStatus();
+      emit('saved');
+    }
+  } catch (err) {
+    console.error('performQuickLink failed:', err);
+  } finally {
+    linking.value = false;
+  }
+}
+
+function onCustomerFormSuccess() {
+  checkPosStatus();
+  emit('saved');
+}
 
 // ════════ Tên gợi nhớ Zalo (per-pair, sync 2-way với Zalo Real) ════════
 // Bound to Friend.aliasInNick — PATCH /friends/:id sẽ:

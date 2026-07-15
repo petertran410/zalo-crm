@@ -75,6 +75,11 @@ export const config = {
   aiDefaultProvider: envValue('AI_DEFAULT_PROVIDER') || 'anthropic',
   aiDefaultModel: envValue('AI_DEFAULT_MODEL') || 'claude-sonnet-4-6',
 
+  /* --- Hisweetie POS MCP Settings --- */
+  posBaseUrl: envValue('HISWEETIE_POS_BASE_URL') || 'https://sandbox-mcp.hisweetievietnam.com',
+  posClientId: envValue('HISWEETIE_POS_CLIENT_ID') || '',
+  posClientSecret: envValue('HISWEETIE_POS_CLIENT_SECRET') || '',
+
   /* Legacy keys (kept for backward compat) */
   anthropicApiKey: envValue('ANTHROPIC_API_KEY') || envValue('ANTHROPIC_AUTH_TOKEN') || '',
   geminiApiKey: envValue('GEMINI_API_KEY') || envValue('GEMINI_AUTH_TOKEN') || '',

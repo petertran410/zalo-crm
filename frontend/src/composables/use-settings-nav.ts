@@ -81,6 +81,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: 'users', label: 'Nhân viên', icon: 'mdi-account-group-outline', route: '/settings/rbac/users', permission: 'admin', resource: 'user', aliases: ['user', 'sale', 'nhân sự'] },
       { id: 'departments', label: 'Sơ đồ tổ chức', icon: 'mdi-file-tree-outline', route: '/settings/rbac/departments', permission: 'admin', resource: 'department', aliases: ['phòng ban', 'department', 'tree', 'đội nhóm', 'team'] },
       { id: 'permission-groups', label: 'Phân quyền', icon: 'mdi-shield-account-outline', route: '/settings/rbac/permission-groups', permission: 'owner', resource: 'permission_group', aliases: ['phân quyền', 'permission', 'role', 'vai trò', 'nhóm quyền'] },
+      { id: 'permission-network', label: 'Sơ đồ phân quyền', icon: 'mdi-hub-outline', route: '/settings/rbac/network', permission: 'owner', resource: 'permission_group', aliases: ['sơ đồ phân quyền', 'network', 'kết nối', 'mạng lưới'] },
       { id: 'audit', label: 'Audit log', icon: 'mdi-history', route: '/settings/org/audit', permission: 'owner', resource: 'audit_log', aliases: ['audit', 'nhật ký', 'log bảo mật'] },
     ],
   },

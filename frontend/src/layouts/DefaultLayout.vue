@@ -276,11 +276,13 @@ interface NavTab {
 // Icons MDI line stroke-2 (mdi-*-outline) thay emoji để nhất quán + đổi màu theo theme.
 const primaryTabs: NavTab[] = [
   { path: '/',                       label: 'Dashboard',   icon: 'mdi-view-dashboard-outline', matchPrefix: '/$' },
+  { path: '/channels',               label: 'Kênh Kết Nối', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
   { path: '/chat',                   label: 'Tin nhắn',    icon: 'mdi-message-text-outline', resource: 'conversation' },
   { path: '/friends',                label: 'Bạn bè',      icon: 'mdi-account-multiple-outline', resource: 'friend' },
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
   { path: '/appointments',           label: 'Lịch hẹn',    icon: 'mdi-calendar-outline' },
   { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
+  { path: '/pos',                    label: 'Cửa hàng POS', icon: 'mdi-storefront-outline' },
 ];
 
 // RBAC 2026-06-09 — tab Marketing là module gồm nhiều chức năng. Hiện nếu user có

@@ -268,9 +268,16 @@ export async function userHasGrant(
       permissionGroupId: true,
       permissionGroup: { select: { grants: true, archivedAt: true } },
       role: true, // legacy fallback
+      customGrants: true,
     },
   });
   if (!user) return false;
+
+  // Check custom overrides/grants gán trực tiếp (Dây nối mạng lưới)
+  if (user.customGrants) {
+    const custom = user.customGrants as GrantsJson;
+    if (hasGrant(custom, resource, action)) return true;
+  }
 
   // Permission group active
   if (user.permissionGroup && !user.permissionGroup.archivedAt) {

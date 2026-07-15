@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Báo Cáo Kế Hoạch: Analytical CRM</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({
+            startOnLoad: true,
+            theme: 'base',
+            themeVariables: {
+                primaryColor: '#e0f2fe',
+                primaryTextColor: '#0c4a6e',
+                primaryBorderColor: '#7dd3fc',
+                lineColor: '#94a3b8',
+                secondaryColor: '#f0fdf4',
+                tertiaryColor: '#fef3c7',
+                fontSize: '13px',
+                fontFamily: 'Inter, sans-serif'
+            },
+            flowchart: {
+                htmlLabels: true,
+                curve: 'basis',
+                rankSpacing: 60,
+                nodeSpacing: 25,
+                padding: 12,
+                useMaxWidth: true
+            }
+        });
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Consolas', 'Monaco', 'monospace'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            100: '#e0f2fe',
+                            500: '#0ea5e9',
+                            600: '#0284c7',
+                            800: '#075985',
+                            900: '#0c4a6e',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+
+        .glass-card {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
+        }
+    </style>
+</head>
+
+<body class="text-slate-800 antialiased p-4 md:p-8">
+
+    <div class="max-w-6xl mx-auto space-y-10">
+
+        <!-- Header -->
+        <header class="bg-brand-900 text-white rounded-3xl p-8 md:p-12 shadow-2xl relative overflow-hidden">
+            <div class="absolute top-0 right-0 -mt-16 -mr-16 text-brand-800 opacity-50">
+                <i class="fas fa-chart-network text-[250px]"></i>
+            </div>
+            <div class="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <h1 class="text-4xl md:text-5xl font-extrabold leading-tight mb-4">
+                        Triển khai<br />
+                        <span class="text-brand-500">Analytical CRM (Hi-CRM)</span>
+                    </h1>
+                    <p class="text-lg text-brand-100 max-w-2xl leading-relaxed">
+                        Thiết kế tầng phân tích khách hàng chồng lên nền tảng Zalo chat/lead CRM hiện có, tích hợp dữ
+                        liệu thương mại từ hệ thống POS nội bộ.
+                    </p>
+                </div>
+            </div>
+        </header>
+
+        <!-- Project Summary -->
+        <section class="glass-card rounded-3xl p-8 relative overflow-hidden">
+            <div class="absolute left-0 top-0 w-2 h-full bg-gradient-to-b from-brand-400 to-blue-600"></div>
+            <h2 class="text-2xl font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <i class="fas fa-lightbulb text-amber-500"></i> Tóm tắt dự án
+            </h2>
+            <p class="text-slate-600 text-lg leading-relaxed">
+                Hợp nhất dữ liệu hành vi tương tác trên Zalo (<span class="font-semibold text-brand-600">System of
+                    Engagement</span>) với dữ liệu thương mại từ POS (<span
+                    class="font-semibold text-emerald-600">System of Record</span>). Sử dụng phương pháp dự đoán để cung
+                cấp góc nhìn 360 độ về CLV, RFM, Churn Risk và đo lường hiệu quả kinh doanh mà không phụ thuộc vào các
+                Microservice ML phức tạp.
+            </p>
+        </section>
+
+        <!-- Section 1: P0 (Renamed from 2) -->
+        <section class="space-y-6">
+            <h2 class="text-3xl font-bold text-slate-900 pl-2 border-l-4 border-amber-500">1. Mapping GeneratedID</h2>
+            <p class="text-slate-600 text-lg">
+                Thiết lập khóa vàng <code
+                    class="bg-slate-200 px-2 py-0.5 rounded text-pink-600 font-mono text-sm">GeneratedID</code> định
+                danh duy nhất khách hàng.
+                <strong class="text-amber-600"><i class="fas fa-ban mr-1"></i> Đây là Blocker cho toàn bộ các tính năng
+                    commerce.</strong>
+            </p>
+            <div class="bg-amber-50 border border-amber-100 rounded-2xl p-6 text-amber-900 max-w-3xl">
+                <ul class="space-y-3">
+                    <li class="flex items-start gap-3"><i
+                            class="fas fa-check-circle text-amber-500 mt-1"></i><span><strong>Lớp 1 (Tự động):</strong>
+                            So khớp số điện thoại Zalo với dữ liệu từ POS.</span></li>
+                    <li class="flex items-start gap-3"><i
+                            class="fas fa-check-circle text-amber-500 mt-1"></i><span><strong>Lớp 2 (Thủ công):</strong>
+                            Chuyển vào hàng đợi chờ Sales duyệt tay nếu SĐT trùng lặp nhiều.</span></li>
+                </ul>
+            </div>
+        </section>
+
+        <!-- Section 2: 40 Features -->
+        <section class="space-y-6">
+            <h2 class="text-3xl font-bold text-slate-900 pl-2 border-l-4 border-emerald-500">2. 40 Tính năng</h2>
+
+            <div class="mt-6 space-y-6">
+                <!-- Tabs Header for Categories -->
+                <div class="flex flex-wrap gap-2 mb-4" id="feature-tabs">
+                    <button onclick="showTab('tab-A', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-brand-500 text-white transition-colors">A.
+                        Giá trị & Lợi nhuận</button>
+                    <button onclick="showTab('tab-B', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">B.
+                        Hành vi & Mua hàng</button>
+                    <button onclick="showTab('tab-C', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">C.
+                        Rủi ro</button>
+                    <button onclick="showTab('tab-D', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">D.
+                        Phân khúc</button>
+                    <button onclick="showTab('tab-E', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">E.
+                        Tương tác</button>
+                    <button onclick="showTab('tab-F', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">F.
+                        Tăng trưởng</button>
+                    <button onclick="showTab('tab-G', event)"
+                        class="tab-btn px-4 py-2 rounded-full text-sm font-semibold bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors">G-H.
+                        Dự báo & Hiệu suất</button>
+                </div>
+
+                <!-- Script for Tabs -->
+                <script>
+                    function showTab(tabId, event) {
+                        document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+                        document.querySelectorAll('.tab-btn').forEach(el => {
+                            el.classList.remove('bg-brand-500', 'text-white');
+                            el.classList.add('bg-slate-100', 'text-slate-600');
+                        });
+                        document.getElementById(tabId).classList.remove('hidden');
+                        if (event) {
+                            event.currentTarget.classList.remove('bg-slate-100', 'text-slate-600');
+                            event.currentTarget.classList.add('bg-brand-500', 'text-white');
+                        }
+                    }
+                </script>
+
+                <!-- Tab Contents -->
+                <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+
+                    <!-- Category A -->
+                    <div id="tab-A" class="tab-content">
+                        <div class="bg-brand-50 px-6 py-4 border-b border-brand-100 flex items-center gap-2">
+                            <i class="fas fa-sack-dollar text-brand-600 text-xl"></i>
+                            <h3 class="font-bold text-brand-900 text-lg">A. Giá trị & Lợi nhuận khách hàng</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">CLV (Historical)</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tính toán tổng giá trị vòng đời
+                                                khách hàng trong quá khứ.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đánh giá chính xác <strong>khách hàng
+                                                VIP</strong> đã mang lại bao nhiêu doanh thu, từ đó phân bổ đặc quyền và
+                                            nguồn lực chăm sóc xứng đáng.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS order history</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">CLV (Predictive)</div>
+                                            <div class="text-xs text-slate-500 mt-1">Dự đoán giá trị khách hàng sẽ mang
+                                                lại trong tương lai.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Nhận diện sớm khách hàng tiềm năng cao để
+                                            ưu tiên ngân sách marketing, <strong>nuôi dưỡng trước khi họ mang lại doanh
+                                                thu lớn</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">RFM heuristic + Trend</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">CAC & CLV:CAC</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tính chi phí thu hút khách hàng
+                                                (CAC) và tỷ lệ lợi nhuận (CLV:CAC).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đo lường hiệu quả các kênh marketing. Giúp
+                                            CEO/CMO quyết định <strong>cắt giảm kênh lỗ, tăng tiền cho kênh sinh lời
+                                                cao</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Cần bảng SourceSpend</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Cost-to-Serve</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tính chi phí vận hành/nhân sự để
+                                                phục vụ 1 khách hàng.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Phát hiện các tệp khách hàng "độc hại" (yêu
+                                            cầu hỗ trợ nhiều nhưng mua ít) để <strong>tối ưu chi phí vận hành</strong>
+                                            và áp dụng tự động hóa.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS Doanh thu + Giá vốn</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Margin / Discount Erosion
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Kiểm soát tình trạng giảm giá quá
+                                                mức, ăn mòn lợi nhuận.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Bảo vệ biên lợi nhuận của công ty bằng cách
+                                            <strong>ngăn chặn Sale lạm dụng chiết khấu</strong> để chốt đơn dễ dàng.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS Giá vốn + Chiết khấu
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4 opacity-70">
+                                            <div class="font-bold text-slate-900 text-base">Share of Wallet <span
+                                                    class="bg-slate-200 text-slate-500 text-[10px] px-2 py-0.5 rounded uppercase">Tạm
+                                                    hoãn</span></div>
+                                            <div class="text-xs text-slate-500 mt-1">Ước lượng % chi tiêu của khách cho
+                                                công ty so với toàn ngành.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700 opacity-70">Tìm kiếm dư địa phát triển:
+                                            Thuyết phục khách mua 100% nhu cầu tại công ty thay vì chia sẻ ngân sách cho
+                                            đối thủ.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50 opacity-70">Thiếu data khảo
+                                            sát</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Opportunity Score</div>
+                                            <div class="text-xs text-slate-500 mt-1">Chấm điểm cơ hội bán hàng dựa trên
+                                                tín hiệu.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Giúp Sale <strong>tập trung vào những Deal
+                                                dễ chốt nhất</strong>, tiết kiệm thời gian tiếp cận khách hàng có ý định
+                                            mua thấp.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">priorityScore + intent</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category B -->
+                    <div id="tab-B" class="tab-content hidden">
+                        <div class="bg-indigo-50 px-6 py-4 border-b border-indigo-100 flex items-center gap-2">
+                            <i class="fas fa-shopping-cart text-indigo-600 text-xl"></i>
+                            <h3 class="font-bold text-indigo-900 text-lg">B. Hành vi & Mẫu hình mua hàng</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">RFM Analysis</div>
+                                            <div class="text-xs text-slate-500 mt-1">Phân loại theo Gần đây (Recency),
+                                                Tần suất (Frequency), Giá trị (Monetary).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tự động hóa các chiến dịch Marketing
+                                            <strong>nhắm đúng thông điệp vào đúng tệp</strong> (VD: Khuyến mãi cứu vãn
+                                            cho tệp sắp rời bỏ, Cảm ơn cho tệp Loyal).
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">R/F nội bộ + M từ POS</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Refill Cycle</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tính toán chu kỳ mua lặp lại sản
+                                                phẩm tiêu hao.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Sale/Hệ thống có thể chủ động <strong>nhắn
+                                                tin nhắc nhở khách mua lại ngay trước khi họ hết hàng</strong>, duy trì
+                                            dòng tiền ổn định.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS order timestamps</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Product Recommendation</div>
+                                            <div class="text-xs text-slate-500 mt-1">Gợi ý sản phẩm giỏ hàng chéo
+                                                (Market-basket).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tăng giá trị trung bình trên mỗi đơn hàng
+                                            (AOV) thông qua việc <strong>gợi ý chính xác sản phẩm khách có khả năng mua
+                                                kèm cao nhất</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS order lines</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Seasonality Detection</div>
+                                            <div class="text-xs text-slate-500 mt-1">Phát hiện hành vi mua theo tính mùa
+                                                vụ/khu vực.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Giúp công ty <strong>chủ động chiến dịch
+                                                chốt sale đón đầu</strong> các dịp mua sắm lớn hoặc chuẩn bị tồn kho hợp
+                                            lý.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS order time/location</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4 opacity-70">
+                                            <div class="font-bold text-slate-900 text-base">Price Elasticity <span
+                                                    class="bg-slate-200 text-slate-500 text-[10px] px-2 py-0.5 rounded uppercase">Tạm
+                                                    hoãn</span></div>
+                                            <div class="text-xs text-slate-500 mt-1">Đo lường mức độ thay đổi nhu cầu
+                                                khi giá đổi.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700 opacity-70">Hỗ trợ chiến lược định giá: biết
+                                            được giảm bao nhiêu % thì tối đa hóa được tổng doanh thu.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50 opacity-70">Thiếu data biến
+                                            động giá</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Order Anomaly Detection
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Phát hiện tần suất/giá trị đơn hàng
+                                                bất thường (Z-score).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Bảo vệ hệ thống: <strong>Cảnh báo sớm các
+                                                giao dịch rác, gian lận</strong> hoặc sai sót nhập liệu của nhân viên.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS orders anomaly</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Channel Preference</div>
+                                            <div class="text-xs text-slate-500 mt-1">Thống kê kênh khách hàng hay phản
+                                                hồi (Zalo, SMS, Call).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tối ưu chi phí truyền thông: <strong>Liên
+                                                hệ qua đúng kênh khách thích</strong> để tăng tỷ lệ đọc và giảm chi phí
+                                            SMS rác.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Message.sentVia</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Cohort Retention</div>
+                                            <div class="text-xs text-slate-500 mt-1">Đo lường tỷ lệ duy trì khách hàng
+                                                theo từng lứa (tháng/chiến dịch).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đánh giá <strong>chất lượng thực sự của
+                                                khách hàng thu được từ marketing</strong>, thay vì chỉ nhìn vào số lượng
+                                            Lead ban đầu.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">ContactStageHistory</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category C -->
+                    <div id="tab-C" class="tab-content hidden">
+                        <div class="bg-rose-50 px-6 py-4 border-b border-rose-100 flex items-center gap-2">
+                            <i class="fas fa-shield-alt text-rose-600 text-xl"></i>
+                            <h3 class="font-bold text-rose-900 text-lg">C. Dự đoán Rủi ro</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Churn Prediction</div>
+                                            <div class="text-xs text-slate-500 mt-1">Dự đoán rủi ro khách hàng chuẩn bị
+                                                rời bỏ công ty (0-100).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Cho phép đội CSKH chủ động <strong>liên hệ
+                                                níu kéo khách hàng trước khi quá muộn</strong>, giảm thiểu tỷ lệ mất
+                                            khách VIP.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Heuristic: silent + trend
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Customer Health Score</div>
+                                            <div class="text-xs text-slate-500 mt-1">Chấm điểm tổng quan tình trạng
+                                                tương tác và cảm xúc khách hàng.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Cung cấp bộ lọc nhanh cho quản lý để
+                                            <strong>chẩn đoán sức khỏe của toàn bộ danh mục khách hàng</strong> mà công
+                                            ty đang quản lý.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Composite score</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Debt / Deposit Asset Risk
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Đánh giá rủi ro dựa trên công nợ và
+                                                tài sản ký gửi hiện tại.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700"><strong>Quản trị dòng tiền chặt
+                                                chẽ</strong>. Chặn hệ thống không cho Sale bán thêm hàng nếu khách hàng
+                                            đang vượt quá rủi ro nợ xấu.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS Công nợ + Ký gửi</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Credit / Payment Risk
+                                                Scoring</div>
+                                            <div class="text-xs text-slate-500 mt-1">Chấm điểm uy tín thanh toán (thường
+                                                xuyên trễ/đúng hạn).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Cơ sở dữ liệu an toàn để Kế toán
+                                            <strong>quyết định cấp hạn mức tín dụng</strong> hoặc thời gian gia hạn
+                                            thanh toán cho từng khách.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS payment history</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Fraud / Anomaly Detection
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Theo dõi các mẫu giao dịch hoàn,
+                                                hủy, sửa đổi liên tục.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700"><strong>Ngăn chặn thất thoát tài
+                                                sản</strong>, phát hiện sớm sự thông đồng giữa nhân viên và khách hàng
+                                            để trục lợi hệ thống.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS transaction logs</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category D -->
+                    <div id="tab-D" class="tab-content hidden">
+                        <div class="bg-amber-50 px-6 py-4 border-b border-amber-100 flex items-center gap-2">
+                            <i class="fas fa-users-cog text-amber-600 text-xl"></i>
+                            <h3 class="font-bold text-amber-900 text-lg">D. Phân khúc & Nhắm mục tiêu</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Dynamic Segmentation</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tạo tập khách hàng tự động dựa trên
+                                                quy tắc động (Rules engine).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tiết kiệm hàng giờ lọc Excel. Tự động
+                                            thêm/bớt khách hàng vào các chiến dịch gửi tin nhắn <strong>tránh spam gây
+                                                phản cảm</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Rules engine + POS value
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Geographic / Territory</div>
+                                            <div class="text-xs text-slate-500 mt-1">Phân tích mật độ khách hàng theo
+                                                Tỉnh/Thành/Quận/Huyện.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Giúp Giám đốc kinh doanh <strong>mở thêm
+                                                chi nhánh hoặc điều phối nhân sự</strong> chính xác vào các "điểm nóng"
+                                            (hotspots) nhu cầu.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">province/district index</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Lookalike Modeling</div>
+                                            <div class="text-xs text-slate-500 mt-1">Tìm kiếm hồ sơ có đặc điểm tương
+                                                đồng với tệp khách VIP.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tối ưu Data quảng cáo: <strong>Mở rộng tệp
+                                                khách hàng tiềm năng chất lượng cao</strong> bằng cách tìm những người
+                                            giống hệt người mua nhiều nhất.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Contact profile feature
+                                            vector</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category E -->
+                    <div id="tab-E" class="tab-content hidden">
+                        <div class="bg-cyan-50 px-6 py-4 border-b border-cyan-100 flex items-center gap-2">
+                            <i class="fas fa-smile-wink text-cyan-600 text-xl"></i>
+                            <h3 class="font-bold text-cyan-900 text-lg">E. Tương tác & Cảm xúc</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Chat Sentiment Analysis
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Phân tích tự động độ giận dữ/hài
+                                                lòng trong tin nhắn chat.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Cảnh báo Quản lý ngay lập tức khi khách
+                                            hàng đang chat với thái độ tiêu cực để <strong>nhảy vào giải quyết khủng
+                                                hoảng truyền thông kịp thời</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">AI sentiment + History</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Complaint Topic Clustering
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Dùng LLM gom nhóm các phàn nàn theo
+                                                chủ đề (VD: Giao hàng chậm, Thái độ...).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Chỉ ra cho Ban Giám Đốc <strong>đâu là lỗ
+                                                hổng quy trình lớn nhất</strong> đang làm mất khách để ưu tiên cải tiến
+                                            ngay.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">LLM extract topic</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Response Time / SLA</div>
+                                            <div class="text-xs text-slate-500 mt-1">Đo lường thời gian Sale/CSKH phản
+                                                hồi tin nhắn của khách.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700"><strong>Kiểm soát chất lượng dịch
+                                                vụ</strong>. Tránh tình trạng để khách hàng chờ đợi quá lâu dẫn đến việc
+                                            khách bỏ đi mua của đối thủ.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">DailyMessageStat</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Intent Classification</div>
+                                            <div class="text-xs text-slate-500 mt-1">Nhận diện ý định khách hàng (Hỏi
+                                                giá, Xin địa chỉ, Phàn nàn).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tự động hóa luồng Chatbot: <strong>Phân
+                                                luồng khách hàng đúng phòng ban</strong> không cần người trực 24/7, tiết
+                                            kiệm quỹ lương.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">AI Intent label</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">NPS / Satisfaction Tracking
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Khảo sát điểm hài lòng và lòng
+                                                trung thành (Net Promoter Score).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đo lường sức khỏe thương hiệu thực tế:
+                                            <strong>Khách hàng có sẵn sàng giới thiệu công ty cho bạn bè không?</strong>
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Module Survey (Zalo)</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category F -->
+                    <div id="tab-F" class="tab-content hidden">
+                        <div class="bg-emerald-50 px-6 py-4 border-b border-emerald-100 flex items-center gap-2">
+                            <i class="fas fa-rocket text-emerald-600 text-xl"></i>
+                            <h3 class="font-bold text-emerald-900 text-lg">F. Tăng trưởng & Cơ hội</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Next Best Action</div>
+                                            <div class="text-xs text-slate-500 mt-1">Gợi ý hành động tối ưu tiếp theo
+                                                cho Sales.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đóng vai trò như một "Huấn luyện viên ảo",
+                                            <strong>chỉ cho Sale mới vào nghề biết nên làm gì để tỷ lệ chốt cao
+                                                nhất</strong> (Ví dụ: Gọi điện thay vì nhắn tin).
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">NbaTemplate engine</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Cross-sell / Upsell Scoring
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Phân tích lỗ hổng giỏ hàng để chấm
+                                                điểm khả năng bán thêm.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Khai thác tối đa tệp khách hàng hiện hữu
+                                            (Mỏ vàng có sẵn) để <strong>bán chéo sản phẩm khác, gia tăng doanh số mà
+                                                không tốn phí Ads</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS product mix gap</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Win-back Scoring</div>
+                                            <div class="text-xs text-slate-500 mt-1">Nhắm mục tiêu khách hàng cũ/ngủ
+                                                đông có khả năng mua lại.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700"><strong>Tái kích hoạt dòng tiền bị lãng
+                                                quên</strong>. Khách cũ mua lại có tỷ suất lợi nhuận cao hơn nhiều so
+                                            với tìm kiếm khách mới.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Dormant + POS Lịch sử</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Referral / Advocacy Tracking
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Theo dõi lượt giới thiệu bạn bè mua
+                                                hàng.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Khuyến khích tiếp thị truyền miệng (Word of
+                                            mouth) - <strong>kênh thu hút khách mới uy tín nhất và chi phí cực
+                                                thấp</strong>.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Cơ chế Ref-code</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Campaign Effectiveness</div>
+                                            <div class="text-xs text-slate-500 mt-1">Đo lường mức độ ảnh hưởng của chiến
+                                                dịch đến doanh thu thực tế.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Tránh đốt tiền oan vào khuyến mãi ảo.
+                                            <strong>Biết chính xác chương trình nào sinh ra đơn hàng thật</strong> để
+                                            nhân rộng.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">CampaignExposure + POS</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Category G/H -->
+                    <div id="tab-G" class="tab-content hidden">
+                        <div class="bg-blue-50 px-6 py-4 border-b border-blue-100 flex items-center gap-2">
+                            <i class="fas fa-chart-line text-blue-600 text-xl"></i>
+                            <h3 class="font-bold text-blue-900 text-lg">G & H. Dự báo & Hiệu suất Nhân sự</h3>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-slate-600">
+                                <thead class="bg-slate-50 text-slate-700 text-xs uppercase border-b border-slate-200">
+                                    <tr>
+                                        <th class="px-6 py-4 font-bold w-1/3">Tính năng & Mô tả</th>
+                                        <th class="px-6 py-4 font-bold">Mục đích / Lợi ích cho Doanh nghiệp</th>
+                                        <th class="px-6 py-4 font-bold w-1/4">Điều kiện Kỹ thuật</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Demand Forecasting</div>
+                                            <div class="text-xs text-slate-500 mt-1">Dự báo nhu cầu hàng hóa tương lai
+                                                (Time-series).</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Giúp bộ phận kho vận <strong>tối ưu tồn
+                                                kho, tránh tình trạng ứ đọng vốn</strong> hoặc đứt gãy nguồn cung sản
+                                            phẩm đang hot.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS order time-series</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Revenue Forecasting</div>
+                                            <div class="text-xs text-slate-500 mt-1">Dự báo doanh thu tương lai theo
+                                                từng phân khúc.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Cung cấp bức tranh tài chính tin cậy để
+                                            <strong>Ban Lãnh Đạo lập ngân sách kinh doanh và lên kế hoạch dòng tiền
+                                                (Cashflow)</strong>.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">POS revenue × segment</td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Sales Rep Effectiveness
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Chấm điểm hiệu suất làm việc thực
+                                                tế của từng nhân viên Sales.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Xây dựng hệ thống <strong>thưởng phạt công
+                                                bằng (KPIs minh bạch)</strong> và phát hiện đúng điểm yếu của nhân viên
+                                            để đào tạo.</td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Retention + POS attribution
+                                        </td>
+                                    </tr>
+                                    <tr class="hover:bg-slate-50">
+                                        <td class="px-6 py-4">
+                                            <div class="font-bold text-slate-900 text-base">Territory / Load Balance
+                                            </div>
+                                            <div class="text-xs text-slate-500 mt-1">Kiểm soát khối lượng công việc chăm
+                                                sóc khách hàng của từng Sale.</div>
+                                        </td>
+                                        <td class="px-6 py-4 text-slate-700">Đảm bảo phân bổ nguồn lực cân bằng:
+                                            <strong>Không có nhân viên quá tải bỏ bê khách, và không ai rảnh rỗi lãng
+                                                phí lương</strong>.
+                                        </td>
+                                        <td class="px-6 py-4 text-xs font-mono bg-slate-50">Count KH/user × province
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+
+
+        <!-- Khối Sơ đồ Hệ sinh thái & Luồng Dữ liệu -->
+        <div class="mt-12 pt-8 border-t border-slate-200">
+            <h3 class="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
+                <i class="fas fa-project-diagram text-brand-500"></i> Kiến trúc Luồng dữ liệu (Data Flow)
+            </h3>
+            <p class="text-slate-600 mb-8 text-sm">Dữ liệu từ 3 nguồn (Zalo CRM, POS, WebCRM) → đi qua tầng Adapter
+                ghép nối & định danh → Engines tính toán CLV/RFM/Churn → Cache snapshot kết quả → phục vụ Dashboards,
+                Sales UI, API và Automation. Vòng Feedback Loop đẩy insights ngược về Sources & Engines.</p>
+
+            <div class="bg-white border border-slate-200 rounded-3xl p-4 lg:p-8 shadow-sm">
+                <pre class="mermaid">
+%%{init: {'theme': 'base', 'themeVariables': { 'fontSize': '13px', 'fontFamily': 'Inter, sans-serif' }}}%%
+flowchart TB
+
+    subgraph SRC["1 · NGUỒN DỮ LIỆU"]
+        direction LR
+        S1["💬 <b>Zalo CRM</b><br/><i>Tương tác · Chat · LeadScore</i>"]
+        S2["🏪 <b>POS Nội bộ</b><br/><i>Đơn hàng · Giá vốn · Công nợ</i>"]
+        S3["🌐 <b>WebCRM</b><br/><i>Định danh · Mapping SĐT</i>"]
+    end
+
+    subgraph ADP["2 · ADAPTERS &amp; MAPPING"]
+        direction LR
+        A1["🔗 <b>P0 Mapping Resolver</b><br/><i>Cron 02:00 · Giải quyết ai là ai</i>"]
+        A2["🔌 <b>POS Adapter</b><br/><i>pull-nightly · Đồng bộ thương mại</i>"]
+        A3["⚡ <b>Webhook Receiver</b><br/><i>real-time · Nhận đẩy đơn mới</i>"]
+    end
+
+    subgraph ENG["3 · ENGINES"]
+        direction LR
+        E1["💎 <b>CLV &amp; RFM</b><br/><i>Phân hạng VIP / Loyal / At-Risk</i>"]
+        E2["💗 <b>Churn &amp; Health</b><br/><i>Cảnh báo mất khách trước 14 ngày</i>"]
+        E3["📈 <b>Predictive &amp; Forecast</b><br/><i>Dự báo doanh thu + cơ hội</i>"]
+    end
+
+    subgraph CACHE["4 · SNAPSHOT CACHE"]
+        direction LR
+        C1["🗄️ <b>CommerceSnapshot</b><br/><i>Revenue · Orders · Margin · Debt</i>"]
+        C2["📊 <b>MetricSnapshot</b><br/><i>Health · Churn · CLV · RFM</i>"]
+        C3["❤️ <b>SentimentHistory</b><br/><i>Cảm xúc khách qua từng tin</i>"]
+    end
+
+    subgraph OUT["5 · OUTPUTS &amp; FEEDBACK"]
+        direction LR
+        O1["📊 <b>Dashboards</b><br/><i>CEO / Manager Reports</i>"]
+        O2["👔 <b>Sales UI Panel</b><br/><i>CLV · Rủi ro · Gợi ý lúc chat</i>"]
+        O3["💻 <b>Analytics API</b><br/><i>/api/v1/analytics/*</i>"]
+        O4["🤖 <b>Segment + Auto</b><br/><i>Phân khúc + gửi Zalo</i>"]
+    end
+
+    %% ─── Main flow ───
+    S1 --&gt; A1
+    S2 --&gt; A2
+    S3 --&gt; A1
+    S2 --&gt; A3
+
+    A1 --&gt; E1
+    A1 --&gt; E2
+    A2 --&gt; E1
+    A2 --&gt; E3
+    A3 --&gt; E1
+
+    E1 --&gt; C1
+    E1 --&gt; C2
+    E2 --&gt; C2
+    E3 --&gt; C2
+    E2 --&gt; C3
+
+    C1 --&gt; O1
+    C2 --&gt; O1
+    C2 --&gt; O2
+    C2 --&gt; O3
+    C2 --&gt; O4
+    C3 --&gt; O2
+
+    %% ─── Feedback Loop ───
+    O2 -."Feedback".-> S1
+    O4 -."Re-config".-> E1
+
+    %% ─── Styling ───
+    classDef srcStyle fill:#dbeafe,stroke:#3b82f6,stroke-width:1px,color:#1e3a5f
+    classDef adpStyle fill:#e0f2fe,stroke:#0ea5e9,stroke-width:1px,color:#0c4a6e
+    classDef engStyle fill:#f3e8ff,stroke:#8b5cf6,stroke-width:1px,color:#4c1d95
+    classDef cacheStyle fill:#f1f5f9,stroke:#94a3b8,stroke-width:1px,color:#334155
+    classDef outStyle fill:#fce7f3,stroke:#ec4899,stroke-width:1px,color:#831843
+    classDef salesHL fill:#e0e7ff,stroke:#6366f1,stroke-width:2px,color:#312e81
+
+    class S1,S2,S3 srcStyle
+    class A1,A2,A3 adpStyle
+    class E1,E2,E3 engStyle
+    class C1,C2,C3 cacheStyle
+    class O1,O3,O4 outStyle
+    class O2 salesHL
+
+    style SRC fill:#eff6ff,stroke:#93c5fd,stroke-width:2px,rx:10
+    style ADP fill:#f0f9ff,stroke:#7dd3fc,stroke-width:2px,rx:10
+    style ENG fill:#faf5ff,stroke:#c4b5fd,stroke-width:2px,rx:10
+    style CACHE fill:#f8fafc,stroke:#cbd5e1,stroke-width:2px,rx:10
+    style OUT fill:#fff1f2,stroke:#fda4af,stroke-width:2px,rx:10
+                </pre>
+            </div>
+        </div>
+
+    </div><!-- /.max-w-6xl -->
+</body>
+
+</html>

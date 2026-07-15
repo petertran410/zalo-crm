@@ -237,6 +237,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRbacStore, type PermissionGroupNode, type RbacUser } from '@/stores/rbac';
 import { api } from '@/api/index';
+import { resourceLabel, resourceIcon, actionLabel } from '@/constants/permission-meta';
 
 const store = useRbacStore();
 const allUsers = ref<RbacUser[]>([]);
@@ -324,37 +325,6 @@ watch(
     } catch {}
   }
 );
-
-// ─── Labels ───
-const ACTION_LABELS: Record<string, string> = {
-  access: 'Truy cập',
-  create: 'Thêm mới',
-  edit: 'Chỉnh sửa',
-  delete: 'Xóa',
-  view_all: 'Xem tất cả',
-};
-function actionLabel(a: string) { return ACTION_LABELS[a] ?? a; }
-
-const RESOURCE_LABELS: Record<string, { icon: string; label: string }> = {
-  department: { icon: '🏢', label: 'Phòng ban' },
-  user: { icon: '👤', label: 'Người dùng' },
-  permission_group: { icon: '🛡', label: 'Nhóm quyền' },
-  conversation: { icon: '💬', label: 'Hội thoại' },
-  contact: { icon: '👥', label: 'Khách hàng' },
-  friend: { icon: '🫂', label: 'Friends Zalo' },
-  customer_list: { icon: '📋', label: 'Tệp khách hàng' },
-  broadcast: { icon: '📢', label: 'Chiến dịch' },
-  sequence: { icon: '🔁', label: 'Sequence' },
-  trigger: { icon: '⚡', label: 'Trigger' },
-  block: { icon: '🧱', label: 'Message Block' },
-  zalo_account: { icon: '🟢', label: 'Nick Zalo' },
-  webhook: { icon: '🔌', label: 'Webhook' },
-  engagement_score: { icon: '📊', label: 'Engagement / Score' },
-  audit_log: { icon: '📜', label: 'Audit Log' },
-  settings: { icon: '⚙', label: 'Cài đặt' },
-};
-function resourceLabel(r: string) { return RESOURCE_LABELS[r]?.label ?? r; }
-function resourceIcon(r: string) { return RESOURCE_LABELS[r]?.icon ?? '•'; }
 
 // ─── Grants helpers ───
 function grantsActive(g: PermissionGroupNode): number {

@@ -43,7 +43,8 @@ export async function registerUserAssignmentRoutes(app: FastifyInstance): Promis
         fullName: true,
         role: true, // legacy
         permissionGroupId: true,
-        permissionGroup: { select: { id: true, name: true, isSystem: true } },
+        permissionGroup: { select: { id: true, name: true, isSystem: true, grants: true } },
+        customGrants: true,
         departmentMember: {
           select: {
             departmentId: true,
@@ -128,6 +129,32 @@ export async function registerUserAssignmentRoutes(app: FastifyInstance): Promis
       data: { permissionGroupId: body.permissionGroupId ?? null },
     });
     return reply.send({ ok: true });
+  });
+
+  // PATCH /api/v1/rbac/users/:id/overrides — gán custom permission overrides cho user
+  app.patch('/api/v1/rbac/users/:id/overrides', {
+    preHandler: [authMiddleware, requireGrant('user', 'edit')],
+  }, async (request, reply) => {
+    const user = (request as any).user;
+    const { id } = request.params as { id: string };
+    const body = (request.body ?? {}) as { customGrants?: any };
+
+    // Validate target user ∈ org
+    const target = await prisma.user.findFirst({
+      where: { id, orgId: user.orgId },
+      select: { id: true },
+    });
+    if (!target) return reply.status(404).send({ error: 'User không tồn tại' });
+
+    // Sanitize customGrants using sanitizeGrants from permission-types
+    const { sanitizeGrants } = await import('./permission-types.js');
+    const sanitized = sanitizeGrants(body.customGrants ?? {});
+
+    await prisma.user.update({
+      where: { id },
+      data: { customGrants: sanitized as any },
+    });
+    return reply.send({ ok: true, customGrants: sanitized });
   });
 
   // POST /api/v1/admin/rbac/seed-default-groups — admin endpoint seed 7 group
