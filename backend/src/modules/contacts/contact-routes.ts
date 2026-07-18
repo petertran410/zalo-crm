@@ -26,6 +26,7 @@ import { runAutomationRules } from '../../shared/ee-registry/automation.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { emitWebhook } from '../api/webhook-service.js';
+import { scheduleHisweetiePush } from '../integrations/hisweetie-push-queue.js';
 
 type QueryParams = Record<string, string>;
 
@@ -1014,6 +1015,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           id: true, status: true, statusId: true, fullName: true, phone: true, source: true,
           assignedUserId: true, crmName: true, email: true, gender: true,
           birthDate: true, leadScore: true, addressLine: true, occupation: true,
+          posCustomerId: true,
         },
       });
       if (!existing) return reply.status(404).send({ error: 'Contact not found' });
@@ -1124,6 +1126,20 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           _count: { select: { conversations: true } },
         },
       });
+
+      // Goal 2 (anh chốt 2026-07-15) — KH đã link POS + sửa field POS NHẬN được →
+      // debounce push ngược POS 2s (xem hisweetie-push-queue.ts).
+      // KHÔNG lắng nghe addressLine: POS `crm_update_customer` từ chối `addresses`
+      // (verify sandbox 2026-07-16) → sửa địa chỉ KHÔNG đẩy sang POS được, đừng
+      // xếp job push thừa. Chỉ tên/SĐT/email mới push.
+      if (existing.posCustomerId != null && (
+        body.fullName !== undefined || body.crmName !== undefined
+        || body.phone !== undefined || body.email !== undefined
+      )) {
+        void scheduleHisweetiePush(existing.id).catch((err) => (
+          logger.warn(`[hisweetie-push] schedule failed for contact ${existing.id}:`, err)
+        ));
+      }
 
       if (existing.status !== updated.status) {
         const org = await prisma.organization.findUnique({

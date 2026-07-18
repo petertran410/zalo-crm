@@ -984,13 +984,24 @@ async function findOrCreateConversation(
 
   const existing = await prisma.conversation.findFirst({
     where: { zaloAccountId: msg.accountId, externalThreadId },
-    select: { id: true, groupName: true, groupAvatarUrl: true, groupMembersCount: true },
+    select: { id: true, groupName: true, groupAvatarUrl: true, groupMembersCount: true, deletedAt: true },
   });
 
   if (existing) {
+    const updates: { groupName?: string; groupAvatarUrl?: string; groupMembersCount?: number; deletedAt?: null } = {};
+    // BUG-FIX 2026-07-17 (anh báo): "Xóa đoạn hội thoại" = soft-delete (deletedAt set,
+    // hội thoại ẩn khỏi list). Zalo app: xoá chat rồi có tin MỚI → chat hiện lại.
+    // Resurface khi tin nhắn ĐẾN SAU thời điểm xoá — tức tin thật sự mới (kể cả khi
+    // về qua reconnect catch-up dưới dạng backfill: tin gửi lúc downtime VẪN là tin mới,
+    // phải bới hội thoại lên). KHÔNG resurface tin CŨ hơn deletedAt (backfill lịch sử xa
+    // không được tự bới hội thoại người dùng đã chủ động ẩn).
+    // Refinement #2 2026-07-17 (anh báo ca Đăng Khoa): dùng mốc thời gian thay vì
+    // cờ isBackfill — cờ đó chặn nhầm cả tin downtime hợp lệ.
+    if (existing.deletedAt && msg.timestamp > existing.deletedAt.getTime()) {
+      updates.deletedAt = null;
+    }
     // Update group metadata if changed (sync mới hơn so với DB)
     if (msg.threadType === 'group') {
-      const updates: { groupName?: string; groupAvatarUrl?: string; groupMembersCount?: number } = {};
       if (msg.groupName && msg.groupName !== existing.groupName) updates.groupName = msg.groupName;
       // Không ghi đè URL nội bộ (đã mirror lên S3 bởi group-info-sync-cron) bằng URL CDN
       // thô từ tin nhắn — cron sở hữu avatar đã cache, tránh flip-flop CDN↔S3 mỗi tin mới.
@@ -1004,9 +1015,9 @@ async function findOrCreateConversation(
       if (msg.groupMembersCount != null && msg.groupMembersCount !== existing.groupMembersCount) {
         updates.groupMembersCount = msg.groupMembersCount;
       }
-      if (Object.keys(updates).length) {
-        await prisma.conversation.update({ where: { id: existing.id }, data: updates });
-      }
+    }
+    if (Object.keys(updates).length) {
+      await prisma.conversation.update({ where: { id: existing.id }, data: updates });
     }
     return { id: existing.id };
   }

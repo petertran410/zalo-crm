@@ -15,7 +15,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { attachZaloListener, type UserInfoCacheEntry } from './zalo-listener-factory.js';
 import { emitWebhook } from '../api/webhook-service.js';
 import { startMessageSync, stopMessageSync } from './zalo-message-sync.js';
-import { backfillIfEmpty } from './zalo-history-backfill.js';
+import { syncHistoryOnConnect } from './zalo-history-backfill.js';
 import { readFile } from 'fs/promises';
 import { imageSize } from 'image-size';
 import { withProxy } from './proxy-util.js';
@@ -308,9 +308,11 @@ class ZaloAccountPool {
         logger.warn(`[zalo:${accountId}] Backfill orphaned conversations failed:`, err);
       });
 
-      // Fire-and-forget: initial history backfill on first login (empty DB)
-      backfillIfEmpty(api, accountId).catch((err) => {
-        logger.warn(`[zalo:${accountId}] Initial history backfill failed:`, err);
+      // Fire-and-forget: history sync on connect. Empty DB → full backfill;
+      // reconnect → bounded catch-up để lấp tin nhắn/KH gửi lúc backend offline
+      // (BUG-FIX 2026-07-17 — xem syncHistoryOnConnect).
+      syncHistoryOnConnect(api, accountId).catch((err) => {
+        logger.warn(`[zalo:${accountId}] History sync on connect failed:`, err);
       });
 
       // Fire-and-forget: pull Zalo labels lần đầu để Friend.zaloLabels + crmTagsPerNick
@@ -433,6 +435,14 @@ class ZaloAccountPool {
       // Fire-and-forget: link orphaned conversations on reconnect
       this.backfillOrphanedConversations(accountId, api).catch((err) => {
         logger.warn(`[zalo:${accountId}] Backfill orphaned conversations failed:`, err);
+      });
+
+      // Fire-and-forget: history sync sau reconnect — BOUNDED catch-up lấp tin nhắn/KH
+      // gửi lúc CRM offline (BUG-FIX 2026-07-17, anh báo). ĐÂY là đường boot/reconnect
+      // (khác connectAccount = QR login); trước fix đường này KHÔNG chạy history sync
+      // nào → tin lúc downtime chỉ hiện sau khi bấm "Đồng bộ lịch sử chat" thủ công.
+      syncHistoryOnConnect(api, accountId).catch((err) => {
+        logger.warn(`[zalo:${accountId}] History sync on reconnect failed:`, err);
       });
 
       // Fire-and-forget: pull Zalo labels sau reconnect — bắt kịp thay đổi label

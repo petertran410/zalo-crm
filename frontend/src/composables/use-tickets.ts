@@ -9,6 +9,7 @@
  */
 import { ref, reactive } from 'vue';
 import { api } from '@/api/index';
+import type { WorkAttachment, WorkAttachmentInput } from '@/composables/work-attachment-types';
 
 export type TicketStatus = 'open' | 'in_progress' | 'resolved';
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent';
@@ -44,6 +45,7 @@ export interface Ticket {
   contact?: TicketContactLite | null;
   conversationId: string | null;
   aiGenerated: boolean;
+  attachments?: WorkAttachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +69,9 @@ export interface TicketPayload {
   aiGenerated?: boolean;
   /** Tạo từ tin nhắn chat nhóm — BE resolve KH từ người gửi + tự cấp quyền (2026-07-10). */
   sourceMessageId?: string | null;
+  sourceMessageIds?: string[] | null;
+  mediaAssetIds?: string[] | null;
+  attachments?: WorkAttachmentInput[] | null;
 }
 
 export const PRIORITY_META: Record<TicketPriority, { label: string; color: string; bg: string }> = {
@@ -203,8 +208,32 @@ export function useTickets() {
     }
   }
 
+  async function fetchTicketAttachments(id: string): Promise<WorkAttachment[]> {
+    const res = await api.get(`/tickets/${id}/attachments`);
+    return res.data.attachments ?? [];
+  }
+
+  async function removeTicketAttachment(ticketId: string, attachmentId: string): Promise<void> {
+    await api.delete(`/tickets/${ticketId}/attachments/${attachmentId}`);
+  }
+
+  async function reorderTicketAttachments(ticketId: string, attachmentIds: string[]): Promise<WorkAttachment[]> {
+    const res = await api.post(`/tickets/${ticketId}/attachments/reorder`, { attachmentIds });
+    return res.data.attachments ?? [];
+  }
+
+  async function updateTicketAttachment(
+    ticketId: string,
+    attachmentId: string,
+    patch: { variantBlobId?: string | null },
+  ): Promise<WorkAttachment | null> {
+    const res = await api.patch(`/tickets/${ticketId}/attachments/${attachmentId}`, patch);
+    return res.data.attachment ?? null;
+  }
+
   return {
     tickets, total, loading, saving, filters,
     fetchTickets, fetchContactTickets, createTicket, updateTicket, changeStatus, deleteTicket, draftFromConversation,
+    fetchTicketAttachments, removeTicketAttachment, reorderTicketAttachments, updateTicketAttachment,
   };
 }

@@ -32,6 +32,11 @@ import { generateAiOutput } from '../ai/ai-service.js';
 import {
   canMutateTicket, canDeleteTicket, isValidTicketTransition, TICKET_STATUSES,
 } from './ticket-permissions.js';
+import {
+  attachMediaToWorkItem,
+  loadAttachmentsForItems,
+  registerWorkAttachmentRoutes,
+} from '../work/work-attachments.js';
 
 const TICKET_INCLUDE = {
   assignee:   { select: { id: true, fullName: true, email: true, avatarUrl: true } },
@@ -68,6 +73,13 @@ function aiErrorMessage(err: unknown): string {
 
 export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+
+  registerWorkAttachmentRoutes(app, {
+    workItemType: 'ticket',
+    basePath: '/api/v1/tickets',
+    loadItem: (orgId, id) => prisma.ticket.findFirst({ where: { id, orgId }, select: { id: true } }),
+    canMutate: canMutateTicket,
+  });
 
   // ── GET /api/v1/tickets ──────────────────────────────────────────────────────
   // Query: view=mine|all, status=open|in_progress|resolved|all (mặc định: chưa resolved),
@@ -136,7 +148,9 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         prisma.ticket.count({ where }),
       ]);
 
-      return { tickets, total, page, limit };
+      const attMap = await loadAttachmentsForItems(user.orgId, 'ticket', tickets.map((t) => t.id), 4);
+      const withAtt = tickets.map((t) => ({ ...t, attachments: attMap.get(t.id) ?? [] }));
+      return { tickets: withAtt, total, page, limit };
     } catch (err) {
       logger.error('[tickets] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch tickets' });
@@ -168,7 +182,9 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         return aDone - bDone;
       });
 
-      return { tickets, total: tickets.length };
+      const attMap = await loadAttachmentsForItems(user.orgId, 'ticket', tickets.map((t) => t.id), 4);
+      const withAtt = tickets.map((t) => ({ ...t, attachments: attMap.get(t.id) ?? [] }));
+      return { tickets: withAtt, total: withAtt.length };
     } catch (err) {
       logger.error('[tickets] Contact list error:', err);
       return reply.status(500).send({ error: 'Failed to fetch tickets' });
@@ -209,10 +225,13 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
 
   // ── POST /api/v1/tickets ────────────────────────────────────────────────────
   app.post('/api/v1/tickets', async (request: FastifyRequest<{
-    Body: {
+      Body: {
       title?: string; summary?: string; priority?: string; category?: string | null; assigneeUserId?: string;
       contactId?: string | null; conversationId?: string | null; aiGenerated?: boolean;
       sourceMessageId?: string | null;
+      sourceMessageIds?: string[] | null;
+      mediaAssetIds?: string[] | null;
+      attachments?: Array<{ mediaAssetId: string; variantBlobId?: string | null; sourceMessageId?: string | null }> | null;
     };
   }>, reply: FastifyReply) => {
     try {
@@ -294,15 +313,39 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         include: TICKET_INCLUDE,
       });
 
+      // Media attachments (chat auto + manual picker). Best-effort — ticket vẫn tạo nếu attach lỗi.
+      const sourceMessageIds = [
+        ...(Array.isArray(request.body?.sourceMessageIds) ? request.body!.sourceMessageIds! : []),
+        ...(sourceMessageId ? [sourceMessageId] : []),
+      ];
+      let attachmentCount = 0;
+      try {
+        attachmentCount = await attachMediaToWorkItem({
+          orgId: user.orgId,
+          userId: user.id,
+          workItemType: 'ticket',
+          workItemId: ticket.id,
+          sourceMessageIds,
+          mediaAssetIds: request.body?.mediaAssetIds,
+          attachments: request.body?.attachments,
+        });
+      } catch (attErr) {
+        logger.warn('[tickets] attach media error:', attErr);
+      }
+
       logActivity({
         orgId: user.orgId,
         userId: user.id,
         action: 'ticket_create',
         ...ticketLogEntity(ticket),
-        details: { ticketId: ticket.id, title: ticket.title, priority: ticket.priority, assigneeUserId, aiGenerated: ticket.aiGenerated },
+        details: {
+          ticketId: ticket.id, title: ticket.title, priority: ticket.priority,
+          assigneeUserId, aiGenerated: ticket.aiGenerated, attachmentCount,
+        },
       });
 
-      return reply.status(201).send({ ticket });
+      const attMap = await loadAttachmentsForItems(user.orgId, 'ticket', [ticket.id], 20);
+      return reply.status(201).send({ ticket: { ...ticket, attachments: attMap.get(ticket.id) ?? [] } });
     } catch (err) {
       logger.error('[tickets] Create error:', err);
       return reply.status(500).send({ error: 'Failed to create ticket' });

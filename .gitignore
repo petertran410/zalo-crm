@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 .env.example
+.env.local
 .docker-compose.yml
 .docker-compose.dev.yml
 .CHANGELOG.md

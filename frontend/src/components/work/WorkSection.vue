@@ -59,10 +59,23 @@
             <button v-if="it.data.status === 'resolved'" class="chip reopen-btn" @click.stop="reopenTicket(it.data)">Mở lại</button>
           </template>
         </div>
+        <ThumbStrip
+          v-if="it.data.attachments?.length"
+          :items="it.data.attachments"
+          @open="openAttachments(it)"
+        />
       </div>
     </div>
 
     <div v-if="!loading && items.length === 0" class="t-empty">Chưa có công việc nào</div>
+
+    <AttachmentManagerPopover
+      v-model="showAttMgr"
+      :work-kind="attMgrKind"
+      :work-item-id="attMgrId"
+      :attachments="attMgrList"
+      @changed="onAttachmentsChanged"
+    />
   </div>
 </template>
 
@@ -71,7 +84,10 @@ import { ref, computed, watch, onMounted } from 'vue';
 import { useToast } from '@/composables/use-toast';
 import { useTasks, isOverdue as isTaskOverdue, isDueToday, dueLabel, type Task } from '@/composables/use-tasks';
 import { useTickets, PRIORITY_META, STATUS_META, type Ticket } from '@/composables/use-tickets';
+import type { WorkAttachment } from '@/composables/work-attachment-types';
 import WorkItemEditor, { type WorkEditItem } from '@/components/work/WorkItemEditor.vue';
+import ThumbStrip from '@/components/work/ThumbStrip.vue';
+import AttachmentManagerPopover from '@/components/work/AttachmentManagerPopover.vue';
 
 const props = defineProps<{
   contactId: string;
@@ -89,6 +105,30 @@ const tickets = ref<Ticket[]>([]);
 const loading = ref(false);
 const showEditor = ref(false);
 const editingItem = ref<WorkEditItem | null>(null);
+
+const showAttMgr = ref(false);
+const attMgrKind = ref<'task' | 'complaint'>('task');
+const attMgrId = ref('');
+const attMgrList = ref<WorkAttachment[]>([]);
+
+function openAttachments(it: WorkItem) {
+  attMgrKind.value = it.kind;
+  attMgrId.value = it.data.id;
+  attMgrList.value = it.data.attachments ?? [];
+  showAttMgr.value = true;
+}
+
+function onAttachmentsChanged(list: WorkAttachment[]) {
+  const id = attMgrId.value;
+  if (attMgrKind.value === 'task') {
+    const t = tasks.value.find((x) => x.id === id);
+    if (t) t.attachments = list;
+  } else {
+    const t = tickets.value.find((x) => x.id === id);
+    if (t) t.attachments = list;
+  }
+  attMgrList.value = list;
+}
 
 const items = computed<WorkItem[]>(() => {
   const merged: WorkItem[] = [

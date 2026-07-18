@@ -534,6 +534,77 @@ export async function generateWatermarkVariant(args: {
  * TẮT watermark per-ảnh: gỡ blob 'watermarked' + đặt watermarkEnabled=false.
  * Bản gốc luôn giữ. Gửi đi sau đó dùng lại bản gốc.
  */
+/**
+ * Lưu bản ANNOTATED từ FE canvas (PNG/JPEG base64 hoặc buffer).
+ * Tạo MediaBlob variantType='annotated'. Bản gốc giữ nguyên.
+ */
+export async function saveAnnotatedVariant(args: {
+  orgId: string;
+  assetId: string;
+  buffer: Buffer;
+  mimeType?: string;
+}): Promise<{ blobId: string; url: string; width: number | null; height: number | null; deduped: boolean }> {
+  const asset = await prisma.mediaAsset.findFirst({
+    where: { id: args.assetId, orgId: args.orgId },
+    select: { id: true, kind: true, name: true },
+  });
+  if (!asset) throw new Error('Asset không tồn tại');
+  if (asset.kind !== 'image') throw new Error('Chỉ ảnh mới annotate được');
+
+  let outBuf = args.buffer;
+  let mime = args.mimeType || 'image/png';
+  let width: number | null = null;
+  let height: number | null = null;
+  try {
+    const out = await sharp(args.buffer, { failOn: 'error' })
+      .rotate()
+      .webp({ quality: 88 })
+      .toBuffer({ resolveWithObject: true });
+    outBuf = out.data;
+    mime = 'image/webp';
+    width = out.info.width ?? null;
+    height = out.info.height ?? null;
+  } catch {
+    try {
+      const dim = imageSize(args.buffer);
+      width = dim.width ?? null;
+      height = dim.height ?? null;
+    } catch { /* keep null */ }
+  }
+
+  const up = await uploadBuffer(outBuf, mime, `${asset.name}-annotated.webp`);
+  const blob = await prisma.mediaBlob.create({
+    data: {
+      orgId: args.orgId,
+      assetId: asset.id,
+      contentHash: up.contentHash,
+      variantType: 'annotated',
+      minioKey: up.key,
+      publicUrl: up.url,
+      mimeType: up.mimeType,
+      sizeBytes: up.size,
+      width,
+      height,
+    },
+  }).catch(async (err) => {
+    if ((err as { code?: string }).code === 'P2002') {
+      const b = await prisma.mediaBlob.findUnique({
+        where: { orgId_contentHash: { orgId: args.orgId, contentHash: up.contentHash } },
+      });
+      if (b) return b;
+    }
+    throw err;
+  });
+
+  return {
+    blobId: blob.id,
+    url: blob.publicUrl,
+    width: blob.width,
+    height: blob.height,
+    deduped: up.deduped,
+  };
+}
+
 export async function disableWatermark(orgId: string, assetId: string): Promise<void> {
   const asset = await prisma.mediaAsset.findFirst({
     where: { id: assetId, orgId }, include: { blobs: { where: { variantType: 'watermarked' } } },

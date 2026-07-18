@@ -156,4 +156,12 @@ export const config = {
   //   (b) đã apply tenant-rls.sql (có clause bypass) + role app NOSUPERUSER.
   // Bật khi RLS CHƯA apply cũng an toàn (chỉ set 1 GUC vô hại) nhưng tốn 1 round-trip/query.
   rlsSetConfig: (envValue('RLS_SET_CONFIG') || 'false').toLowerCase() === 'true',
+
+  /* --- Hisweetie POS MCP (CRM → POS gateway) 2026-07 ---
+   * Client SDK @dieptra/mcp-client: OAuth client_credentials + Streamable HTTP /mcp.
+   * baseUrl = origin only (vd https://sandbox-mcp.hisweetievietnam.com), không kèm /mcp.
+   * Để trống clientId/secret → feature disabled (routes trả 503). */
+  hisweetieMcpUrl: (envValue('HISWEETIE_MCP_URL') || '').replace(/\/+$/, ''),
+  hisweetieClientId: envValue('HISWEETIE_CLIENT_ID') || '',
+  hisweetieClientSecret: envValue('HISWEETIE_CLIENT_SECRET') || '',
 };

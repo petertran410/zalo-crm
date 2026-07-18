@@ -1486,6 +1486,111 @@ export async function chatRoutes(app: FastifyInstance) {
     return { messages: redacted, total, page: parseInt(page), limit: parseInt(limit) };
   });
 
+  // ── Media gallery trong hội thoại (giống panel Media Zalo) ────────────────
+  // Dùng khi tạo task/ticket từ chat: "Thêm" → mở gallery Ảnh/Video/Tệp của
+  // CHÍNH conversation này (tin đã có trong chat), KHÔNG phải kho Media CRM.
+  app.get('/api/v1/conversations/:id/media', {
+    preHandler: requireZaloAccess('read'),
+    config: { contentClass: 'content' as const, rbacResource: 'conversation' as const, rbacAction: 'access' as const },
+  }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const { id } = request.params as { id: string };
+    const q = request.query as { kind?: string; page?: string; limit?: string };
+    const kind = (q.kind || 'image').toLowerCase();
+    const allowedKinds = new Set(['image', 'video', 'file', 'all']);
+    if (!allowedKinds.has(kind)) {
+      return reply.status(400).send({ error: 'kind phải là image|video|file|all' });
+    }
+    const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(q.limit || '60', 10) || 60));
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id, orgId: user.orgId },
+      select: { id: true },
+    });
+    if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+
+    const contentTypes = kind === 'all' ? ['image', 'video', 'file'] : [kind];
+    const where = {
+      conversationId: id,
+      isDeleted: false,
+      contentType: { in: contentTypes },
+    };
+
+    const [rows, total] = await Promise.all([
+      prisma.message.findMany({
+        where,
+        orderBy: [{ zaloMsgIdNum: { sort: 'desc', nulls: 'last' } }, { sentAt: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true,
+          content: true,
+          contentType: true,
+          senderName: true,
+          senderType: true,
+          sentAt: true,
+          albumKey: true,
+          albumIndex: true,
+          albumTotal: true,
+        },
+      }),
+      prisma.message.count({ where }),
+    ]);
+
+    function extractMedia(content: string | null, contentType: string): {
+      url: string | null;
+      thumbUrl: string | null;
+      name: string | null;
+    } {
+      if (!content) return { url: null, thumbUrl: null, name: null };
+      if (content.startsWith('http')) {
+        return { url: content, thumbUrl: contentType === 'image' ? content : null, name: null };
+      }
+      if (!content.startsWith('{')) return { url: null, thumbUrl: null, name: null };
+      try {
+        const p = JSON.parse(content) as Record<string, unknown>;
+        const url = String(
+          p.hdUrl || p.href || p.normalUrl || p.url || p.fileUrl || '',
+        ) || null;
+        const thumbUrl = String(
+          p.thumbUrl || p.thumb || p.hdUrl || p.href || p.normalUrl || '',
+        ) || null;
+        let name: string | null = null;
+        if (typeof p.title === 'string' && p.title.trim()) name = p.title.trim();
+        else if (typeof p.fileName === 'string' && p.fileName.trim()) name = p.fileName.trim();
+        else if (typeof p.name === 'string' && p.name.trim()) name = p.name.trim();
+        return { url, thumbUrl: contentType === 'image' ? (thumbUrl || url) : thumbUrl, name };
+      } catch {
+        return { url: null, thumbUrl: null, name: null };
+      }
+    }
+
+    const items = rows
+      .map((m) => {
+        const media = extractMedia(m.content, m.contentType);
+        if (!media.url && !media.thumbUrl) return null;
+        return {
+          messageId: m.id,
+          kind: m.contentType as 'image' | 'video' | 'file',
+          url: media.url,
+          thumbnailUrl: media.thumbUrl || media.url,
+          name: media.name
+            || (m.contentType === 'image' ? 'Ảnh' : m.contentType === 'video' ? 'Video' : 'Tệp')
+            + (m.senderName ? ` · ${m.senderName}` : ''),
+          senderName: m.senderName,
+          senderType: m.senderType,
+          sentAt: m.sentAt.toISOString(),
+          albumKey: m.albumKey,
+          albumIndex: m.albumIndex,
+          albumTotal: m.albumTotal,
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x);
+
+    return { items, total, page, limit };
+  });
+
   // ── Send message ─────────────────────────────────────────────────────────
   app.post('/api/v1/conversations/:id/messages', { preHandler: requireZaloAccess('chat') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;

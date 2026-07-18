@@ -15,6 +15,7 @@ export type ActivityCategory =
   | 'appointment'    // Lịch hẹn: create / update / complete / cancel / reschedule
   | 'task'            // Công việc (Task V1 2026-07-07): create / update / complete / reopen / delete
   | 'ticket'          // Ticket (KH complaint/request V1 2026-07-09): create / update / status_change / resolve / delete
+  | 'billing'         // Hoá đơn từ chat (goal 4, 2026-07-18): draft create / dispatch sandbox / dispatch fail
   | 'interaction'     // Tổng hợp interaction (first_inbound, silent_30d...) — KHÔNG log từng msg
   | 'system'          // contact_link_parent, merge, import, migration
   | 'automation'      // Bot actions (auto-tag, auto-score...)
@@ -85,6 +86,11 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   ticket_resolve: 'ticket',
   ticket_reopen: 'ticket',
   ticket_delete: 'ticket',
+
+  // billing (Hoá đơn từ chat goal 4, 2026-07-18)
+  billing_draft_create: 'billing',
+  billing_dispatch_sent: 'billing',
+  billing_dispatch_fail: 'billing',
 
   // interaction
   first_inbound: 'interaction',

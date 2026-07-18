@@ -167,6 +167,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'channels/rate-limit',       name: 'Settings.RateLimit',       component: () => import('@/views/settings/SettingsComingSoon.vue'), props: { feature: 'rate-limit' }, meta: { resource: 'settings' } },
       // Automation tech-settings route → extension bundle (eeSettingsChildren).
       { path: 'channels/integrations',     name: 'Settings.Integrations',    component: () => import('@/views/IntegrationsView.vue'), meta: { resource: 'settings' } },
+      { path: 'channels/hisweetie-pos',    name: 'Settings.HisweetiePos',    component: () => import('@/views/HisweetiePosView.vue'), meta: { resource: 'settings' } },
 
       // 🛠 Dev & API
       { path: 'dev/api',           name: 'Settings.Api',          component: () => import('@/views/ApiSettingsView.vue'), meta: { resource: 'webhook' } },
@@ -388,6 +389,7 @@ const ROUTE_TITLES: Record<string, string> = {
   'Settings.RateLimit': 'Giới hạn tốc độ',
   'Settings.Automation': 'Cài đặt Automation',
   'Settings.Integrations': 'Tích hợp',
+  'Settings.HisweetiePos': 'Hisweetie POS',
   'Settings.Api': 'API & Webhook',
   'Settings.PublicToken': 'Public Token',
   'Settings.FeatureFlags': 'Feature Flags',

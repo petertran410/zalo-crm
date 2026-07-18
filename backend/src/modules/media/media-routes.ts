@@ -19,7 +19,7 @@ import { userHasGrant } from '../rbac/permission-group-service.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
-import { registerAsset, bumpUsage, resolveSavedVisibility, generateWatermarkVariant, disableWatermark, logMediaUsage, normalizeTags, type MediaKind } from './media-service.js';
+import { registerAsset, bumpUsage, resolveSavedVisibility, generateWatermarkVariant, disableWatermark, saveAnnotatedVariant, logMediaUsage, normalizeTags, type MediaKind } from './media-service.js';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 import { createMediaMessage, getUserFullName } from '../chat/chat-helpers.js';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
@@ -28,6 +28,7 @@ import { uploadBuffer, getObjectBuffer, keyFromPublicUrl } from '../../shared/st
 import { scanOrPass } from '../../shared/security/clamav-client.js';
 import { readFile } from 'node:fs/promises';
 import { logger } from '../../shared/utils/logger.js';
+import { saveOneMessageToMedia, type SaveOneResult } from './save-from-chat-helper.js';
 
 const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
@@ -109,150 +110,6 @@ export function buildSendFileName(
   } catch { /* ignore */ }
   if (!ext) ext = MIME_EXT[blob.mimeType] || '.bin';
   return base + ext;
-}
-
-/**
- * Kết quả lưu 1 tin nhắn vào kho (dùng chung cho single + batch/album).
- * status: 'ok' | 'skipped' (tin không có media) | 'blocked' (nick Riêng tư không phải chủ) | 'error'.
- */
-interface SaveOneResult {
-  messageId: string;
-  status: 'ok' | 'skipped' | 'blocked' | 'error';
-  asset?: { id: string; name: string };
-  deduped?: boolean;
-  reason?: string;
-}
-
-/**
- * Lưu 1 tin nhắn (ảnh/file) vào kho — DRY helper cho /save-from-chat (1 tin) và
- * /save-from-chat-batch (cả album / chọn nhiều). KHÔNG throw: trả status để batch
- * tổng hợp (1 ảnh lỗi không làm hỏng cả album). Giữ nguyên privacy guard D11 + audit.
- */
-async function saveOneMessageToMedia(args: {
-  orgId: string;
-  userId: string;
-  messageId: string;
-  visibility?: 'private' | 'public';
-}): Promise<SaveOneResult> {
-  const { orgId, userId, messageId } = args;
-  const message = await prisma.message.findFirst({
-    where: { id: messageId, conversation: { orgId } },
-    include: { conversation: { include: { zaloAccount: true } } },
-  });
-  if (!message) return { messageId, status: 'error', reason: 'Không tìm thấy tin nhắn' };
-
-  const nick = message.conversation.zaloAccount;
-  const isPrivateNick = nick.privacyMode === 'main';
-  const vis = resolveSavedVisibility({
-    nickPrivacyMode: nick.privacyMode,
-    nickOwnerUserId: nick.ownerUserId,
-    viewerUserId: userId,
-    requested: args.visibility,
-  });
-  if (vis.blocked) {
-    return { messageId, status: 'blocked', reason: 'Tin từ nick Riêng tư — chỉ chính chủ nick mới lưu được.' };
-  }
-
-  let parsed: any = {};
-  try { parsed = JSON.parse(message.content || '{}'); } catch { /* not json */ }
-  const url: string | undefined = parsed.href || parsed.hdUrl || parsed.normalUrl || parsed.url || parsed.fileUrl;
-  if (!url) return { messageId, status: 'skipped', reason: 'Tin này không có media để lưu' };
-
-  const ct = message.contentType;
-  let kind: MediaKind = ct === 'image' ? 'image' : ct === 'video' ? 'video' : 'file';
-
-  // FIX 2026-06-12 (anh báo: tệp toàn "Lưu từ chat" → sale không phân biệt được).
-  // Zalo lưu TÊN FILE THẬT (kèm đuôi) ở content.title, KHÔNG phải content.name. Đọc theo thứ
-  // tự title → fileName → name → fileUrl-basename. Ảnh thì không có title → giữ "Lưu từ chat".
-  const urlBase = (() => { try { return decodeURIComponent(String(url).split('/').pop() || ''); } catch { return ''; } })();
-  // FIX 2026-06-12 (anh báo file .doc/.xlsx lỗi): Zalo còn để ĐUÔI CHUẨN ở
-  // content.params.fileExt ("doc"/"xlsx"...). params là STRING json lồng → parse lần 2.
-  // Đây là nguồn đuôi đáng tin nhất; dùng để VÁ đuôi khi title thiếu đuôi.
-  const fileExt: string = (() => {
-    try {
-      const p = typeof parsed.params === 'string' ? JSON.parse(parsed.params) : parsed.params;
-      const e = String(p?.fileExt || '').replace(/^\./, '').toLowerCase().trim();
-      return /^[a-z0-9]{1,5}$/.test(e) ? e : '';
-    } catch { return ''; }
-  })();
-  let realName: string | undefined =
-    parsed.title || parsed.fileName || parsed.name
-    || (kind !== 'image' && urlBase && /\.[A-Za-z0-9]{2,5}$/.test(urlBase) ? urlBase : undefined);
-  // Nếu có tên nhưng THIẾU đuôi mà Zalo báo fileExt → ghép đuôi (vd "Hợp đồng" + ".doc").
-  if (realName && fileExt && !/\.[A-Za-z0-9]{2,5}$/.test(realName)) {
-    realName = `${realName}.${fileExt}`;
-  }
-
-  // FIX 2026-06-12 (anh báo video .mp4 lọt tab Tệp): Zalo gửi video dưới dạng ĐÍNH KÈM file
-  // (contentType='file') → kind='file' → vào tab Tệp, gửi đi mất player. Đuôi (fileExt hoặc
-  // đuôi của realName) cho biết THẬT là video → nâng kind='file'→'video' để vào tab Video,
-  // có thumbnail, gửi đi NATIVE. Chỉ NÂNG file→video (anh chốt); ảnh Zalo gửi đúng kind sẵn.
-  if (kind === 'file') {
-    const extForKind = fileExt || (realName?.match(/\.([A-Za-z0-9]{2,5})$/)?.[1] ?? '');
-    if (kindFromExt(extForKind) === 'video') {
-      kind = 'video';
-      logger.info(`[media][audit] nhận diện video từ đuôi .${extForKind} (Zalo gửi dạng file) msg=${messageId}`);
-    }
-  }
-  // 2026-06-20 (anh chốt): ẢNH Zalo không kèm tên → thay "Lưu từ chat" giống hệt nhau bằng
-  // "[tên cuối của sale] dd/mm" (vd "Ngoán 20/06") cho dễ phân biệt + biết ai lưu, khi nào.
-  // Áp cho MỌI fallback (ảnh/video/file thiếu tên thật). Sale vẫn đổi tên lại được trong kho.
-  const saver = await prisma.user.findUnique({ where: { id: userId }, select: { fullName: true } });
-  const saleLast =
-    (saver?.fullName ?? '').trim().split(/\s+/).pop()
-    || (nick.displayName ?? '').trim().split(/\s+/).pop()
-    || 'Chat';
-  const ddmm = (message.sentAt ?? new Date()).toLocaleDateString('en-GB', {
-    day: '2-digit', month: '2-digit', timeZone: 'Asia/Ho_Chi_Minh',
-  });
-  const mediaName = realName || `${saleLast} ${ddmm}`;
-
-  // Validation file (audit 2026-06-12): save-from-chat KHÔNG qua classify() như /upload.
-  // Chặn đuôi nguy hiểm (thực thi) để file độc không vào kho rồi gửi lại khách. KHÔNG dùng
-  // whitelist cứng vì file Zalo nhiều khi mime=octet-stream hợp lệ (pdf/excel) sẽ bị chặn nhầm.
-  if (kind === 'file') {
-    const fname = String(mediaName || url || '').toLowerCase();
-    const DANGEROUS = ['.exe', '.bat', '.cmd', '.scr', '.com', '.pif', '.msi', '.js', '.jar', '.vbs', '.ps1', '.sh'];
-    if (DANGEROUS.some((ext) => fname.endsWith(ext))) {
-      logger.warn(`[media][audit] chặn lưu file nguy hiểm user=${userId} name=${fname}`);
-      return { messageId, status: 'blocked', reason: 'Loại tệp này không được phép lưu vào kho (bảo mật).' };
-    }
-  }
-
-  let tmp: { path: string; cleanup: () => Promise<void> } | null = null;
-  try {
-    tmp = await downloadMediaToTemp({ url, filename: realName }, ct);
-    const buf = await readFile(tmp.path);
-    // GĐ13b: quét virus file lưu-từ-chat (fail-open mặc định; AV tắt → skip). Nhiễm → chặn lưu.
-    const av = await scanOrPass(buf, { filename: realName, userId });
-    if (av.blocked) return { messageId, status: 'blocked', reason: av.reason };
-    const mimeType = parsed.mime
-      || (kind === 'image' ? 'image/jpeg' : kind === 'video' ? 'video/mp4' : 'application/octet-stream');
-    const res = await registerAsset({
-      orgId, buffer: buf, mimeType, kind,
-      name: mediaName,
-      originalFilename: realName,
-      ownerUserId: userId, createdById: userId,
-      visibility: vis.visibility,
-      source: 'saved_from_chat',
-      // 2026-06-15: ghi nick nguồn cho MỌI ảnh lưu từ chat (cả nick thường) để hiện "ảnh từ
-      // nick nào". Cờ ENFORCE privacy tách riêng — chỉ true khi nick Riêng tư (privacyMode='main').
-      sourceZaloAccountId: nick.id,
-      sourceIsPrivateNick: isPrivateNick,
-    });
-    logger.info(`[media][audit] save_from_chat asset=${res.asset.id} user=${userId} visibility=${vis.visibility} fromPrivateNick=${isPrivateNick} deduped=${res.deduped}`);
-    await logMediaUsage({
-      orgId, mediaAssetId: res.asset.id, eventType: 'saved_from_chat', userId,
-      conversationId: message.conversationId,
-      meta: { visibility: vis.visibility, fromPrivateNick: isPrivateNick, deduped: res.deduped },
-    });
-    return { messageId, status: 'ok', asset: { id: res.asset.id, name: res.asset.name }, deduped: res.deduped };
-  } catch (err: any) {
-    logger.error('[media] save-from-chat error:', err);
-    return { messageId, status: 'error', reason: err?.message ?? 'save failed' };
-  } finally {
-    await tmp?.cleanup().catch(() => {});
-  }
 }
 
 export async function mediaRoutes(app: FastifyInstance) {
@@ -988,6 +845,54 @@ export async function mediaRoutes(app: FastifyInstance) {
       await prisma.mediaAsset.deleteMany({ where: { id: { in: victims.map((v) => v.id) } } });
       logger.info(`[media][audit] empty_trash user=${userId} deleted=${victims.length} (DB only)`);
       return { ok: true, deleted: victims.length, hasMore: victims.length === TRASH_EMPTY_BATCH };
+    },
+  );
+
+  // ── POST /api/v1/media/:id/annotate — lưu bản annotated từ FE canvas (base64) ─
+  app.post(
+    '/api/v1/media/:id/annotate',
+    { preHandler: requireGrant('media', 'edit') },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { imageBase64?: string; mimeType?: string };
+
+      const canViewAll = await userHasGrant(userId, 'media', 'view_all');
+      const asset = await prisma.mediaAsset.findFirst({
+        where: {
+          id, orgId: user.orgId, archivedAt: null,
+          ...(canViewAll ? {} : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] }),
+        },
+        select: { id: true, kind: true },
+      });
+      if (!asset) return reply.status(404).send({ error: 'Không tìm thấy media' });
+      if (asset.kind !== 'image') return reply.status(400).send({ error: 'Chỉ ảnh mới annotate được' });
+
+      const raw = (body.imageBase64 || '').trim();
+      if (!raw) return reply.status(400).send({ error: 'imageBase64 required' });
+      // Accept data URL or raw base64
+      const m = raw.match(/^data:([^;]+);base64,(.+)$/);
+      const mimeType = m?.[1] || body.mimeType || 'image/png';
+      const b64 = m?.[2] || raw;
+      let buffer: Buffer;
+      try {
+        buffer = Buffer.from(b64, 'base64');
+      } catch {
+        return reply.status(400).send({ error: 'imageBase64 không hợp lệ' });
+      }
+      if (buffer.length < 32) return reply.status(400).send({ error: 'Ảnh annotate rỗng' });
+      if (buffer.length > 25 * 1024 * 1024) return reply.status(400).send({ error: 'Ảnh annotate quá lớn (tối đa 25MB)' });
+
+      try {
+        const res = await saveAnnotatedVariant({
+          orgId: user.orgId, assetId: id, buffer, mimeType,
+        });
+        return { blobId: res.blobId, url: res.url, width: res.width, height: res.height };
+      } catch (err: any) {
+        logger.error('[media] annotate error:', err);
+        return reply.status(400).send({ error: err?.message ?? 'annotate failed' });
+      }
     },
   );
 

@@ -17,6 +17,11 @@ import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { assertContactVisible, getContactScope } from '../contacts/contact-scope.js';
 import { resolveWorkItemFromMessage } from '../chat/work-from-message.js';
 import { canMutateTask, canDeleteTask } from './task-permissions.js';
+import {
+  attachMediaToWorkItem,
+  loadAttachmentsForItems,
+  registerWorkAttachmentRoutes,
+} from '../work/work-attachments.js';
 
 const TASK_INCLUDE = {
   assignee:  { select: { id: true, fullName: true, email: true, avatarUrl: true } },
@@ -46,6 +51,13 @@ function taskLogEntity(task: { id: string; contactId: string | null }): { entity
 
 export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+
+  registerWorkAttachmentRoutes(app, {
+    workItemType: 'task',
+    basePath: '/api/v1/tasks',
+    loadItem: (orgId, id) => prisma.task.findFirst({ where: { id, orgId }, select: { id: true } }),
+    canMutate: canMutateTask,
+  });
 
   // ── GET /api/v1/tasks ──────────────────────────────────────────────────────
   // Query: view=mine|all, status=open|done|all, contactId?, assigneeUserId? (chỉ view=all),
@@ -107,7 +119,9 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         prisma.task.count({ where }),
       ]);
 
-      return { tasks, total, page, limit };
+      const attMap = await loadAttachmentsForItems(user.orgId, 'task', tasks.map((t) => t.id), 4);
+      const withAtt = tasks.map((t) => ({ ...t, attachments: attMap.get(t.id) ?? [] }));
+      return { tasks: withAtt, total, page, limit };
     } catch (err) {
       logger.error('[tasks] List error:', err);
       return reply.status(500).send({ error: 'Failed to fetch tasks' });
@@ -137,7 +151,9 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       // status 'done' < 'open' theo alphabet — muốn open trước nên sort tay cho rõ ràng
       tasks.sort((a, b) => (a.status === b.status ? 0 : a.status === 'open' ? -1 : 1));
 
-      return { tasks, total: tasks.length };
+      const attMap = await loadAttachmentsForItems(user.orgId, 'task', tasks.map((t) => t.id), 4);
+      const withAtt = tasks.map((t) => ({ ...t, attachments: attMap.get(t.id) ?? [] }));
+      return { tasks: withAtt, total: withAtt.length };
     } catch (err) {
       logger.error('[tasks] Contact list error:', err);
       return reply.status(500).send({ error: 'Failed to fetch tasks' });
@@ -146,7 +162,12 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
   // ── POST /api/v1/tasks ─────────────────────────────────────────────────────
   app.post('/api/v1/tasks', async (request: FastifyRequest<{
-    Body: { title?: string; description?: string; assigneeUserId?: string; contactId?: string | null; ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean; sourceMessageId?: string | null };
+    Body: {
+      title?: string; description?: string; assigneeUserId?: string; contactId?: string | null;
+      ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean; sourceMessageId?: string | null;
+      sourceMessageIds?: string[] | null; mediaAssetIds?: string[] | null;
+      attachments?: Array<{ mediaAssetId: string; variantBlobId?: string | null; sourceMessageId?: string | null }> | null;
+    };
   }>, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -219,15 +240,38 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         include: TASK_INCLUDE,
       });
 
+      const sourceMessageIds = [
+        ...(Array.isArray(request.body?.sourceMessageIds) ? request.body!.sourceMessageIds! : []),
+        ...(sourceMessageId ? [sourceMessageId] : []),
+      ];
+      let attachmentCount = 0;
+      try {
+        attachmentCount = await attachMediaToWorkItem({
+          orgId: user.orgId,
+          userId: user.id,
+          workItemType: 'task',
+          workItemId: task.id,
+          sourceMessageIds,
+          mediaAssetIds: request.body?.mediaAssetIds,
+          attachments: request.body?.attachments,
+        });
+      } catch (attErr) {
+        logger.warn('[tasks] attach media error:', attErr);
+      }
+
       logActivity({
         orgId: user.orgId,
         userId: user.id,
         action: 'task_create',
         ...taskLogEntity(task),
-        details: { taskId: task.id, title: task.title, dueAt: task.dueAt?.toISOString() ?? null, assigneeUserId },
+        details: {
+          taskId: task.id, title: task.title, dueAt: task.dueAt?.toISOString() ?? null,
+          assigneeUserId, attachmentCount,
+        },
       });
 
-      return reply.status(201).send({ task });
+      const attMap = await loadAttachmentsForItems(user.orgId, 'task', [task.id], 20);
+      return reply.status(201).send({ task: { ...task, attachments: attMap.get(task.id) ?? [] } });
     } catch (err) {
       logger.error('[tasks] Create error:', err);
       return reply.status(500).send({ error: 'Failed to create task' });

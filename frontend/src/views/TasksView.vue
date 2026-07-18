@@ -89,6 +89,11 @@
               <span class="t-desc">{{ it.data.summary }}</span>
             </template>
           </div>
+          <ThumbStrip
+            v-if="it.data.attachments?.length"
+            :items="it.data.attachments"
+            @open="openAttachments(it)"
+          />
         </div>
 
         <!-- Assignee (view Tất cả) -->
@@ -112,6 +117,14 @@
 
     <!-- Editor modal -->
     <WorkItemEditor v-model="showEditor" :edit-item="editingItem" @created="onSaved" @updated="onSaved" />
+
+    <AttachmentManagerPopover
+      v-model="showAttMgr"
+      :work-kind="attMgrKind"
+      :work-item-id="attMgrId"
+      :attachments="attMgrList"
+      @changed="onAttachmentsChanged"
+    />
   </div>
 </template>
 
@@ -123,7 +136,10 @@ import { useToast } from '@/composables/use-toast';
 import { useConfirm } from '@/composables/use-confirm';
 import { useTasks, isOverdue as isTaskOverdue, isDueToday, dueLabel, type Task } from '@/composables/use-tasks';
 import { useTickets, PRIORITY_META, STATUS_META, COMPLAINT_CATEGORY_META, type Ticket, type TicketStatus } from '@/composables/use-tickets';
+import type { WorkAttachment } from '@/composables/work-attachment-types';
 import WorkItemEditor, { type WorkEditItem } from '@/components/work/WorkItemEditor.vue';
+import ThumbStrip from '@/components/work/ThumbStrip.vue';
+import AttachmentManagerPopover from '@/components/work/AttachmentManagerPopover.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 
 const authStore = useAuthStore();
@@ -166,6 +182,31 @@ function isOverdue(it: WorkItem): boolean {
 
 const showEditor = ref(false);
 const editingItem = ref<WorkEditItem | null>(null);
+
+const showAttMgr = ref(false);
+const attMgrKind = ref<'task' | 'complaint'>('task');
+const attMgrId = ref('');
+const attMgrList = ref<WorkAttachment[]>([]);
+
+function openAttachments(it: WorkItem) {
+  attMgrKind.value = it.kind;
+  attMgrId.value = it.data.id;
+  attMgrList.value = it.data.attachments ?? [];
+  showAttMgr.value = true;
+}
+
+function onAttachmentsChanged(list: WorkAttachment[]) {
+  const id = attMgrId.value;
+  const kind = attMgrKind.value;
+  if (kind === 'task') {
+    const t = tasks.value.find((x) => x.id === id);
+    if (t) t.attachments = list;
+  } else {
+    const t = tickets.value.find((x) => x.id === id);
+    if (t) t.attachments = list;
+  }
+  attMgrList.value = list;
+}
 
 function reload() {
   taskFilters.view = view.value;

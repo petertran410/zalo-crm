@@ -450,6 +450,14 @@
           :contact-name="headerFullName"
         />
 
+        <!-- Hoá đơn từ chat (goal 4) 2026-07-16 — chỉ hiện khi KH đã liên kết POS -->
+        <BillingSection
+          v-if="props.contactId && posCustomerId != null"
+          :contact-id="props.contactId"
+          :pos-customer-id="posCustomerId"
+          :contact-name="headerFullName"
+        />
+
         <!-- Empty state khi không có gì trong tab -->
         <div v-if="!hasAnyActivity" class="tab-empty">
           <p>Chưa có hoạt động — sau khi có conv tin nhắn, AI sẽ tự tóm tắt + phân tích cảm xúc.</p>
@@ -592,6 +600,7 @@ import { useChatContactPanel } from '@/composables/use-chat-contact-panel';
 import { displayPhone, displayPhoneIntl } from '@/composables/use-phone-format';
 import ChatAppointments from './ChatAppointments.vue';
 import WorkSection from '@/components/work/WorkSection.vue';
+import BillingSection from '@/components/chat/BillingSection.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';
@@ -857,6 +866,9 @@ async function fetchRelations(contactId: string) {
 
 // ════════ Header name (Avatar component handle initials + gender + gradient) ════════
 // B7 fix — Contact stub có thể fullName='Unknown'; fallback qua aliasInNick (props.friendship)
+// Hoá đơn từ chat (goal 4) — chỉ mở cho KH đã liên kết POS (có posCustomerId).
+const posCustomerId = computed<number | null>(() => props.contact?.posCustomerId ?? null);
+
 // rồi activeFriend.zaloDisplayName (nick đang chăm) trước khi hiện 'Khách hàng'.
 const headerFullName = computed(() => {
   const isUsable = (s: string | null | undefined): s is string =>

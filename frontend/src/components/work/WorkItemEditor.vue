@@ -166,8 +166,83 @@
             <button v-else type="button" class="link-kh-btn" @click="openCustSuggest">+ Liên kết khách hàng</button>
           </div>
 
+          <!-- Hình ảnh & tệp — chỉ khi tạo từ chat (fromMessage) -->
+          <div v-if="fromMessageState" class="tfield media-section">
+            <div class="media-head">
+              <span class="tfield-label">Hình ảnh &amp; tệp ({{ attachments.length }})</span>
+              <button
+                type="button" class="add-media-btn"
+                :disabled="!conversationId"
+                @click="showPicker = true"
+                title="Thêm từ media hội thoại Zalo"
+              >
+                <v-icon size="16">mdi-plus</v-icon> Thêm
+              </button>
+            </div>
+            <div v-if="attachments.length" class="media-grid" ref="mediaGridRef">
+              <div
+                v-for="(a, idx) in attachments"
+                :key="a.key"
+                class="media-tile"
+                :class="{ dragging: drag.activeKey.value === a.key, ghost: drag.ghostIndex.value === idx }"
+                :data-drag-key="a.key"
+                @pointerdown="onTilePointerDown($event, a)"
+                @pointermove="drag.onPointerMove"
+                @pointerup="drag.onPointerUp"
+                @pointercancel="drag.onPointerCancel"
+              >
+                <img v-if="displayAttachUrl(a)" :src="displayAttachUrl(a)!" alt="" draggable="false" />
+                <span v-else class="media-ph">{{ a.kind === 'video' ? '▶' : 'F' }}</span>
+                <div class="media-tile-actions">
+                  <button
+                    v-if="a.kind === 'image' && a.mediaAssetId" type="button" class="tile-btn" title="Annotate"
+                    @click.stop="openAnnotate(a)"
+                  ><v-icon size="13">mdi-pencil</v-icon></button>
+                  <button type="button" class="tile-btn danger" title="Gỡ" @click.stop="removeAttach(a.key)">
+                    <v-icon size="13">mdi-close</v-icon>
+                  </button>
+                </div>
+                <span class="media-tile-name">{{ a.name }}</span>
+              </div>
+            </div>
+            <div v-else class="media-empty">
+              Chưa chọn media — bấm Thêm để mở gallery ảnh/video/tệp của hội thoại này
+            </div>
+            <p v-if="pendingSourceCount > 0" class="media-hint">
+              {{ pendingSourceCount }} media sẽ đính kèm khi lưu
+            </p>
+          </div>
+
           <div v-if="error" class="error-banner"><v-icon size="15">mdi-alert-outline</v-icon> {{ error }}</div>
         </div>
+
+        <!-- Pop-out drag clone -->
+        <Teleport to="body">
+          <div
+            v-if="drag.popOut.value"
+            class="drag-clone"
+            :style="{
+              left: drag.popOut.value.x + 'px',
+              top: drag.popOut.value.y + 'px',
+              width: drag.popOut.value.w + 'px',
+              height: drag.popOut.value.h + 'px',
+            }"
+          >
+            <img v-if="drag.popOut.value.src" :src="drag.popOut.value.src" alt="" />
+          </div>
+        </Teleport>
+
+        <WorkMediaPickerDialog
+          v-model="showPicker"
+          :conversation-id="conversationId"
+          @pick="onPickerPick"
+        />
+        <WorkImageAnnotator
+          v-model="showAnnotate"
+          :media-asset-id="annotateTarget?.mediaAssetId || ''"
+          :image-url="annotateTarget ? (displayAttachUrl(annotateTarget) || '') : ''"
+          @applied="onAnnotated"
+        />
 
         <!-- Footer -->
         <div class="editor-foot">
@@ -195,6 +270,13 @@ import { orgWallClockToUtc, orgDayKey, getOrgParts } from '@/composables/use-org
 import { initials } from '@/composables/appointment-helpers';
 import { useTasks, type Task, type TaskContactLite } from '@/composables/use-tasks';
 import { useTickets, PRIORITY_META, COMPLAINT_CATEGORY_META, type Ticket, type TicketPriority, type ComplaintCategory } from '@/composables/use-tickets';
+import {
+  displayAttachUrl,
+  type WorkAttachLocal,
+} from '@/composables/work-attachment-types';
+import { usePointerDragReorder } from '@/composables/usePointerDragReorder';
+import WorkMediaPickerDialog from '@/components/work/WorkMediaPickerDialog.vue';
+import WorkImageAnnotator from '@/components/work/WorkImageAnnotator.vue';
 
 const { confirm } = useConfirm();
 const { createTask, updateTask } = useTasks();
@@ -219,9 +301,15 @@ const props = defineProps<{
     kind: 'task' | 'complaint';
     text: string;
     sourceMessageId: string;
+    /** Album / multi image — BE auto-attach all */
+    sourceMessageIds?: string[];
     senderName: string | null;
     senderIsCustomer: boolean;
   } | null;
+  /** Hội thoại Zalo đang mở — gallery "Thêm" lấy media từ chat này (không phải kho CRM). */
+  conversationId?: string | null;
+  /** Prefill attachments already in kho (optional) */
+  prefillAttachments?: WorkAttachLocal[] | null;
 }>();
 
 const emit = defineEmits<{
@@ -271,7 +359,109 @@ const error = ref('');
 
 // ── Chế độ "từ tin nhắn" (chat nhóm) ──────────────────────────────────────
 // Khi set: KH resolve ở BE từ sourceMessageId (không dùng picker). Giữ trong session modal.
-const fromMessageState = ref<{ sourceMessageId: string; senderName: string | null; senderIsCustomer: boolean } | null>(null);
+const fromMessageState = ref<{
+  sourceMessageId: string;
+  sourceMessageIds?: string[];
+  senderName: string | null;
+  senderIsCustomer: boolean;
+} | null>(null);
+
+// ── Attachments (chỉ khi fromMessage) ─────────────────────────────────────
+const attachments = ref<WorkAttachLocal[]>([]);
+const showPicker = ref(false);
+const showAnnotate = ref(false);
+const annotateTarget = ref<WorkAttachLocal | null>(null);
+const mediaGridRef = ref<HTMLElement | null>(null);
+
+const drag = usePointerDragReorder({
+  items: attachments,
+  getKey: (a) => a.key,
+  onReorder: (next) => { attachments.value = next; },
+});
+
+function onTilePointerDown(e: PointerEvent, a: WorkAttachLocal) {
+  if (!mediaGridRef.value) return;
+  drag.onPointerDown(e, a.key, mediaGridRef.value, displayAttachUrl(a));
+}
+function removeAttach(key: string) {
+  attachments.value = attachments.value.filter((x) => x.key !== key);
+}
+function onPickerPick(list: WorkAttachLocal[]) {
+  // Gallery chat: dedupe theo sourceMessageId (message trong hội thoại).
+  const existingMsg = new Set(
+    attachments.value.map((a) => a.sourceMessageId).filter(Boolean) as string[],
+  );
+  const existingAsset = new Set(
+    attachments.value.map((a) => a.mediaAssetId).filter(Boolean),
+  );
+  for (const a of list) {
+    if (a.sourceMessageId && existingMsg.has(a.sourceMessageId)) continue;
+    if (a.mediaAssetId && existingAsset.has(a.mediaAssetId)) continue;
+    attachments.value.push(a);
+  }
+}
+function openAnnotate(a: WorkAttachLocal) {
+  // Annotate cần mediaAssetId trong kho — gallery chat chưa save thì bỏ qua (annotate sau khi tạo).
+  if (!a.mediaAssetId) return;
+  annotateTarget.value = a;
+  showAnnotate.value = true;
+}
+function onAnnotated(payload: { blobId: string; url: string }) {
+  const t = annotateTarget.value;
+  if (!t) return;
+  const idx = attachments.value.findIndex((x) => x.key === t.key);
+  if (idx >= 0) {
+    attachments.value[idx] = {
+      ...attachments.value[idx],
+      variantBlobId: payload.blobId,
+      variantUrl: payload.url,
+    };
+  }
+}
+const conversationId = computed(() => props.conversationId || null);
+
+/** Số media sẽ gửi lên BE (gallery đã chọn + tin nguồn image/video/file). */
+const pendingSourceCount = computed(() => {
+  if (!fromMessageState.value) return 0;
+  const fromPicker = attachments.value
+    .map((a) => a.sourceMessageId)
+    .filter((id): id is string => !!id);
+  // Chỉ đếm tin nguồn context nếu đó là media (image/video/file), không đếm text thuần.
+  // Heuristic: nếu user đã pick gallery thì ưu tiên list pick; nếu attachments rỗng
+  // nhưng sourceMessageIds có nhiều (album) hoặc tin gốc là media → đếm context.
+  const fromContext = fromMessageState.value.sourceMessageIds ?? [fromMessageState.value.sourceMessageId];
+  return new Set([...fromContext, ...fromPicker].filter(Boolean)).size;
+});
+
+function buildAttachmentPayload() {
+  if (!fromMessageState.value) return {};
+  // Gộp: tin nguồn lúc right-click + tin user chọn thêm trong gallery chat.
+  const fromPicker = attachments.value
+    .map((a) => a.sourceMessageId)
+    .filter((id): id is string => !!id);
+  const fromContext = fromMessageState.value.sourceMessageIds?.length
+    ? fromMessageState.value.sourceMessageIds
+    : [fromMessageState.value.sourceMessageId];
+  // Nếu user đã chọn gallery: chỉ attach những gì họ chọn + (nếu tin gốc là media và chưa nằm trong pick) tin gốc.
+  // Nếu chưa chọn gì: gửi sourceMessageIds context (album / image right-click auto-attach).
+  const sourceMessageIds = fromPicker.length
+    ? [...new Set([...fromPicker, ...fromContext])].filter(Boolean)
+    : [...new Set(fromContext)].filter(Boolean);
+  // Chỉ gửi mediaAssetIds đã có trong kho (annotate / prefill). Gallery chat → rỗng, BE dùng sourceMessageIds.
+  const mediaAssetIds = attachments.value.map((a) => a.mediaAssetId).filter(Boolean);
+  const attachmentsPayload = attachments.value
+    .filter((a) => a.mediaAssetId)
+    .map((a) => ({
+      mediaAssetId: a.mediaAssetId,
+      variantBlobId: a.variantBlobId,
+      sourceMessageId: a.sourceMessageId ?? null,
+    }));
+  return {
+    sourceMessageIds,
+    mediaAssetIds: mediaAssetIds.length ? mediaAssetIds : undefined,
+    attachments: attachmentsPayload.length ? attachmentsPayload : undefined,
+  };
+}
 
 // ── Contact autocomplete ──────────────────────────────────────────────────
 const selectedContact = ref<TaskContactLite | null>(null);
@@ -333,6 +523,10 @@ watch(() => props.modelValue, (open) => {
   custSuggestOpen.value = false;
   custQuery.value = '';
   fromMessageState.value = null;
+  attachments.value = [];
+  showPicker.value = false;
+  showAnnotate.value = false;
+  annotateTarget.value = null;
   if (!fetchedUsers.value.length) fetchUsers().catch(() => {});
 
   if (props.editItem) {
@@ -386,9 +580,11 @@ watch(() => props.modelValue, (open) => {
     selectedContact.value = null;
     fromMessageState.value = {
       sourceMessageId: fm.sourceMessageId,
+      sourceMessageIds: fm.sourceMessageIds?.length ? fm.sourceMessageIds : [fm.sourceMessageId],
       senderName: fm.senderName,
       senderIsCustomer: fm.senderIsCustomer,
     };
+    attachments.value = props.prefillAttachments ? props.prefillAttachments.map((a) => ({ ...a })) : [];
   } else {
     kind.value = props.defaultKind || 'task';
     form.title = '';
@@ -431,6 +627,7 @@ async function submit() {
   saving.value = true;
   error.value = '';
   try {
+    const attPayload = buildAttachmentPayload();
     if (kind.value === 'task') {
       const payload = {
         title: form.title.trim(),
@@ -440,7 +637,7 @@ async function submit() {
         dueHasTime: !!form.dueDate && form.hasTime && !!form.dueTime,
         // Từ tin nhắn → gửi sourceMessageId (BE resolve + gắn KH); thường → contactId từ picker.
         ...(fromMessageState.value
-          ? { sourceMessageId: fromMessageState.value.sourceMessageId }
+          ? { sourceMessageId: fromMessageState.value.sourceMessageId, ...attPayload }
           : { contactId: selectedContact.value?.id ?? null }),
       };
       if (isEdit.value && props.editItem?.kind === 'task') {
@@ -458,7 +655,7 @@ async function submit() {
         category: form.category || null,
         assigneeUserId: form.assigneeUserId,
         ...(fromMessageState.value
-          ? { sourceMessageId: fromMessageState.value.sourceMessageId }
+          ? { sourceMessageId: fromMessageState.value.sourceMessageId, ...attPayload }
           : { contactId: selectedContact.value?.id ?? null }),
       };
       if (isEdit.value && props.editItem?.kind === 'complaint') {
@@ -677,8 +874,62 @@ async function requestClose() {
   background: #fee2e2; color: #991b1b; font-size: 12.5px;
 }
 
+.media-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.add-media-btn {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 28px; padding: 0 10px; border-radius: 7px;
+  border: 1px solid #bfdbfe; background: #eff6ff; color: #2563eb;
+  font-size: 12px; font-weight: 600; cursor: pointer;
+}
+.add-media-btn:hover { background: #dbeafe; }
+.media-grid {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  touch-action: none;
+}
+.media-tile {
+  position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden;
+  background: #e5e7eb; border: 1.5px solid #e5e7eb; cursor: grab;
+  user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.media-tile.dragging { opacity: 0.35; }
+.media-tile.ghost { outline: 2px dashed #2563eb; outline-offset: -2px; }
+.media-tile img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+.media-ph {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; color: #64748b;
+}
+.media-tile-actions {
+  position: absolute; top: 4px; right: 4px; display: flex; gap: 3px;
+}
+.tile-btn {
+  width: 22px; height: 22px; border: none; border-radius: 6px;
+  background: rgba(0,0,0,.55); color: #fff; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tile-btn.danger:hover { background: #dc2626; }
+.media-tile-name {
+  position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; color: #fff;
+  background: linear-gradient(transparent, rgba(0,0,0,.72)); padding: 10px 4px 3px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.media-empty {
+  font-size: 12px; color: #94a3b8; font-style: italic;
+  padding: 12px; text-align: center; border: 1px dashed #e5e7eb; border-radius: 8px;
+}
+.media-hint { font-size: 11px; color: #64748b; margin: 0; }
+.drag-clone {
+  position: fixed; z-index: 200; pointer-events: none;
+  border-radius: 10px; overflow: hidden;
+  box-shadow: 0 12px 32px rgba(0,0,0,.35);
+  transform: scale(1.05) rotate(2deg); opacity: 0.95;
+}
+.drag-clone img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
 @media (max-width: 768px) {
   .row-2 { grid-template-columns: 1fr; }
   .editor { width: 100%; }
+  .media-grid { grid-template-columns: repeat(2, 1fr); }
 }
 </style>

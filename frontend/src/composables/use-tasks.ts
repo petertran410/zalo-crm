@@ -12,6 +12,7 @@
 import { ref, reactive } from 'vue';
 import { api } from '@/api/index';
 import { orgDayKey, getOrgParts, formatInOrgTz } from '@/composables/use-org-timezone';
+import type { WorkAttachment, WorkAttachmentInput } from '@/composables/work-attachment-types';
 
 export interface TaskUserLite {
   id: string;
@@ -41,6 +42,7 @@ export interface Task {
   contact?: TaskContactLite | null;
   doneAt: string | null;
   doneBy?: TaskUserLite | null;
+  attachments?: WorkAttachment[];
   createdAt: string;
   updatedAt: string;
 }
@@ -60,6 +62,9 @@ export interface TaskPayload {
   dueHasTime?: boolean;
   /** Tạo từ tin nhắn chat nhóm — BE resolve KH từ người gửi + tự cấp quyền (2026-07-10). */
   sourceMessageId?: string | null;
+  sourceMessageIds?: string[] | null;
+  mediaAssetIds?: string[] | null;
+  attachments?: WorkAttachmentInput[] | null;
 }
 
 /** Quá hạn = đang mở + có hạn + NGÀY hạn (org TZ) < NGÀY hôm nay (org TZ). */
@@ -200,8 +205,32 @@ export function useTasks() {
     }
   }
 
+  async function fetchTaskAttachments(id: string): Promise<WorkAttachment[]> {
+    const res = await api.get(`/tasks/${id}/attachments`);
+    return res.data.attachments ?? [];
+  }
+
+  async function removeTaskAttachment(taskId: string, attachmentId: string): Promise<void> {
+    await api.delete(`/tasks/${taskId}/attachments/${attachmentId}`);
+  }
+
+  async function reorderTaskAttachments(taskId: string, attachmentIds: string[]): Promise<WorkAttachment[]> {
+    const res = await api.post(`/tasks/${taskId}/attachments/reorder`, { attachmentIds });
+    return res.data.attachments ?? [];
+  }
+
+  async function updateTaskAttachment(
+    taskId: string,
+    attachmentId: string,
+    patch: { variantBlobId?: string | null },
+  ): Promise<WorkAttachment | null> {
+    const res = await api.patch(`/tasks/${taskId}/attachments/${attachmentId}`, patch);
+    return res.data.attachment ?? null;
+  }
+
   return {
     tasks, total, loading, saving, filters,
     fetchTasks, fetchContactTasks, createTask, updateTask, toggleTask, deleteTask,
+    fetchTaskAttachments, removeTaskAttachment, reorderTaskAttachments, updateTaskAttachment,
   };
 }
