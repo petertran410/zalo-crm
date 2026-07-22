@@ -108,7 +108,7 @@
             :name="displayName(conv)"
             :size="41"
             :is-group="conv.threadType === 'group'"
-            :platform="conv.threadType === 'user' ? 'zalo' : null"
+            :platform="platformOf(conv)"
             :gradient-seed="conv.id"
           />
           <!-- Mini nick avatar — góc dưới-trái cho biết conv thuộc nick Zalo nào.
@@ -682,6 +682,12 @@ function displayName(conv: Conversation): string {
   const friendship = conv.friendship as { zaloDisplayName?: string | null } | undefined;
   if (isUsableName(friendship?.zaloDisplayName)) return friendship!.zaloDisplayName!;
   return 'Unknown';
+}
+// Multi-channel Phase 2 (2026-07-22): badge kênh trên avatar — FB dùng badge riêng để
+// sale phân biệt hội thoại Messenger với Zalo ngay ở cột danh sách. Nhóm không có badge.
+function platformOf(conv: Conversation): 'zalo' | 'facebook' | null {
+  if (conv.threadType !== 'user') return null;
+  return (conv as Conversation & { channel?: string }).channel === 'facebook' ? 'facebook' : 'zalo';
 }
 function avatarSrcOf(conv: Conversation): string | null {
   if (conv.threadType === 'group') {

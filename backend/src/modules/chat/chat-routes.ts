@@ -467,7 +467,9 @@ export async function chatRoutes(app: FastifyInstance) {
     } = request.query as QueryParams;
 
     // T5-A (YC2): hội thoại nick đã XÓA-có-uid hiện lại (đọc-only) → DISPLAYABLE thay archivedAt:null.
-    const where: any = { orgId: user.orgId, deletedAt: null, zaloAccount: DISPLAYABLE_NICK_WHERE };
+    // Multi-channel Phase 2 (2026-07-22): điều kiện nick (zaloAccount) KHÔNG đặt ở đây nữa —
+    // filter quan hệ zaloAccount loại luôn hội thoại FB (zaloAccount=null). Áp ở dưới, OR với FB.
+    const where: any = { orgId: user.orgId, deletedAt: null };
     if (tab) where.tab = tab;
     if (threadType === 'user' || threadType === 'group') {
       where.threadType = threadType;
@@ -505,6 +507,17 @@ export async function chatRoutes(app: FastifyInstance) {
     else if (folderAccountIds !== null && folderAccountIds.length === 0) {
       // Folder rỗng (chưa add nick nào) → return empty list
       where.zaloAccountId = 'EMPTY_FOLDER_NO_MATCH';
+    }
+
+    // Multi-channel Phase 2 (2026-07-22): hội thoại FB hiện CHUNG tab chat với Zalo.
+    // Điều kiện "nick hiển thị được" chỉ có nghĩa với hội thoại Zalo → OR cùng channel='facebook'.
+    // Khi user LỌC theo nick/folder cụ thể → giữ thuần Zalo (không trộn FB vào bộ lọc nick).
+    const nickFiltered = accountIdList.length > 0 || (folderAccountIds !== null && folderAccountIds.length === 0);
+    where.AND = where.AND ?? [];
+    if (nickFiltered) {
+      where.zaloAccount = DISPLAYABLE_NICK_WHERE;
+    } else {
+      where.AND.push({ OR: [{ channel: 'facebook' }, { zaloAccount: DISPLAYABLE_NICK_WHERE }] });
     }
 
     // Contact-level filter — gộp vào where.contact nested
@@ -786,7 +799,9 @@ export async function chatRoutes(app: FastifyInstance) {
         const allowed = accountIdList.filter(id => displayableIds.includes(id));
         where.zaloAccountId = allowed.length === 1 ? allowed[0] : { in: allowed };
       } else {
-        where.zaloAccountId = { in: displayableIds };
+        // Multi-channel Phase 2 (2026-07-22): scope nick Zalo KHÔNG áp cho hội thoại FB
+        // (không có nick) → OR để sale thường vẫn thấy FB. Vẫn org-scoped ở where.orgId.
+        where.AND.push({ OR: [{ channel: 'facebook' }, { zaloAccountId: { in: displayableIds } }] });
       }
     }
 
@@ -1299,6 +1314,9 @@ export async function chatRoutes(app: FastifyInstance) {
         select: {
           id: true,
           zaloMsgId: true,
+          // Multi-channel Phase 2 (2026-07-22): id tin kênh khác (FB mid). FE dùng làm bằng chứng
+          // "kênh đã nhận" để KHÔNG kẹt trạng thái "Đang gửi" (FB không có delivered/seen như Zalo).
+          externalMsgId: true,
           zaloMsgIdNum: true, // FE primary sort key (string format vì BigInt → JSON via serializer)
           senderUid: true,
           senderName: true,

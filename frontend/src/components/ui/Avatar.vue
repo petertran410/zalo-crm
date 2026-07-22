@@ -44,12 +44,18 @@
       {{ gender === 'female' ? '♀' : '♂' }}
     </span>
 
-    <!-- Platform mark (Z badge cho Zalo) -->
+    <!-- Platform mark (Z badge cho Zalo, f badge cho Facebook Messenger — multi-channel 2026-07-22) -->
     <span
       v-if="!isGroup && platform === 'zalo'"
       class="av-platform"
       :style="platformBadgeStyle"
     >Z</span>
+    <span
+      v-else-if="!isGroup && platform === 'facebook'"
+      class="av-platform av-platform--fb"
+      :style="platformBadgeStyle"
+      title="Facebook Messenger"
+    >f</span>
   </div>
 </template>
 
@@ -63,7 +69,7 @@ const props = withDefaults(defineProps<{
   isGroup?: boolean;
   groupMembersCount?: number | null;
   gender?: string | null;
-  platform?: 'zalo' | null;
+  platform?: 'zalo' | 'facebook' | null;
   /** String dùng để hash ra gradient màu khi không có src (mặc định = name) */
   gradientSeed?: string;
   /** Title HTML tooltip */
@@ -253,6 +259,9 @@ const platformBadgeStyle = computed(() => {
   display: flex; align-items: center; justify-content: center;
   z-index: 1;
 }
+
+/* Facebook Messenger — badge xanh FB (multi-channel 2026-07-22) */
+.av-platform--fb { background: #0866ff; font-family: Georgia, 'Times New Roman', serif; }
 
 /* Khi có cả gender + platform: ẩn platform (gender ưu tiên) */
 .smax-av:has(.av-gender) .av-platform { display: none; }

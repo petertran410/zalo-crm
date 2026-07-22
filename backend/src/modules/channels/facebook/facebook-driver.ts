@@ -56,6 +56,38 @@ class FacebookDriver implements ChannelDriver {
     }
   }
 
+  /**
+   * Tên KH qua Conversations API — GET /{page-id}/conversations?user_id={psid}&fields=participants.
+   * QUAN TRỌNG: endpoint này trả tên cho MỌI người đã nhắn Page, kể cả người KHÔNG có app role
+   * (User Profile API ở trên chỉ trả cho người có role khi app còn Development mode).
+   * account.externalId phải là Page ID. Trả null nếu lỗi.
+   */
+  async getUserNameViaConversations(account: ChannelAccountRef, psid: string): Promise<string | null> {
+    try {
+      const url = `https://graph.facebook.com/${GRAPH_VERSION}/${encodeURIComponent(account.externalId)}/conversations`
+        + `?user_id=${encodeURIComponent(psid)}&fields=participants&access_token=${encodeURIComponent(account.accessToken)}`;
+      const res = await fetch(url);
+      if (!res.ok) return null;
+      const d = (await res.json().catch(() => ({}))) as {
+        data?: Array<{ participants?: { data?: Array<{ id?: string; name?: string }> } }>;
+      };
+      for (const conv of d.data ?? []) {
+        // Participant KHÁC Page chính là KH.
+        const who = (conv.participants?.data ?? []).find((x) => x.id && x.id !== account.externalId);
+        if (who?.name?.trim()) return who.name.trim();
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Resolve tên KH: thử User Profile API trước, fallback Conversations API. */
+  async resolveUserName(account: ChannelAccountRef, psid: string): Promise<string | null> {
+    return (await this.getUserProfileName(account, psid))
+      ?? (await this.getUserNameViaConversations(account, psid));
+  }
+
   async fetchHistory(_account: ChannelAccountRef, _threadId: string, _since?: Date | null): Promise<NormalizedInboundMessage[]> {
     // Phase 2: GET /{page-id}/conversations → /{thread-id}/messages (phân trang, không giới hạn 24h)
     throw new Error(NOT_IMPLEMENTED);

@@ -21,10 +21,6 @@
           <v-icon :icon="tab.icon" size="16" class="ic-svg" />{{ tab.label }}
         </RouterLink>
 
-        <!-- Multi-channel Phase 2 (2026-07-21) — link inbox Facebook tối giản (test). -->
-        <RouterLink to="/fb-inbox" class="nav-tab" :class="{ active: $route.path === '/fb-inbox' }">
-          <v-icon icon="mdi-facebook-messenger" size="16" class="ic-svg" />FB
-        </RouterLink>
 
         <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
              RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
