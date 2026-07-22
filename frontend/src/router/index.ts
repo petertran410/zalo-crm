@@ -50,6 +50,13 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: 'conversation' },
   },
   {
+    // Multi-channel Phase 2 (2026-07-21) — inbox Facebook tối giản (test kết nối).
+    path: '/fb-inbox',
+    name: 'FacebookInbox',
+    component: () => import('@/views/FacebookInboxView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/contacts',
     name: 'Contacts',
     component: () => import('@/views/ContactsView.vue'),

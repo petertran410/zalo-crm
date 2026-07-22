@@ -34,6 +34,8 @@ export async function assertConversationReadAccess(request: FastifyRequest, repl
     return null;
   }
   if (['owner', 'admin'].includes(user.role)) return conversation;
+  // Multi-channel Phase 2 (2026-07-21): hội thoại FB (zaloAccountId=null) không gate theo Zalo access.
+  if (!conversation.zaloAccountId) return conversation;
 
   const access = await prisma.zaloAccountAccess.findFirst({
     where: { zaloAccountId: conversation.zaloAccountId, userId: user.id },

@@ -643,7 +643,7 @@ export async function handleIncomingMessage(
               unreadCount: conversationDetails.unreadCount,
               threadId: conversationDetails.externalThreadId,
               threadType: conversationDetails.threadType,
-              zaloAccountId: conversationDetails.zaloAccountId,
+              zaloAccountId: conversationDetails.zaloAccountId ?? undefined,
             }
           : null,
         message: { id: message.id, content: message.content, contentType: message.contentType, senderType: message.senderType },

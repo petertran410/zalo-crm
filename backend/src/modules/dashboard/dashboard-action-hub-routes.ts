@@ -453,12 +453,12 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
             contactAvatar: c.contact?.avatarUrl,
             unreadCount: c.unreadCount,                  // metadata — không blur
             lastMessageAt: c.lastMessageAt,              // metadata — không blur
-            nickName: c.zaloAccount.displayName,
+            nickName: c.zaloAccount?.displayName ?? null,
             status: c.contact?.status,
             // 2026-06-11 — preview tin (đã redact) + cờ blur + cờ nick riêng tư
             messagePreview: preview,
             redacted: !canSee && !!m && !m.isDeleted,
-            isPrivateNick: c.zaloAccount.privacyMode === 'main',
+            isPrivateNick: c.zaloAccount?.privacyMode === 'main',
           };
         }),
         appointments: todayAppts.map((a) => ({

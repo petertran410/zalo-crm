@@ -810,12 +810,13 @@ model Status {
 model Conversation {
   id                String    @id @default(uuid())
   orgId             String    @map("org_id")
-  zaloAccountId     String    @map("zalo_account_id")
+  // Multi-channel Phase 2 (2026-07-21) — nới nullable: row kênh FB/TikTok KHÔNG có zaloAccount.
+  // Row Zalo cũ vẫn luôn set; code Zalo đọc field này phải guard null (chỉ conv FB mới null).
+  zaloAccountId     String?   @map("zalo_account_id")
   contactId         String?   @map("contact_id")
   // ── Multi-channel V1 (2026-07-10) ── Kênh hội thoại. Mặc định 'zalo' → mọi row cũ backfill
   // 'zalo', code Zalo cũ KHÔNG đổi. Kênh mới (facebook | tiktok_shop) set tường minh khi tạo.
-  // GIỮ zaloAccountId non-null ở phase này để tránh ripple type khắp 901 call site; row FB
-  // dùng facebookPageAccountId + nới zaloAccountId → nullable ở phase 2 khi THỰC chèn conv FB.
+  // zaloAccountId nullable từ Phase 2 (2026-07-21) — row FB dùng facebookPageAccountId thay thế.
   channel               String    @default("zalo") @map("channel")
   facebookPageAccountId String?   @map("facebook_page_account_id")
   threadType        String    @default("user") // user, group
@@ -838,7 +839,7 @@ model Conversation {
   createdAt         DateTime  @default(now()) @map("created_at")
 
   org           Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  zaloAccount   ZaloAccount          @relation(fields: [zaloAccountId], references: [id], onDelete: Cascade)
+  zaloAccount   ZaloAccount?         @relation(fields: [zaloAccountId], references: [id], onDelete: Cascade)
   // Multi-channel V1 — conv thuộc 1 Page Facebook (khi channel='facebook'). Cascade: gỡ Page → xoá conv của nó.
   facebookPageAccount FacebookPageAccount? @relation(fields: [facebookPageAccountId], references: [id], onDelete: Cascade)
   contact       Contact?             @relation(fields: [contactId], references: [id])

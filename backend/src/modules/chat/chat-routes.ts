@@ -15,6 +15,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { randomUUID } from 'node:crypto';
 import type { Server } from 'socket.io';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
+import { sendFacebookMessage } from '../channels/facebook/facebook-outbound-service.js';
 import { applyContactAggregateFromMessage, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 // M53 2026-05-30 — AI Trợ Lý cho Virtual Chat (KH no-Zalo)
@@ -866,8 +867,10 @@ export async function chatRoutes(app: FastifyInstance) {
     // (account, uid) khi seed legacy. OR-clause với pair trùng → planner duplicate
     // index scan (M-tier optimization 2026-05-21).
     const userPairsRaw = conversations
-      .filter(c => c.threadType === 'user' && c.contactId && c.externalThreadId)
-      .map(c => ({ zaloAccountId: c.zaloAccountId, zaloUidInNick: c.externalThreadId! }));
+      // Multi-channel Phase 2 (2026-07-21): bỏ conv kênh khác (FB, zaloAccountId=null) khỏi
+      // enrichment Friend Zalo — chúng không có Friend/nick Zalo.
+      .filter(c => c.threadType === 'user' && c.contactId && c.externalThreadId && c.zaloAccountId)
+      .map(c => ({ zaloAccountId: c.zaloAccountId!, zaloUidInNick: c.externalThreadId! }));
     const pairKeys = new Set<string>();
     const userPairs: typeof userPairsRaw = [];
     for (const p of userPairsRaw) {
@@ -1023,7 +1026,8 @@ export async function chatRoutes(app: FastifyInstance) {
     const { getZaloScope } = await import('../zalo/zalo-scope.js');
     const scope = await getZaloScope(user.id, user.orgId, user.role);
     // T6-consumer (YC2): mở chi tiết dùng displayableIds (nick xóa-có-uid đọc-only). Gửi gate riêng (T7).
-    if (!scope.isOrgAdmin && !scope.displayableIds.includes(conversation.zaloAccountId)) {
+    // Multi-channel Phase 2 (2026-07-21): hội thoại FB (zaloAccountId=null) KHÔNG theo Zalo scope → bỏ qua check.
+    if (conversation.zaloAccountId && !scope.isOrgAdmin && !scope.displayableIds.includes(conversation.zaloAccountId)) {
       return reply.status(403).send({ error: 'Bạn không có quyền xem hội thoại này', code: 'not_in_scope' });
     }
 
@@ -1047,7 +1051,7 @@ export async function chatRoutes(app: FastifyInstance) {
       autoTags: unknown;
       aliasInNick: string | null;
     } | null = null;
-    if (conversation.threadType === 'user' && conversation.contactId && conversation.externalThreadId) {
+    if (conversation.zaloAccountId && conversation.threadType === 'user' && conversation.contactId && conversation.externalThreadId) {
       const f = await prisma.friend.findUnique({
         where: { zaloAccountId_zaloUidInNick: { zaloAccountId: conversation.zaloAccountId, zaloUidInNick: conversation.externalThreadId } },
         select: {
@@ -1083,7 +1087,9 @@ export async function chatRoutes(app: FastifyInstance) {
       if (outContact) outContact = redactContact(outContact, privacyCtx);
       if (outFriendship) {
         outFriendship = redactFriend(
-          { ...outFriendship, zaloAccount: { privacyMode: conversation.zaloAccount.privacyMode, ownerUserId: conversation.zaloAccount.ownerUserId } } as any,
+          { ...outFriendship, zaloAccount: conversation.zaloAccount
+            ? { privacyMode: conversation.zaloAccount.privacyMode, ownerUserId: conversation.zaloAccount.ownerUserId }
+            : { privacyMode: 'sub', ownerUserId: null } } as any,
           privacyCtx,
         );
       }
@@ -1111,6 +1117,8 @@ export async function chatRoutes(app: FastifyInstance) {
       select: { id: true, contactId: true, zaloAccountId: true, externalThreadId: true, threadType: true },
     });
     if (!conv) return reply.status(404).send({ error: 'Conversation not found' });
+    // Multi-channel Phase 2 (2026-07-21): touch-profile là đồng bộ hồ sơ Zalo → bỏ qua kênh khác (FB).
+    if (!conv.zaloAccountId) return { ok: true, skipped: true, reason: 'not_zalo_channel' };
     if (conv.threadType !== 'user' || !conv.contactId || !conv.externalThreadId) {
       return { ok: true, skipped: true, reason: 'group_or_no_contact' };
     }
@@ -1622,6 +1630,34 @@ export async function chatRoutes(app: FastifyInstance) {
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
 
+    // Multi-channel Phase 2 (2026-07-21): hội thoại FB → gửi qua driver Graph API, KHÔNG qua Zalo path.
+    if (conversation.channel === 'facebook') {
+      if (!conversation.facebookPageAccountId || !conversation.externalThreadId) {
+        return reply.status(400).send({ error: 'Hội thoại Facebook thiếu Page/thread.', code: 'FB_CONV_INCOMPLETE' });
+      }
+      try {
+        const io = (app as any).io as Server;
+        return await sendFacebookMessage(io, {
+          orgId: user.orgId,
+          conversationId: id,
+          facebookPageAccountId: conversation.facebookPageAccountId,
+          externalThreadId: conversation.externalThreadId,
+          content: content.trim(),
+          repliedByUserId: user.id,
+        });
+      } catch (err) {
+        logger.error('[chat] FB send error:', err);
+        const emsg = err instanceof Error && err.message === 'PAGE_NOT_CONNECTED'
+          ? 'Page Facebook chưa kết nối hoặc token hỏng.'
+          : 'Gửi tin Facebook thất bại.';
+        return reply.status(502).send({ error: emsg, code: 'FB_SEND_FAILED' });
+      }
+    }
+    // Từ đây: chắc chắn hội thoại Zalo → zaloAccount non-null (narrow cho phần còn lại của handler).
+    if (!conversation.zaloAccount || !conversation.zaloAccountId) {
+      return reply.status(400).send({ error: 'Kênh không hỗ trợ gửi ở route này.', code: 'NOT_ZALO_CHANNEL' });
+    }
+
     // T7 (YC2 2026-06-20): CHẶN GỬI qua nick ĐÃ XÓA (archivedAt) — kể cả hội thoại ảo. Đặt
     // TRƯỚC isVirtual + TRƯỚC mọi nhánh tạo Message. Sau T5/T6 hội thoại nick xóa hiện lại
     // (đọc-only) → guard này chặn sale gửi nhầm. Nick chưa-kết-nối (status) để nhánh gửi thật lo.
@@ -1966,6 +2002,10 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    // Multi-channel Phase 2 (2026-07-21): gửi block (automation Zalo) chỉ cho hội thoại Zalo.
+    if (!conversation.zaloAccount || !conversation.zaloAccountId) {
+      return reply.status(400).send({ error: 'Gửi block chỉ hỗ trợ hội thoại Zalo.', code: 'NOT_ZALO_CHANNEL' });
+    }
 
     // ── Gate 2: virtual conv = KH no-Zalo → không dispatch SDK được ────────
     if (conversation.isVirtual) {
@@ -2171,7 +2211,8 @@ export async function chatRoutes(app: FastifyInstance) {
               zaloMsgId: zaloMsgId || null,
               zaloMsgIdNum: zaloMsgId && /^\d+$/.test(zaloMsgId) ? BigInt(zaloMsgId) : null,
               senderType: 'self',
-              senderUid: conversation.zaloAccount.zaloUid || '',
+              // zaloAccount non-null (đã guard đầu handler); narrowing rớt trong loop+await → assert.
+              senderUid: conversation.zaloAccount!.zaloUid || '',
               senderName: 'Staff',
               content: p.content,
               contentType: p.contentType,
@@ -2195,8 +2236,8 @@ export async function chatRoutes(app: FastifyInstance) {
             accountId: zaloAccountId,
             conversationId: id,
             message: safeMessage,
-            privacyMode: conversation.zaloAccount.privacyMode,
-            ownerUserId: conversation.zaloAccount.ownerUserId,
+            privacyMode: conversation.zaloAccount!.privacyMode,
+            ownerUserId: conversation.zaloAccount!.ownerUserId,
           });
         }
         // D3 (2026-06-13): gửi media qua Khối (gửi tay) → bump usageCount để đo ảnh/file hiệu quả.
@@ -2281,6 +2322,10 @@ export async function chatRoutes(app: FastifyInstance) {
       include: { zaloAccount: true },
     });
     if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+    // Multi-channel Phase 2 (2026-07-21): upload ảnh qua Zalo SDK → chỉ hội thoại Zalo.
+    if (!conversation.zaloAccount || !conversation.zaloAccountId) {
+      return reply.status(400).send({ error: 'Gửi ảnh chỉ hỗ trợ hội thoại Zalo.', code: 'NOT_ZALO_CHANNEL' });
+    }
     if (!conversation.externalThreadId) return reply.status(400).send({ error: 'No external thread ID' });
 
     const instance = zaloPool.getInstance(conversation.zaloAccountId);

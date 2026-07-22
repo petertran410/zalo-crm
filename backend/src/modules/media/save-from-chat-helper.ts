@@ -43,7 +43,9 @@ export async function saveOneMessageToMedia(args: {
   });
   if (!message) return { messageId, status: 'error', reason: 'Không tìm thấy tin nhắn' };
 
+  // Multi-channel Phase 2 (2026-07-21): lưu media từ chat hiện chỉ hỗ trợ hội thoại Zalo (có nick).
   const nick = message.conversation.zaloAccount;
+  if (!nick) return { messageId, status: 'error', reason: 'Chỉ hỗ trợ lưu từ hội thoại Zalo' };
   const isPrivateNick = nick.privacyMode === 'main';
   const vis = resolveSavedVisibility({
     nickPrivacyMode: nick.privacyMode,

@@ -143,7 +143,8 @@ async function processUpdate(u: TgMessageUpdate): Promise<void> {
       },
     },
   });
-  if (!conv || !conv.externalThreadId) return;
+  // Multi-channel Phase 2 (2026-07-21): cầu Telegram chỉ cho hội thoại Zalo (có zaloAccount).
+  if (!conv || !conv.externalThreadId || !conv.zaloAccount || !conv.zaloAccountId) return;
   if (!conv.zaloAccount.telegramBridge?.enabled) return;
   // (Phase 3: checkZaloAccess theo Telegram-user↔CRM-user. Phase 2: thành viên group = quyền.)
 
