@@ -28,8 +28,8 @@ services:
       # MEDIA_AV_ENABLED=1 trong .env SAU khi service clamav 'healthy' (tải DB virus xong ~vài phút).
       - MEDIA_AV_ENABLED=${MEDIA_AV_ENABLED:-0}
       - MEDIA_AV_FAIL_CLOSED=${MEDIA_AV_FAIL_CLOSED:-0}
-      - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
-      - CLAMAV_PORT=${CLAMAV_PORT:-3310}
+      # - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
+      # - CLAMAV_PORT=${CLAMAV_PORT:-3310}
     depends_on:
       db:
         condition: service_healthy
@@ -88,7 +88,7 @@ services:
     container_name: zalo-crm-redis
     restart: unless-stopped
     environment:
-      - TZ=Asia/Ho_Chi_Minh   # log Redis giờ VN (Cách 2); Redis không lưu thời gian nghiệp vụ
+      - TZ=Asia/Ho_Chi_Minh # log Redis giờ VN (Cách 2); Redis không lưu thời gian nghiệp vụ
     # ── Luồng Mục Tiêu M1 (2026-06-01) ──
     # AOF every 1s (Issue #5 5A — crash recovery survive: BullMQ jobs delayed/waiting
     # persist even if container kill -9). Verified POC spike 5/5 PASS 2026-06-01.
@@ -119,9 +119,9 @@ services:
       # SECURITY: no defaults — deploy MUST set MINIO_ROOT_USER and
       # MINIO_ROOT_PASSWORD in .env. Previously fell back to minioadmin/
       # minioadmin which let anyone with network access pop the admin console.
-      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
-      TZ: Asia/Ho_Chi_Minh   # log MinIO giờ VN (Cách 2)
+      TZ: Asia/Ho_Chi_Minh # log MinIO giờ VN (Cách 2)
     volumes:
       - minio_data:/data
     ports:
@@ -162,7 +162,7 @@ services:
     # access-key auth.
     environment:
       # Same hard-fail pattern as minio service — no default credentials.
-      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
       S3_BUCKET: ${S3_BUCKET:-zalocrm-attachments}
 
@@ -191,26 +191,26 @@ services:
   # App KHÔNG depends_on service này (fail-open): app chạy bình thường kể cả khi clamav
   # đang tải DB virus (~vài phút sau khi start) hoặc tắt. App chỉ THẬT SỰ quét khi
   # MEDIA_AV_ENABLED=1. Chưa bật → scanBuffer trả 'skipped' ngay, 0 kết nối.
-  clamav:
-    image: clamav/clamav:1.4
-    container_name: zalo-crm-clamav
-    restart: unless-stopped
-    environment:
-      - TZ=Asia/Ho_Chi_Minh   # log ClamAV giờ VN (Cách 2)
-    # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
-    volumes:
-      - clamav_data:/var/lib/clamav   # giữ DB virus qua restart (đỡ tải lại mỗi lần)
-    healthcheck:
-      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
-      interval: 60s
-      timeout: 10s
-      retries: 3
-      start_period: 300s   # lần đầu freshclam tải DB virus có thể vài phút
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+  # clamav:
+  #   image: clamav/clamav:1.4
+  #   container_name: zalo-crm-clamav
+  #   restart: unless-stopped
+  #   environment:
+  #     - TZ=Asia/Ho_Chi_Minh # log ClamAV giờ VN (Cách 2)
+  #   # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
+  #   volumes:
+  #     - clamav_data:/var/lib/clamav # giữ DB virus qua restart (đỡ tải lại mỗi lần)
+  #   healthcheck:
+  #     test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+  #     interval: 60s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 300s # lần đầu freshclam tải DB virus có thể vài phút
+  #   logging:
+  #     driver: json-file
+  #     options:
+  #       max-size: "10m"
+  #       max-file: "3"
 
 volumes:
   pg_data:
