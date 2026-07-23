@@ -50,5 +50,7 @@ export default defineConfig({
         ws: true,
       },
     },
+    // Polling cho Docker trên Windows (inotify không hoạt động qua bind mount)
+    watch: isDocker ? { usePolling: true, interval: 500 } : undefined,
   },
 });

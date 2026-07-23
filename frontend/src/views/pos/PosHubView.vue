@@ -186,6 +186,12 @@ function onSyncProgress(data: SyncProgress) {
     customerProgress.value = data;
   }
 
+  // Báo lỗi chi tiết từ socket event
+  if (data.phase === 'error') {
+    const tableName = data.table === 'products' ? 'sản phẩm' : 'khách hàng';
+    toast.error(`Lỗi đồng bộ ${tableName}: ${data.message || 'Không rõ nguyên nhân'}`);
+  }
+
   // Tự động tắt syncing khi cả hai bảng done hoặc error
   if (
     (productProgress.value.phase === 'done' || productProgress.value.phase === 'error') &&
@@ -248,13 +254,11 @@ async function triggerSync() {
 
   try {
     await api.post('/pos/sync', null, { timeout: 300_000 });
-    // Socket events sẽ tự cập nhật syncing = false khi done
   } catch (err: any) {
     syncing.value = false;
-    // Chỉ báo lỗi nếu socket chưa báo error
-    if (productProgress.value.phase !== 'error' && customerProgress.value.phase !== 'error') {
-      toast.error(err.response?.data?.error || 'Đồng bộ dữ liệu POS thất bại');
-    }
+    // Báo lỗi chi tiết kèm mã lỗi nếu request thất bại (timeout/500/network)
+    const errMsg = err.response?.data?.error || err.message || 'Mất kết nối hoặc quá thời gian phản hồi (timeout)';
+    toast.error(`Đồng bộ dữ liệu POS thất bại: ${errMsg}`);
   }
 }
 </script>

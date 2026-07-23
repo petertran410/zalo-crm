@@ -135,11 +135,18 @@ function viewAll(resource: Resource): GrantsJson[Resource] {
  * Default groups. Migration D13 sẽ tạo các group này với is_system=true.
  * Admin → full mọi resource × mọi action.
  * Marketing → anh chốt A: contact.view_all=true (Zalo test loop 2026-05-21 13:25).
+ * Workspace 2026-07-22: kèm workspaceId để frontend resolver đọc chính xác.
  */
-export const DEFAULT_PERMISSION_GROUPS = [
+export const DEFAULT_PERMISSION_GROUPS: Array<{
+  name: string;
+  isSystem: boolean;
+  workspaceId: string;
+  grants: GrantsJson;
+}> = [
   {
     name: 'Admin',
     isSystem: true,
+    workspaceId: 'admin',
     grants: Object.fromEntries(
       RESOURCES.map((r) => [r, fullCrud(r)])
     ) as GrantsJson,
@@ -147,6 +154,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'CEO',
     isSystem: true,
+    workspaceId: 'admin',
     grants: {
       // CEO xem mọi resource business, không sửa permission/department/user
       department: { access: true },
@@ -170,6 +178,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'Trưởng phòng',
     isSystem: true,
+    workspaceId: 'manager',
     grants: {
       // Manager full CRUD trong scope dept + sub-depts (view_all = false vì scope dept tree, không phải global)
       department: { access: true },
@@ -192,6 +201,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'Sale Senior',
     isSystem: true,
+    workspaceId: 'sales',
     grants: {
       // Sale Senior CRUD KH + Conversation của mình, có Xóa
       conversation: { access: true, edit: true, delete: true },
@@ -211,6 +221,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'Sale',
     isSystem: true,
+    workspaceId: 'sales',
     grants: {
       // Sale CR KH của mình, không Xóa Conversation
       conversation: { access: true, edit: true },
@@ -231,6 +242,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'Marketing',
     isSystem: true,
+    workspaceId: 'marketing',
     grants: {
       // Marketing CRUD Broadcast/Sequence/Trigger/Block, view_all Contact (anh chốt A 2026-05-21 13:25)
       contact: { access: true, view_all: true },
@@ -248,6 +260,7 @@ export const DEFAULT_PERMISSION_GROUPS = [
   {
     name: 'Hành chính - Nhân sự',
     isSystem: true,
+    workspaceId: 'admin',
     grants: {
       // HC-NS view-only User + report, không access Conversation/Contact content
       user: { access: true, create: true, edit: true },

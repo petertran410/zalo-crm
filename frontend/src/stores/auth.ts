@@ -22,6 +22,10 @@ interface User {
   grants?: Record<string, Record<string, boolean>>;
   permissionGroupName?: string | null;
   isFullAccess?: boolean;
+  // Workspace Architecture 2026-07-22 — workspace tương ứng với PermissionGroup.
+  // Đọc từ permissionGroup.workspaceId (BE trả về qua /profile).
+  // Resolver ưu tiên field này, fallback string-matching nếu null.
+  workspaceId?: string | null;
   // Dashboard v4 2026-06-11 — vai trò phòng ban + cờ xem-tất-cả, quyết hiện mấy tab dashboard.
   deptRole?: string | null;       // 'leader' | 'deputy' | 'member' | null
   departmentId?: string | null;
@@ -88,6 +92,7 @@ export const useAuthStore = defineStore('auth', () => {
       avatarUrl: res.data.user.avatarUrl ?? null,
       grants: res.data.user.grants ?? {},
       permissionGroupName: res.data.user.permissionGroup?.name ?? null,
+      workspaceId: res.data.user.permissionGroup?.workspaceId ?? null,
       isFullAccess: res.data.user.isFullAccess ?? false,
       deptRole: res.data.user.deptRole ?? null,
       departmentId: res.data.user.departmentId ?? null,
@@ -116,6 +121,7 @@ export const useAuthStore = defineStore('auth', () => {
         onboardingDismissedAt: data.onboardingDismissedAt ?? null,
         grants: data.grants ?? {},
         permissionGroupName: data.permissionGroup?.name ?? null,
+        workspaceId: data.permissionGroup?.workspaceId ?? null,
         isFullAccess: data.isFullAccess ?? false,
         deptRole: data.deptRole ?? null,
         departmentId: data.departmentId ?? null,

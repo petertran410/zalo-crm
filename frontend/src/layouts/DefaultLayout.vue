@@ -82,6 +82,9 @@
       <!-- Flexible spacer pushes everything after it to the right edge. -->
       <div class="topnav-spacer" />
 
+      <!-- Global Sync Widget -->
+      <SyncHeaderWidget />
+
       <!-- Global search trigger -->
       <GlobalSearch class="topnav-search" />
 
@@ -146,6 +149,7 @@ import { isExtension } from '@ee/edition';
 import { useRouter } from 'vue-router';
 import NotificationBell from '@/components/NotificationBell.vue';
 import GlobalSearch from '@/components/GlobalSearch.vue';
+import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import { fetchPublicBranding } from '@/api/public-branding';

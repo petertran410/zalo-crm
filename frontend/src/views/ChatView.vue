@@ -12,6 +12,8 @@
       :total-unread="totalUnreadCount"
       :current-account-id="accountFilter"
       :current-account="currentAccount"
+      :current-role="currentRole"
+      @update:current-role="currentRole = $event"
       @manage-folders="showFolderManagePopup = true"
       @clear-account-filter="onFilterAccount(null)"
     />
@@ -127,6 +129,7 @@
       :ai-summary-loading="aiSummaryLoading"
       :ai-sentiment="aiSentiment"
       :ai-sentiment-loading="aiSentimentLoading"
+      :current-role="currentRole"
       class="smax-info-col"
       @refresh-ai-summary="generateAiSummary"
       @refresh-ai-sentiment="generateAiSentiment"
@@ -186,6 +189,17 @@ const {
 
 // ════════ Auth (cần để compute isOwnedByMe fallback cho accountList) ════════
 const authStore = useAuthStore();
+
+
+
+const currentRole = ref<string>('manager');
+watch(currentRole, (val) => {
+  if (val === 'sales') {
+    router.push({ name: 'SalesChat', params: route.params });
+  } else if (val === 'cs') {
+    router.push({ name: 'CsChat', params: route.params });
+  }
+});
 
 // ════════ Zalo accounts (for FilterRail nick picker) ════════
 const { accounts: zaloAccounts, fetchAccounts: fetchZaloAccounts } = useZaloAccounts();

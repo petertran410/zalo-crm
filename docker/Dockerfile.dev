@@ -1,9 +1,12 @@
+# Backend development image — tsx watch with polling for Windows Docker
 FROM node:20-alpine
 
-RUN apk add --no-cache tini ffmpeg tzdata vips vips-cpp build-base python3 && \
+RUN apk add --no-cache tini ffmpeg tzdata vips vips-cpp build-base python3 wget && \
     cp /usr/share/zoneinfo/Asia/Ho_Chi_Minh /etc/localtime && \
     echo "Asia/Ho_Chi_Minh" > /etc/timezone
 ENV TZ=Asia/Ho_Chi_Minh
+# Polling mode cho file watchers (inotify không hoạt động trên Windows Docker)
+ENV CHOKIDAR_USEPOLLING=true
 
 WORKDIR /app/backend
 
@@ -11,7 +14,8 @@ COPY backend/package.json backend/package-lock.json ./
 RUN npm install --no-audit --no-fund
 
 COPY backend/prisma ./prisma
+COPY backend/prisma.config.ts ./prisma.config.ts
 RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma generate
 
 EXPOSE 3000
-CMD ["npm", "run", "dev"]
+CMD ["npx", "tsx", "watch", "--poll", "src/app.ts"]

@@ -134,28 +134,28 @@
           <div class="channel-row">
             <!-- Avatar -->
             <div class="ch-avatar-wrap">
-              <span class="ch-avatar" :style="{ background: ch.avatarBg }">
-                <img v-if="ch.avatarUrl" :src="ch.avatarUrl" :alt="ch.name" @error="(e: Event) => (e.target as HTMLImageElement).style.display='none'" />
-                <span v-else class="ch-initial">{{ ch.name.charAt(0) }}</span>
+              <span class="ch-avatar" :style="{ background: pickColor(ch.id) }">
+                <img v-if="ch.avatarUrl" :src="ch.avatarUrl" :alt="ch.displayName || 'Zalo'" @error="(e: Event) => (e.target as HTMLImageElement).style.display='none'" />
+                <span v-else class="ch-initial">{{ (ch.displayName || 'Z').charAt(0) }}</span>
               </span>
-              <span class="ch-platform-badge" :class="'plat-' + ch.platform">
-                {{ platformEmoji(ch.platform) }}
+              <span class="ch-platform-badge plat-zalo">
+                💙
               </span>
             </div>
             <!-- Info -->
             <div class="ch-info">
               <div class="ch-name-row">
-                <span class="ch-name">{{ ch.name }}</span>
-                <span class="ch-platform-label" :class="'lbl-' + ch.platform">{{ platformLabel(ch.platform) }}</span>
+                <span class="ch-name">{{ ch.displayName || 'Tài khoản Zalo' }}</span>
+                <span class="ch-platform-label lbl-zalo">Zalo</span>
               </div>
-              <div class="ch-phone">{{ ch.phone || ch.accountId }}</div>
+              <div class="ch-phone">{{ ch.phone || ch.zaloUid || 'Không có SĐT' }}</div>
               <!-- Status -->
               <div class="ch-status-row">
-                <span class="ch-status" :class="statusClass(ch.status)">
-                  <span class="status-dot" />{{ statusLabel(ch.status) }}
+                <span class="ch-status" :class="statusClass(ch.liveStatus)">
+                  <span class="status-dot" />{{ statusLabel(ch.liveStatus) }}
                 </span>
                 <button
-                  v-if="ch.status === 'token_error'"
+                  v-if="ch.liveStatus === 'disconnected'"
                   class="btn-reconnect"
                   @click="reconnectChannel(ch)"
                 >
@@ -257,8 +257,8 @@
             <div class="channel-checkbox-list">
               <label v-for="ch in channels" :key="ch.id" class="ch-checkbox-row">
                 <input type="checkbox" :value="ch.id" v-model="groupForm.channelIds" />
-                <span class="platform-mini" :class="'plat-' + ch.platform">{{ platformEmoji(ch.platform) }}</span>
-                <span>{{ ch.name }}</span>
+                <span class="platform-mini plat-zalo">💙</span>
+                <span>{{ ch.displayName || 'Zalo Account' }}</span>
               </label>
             </div>
           </div>
@@ -279,125 +279,24 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useToast } from '@/composables/use-toast';
+import { useChannelConnections, type ChannelAccount } from '@/composables/use-channel-connections';
+import { api } from '@/api/index';
 
 const toast = useToast();
-
-// ── Types ──
-interface Channel {
-  id: string;
-  name: string;
-  phone: string;
-  accountId: string;
-  platform: 'zalo' | 'facebook' | 'shopee' | 'tiktok' | 'web';
-  status: 'connected' | 'token_error' | 'disconnected';
-  avatarUrl: string;
-  avatarBg: string;
-  visible: boolean;
-  staffName: string;
-  staffId: string;
-  deptId: string;
-}
-interface ChannelGroup {
-  id: string;
-  name: string;
-  platforms: string[];
-  channelCount: number;
-  members: { name: string; color: string }[];
-}
-interface Department {
-  id: string;
-  name: string;
-  color: string;
-  memberCount: number;
-  channelCount: number;
-}
-
-// ── Mock Data ──
-const AVATAR_COLORS = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
-function pickColor(i: number) { return AVATAR_COLORS[i % AVATAR_COLORS.length]; }
-
-const departments = ref<Department[]>([]);
-
-const channelGroups = ref<ChannelGroup[]>([
-  {
-    id: 'g1', name: 'Facebook & Website', platforms: ['facebook', 'web'], channelCount: 5,
-    members: [
-      { name: 'Phong', color: '#6366F1' },
-      { name: 'Linh', color: '#0EA5E9' },
-    ],
-  },
-  {
-    id: 'g2', name: 'Facebook & Website & Zalo', platforms: ['facebook', 'web', 'zalo'], channelCount: 6,
-    members: [
-      { name: 'Hùng', color: '#10B981' },
-      { name: 'Mai', color: '#F59E0B' },
-    ],
-  },
-  {
-    id: 'g3', name: 'Shopee & TikTok', platforms: ['shopee', 'tiktok'], channelCount: 2,
-    members: [
-      { name: 'An', color: '#EC4899' },
-    ],
-  },
-  {
-    id: 'g4', name: 'Ecom', platforms: ['shopee', 'tiktok', 'web'], channelCount: 4,
-    members: [
-      { name: 'Bảo', color: '#8B5CF6' },
-      { name: 'Duy', color: '#14B8A6' },
-    ],
-  },
-  {
-    id: 'g5', name: 'CSKH Zalo', platforms: ['zalo'], channelCount: 3,
-    members: [
-      { name: 'Trang', color: '#F59E0B' },
-      { name: 'Quân', color: '#6366F1' },
-      { name: 'Hoài', color: '#0EA5E9' },
-      { name: 'Vy', color: '#EF4444' },
-    ],
-  },
-  {
-    id: 'g6', name: 'Sale HCM', platforms: ['zalo', 'facebook'], channelCount: 4,
-    members: [
-      { name: 'Nhật', color: '#10B981' },
-      { name: 'Khoa', color: '#EC4899' },
-    ],
-  },
-]);
-
-const channels = ref<Channel[]>([
-  { id: 'c1',  name: 'Phong',   phone: '0903***123', accountId: 'fb-page-001', platform: 'facebook', status: 'connected',    avatarUrl: '', avatarBg: pickColor(0), visible: true,  staffName: 'Nguyễn Phong', staffId: 's1', deptId: 'd1' },
-  { id: 'c2',  name: 'Linh',    phone: '0912***456', accountId: 'zalo-001',     platform: 'zalo',     status: 'connected',    avatarUrl: '', avatarBg: pickColor(1), visible: true,  staffName: 'Trần Linh',    staffId: 's2', deptId: 'd1' },
-  { id: 'c3',  name: 'Hùng',    phone: '0987***789', accountId: 'sp-shop-001',  platform: 'shopee',   status: 'token_error',  avatarUrl: '', avatarBg: pickColor(2), visible: true,  staffName: 'Lê Hùng',      staffId: 's3', deptId: 'd1' },
-  { id: 'c4',  name: 'An',      phone: '0976***321', accountId: 'tt-shop-001',  platform: 'tiktok',   status: 'connected',    avatarUrl: '', avatarBg: pickColor(3), visible: true,  staffName: 'Phạm An',      staffId: 's4', deptId: 'd2' },
-  { id: 'c5',  name: 'Bảo',     phone: '0934***654', accountId: 'web-001',      platform: 'web',      status: 'connected',    avatarUrl: '', avatarBg: pickColor(4), visible: true,  staffName: 'Võ Bảo',       staffId: 's5', deptId: 'd2' },
-  { id: 'c6',  name: 'Mai',     phone: '0908***987', accountId: 'fb-page-002',  platform: 'facebook', status: 'token_error',  avatarUrl: '', avatarBg: pickColor(5), visible: true,  staffName: 'Đỗ Mai',       staffId: 's6', deptId: 'd1' },
-  { id: 'c7',  name: 'Trang',   phone: '0909***111', accountId: 'zalo-002',     platform: 'zalo',     status: 'connected',    avatarUrl: '', avatarBg: pickColor(6), visible: true,  staffName: 'Ngô Trang',    staffId: 's7', deptId: 'd2' },
-  { id: 'c8',  name: 'Duy',     phone: '0918***222', accountId: 'sp-shop-002',  platform: 'shopee',   status: 'disconnected', avatarUrl: '', avatarBg: pickColor(7), visible: false, staffName: 'Bùi Duy',      staffId: 's8', deptId: 'd1' },
-  { id: 'c9',  name: 'Quân',    phone: '0936***333', accountId: 'tt-shop-002',  platform: 'tiktok',   status: 'connected',    avatarUrl: '', avatarBg: pickColor(0), visible: true,  staffName: 'Hoàng Quân',   staffId: 's9', deptId: 'd2' },
-  { id: 'c10', name: 'Hoài',    phone: '0944***444', accountId: 'zalo-003',     platform: 'zalo',     status: 'connected',    avatarUrl: '', avatarBg: pickColor(1), visible: true,  staffName: 'Lý Hoài',      staffId: 's10', deptId: 'd1' },
-  { id: 'c11', name: 'Nhật',    phone: '0955***555', accountId: 'fb-page-003',  platform: 'facebook', status: 'connected',    avatarUrl: '', avatarBg: pickColor(2), visible: true,  staffName: 'Trương Nhật',  staffId: 's11', deptId: 'd2' },
-  { id: 'c12', name: 'Khoa',    phone: '0966***666', accountId: 'web-002',      platform: 'web',      status: 'token_error',  avatarUrl: '', avatarBg: pickColor(3), visible: true,  staffName: 'Đặng Khoa',    staffId: 's12', deptId: 'd1' },
-  { id: 'c13', name: 'Vy',      phone: '0977***777', accountId: 'zalo-004',     platform: 'zalo',     status: 'connected',    avatarUrl: '', avatarBg: pickColor(4), visible: true,  staffName: 'Phan Vy',      staffId: 's13', deptId: 'd2' },
-  { id: 'c14', name: 'Thảo',    phone: '0988***888', accountId: 'sp-shop-003',  platform: 'shopee',   status: 'connected',    avatarUrl: '', avatarBg: pickColor(5), visible: true,  staffName: 'Hồ Thảo',      staffId: 's14', deptId: 'd1' },
-  { id: 'c15', name: 'Minh',    phone: '0922***999', accountId: 'tt-shop-003',  platform: 'tiktok',   status: 'disconnected', avatarUrl: '', avatarBg: pickColor(6), visible: false, staffName: 'Cao Minh',     staffId: 's15', deptId: 'd2' },
-  { id: 'c16', name: 'Hương',   phone: '0911***000', accountId: 'fb-page-004',  platform: 'facebook', status: 'connected',    avatarUrl: '', avatarBg: pickColor(7), visible: true,  staffName: 'Vũ Hương',     staffId: 's16', deptId: 'd1' },
-  { id: 'c17', name: 'Tuấn',    phone: '0945***112', accountId: 'zalo-005',     platform: 'zalo',     status: 'connected',    avatarUrl: '', avatarBg: pickColor(0), visible: true,  staffName: 'Lưu Tuấn',     staffId: 's17', deptId: 'd2' },
-  { id: 'c18', name: 'Diệp',    phone: '0933***223', accountId: 'web-003',      platform: 'web',      status: 'connected',    avatarUrl: '', avatarBg: pickColor(1), visible: true,  staffName: 'Trần Diệp',    staffId: 's18', deptId: 'd1' },
-]);
+const { groups, accounts: channels, loading, fetchAll, totalChannels, connectedCount, errorCount, lastFetch } = useChannelConnections();
 
 // ── State ──
 const searchQuery = ref('');
 const platformFilter = ref('all');
 const statusFilter = ref('all');
-const lastRefresh = ref(new Date());
 const showAddDialog = ref(false);
 const showGroupDialog = ref(false);
 
 const addForm = ref({
   staffId: '',
-  platform: '' as string,
+  platform: 'zalo', // Chỉ hỗ trợ Zalo thực tế
   accountInfo: '',
   displayName: '',
 });
@@ -407,26 +306,31 @@ const groupForm = ref({
   channelIds: [] as string[],
 });
 
-const staffOptions = [
-  { id: 's1',  name: 'Nguyễn Phong' },
-  { id: 's2',  name: 'Trần Linh' },
-  { id: 's3',  name: 'Lê Hùng' },
-  { id: 's4',  name: 'Phạm An' },
-  { id: 's5',  name: 'Võ Bảo' },
-  { id: 's6',  name: 'Đỗ Mai' },
-  { id: 's7',  name: 'Ngô Trang' },
-  { id: 's8',  name: 'Bùi Duy' },
-  { id: 's9',  name: 'Hoàng Quân' },
-  { id: 's10', name: 'Lý Hoài' },
-];
+// Options phục vụ dialog Thêm Kênh
+const staffOptions = ref<{ id: string; name: string }[]>([]);
 
 const platformOptions = [
-  { key: 'zalo',     emoji: '💙', label: 'Zalo' },
-  { key: 'facebook', emoji: '📘', label: 'Facebook Page' },
-  { key: 'shopee',   emoji: '🛒', label: 'Shopee Shop' },
-  { key: 'tiktok',   emoji: '🎵', label: 'TikTok Shop' },
-  { key: 'web',      emoji: '🌐', label: 'Web Widget' },
+  { key: 'zalo', emoji: '💙', label: 'Zalo' },
 ];
+
+// Load danh sách nhân viên thực tế từ API để gán khi add kênh
+async function loadStaffOptions() {
+  try {
+    const { data } = await api.get('/users');
+    const users = Array.isArray(data) ? data : (data.users ?? []);
+    staffOptions.value = users.map((u: any) => ({
+      id: u.id,
+      name: u.fullName || u.email,
+    }));
+  } catch (err) {
+    console.error('Không thể tải danh sách nhân viên', err);
+  }
+}
+
+onMounted(() => {
+  fetchAll();
+  loadStaffOptions();
+});
 
 // ── Computed ──
 const filteredChannels = computed(() => {
@@ -435,27 +339,45 @@ const filteredChannels = computed(() => {
     const q = searchQuery.value.toLowerCase();
     list = list.filter(
       (ch) =>
-        ch.name.toLowerCase().includes(q) ||
-        ch.phone.includes(q) ||
-        ch.accountId.toLowerCase().includes(q) ||
-        ch.staffName.toLowerCase().includes(q),
+        (ch.displayName || '').toLowerCase().includes(q) ||
+        (ch.phone || '').includes(q) ||
+        (ch.zaloUid || '').toLowerCase().includes(q) ||
+        (ch.owner?.fullName || '').toLowerCase().includes(q),
     );
-  }
-  if (platformFilter.value !== 'all') {
-    list = list.filter((ch) => ch.platform === platformFilter.value);
-  }
-  if (statusFilter.value !== 'all') {
-    list = list.filter((ch) => ch.status === statusFilter.value);
   }
   return list;
 });
 
-const totalChannels = computed(() => channels.value.length);
-const connectedCount = computed(() => channels.value.filter((ch) => ch.status === 'connected').length);
-const errorCount = computed(() => channels.value.filter((ch) => ch.status === 'token_error').length);
+// Chuyển đổi dữ liệu groups từ API sang shape UI
+const channelGroups = computed(() => {
+  return groups.value.map((g, idx) => ({
+    id: g.deptId || `unassigned-${idx}`,
+    name: g.deptName,
+    platforms: ['zalo'],
+    channelCount: g.accounts.length,
+    members: g.accounts.map((acc) => ({
+      name: acc.displayName || acc.ownerName || 'Zalo',
+      color: pickColor(acc.id),
+    })),
+  }));
+});
+
+// Map sang danh sách bộ phận cho Widget
+const departments = computed(() => {
+  return groups.value
+    .filter((g) => g.deptId !== null)
+    .map((g) => ({
+      id: g.deptId!,
+      name: g.deptName,
+      color: '#6366F1',
+      memberCount: new Set(g.accounts.map((a) => a.ownerUserId)).size,
+      channelCount: g.accounts.length,
+    }));
+});
 
 const lastRefreshLabel = computed(() => {
-  const diff = Math.floor((Date.now() - lastRefresh.value.getTime()) / 1000);
+  if (!lastFetch.value) return 'chưa cập nhật';
+  const diff = Math.floor((Date.now() - lastFetch.value.getTime()) / 1000);
   if (diff < 10) return 'vừa xong';
   if (diff < 60) return `${diff}s trước`;
   if (diff < 3600) return `${Math.floor(diff / 60)} phút trước`;
@@ -463,114 +385,107 @@ const lastRefreshLabel = computed(() => {
 });
 
 // ── Helpers ──
-function platformEmoji(p: string): string {
-  const map: Record<string, string> = { zalo: '💙', facebook: '📘', shopee: '🛒', tiktok: '🎵', web: '🌐' };
-  return map[p] ?? '📱';
-}
-function platformLabel(p: string): string {
-  const map: Record<string, string> = { zalo: 'Zalo', facebook: 'Facebook', shopee: 'Shopee', tiktok: 'TikTok', web: 'Website' };
-  return map[p] ?? p;
-}
-function statusClass(s: string): string {
-  return s === 'connected' ? 'st-ok' : s === 'token_error' ? 'st-err' : 'st-off';
-}
-function statusLabel(s: string): string {
-  return s === 'connected' ? 'Đang kết nối' : s === 'token_error' ? 'Token error' : 'Chưa kết nối';
-}
-function platformConfigLabel(p: string): string {
-  const map: Record<string, string> = {
-    zalo: 'Số điện thoại Zalo',
-    facebook: 'Page ID hoặc URL',
-    shopee: 'Shopee Shop ID',
-    tiktok: 'TikTok Shop ID',
-    web: 'Domain website',
-  };
-  return map[p] ?? 'Thông tin tài khoản';
-}
-function platformConfigPlaceholder(p: string): string {
-  const map: Record<string, string> = {
-    zalo: '0909123456',
-    facebook: 'https://fb.com/yourpage hoặc 123456789',
-    shopee: 'shop_12345678',
-    tiktok: 'tiktok_shop_id',
-    web: 'example.com',
-  };
-  return map[p] ?? '';
+const AVATAR_COLORS = ['#6366F1', '#0EA5E9', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#EC4899', '#14B8A6'];
+function pickColor(id: string) {
+  let hash = 0;
+  for (let i = 0; i < id.length; i++) {
+    hash = id.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[index];
 }
 
-// ── Actions (mock) ──
+function platformEmoji(p: string): string {
+  return '💙';
+}
+function platformLabel(p: string): string {
+  return 'Zalo';
+}
+function statusClass(s: string): string {
+  return s === 'connected' ? 'st-ok' : s === 'qr_pending' ? 'st-warn' : 'st-off';
+}
+function statusLabel(s: string): string {
+  return s === 'connected' ? 'Đang kết nối' : s === 'qr_pending' ? 'Đang chờ QR' : 'Chưa kết nối';
+}
+function platformConfigLabel(p: string): string {
+  return 'Số điện thoại Zalo';
+}
+function platformConfigPlaceholder(p: string): string {
+  return '0909123456';
+}
+
+// ── Actions ──
 function onRefresh() {
-  lastRefresh.value = new Date();
+  fetchAll();
   toast.push('Đã làm mới danh sách kênh kết nối', 'success');
 }
-function showReconnectAll() {
-  const errCount = channels.value.filter((ch) => ch.status === 'token_error').length;
-  if (errCount === 0) {
-    toast.push('Tất cả kênh đang hoạt động bình thường', 'success');
-    return;
+
+async function showReconnectAll() {
+  toast.push('Chức năng làm mới hàng loạt đang hoạt động ngầm thông qua hệ thống dọn dẹp', 'info');
+}
+
+async function reconnectChannel(ch: any) {
+  try {
+    await api.post(`/zalo-accounts/${ch.id}/reconnect`);
+    toast.push(`Đang kết nối lại "${ch.displayName || 'Zalo'}"`, 'info');
+    fetchAll();
+  } catch (err: any) {
+    toast.push('Kết nối lại thất bại: ' + (err.response?.data?.error || err.message), 'error');
   }
-  // Mock reconnect
-  channels.value.forEach((ch) => {
-    if (ch.status === 'token_error') ch.status = 'connected';
-  });
-  toast.push(`Đã làm mới ${errCount} kênh bị lỗi token`, 'success');
 }
-function reconnectChannel(ch: Channel) {
-  ch.status = 'connected';
-  toast.push(`Đã kết nối lại "${ch.name}"`, 'success');
+
+function toggleVisible(ch: any) {
+  toast.push('Tính năng hiển thị kênh sẽ được cập nhật trong bản phát hành sau', 'info');
 }
-function toggleVisible(ch: Channel) {
-  ch.visible = !ch.visible;
-  toast.push(ch.visible ? `Đã hiện kênh "${ch.name}"` : `Đã ẩn kênh "${ch.name}"`, 'info');
+
+function changeDept(ch: any) {
+  toast.push(`Thay đổi bộ phận thông qua chỉnh sửa phòng ban của nhân viên sở hữu: ${ch.owner?.fullName}`, 'info');
 }
-function changeDept(ch: Channel) {
-  toast.push(`Chức năng "Đổi bộ phận" cho kênh "${ch.name}" — sẽ triển khai khi có API`, 'info');
+
+function changeOwner(ch: any) {
+  toast.push(`Đổi nhân viên sở hữu cho kênh: ${ch.displayName}`, 'info');
 }
-function changeOwner(ch: Channel) {
-  toast.push(`Chức năng "Đổi nhân viên sở hữu" cho kênh "${ch.name}" — sẽ triển khai khi có API`, 'info');
+
+function viewDetail(ch: any) {
+  toast.push(`Chi tiết kết nối: ${ch.displayName || 'Zalo'} (${ch.phone || ch.zaloUid})`, 'info');
 }
-function viewDetail(ch: Channel) {
-  toast.push(`Chi tiết kết nối: ${ch.name} (${platformLabel(ch.platform)}) — ${ch.accountId}`, 'info');
+
+async function removeChannel(ch: any) {
+  if (!confirm(`Bạn có chắc chắn muốn gỡ kênh "${ch.displayName || 'Zalo'}"?`)) return;
+  try {
+    await api.delete(`/zalo-accounts/${ch.id}`);
+    toast.push(`Đã gỡ kênh "${ch.displayName || 'Zalo'}"`, 'success');
+    fetchAll();
+  } catch (err: any) {
+    toast.push('Gỡ thất bại: ' + (err.response?.data?.error || err.message), 'error');
+  }
 }
-function removeChannel(ch: Channel) {
-  channels.value = channels.value.filter((c) => c.id !== ch.id);
-  toast.push(`Đã gỡ kênh "${ch.name}"`, 'success');
+
+async function onAddChannel() {
+  try {
+    const res = await api.post('/zalo-accounts', {
+      phone: addForm.value.accountInfo,
+      displayName: addForm.value.displayName,
+    });
+    // Gán quyền truy cập cho user được chọn làm owner (nếu khác admin hiện tại)
+    if (res.data?.id && addForm.value.staffId) {
+      await api.post(`/zalo-accounts/${res.data.id}/access`, {
+        userId: addForm.value.staffId,
+        permission: 'admin'
+      }).catch(() => {});
+    }
+    toast.push('Đã khởi tạo kênh kết nối mới. Hãy thực hiện quét QR để hoàn tất.', 'success');
+    showAddDialog.value = false;
+    addForm.value = { staffId: '', platform: 'zalo', accountInfo: '', displayName: '' };
+    fetchAll();
+  } catch (err: any) {
+    toast.push('Không thể thêm kênh: ' + (err.response?.data?.error || err.message), 'error');
+  }
 }
-function onAddChannel() {
-  const p = addForm.value.platform as Channel['platform'];
-  const staff = staffOptions.find((s) => s.id === addForm.value.staffId);
-  const newCh: Channel = {
-    id: `c-new-${Date.now()}`,
-    name: addForm.value.displayName || staff?.name || 'Kênh mới',
-    phone: addForm.value.accountInfo,
-    accountId: addForm.value.accountInfo,
-    platform: p,
-    status: 'connected',
-    avatarUrl: '',
-    avatarBg: pickColor(channels.value.length),
-    visible: true,
-    staffName: staff?.name || 'N/A',
-    staffId: addForm.value.staffId,
-    deptId: 'd1',
-  };
-  channels.value.push(newCh);
-  showAddDialog.value = false;
-  addForm.value = { staffId: '', platform: '', accountInfo: '', displayName: '' };
-  toast.push(`Đã thêm kênh "${newCh.name}" (${platformLabel(p)})`, 'success');
-}
+
 function onCreateGroup() {
-  const selected = channels.value.filter((ch) => groupForm.value.channelIds.includes(ch.id));
-  const platforms = [...new Set(selected.map((ch) => ch.platform))];
-  channelGroups.value.push({
-    id: `g-new-${Date.now()}`,
-    name: groupForm.value.name,
-    platforms,
-    channelCount: selected.length,
-    members: selected.map((ch) => ({ name: ch.name, color: ch.avatarBg })),
-  });
+  toast.push('Tính năng gộp nhóm thủ công đang chờ nâng cấp database schema', 'info');
   showGroupDialog.value = false;
-  groupForm.value = { name: '', channelIds: [] };
-  toast.push(`Đã tạo nhóm kênh "${groupForm.value.name || 'Mới'}"`, 'success');
 }
 </script>
 

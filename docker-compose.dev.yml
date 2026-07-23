@@ -1,15 +1,33 @@
 version: "3.8"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Development overlay — docker compose -f docker-compose.yml -f docker-compose.dev.yml
+# Overrides `app` to run tsx watch (hot-reload backend) and adds `frontend`
+# service running Vite dev server (HMR). Source dirs are bind-mounted from host;
+# node_modules stay inside the container (anonymous volume) to avoid OS mismatch.
+#
+# IMPORTANT (Windows): Docker on Windows/WSL2 does NOT forward filesystem inotify
+# events into containers. All watchers MUST use polling mode (CHOKIDAR_USEPOLLING).
+# ─────────────────────────────────────────────────────────────────────────────
+
 services:
   app:
     build:
       context: .
       dockerfile: docker/Dockerfile.dev
     container_name: zalo-crm-app-dev
-    command: sh -c "npx prisma generate && npx prisma db push && npx tsx watch src/app.ts"
+    restart: on-failure
+    command: sh -c "npx prisma generate && npx prisma db push && npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://${DB_USER:-crmuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-zalocrm}
+      # Polling cho tsx watch trên Windows Docker (inotify không hoạt động)
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=500
+      # Tắt Prisma query log mặc định (bật khi cần debug: PRISMA_LOG_QUERIES=true)
+      - PRISMA_LOG_QUERIES=false
+    env_file:
+      - .env
     volumes:
       - ./backend:/app/backend
       - /app/backend/node_modules
@@ -23,6 +41,14 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      # Backend cần ~60-90s: prisma generate (~10s) + db push (~10s) + app boot (~20s)
+      # + Zalo reconnect (~20s). 120s grace để không bị đánh unhealthy sớm.
+      start_period: 120s
 
   frontend:
     build:
@@ -34,8 +60,12 @@ services:
       - "5173:5173"
     environment:
       - IS_DOCKER=true
+      # Polling cho Vite/chokidar trên Windows Docker
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=500
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
     depends_on:
-      - app
+      app:
+        condition: service_healthy

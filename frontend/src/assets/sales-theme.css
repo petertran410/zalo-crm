@@ -1,0 +1,628 @@
+/**
+ * Sales Workspace — Zalo Blue Theme & Glassmorphic Neo-SaaS Styles
+ * ─────────────────────────────────────────────────────────────────
+ * Đồng bộ màu sắc chủ đạo Zalo: #0068FF
+ * Bổ sung các tiện ích CSS Glassmorphic Glass-panel, Glass-card, Avatar Ring...
+ */
+
+:root {
+  /* Zalo Theme Color Tokens */
+  --zmp-theme-color: #0068FF;
+  --zmp-theme-color-rgb: 0, 104, 255;
+  --zmp-theme-color-shade: #0057d6;
+  --zmp-theme-color-tint: #2980ff;
+
+  /* Component UI Tokens */
+  --zmp-checkbox-active-color-disabled: var(--zmp-theme-color-shade);
+  --zmp-radio-active-color-disabled: var(--zmp-theme-color-shade);
+  --zmp-toggle-active-color-disabled: var(--zmp-theme-color-shade);
+  --zmp-picker-action-button-hover-bg-color: var(--zmp-theme-color-shade);
+  --zmp-button-pressed-bg-color-primary: var(--zmp-theme-color-shade);
+  --zmp-button-bg-color-secondary: #ffffff;
+  --zmp-button-pressed-bg-color-secondary: #ffffff;
+  --zmp-button-pressed-color-secondary: var(--zmp-theme-color);
+  --zmp-button-border-color-secondary: var(--zmp-theme-color);
+  --zmp-fab-pressed-bg-color: var(--zmp-theme-color-shade);
+
+  /* Workspace Surface & Accent Tokens — Option 1 Cool Slate Canvas */
+  --sales-bg-surface: #E8EEF5;
+  --sales-primary: #0068FF;
+  --sales-primary-container: #002d3e;
+  --sales-surface-border: rgba(255, 255, 255, 0.5);
+  --sales-card-border: rgba(255, 255, 255, 0.4);
+
+  /* Border-radius Scale — dùng thống nhất toàn bộ Sales Workspace */
+  --radius-xs:  6px;    /* badge, chip-inline, mini button */
+  --radius-sm:  8px;    /* input, tag chip, sfb-clear */
+  --radius-md: 12px;    /* card small, pill */
+  --radius-lg: 16px;    /* panel, dialog section */
+  --radius-xl: 20px;    /* main pane / dual-pane */
+  --radius-2xl:24px;    /* sidebar, large glass card */
+  --radius-full: 9999px; /* avatar, badge dot */
+}
+
+/* Glassmorphism Utilities */
+.glass-panel {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+.glass-card {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  box-shadow: 0 4px 16px 0 rgba(31, 38, 135, 0.03) !important;
+}
+
+/* Avatar Ring */
+.avatar-ring {
+  padding: 2px;
+  background: linear-gradient(45deg, #ff9a9e, #fecfef, #a1c4fd);
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Material Symbols Outlined Adjustments */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined', sans-serif;
+  font-weight: normal;
+  font-style: normal;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+.material-symbols-outlined.fill {
+  font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}
+
+/* Custom Scrollbars
+   2026-07-22: Tang do tuong phan thumb 0.15->0.28 (aa level) va hover 0.3->0.5
+   de nguoi dung de nhan biet thanh cuon hon. */
+.sl-app ::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+.sl-app ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sl-app ::-webkit-scrollbar-thumb {
+  background: rgba(0, 104, 255, 0.28);
+  border-radius: 10px;
+}
+
+.sl-app ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 104, 255, 0.50);
+}
+
+/* No Scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ══════════════════════════════════════════════════════════
+   GLOBAL OVERRIDES FOR INNER CRM VIEWS UNDER .sl-app
+   ══════════════════════════════════════════════════════════ */
+
+/* --- 1. CONTACTS VIEW OVERRIDES --- */
+.sl-app .smax-contacts-page {
+  background: transparent !important;
+  height: 100% !important;
+  padding: 12px 16px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.sl-app .smax-contacts-page .page-header {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 18px !important;
+  padding: 12px 20px !important;
+  box-shadow: 0 4px 20px rgba(0, 104, 255, 0.03) !important;
+}
+
+.sl-app .smax-contacts-page .toolbar-primary {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 18px !important;
+  padding: 12px 20px !important;
+  margin: 0 !important;
+  box-shadow: 0 4px 20px rgba(0, 104, 255, 0.03) !important;
+  gap: 10px !important;
+}
+
+.sl-app .smax-contacts-page .stats-row {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  border-radius: 14px !important;
+  padding: 8px 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 104, 255, 0.02) !important;
+  margin: 0 !important;
+}
+
+.sl-app .smax-contacts-page .dual-pane {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  gap: 12px !important;
+  padding: 12px !important;
+}
+
+.sl-app .smax-contacts-page .dual-pane .scroll-wrap {
+  flex: 1 !important;
+  overflow: auto !important;
+  border-radius: 16px !important;
+}
+
+.sl-app .smax-contacts-page .smax-table {
+  border: none !important;
+}
+
+.sl-app .smax-contacts-page .smax-table th {
+  background: rgba(255, 255, 255, 0.8) !important;
+  color: #41484c !important;
+  font-weight: 700 !important;
+  font-size: 12.5px !important;
+  border-bottom: 1.5px solid rgba(0, 0, 0, 0.06) !important;
+  padding: 12px 10px !important;
+}
+
+.sl-app .smax-contacts-page .smax-table tr.master-row {
+  border-bottom: 1px solid rgba(0, 0, 0, 0.04) !important;
+  background: transparent !important;
+  transition: background 0.15s ease !important;
+}
+
+.sl-app .smax-contacts-page .smax-table tr.master-row:hover {
+  background: rgba(0, 104, 255, 0.03) !important;
+}
+
+.sl-app .smax-contacts-page .smax-table tr.master-row.detail-active {
+  background: rgba(0, 104, 255, 0.06) !important;
+}
+
+.sl-app .smax-contacts-page .cl-pager {
+  background: rgba(255, 255, 255, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  border-radius: 14px !important;
+  padding: 8px 16px !important;
+  margin: 0 !important;
+}
+
+.sl-app .smax-contacts-page .detail-pane {
+  background: rgba(255, 255, 255, 0.9) !important;
+  border-left: 1px solid rgba(0, 0, 0, 0.06) !important;
+  border-radius: 20px !important;
+}
+
+/* --- 2. APPOINTMENTS VIEW OVERRIDES --- */
+.sl-app .apt-page {
+  background: transparent !important;
+  height: 100% !important;
+  padding: 12px 16px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.sl-app .apt-page .apt-hero {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 18px !important;
+  padding: 16px 20px !important;
+  box-shadow: 0 4px 20px rgba(0, 104, 255, 0.03) !important;
+}
+
+.sl-app .apt-page .apt-filter-strip {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  border-radius: 14px !important;
+  padding: 8px 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 104, 255, 0.02) !important;
+  margin: 0 !important;
+}
+
+.sl-app .apt-page .apt-body {
+  background: transparent !important;
+  flex: 1 !important;
+  min-height: 0 !important;
+  gap: 12px !important;
+}
+
+.sl-app .apt-page .sidebar-wrap {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+.sl-app .apt-page .apt-content {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+  padding: 16px !important;
+}
+
+/* --- 3. FRIENDS VIEW OVERRIDES --- */
+.sl-app .friends-page {
+  background: transparent !important;
+  height: 100% !important;
+  padding: 12px 16px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.sl-app .friends-page .page-grid {
+  gap: 12px !important;
+  height: 100% !important;
+}
+
+.sl-app .friends-page .page-grid > aside {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+.sl-app .friends-page .main {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+  padding: 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+.sl-app .friends-page .page-head {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05) !important;
+  padding: 0 0 12px 0 !important;
+}
+
+.sl-app .friends-page .stats {
+  background: rgba(255, 255, 255, 0.5) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  border-radius: 12px !important;
+  padding: 6px 12px !important;
+}
+
+/* --- 4. MEDIA VIEW OVERRIDES --- */
+.sl-app .media-page {
+  background: transparent !important;
+  height: 100% !important;
+  padding: 12px 16px 16px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+  overflow: hidden !important;
+}
+
+.sl-app .media-page .m-top {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 18px !important;
+  padding: 14px 20px !important;
+  box-shadow: 0 4px 20px rgba(0, 104, 255, 0.03) !important;
+}
+
+.sl-app .media-page .m-tabs {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 14px !important;
+  padding: 2px 20px !important;
+  box-shadow: 0 4px 20px rgba(0, 104, 255, 0.02) !important;
+}
+
+.sl-app .media-page .m-filter {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4) !important;
+  border-radius: 14px !important;
+  padding: 8px 16px !important;
+  box-shadow: 0 4px 16px rgba(0, 104, 255, 0.02) !important;
+}
+
+.sl-app .media-page .m-work {
+  gap: 12px !important;
+  height: 100% !important;
+}
+
+.sl-app .media-page .m-tree {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+.sl-app .media-page .m-grid-wrap {
+  background: rgba(255, 255, 255, 0.72) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 24px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+  padding: 16px !important;
+}
+
+.sl-app .media-page .card {
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02) !important;
+  border-radius: 12px !important;
+}
+
+/* --- 5. POS HUB OVERRIDES --- */
+.sl-app .pos-hub-container {
+  background: transparent !important;
+  height: 100% !important;
+  padding: 16px !important;
+  overflow-y: auto !important;
+}
+
+.sl-app .pos-hub-container .hub-card {
+  background: rgba(255, 255, 255, 0.75) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04) !important;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ACCESSIBILITY: prefers-reduced-transparency
+   2026-07-22: Nguoi dung bat "Reduce Transparency" tren OS se thay
+   cac glass panel chuyen sang nen dac, khong con trong suot.
+   Giu nguyen border va box-shadow de UI van co chieu sau.
+   ══════════════════════════════════════════════════════════ */
+@media (prefers-reduced-transparency: reduce) {
+  .sl-app ::-webkit-scrollbar-thumb {
+    background: rgba(0, 104, 255, 0.45) !important;
+  }
+
+  .glass-panel {
+    background: #f5f7fa !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  .glass-card {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Sidebar */
+  .sl-sidenav {
+    background: #f5f7fa !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+
+  /* Contacts / Apt / Friends / Media panels */
+  .sl-app .smax-contacts-page .page-header,
+  .sl-app .smax-contacts-page .toolbar-primary,
+  .sl-app .smax-contacts-page .dual-pane,
+  .sl-app .apt-page .apt-hero,
+  .sl-app .apt-page .sidebar-wrap,
+  .sl-app .apt-page .apt-content,
+  .sl-app .friends-page .page-grid > aside,
+  .sl-app .friends-page .main,
+  .sl-app .media-page .m-top,
+  .sl-app .media-page .m-tree,
+  .sl-app .media-page .m-grid-wrap,
+  .sl-app .pos-hub-container .hub-card {
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   MESSAGE STREAM & BUBBLE CONTRAST ENHANCEMENT
+   2026-07-22: Giảm độ sáng nền trắng của khung chat sang xám xanh dịu (#F0F4F8)
+   và tạo đổ bóng/viền nhẹ cho các bong bóng chat trắng để làm nổi bật box chat.
+   ══════════════════════════════════════════════════════════ */
+.sl-app .message-thread {
+  background: #EEF2F6 !important;
+}
+
+.sl-app .messages.chat-messages-area {
+  background: #F0F4F8 !important;
+}
+
+/* Bong bóng chat của khách (received / white bubble) — nổi bật rõ nét trên nền xám nhạt */
+.sl-app .message-bubble.is-other {
+  background: #FFFFFF !important;
+  border: 1px solid rgba(0, 0, 0, 0.08) !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.02) !important;
+}
+
+/* Bong bóng chat của sale (self / blue-tint bubble) */
+.sl-app .message-bubble.is-self {
+  background: #E0F2FE !important;
+  border: 1px solid rgba(2, 132, 199, 0.18) !important;
+  box-shadow: 0 2px 6px rgba(0, 104, 255, 0.06) !important;
+}
+
+/* Chat header & Input area nền kính mờ sạch sẽ */
+.sl-app .chat-header {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px);
+}
+
+.sl-app .input-area {
+  background: rgba(255, 255, 255, 0.92) !important;
+  backdrop-filter: blur(12px);
+}
+
+/* ══════════════════════════════════════════════════════════
+   UNREAD CONVERSATIONS VISUAL HIGHLIGHT & BADGE
+   2026-07-22: Giúp nhân viên Sales nhận diện tức thì hội thoại chưa đọc.
+   - Nền xanh nhạt pastel rực rỡ + Dải viền xanh lam nổi bật bên trái
+   - Badge đếm số tin chưa đọc màu Đỏ Cam rực rỡ (#EF4444)
+   ══════════════════════════════════════════════════════════ */
+/* ══════════════════════════════════════════════════════════
+   OPTION 1: CLEAN SOFT TINT CARDS (No corner clipping artifacts)
+   2026-07-22: Bỏ hoàn toàn vạch lẹm border-left.
+   1. Active (Đang chọn): Bo góc 12px, viền 4 cạnh #93C5FD, nền xanh #EFF6FF, tên #0068FF.
+   2. Unread (Chưa đọc): Bo góc 12px, viền 4 cạnh #FCD34D, nền kem #FFFBEB, badge đỏ.
+   ══════════════════════════════════════════════════════════ */
+
+/* Active Item (Ô đang chọn chat) */
+.sl-app .conv-item.active,
+.sl-app .conv-item.is-group.active {
+  background: #EFF6FF !important;
+  color: #0F172A !important;
+  border-radius: 12px !important;
+  margin: 3px 6px !important;
+  border: 1.5px solid #93C5FD !important;
+  border-left: 1.5px solid #93C5FD !important;
+  padding-left: 13px !important;
+  border-bottom-color: #93C5FD !important;
+  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.10) !important;
+}
+
+.sl-app .conv-item.active:hover,
+.sl-app .conv-item.is-group.active:hover {
+  background: #E0F2FE !important;
+  border-color: #60A5FA !important;
+}
+
+.sl-app .conv-item.active .ci-name {
+  color: #0068FF !important;
+  font-weight: 750 !important;
+}
+
+.sl-app .conv-item.active .ci-preview {
+  color: #334155 !important;
+  font-weight: 500 !important;
+}
+
+.sl-app .conv-item.active .ci-time {
+  color: #0068FF !important;
+  font-weight: 700 !important;
+}
+
+.sl-app .conv-item.active .group-icon {
+  filter: none;
+}
+
+/* Unread Item (Ô chưa đọc) */
+.sl-app .conv-item.unread {
+  background: #FFFBEB !important;
+  border-radius: 12px !important;
+  margin: 3px 6px !important;
+  border: 1px solid #FCD34D !important;
+  border-left: 1px solid #FCD34D !important;
+  padding-left: 13px !important;
+  border-bottom-color: #FCD34D !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08) !important;
+  transition: all 0.18s ease !important;
+}
+
+.sl-app .conv-item.unread:hover {
+  background: #FEF3C7 !important;
+  border-color: #FBBF24 !important;
+}
+
+.sl-app .conv-item.unread .ci-name {
+  font-weight: 750 !important;
+  color: #0F172A !important;
+}
+
+.sl-app .conv-item.unread .ci-preview {
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+
+.sl-app .conv-item.unread .ci-time {
+  color: #D97706 !important;
+  font-weight: 700 !important;
+}
+
+.sl-app .ci-unread-count {
+  background: linear-gradient(135deg, #EF4444, #DC2626) !important;
+  color: #FFFFFF !important;
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4) !important;
+}
+
+/* ══════════════════════════════════════════════════════════
+   OPTION 1: COOL SLATE CANVAS — COLUMN 3D ELEVATION
+   2026-07-22: Giúp Cột 2 (Conv list) & Cột 4 (Info panel) nổi bật
+   như các thẻ card 3D trắng tinh khiết trên nền Cool Slate Canvas.
+   ══════════════════════════════════════════════════════════ */
+.sl-app .smax-conv-col,
+.sl-app .smax-info-col {
+  background: #FFFFFF !important;
+  box-shadow: 0 6px 24px 0 rgba(0, 30, 80, 0.06), 0 1px 3px 0 rgba(0, 0, 0, 0.03) !important;
+  border-radius: 18px !important;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  overflow: hidden !important;
+}
+
+.sl-app .smax-msg-col {
+  box-shadow: 0 6px 24px 0 rgba(0, 30, 80, 0.05) !important;
+  border-radius: 18px !important;
+  overflow: hidden !important;
+}

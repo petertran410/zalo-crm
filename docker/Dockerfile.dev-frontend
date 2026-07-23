@@ -1,4 +1,9 @@
+# Frontend development image — Vite dev server with polling for Windows Docker
 FROM node:20-alpine
+
+# Polling mode cho Vite/chokidar (inotify không hoạt động trên Windows Docker)
+ENV CHOKIDAR_USEPOLLING=true
+ENV WATCHPACK_POLLING=true
 
 WORKDIR /app/frontend
 

@@ -192,7 +192,8 @@ export async function getProfile(userId: string) {
       customGrants: true,
       org: { select: { id: true, name: true, timezone: true } },
       // RBAC enforce 2026-06-08 — trả grants để frontend biết user hiện tại được vào màn nào.
-      permissionGroup: { select: { id: true, name: true, grants: true, archivedAt: true } },
+      // Workspace 2026-07-22 — kèm workspaceId để resolver không phải đoán từ tên nhóm.
+      permissionGroup: { select: { id: true, name: true, grants: true, archivedAt: true, workspaceId: true } },
       // Dashboard v4 2026-06-11 — vai trò phòng ban để FE quyết hiện mấy tab dashboard
       // (sale 1 tab / trưởng phòng 2 / admin 3).
       departmentMember: { select: { deptRole: true, departmentId: true } },
@@ -240,7 +241,7 @@ export async function getProfile(userId: string) {
 
   return {
     ...rest,
-    permissionGroup: pg ? { id: pg.id, name: pg.name, grants: roleGrants } : null,
+    permissionGroup: pg ? { id: pg.id, name: pg.name, grants: roleGrants, workspaceId: pg.workspaceId ?? null } : null,
     grants: mergedGrants,
     isFullAccess,
     deptRole,

@@ -1,35 +1,368 @@
 <template>
   <aside class="info-panel">
-    <!-- ════════ HEADER: Phase 8.C Score Banner (3 stat cards + avatar below) ════════ -->
-    <header class="ip-header">
-      <button class="ip-close" title="Đóng" @click="$emit('close')">×</button>
-      <ScoreBanner :scores="scoreData">
-        <template #avatar>
-          <Avatar
-            :src="props.contact?.avatarUrl"
-            :name="headerFullName"
-            :size="56"
-            :gradient-seed="props.contact?.id || headerFullName"
-            class="ip-avatar-big"
-          />
-        </template>
-        <template #name>
-          <div class="ip-name-line" :title="headerFullName">{{ headerFullName }}</div>
-          <div v-if="props.contact?.zaloUid" class="ip-id">UID: {{ props.contact.zaloUid }}</div>
-          <!-- 2026-06-06 (Anh chốt): trạng thái cột 4 cạnh UID dùng CÙNG ContactDealStageSelector
-               (statusId dynamic) như cột 3 → đổi 1 chỗ sync ngay 2 chỗ (cùng trường statusId). -->
-          <div class="ip-care-row-inline">
-            <ContactDealStageSelector
-              v-if="props.contact?.id"
-              :contact-id="props.contact.id"
-              :current-status-id="(props.contact as { statusId?: string | null }).statusId ?? null"
-              :org-id="orgId"
-              @updated="onDealStageUpdatedPanel"
+    <!-- Close button for Sales/CS workspace -->
+    <button v-if="currentRole && currentRole !== 'manager'" class="ip-close" title="Đóng" @click="$emit('close')">×</button>    <!-- ════════ ROLE-BASED WORKSPACE: Sales & Customer Service ════════ -->
+    <template v-if="currentRole && currentRole !== 'manager'">
+
+      <!-- ══════════════════════════════════════════
+           SP PROFILE HEADER — Glass Card Premium
+           ══════════════════════════════════════════ -->
+      <div class="sp-header">
+        <!-- Top row: Avatar + Name + UID -->
+        <div class="sp-header-top">
+          <div class="sp-avatar-wrap">
+            <Avatar
+              :src="props.contact?.avatarUrl"
+              :name="headerFullName"
+              :size="56"
+              :gradient-seed="props.contact?.id || headerFullName"
+              class="sp-avatar"
+            />
+            <!-- VIP ring indicator -->
+            <span v-if="customerType === 'VIP'" class="sp-vip-ring" title="Khách VIP"></span>
+          </div>
+          <div class="sp-name-block">
+            <input
+              v-model="form.fullName"
+              placeholder="Tên Zalo"
+              class="sp-name-input"
+              @blur="saveContact"
+            />
+            <div class="sp-uid-row" v-if="props.contact?.zaloUid">
+              <span class="sp-uid-badge">UID: {{ props.contact.zaloUid }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Detail grid: SĐT / Giới tính -->
+        <div class="sp-detail-grid">
+          <div class="sp-field">
+            <span class="sp-field-icon">📞</span>
+            <span class="sp-field-label">SĐT</span>
+            <input
+              v-model="form.phone"
+              placeholder="Chưa có"
+              class="sp-field-input"
+              @blur="saveContact"
             />
           </div>
-        </template>
-      </ScoreBanner>
-    </header>
+          <div class="sp-field">
+            <span class="sp-field-icon">⚧</span>
+            <span class="sp-field-label">Giới tính</span>
+            <select
+              v-model="form.gender"
+              class="sp-field-select"
+              @change="saveContact"
+            >
+              <option :value="null">Không rõ</option>
+              <option value="female">Nữ</option>
+              <option value="male">Nam</option>
+              <option value="other">Khác</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Customer Type chip row -->
+        <div class="sp-type-row">
+          <span class="sp-type-label">🏷️ Loại KH:</span>
+          <span
+            class="sp-type-chip"
+            :class="{
+              'sp-chip-vip': customerType === 'VIP',
+              'sp-chip-loyal': customerType === 'Thân thiết',
+              'sp-chip-new': customerType === 'Mới',
+            }"
+          >{{ customerType || 'Chưa phân loại' }}</span>
+          <select v-model="customerType" class="sp-type-ghost-select" title="Đổi loại KH">
+            <option value="Mới">Mới</option>
+            <option value="Thân thiết">Thân thiết</option>
+            <option value="VIP">VIP</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════
+           SP PILL TABS — bo tròn pill-style
+           ══════════════════════════════════════════ -->
+      <nav class="sp-pill-nav">
+        <div class="sp-pill-tabs">
+          <button
+            class="sp-pill-tab"
+            :class="{ active: salesTab === 'overview' }"
+            @click="salesTab = 'overview'"
+          >📋 Overview</button>
+          <button
+            class="sp-pill-tab"
+            :class="{ active: salesTab === 'orders' }"
+            @click="salesTab = 'orders'"
+          >🛒 Đơn hàng</button>
+          <button
+            class="sp-pill-tab"
+            :class="{ active: salesTab === 'appointment' }"
+            @click="salesTab = 'appointment'"
+          >📅 Lịch hẹn</button>
+          <button
+            class="sp-pill-tab"
+            :class="{ active: salesTab === 'notes' }"
+            @click="salesTab = 'notes'"
+          >📝 Ghi chú</button>
+        </div>
+      </nav>
+
+      <!-- ══════════════════════════════════════════
+           SP TAB CONTENT
+           ══════════════════════════════════════════ -->
+      <div class="sp-tab-content">
+
+        <!-- ─── OVERVIEW TAB ─── -->
+        <div v-show="salesTab === 'overview'" class="sp-pane">
+
+          <!-- Customer 360 Glass Card -->
+          <div class="sp-glass-card">
+            <div class="sp-card-header">
+              <span class="sp-card-icon">📊</span>
+              <span class="sp-card-title">Customer 360</span>
+              <span class="sp-card-badge-mvp">MVP</span>
+            </div>
+            <div class="sp-c360-grid">
+              <div class="sp-c360-stat">
+                <span class="sp-c360-label">Công nợ</span>
+                <span
+                  class="sp-c360-val"
+                  :class="posLinkStatus.posCustomer?.debt && posLinkStatus.posCustomer.debt !== '0đ' ? 'sp-val-danger' : 'sp-val-ok'"
+                >{{ posLinkStatus.posCustomer?.debt || '0đ' }}</span>
+              </div>
+              <div class="sp-c360-stat">
+                <span class="sp-c360-label">Tổng đơn</span>
+                <span class="sp-c360-val sp-val-primary">{{ posLinkStatus.posCustomer?.totalOrders || '0' }} đơn</span>
+              </div>
+              <div class="sp-c360-stat sp-c360-full">
+                <span class="sp-c360-label">Đơn gần nhất</span>
+                <span class="sp-c360-val">{{ posLinkStatus.posCustomer?.lastOrder || 'Chưa có' }}</span>
+              </div>
+              <div class="sp-c360-stat sp-c360-full">
+                <span class="sp-c360-label">Tương tác cuối</span>
+                <span class="sp-c360-val">{{ cockpit?.lastInboundAt ? relativeTime(cockpit.lastInboundAt) : 'Chưa rõ' }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Follow-up & Nhắc hẹn Glass Card -->
+          <div class="sp-glass-card">
+            <div class="sp-card-header">
+              <span class="sp-card-icon">🎯</span>
+              <span class="sp-card-title">Follow-up & Nhắc hẹn</span>
+              <span v-if="contactAppointments.length > 0" class="sp-card-badge-count">{{ contactAppointments.length }}</span>
+            </div>
+            <div v-if="contactAppointments.length > 0" class="sp-appt-list">
+              <div
+                v-for="apt in contactAppointments.slice(0, 2)"
+                :key="apt.id"
+                class="sp-appt-item"
+              >
+                <span class="sp-appt-icon">📅</span>
+                <div class="sp-appt-info">
+                  <span class="sp-appt-date">{{ shortDate(apt.appointmentDate) }} {{ apt.appointmentTime || '' }}</span>
+                  <span class="sp-appt-note">{{ apt.notes || 'Không có ghi chú' }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="sp-empty-state">
+              <span class="sp-empty-icon">🗓️</span>
+              <span class="sp-empty-text">Không có lịch hẹn sắp tới</span>
+            </div>
+          </div>
+
+          <!-- Customer Intelligence — Coming Soon Card -->
+          <div class="sp-coming-soon-card">
+            <div class="sp-cs-header">
+              <span class="sp-card-icon">🧠</span>
+              <span class="sp-card-title">Customer Intelligence</span>
+              <span class="sp-cs-badge">🔒 Sắp ra mắt</span>
+            </div>
+            <div class="sp-cs-body">
+              <span class="sp-cs-preview">CLV · RFM · Churn · Health Score</span>
+              <span class="sp-cs-desc">Phân tích hành vi mua hàng &amp; dự báo rủi ro khách rời bỏ</span>
+            </div>
+          </div>
+
+          <!-- Timeline — Coming Soon Card -->
+          <div class="sp-coming-soon-card">
+            <div class="sp-cs-header">
+              <span class="sp-card-icon">⏳</span>
+              <span class="sp-card-title">Timeline</span>
+              <span class="sp-cs-badge">🔒 Sắp ra mắt</span>
+            </div>
+            <div class="sp-cs-body">
+              <span class="sp-cs-preview">Bám đuổi sự kiện khách hàng</span>
+              <span class="sp-cs-desc">Ghi lại toàn bộ hành trình tương tác theo dòng thời gian</span>
+            </div>
+          </div>
+
+        </div><!-- /OVERVIEW TAB -->
+
+        <!-- ─── ORDERS TAB ─── -->
+        <div v-show="salesTab === 'orders'" class="sp-pane sp-pane-padded">
+          <section class="ip-section orders-section">
+            <div class="orders-header d-flex justify-space-between align-center mb-3">
+              <span class="font-weight-bold text-caption text-grey-darken-3">🛒 POS KiotViet</span>
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                class="text-none create-order-btn"
+                style="background-color: #0284c7; color: white;"
+                @click="showCreateOrderDialog = true"
+              >
+                Tạo đơn hàng
+              </v-btn>
+            </div>
+
+            <v-card variant="flat" class="border pa-3 rounded-lg bg-grey-lighten-5">
+              <div v-if="loadingStatus" class="d-flex align-center justify-center py-2">
+                <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
+                <span class="text-caption text-grey-darken-1">Đang kiểm tra POS...</span>
+              </div>
+              <div v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer" class="pos-linked-info text-caption">
+                <div class="text-subtitle-2 font-weight-bold slate-dark mb-1">
+                  {{ posLinkStatus.posCustomer.name }}
+                </div>
+                <div>SĐT: {{ posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber || '—' }}</div>
+                <div>Mã khách hàng: {{ posLinkStatus.posCustomerCode }}</div>
+                <div class="mt-2 pt-2 border-top">
+                  <div>Tổng tiền hàng: <strong class="text-primary">{{ posLinkStatus.posCustomer.totalOrders || '0' }} đơn</strong></div>
+                  <div>Nợ hiện tại: <strong class="text-error">{{ posLinkStatus.posCustomer.debt || '0đ' }}</strong></div>
+                  <div>Lần mua cuối: <strong>{{ posLinkStatus.posCustomer.lastOrder || 'Chưa rõ' }}</strong></div>
+                </div>
+              </div>
+              <div v-else class="pos-not-linked-info text-center py-1">
+                <p class="text-caption text-grey-darken-1 mb-2">Chưa liên kết POS.</p>
+                <v-btn size="small" color="primary" variant="flat" class="text-none" style="background-color: #0284c7; color: white;" @click="openCreateCustomerForm">
+                  Tạo khách hàng POS
+                </v-btn>
+              </div>
+            </v-card>
+          </section>
+
+          <!-- Orders list from Read Model -->
+          <section class="ip-section mt-3">
+            <div class="section-subtitle font-weight-bold mb-2 text-caption text-grey-darken-3">Đơn hàng gần đây</div>
+            <div v-if="ordersLoading" class="d-flex align-center justify-center py-3">
+              <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
+              <span class="text-caption text-grey-darken-1">Đang tải đơn hàng...</span>
+            </div>
+            <div v-else-if="contactOrders.length > 0" class="orders-list d-flex flex-column gap-2">
+              <div
+                v-for="order in contactOrders"
+                :key="order.id"
+                class="order-item border pa-2 rounded bg-white text-caption"
+              >
+                <div class="omi-head d-flex justify-space-between font-weight-bold">
+                  <span class="omi-code text-primary">{{ order.code }}</span>
+                  <span
+                    class="omi-status"
+                    :class="{
+                      'text-success': order.orderStatus === 'Completed' || order.orderStatus === 'Confirmed',
+                      'text-warning': order.orderStatus === 'Draft',
+                      'text-error': order.orderStatus === 'Cancelled',
+                    }"
+                  >
+                    {{ order.orderStatus === 'Completed' ? 'Hoàn thành'
+                      : order.orderStatus === 'Confirmed' ? 'Đã xác nhận'
+                      : order.orderStatus === 'Cancelled' ? 'Đã hủy'
+                      : order.orderStatus }}
+                  </span>
+                </div>
+                <div class="omi-details text-grey-darken-2 mt-1">
+                  <span v-for="(item, idx) in order.items.slice(0, 2)" :key="idx">
+                    {{ item.productName }} (SL: {{ item.quantity }}){{ idx < Math.min(order.items.length, 2) - 1 ? ', ' : '' }}
+                  </span>
+                  <span v-if="order.items.length > 2" class="text-grey"> +{{ order.items.length - 2 }} sản phẩm</span>
+                </div>
+                <div class="omi-footer d-flex justify-space-between mt-1 pt-1 border-top">
+                  <span class="text-grey">{{ shortDate(order.createdAt) }}</span>
+                  <span class="font-weight-bold font-mono text-primary">{{ new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.grandTotal) }}</span>
+                </div>
+              </div>
+            </div>
+            <div v-else class="text-caption text-grey-darken-1 text-center py-2">Chưa có đơn hàng nào.</div>
+          </section>
+        </div><!-- /ORDERS TAB -->
+
+        <!-- ─── APPOINTMENT TAB ─── -->
+        <div v-show="salesTab === 'appointment'" class="sp-pane">
+          <ChatAppointments
+            v-if="props.contactId"
+            :contact-id="props.contactId"
+            :contact-name="headerFullName"
+            :appointments="contactAppointments"
+            @refresh="reloadAppointments"
+          />
+        </div>
+
+        <!-- ─── NOTES TAB ─── -->
+        <div v-show="salesTab === 'notes'" class="sp-pane">
+          <CustomerTimelineSection
+            :contact-id="props.contactId"
+            :contact-name="headerFullName"
+            @appointment-created="onAppointmentCreated"
+          />
+        </div>
+
+      </div><!-- /sp-tab-content -->
+
+      <!-- Create Order Dialog -->
+      <CreateOrderModal
+        v-model="showCreateOrderDialog"
+        :contact-id="props.contactId"
+        :contact-name="headerFullName"
+        :contact-phone="props.contact?.phone"
+        :pos-customer-id="posLinkStatus.posCustomerId"
+        :pos-customer-code="posLinkStatus.posCustomerCode"
+        @order-created="onOrderCreated"
+      />
+
+      <!-- Customer Form Dialog (Tạo/Sửa khách hàng POS) — phải có ở đây để hoạt động với Sales workspace -->
+      <PosCustomerForm
+        v-model="customerFormOpen"
+        :contact-id="props.contactId"
+        :customer-data="selectedPosCustomer"
+        @success="onCustomerFormSuccess"
+      />
+
+    </template><!-- /Sales & CS panel -->
+
+    <template v-else>
+      <!-- ════════ HEADER: Phase 8.C Score Banner (3 stat cards + avatar below) ════════ -->
+      <header class="ip-header">
+        <button class="ip-close" title="Đóng" @click="$emit('close')">×</button>
+        <ScoreBanner :scores="scoreData">
+          <template #avatar>
+            <Avatar
+              :src="props.contact?.avatarUrl"
+              :name="headerFullName"
+              :size="56"
+              :gradient-seed="props.contact?.id || headerFullName"
+              class="ip-avatar-big"
+            />
+          </template>
+          <template #name>
+            <div class="ip-name-line" :title="headerFullName">{{ headerFullName }}</div>
+            <div v-if="props.contact?.zaloUid" class="ip-id">UID: {{ props.contact.zaloUid }}</div>
+            <!-- 2026-06-06 (Anh chốt): trạng thái cột 4 cạnh UID dùng CÙNG ContactDealStageSelector
+                 (statusId dynamic) như cột 3 → đổi 1 chỗ sync ngay 2 chỗ (cùng trường statusId). -->
+            <div class="ip-care-row-inline">
+              <ContactDealStageSelector
+                v-if="props.contact?.id"
+                :contact-id="props.contact.id"
+                :current-status-id="(props.contact as { statusId?: string | null }).statusId ?? null"
+                :org-id="orgId"
+                @updated="onDealStageUpdatedPanel"
+              />
+            </div>
+          </template>
+        </ScoreBanner>
+      </header>
 
     <!-- 2026-06-01: Wrapper conditional cho mainTab='profile' — content cũ giữ nguyên -->
     <template v-if="mainTab === 'profile'">
@@ -686,7 +1019,8 @@
         <span class="bt-label">FOLLOW-UP</span>
       </button>
     </nav>
-  </aside>
+  </template>
+</aside>
 </template>
 
 <script setup lang="ts">
@@ -706,6 +1040,7 @@ import AddFlowModal from './AddFlowModal.vue';
 import MediaTabPanel from './MediaTabPanel.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ContactDealStageSelector from '@/components/chat/ContactDealStageSelector.vue';
+import CreateOrderModal from '../order-builder/VisualOrderModal.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
 import { api } from '@/api';
@@ -741,6 +1076,7 @@ const props = defineProps<{
   aiSummaryLoading: boolean;
   aiSentiment: AiSentiment | null;
   aiSentimentLoading: boolean;
+  currentRole?: string;
 }>();
 
 const emit = defineEmits<{
@@ -897,6 +1233,49 @@ async function saveAlias() {
 //   Ảnh/Video/Tệp/Khối trong MediaTabPanel). `activeTab` (sub-tab) chỉ active scope 'profile'.
 const mainTab = ref<'profile' | 'media' | 'ai' | 'followup'>('profile');
 const activeTab = ref<'profile' | 'crm' | 'activity' | 'score'>('profile');
+
+// Sales & Customer Service Workspace Optimization state:
+const salesTab = ref<'overview' | 'orders' | 'appointment' | 'notes'>('overview');
+const showCreateOrderDialog = ref(false);
+const customerType = ref<string | null>('VIP');
+
+// Order list from local Read Model
+interface OrderListItem {
+  id: string;
+  code: string;
+  grandTotal: number;
+  orderStatus: string;
+  createdAt: string;
+  items: { productName: string; quantity: number }[];
+}
+const contactOrders = ref<OrderListItem[]>([]);
+const ordersLoading = ref(false);
+
+async function fetchContactOrders() {
+  if (!props.contactId) return;
+  ordersLoading.value = true;
+  try {
+    const { data } = await api.get<any>(`/pos/orders/contact/${props.contactId}`);
+    contactOrders.value = data?.data?.orders || [];
+  } catch (err) {
+    console.error('fetchContactOrders failed:', err);
+  } finally {
+    ordersLoading.value = false;
+  }
+}
+
+function onOrderCreated(_data: any) {
+  toast.success('Đơn hàng đã được tạo thành công!');
+  fetchContactOrders();
+  checkPosStatus();
+}
+
+// Fetch orders when switching to Orders tab
+watch([() => salesTab.value, () => props.contactId], ([tab, id]) => {
+  if (tab === 'orders' && id) {
+    fetchContactOrders();
+  }
+}, { immediate: false });
 
 // Cho phép cha (ChatView) mở tab Media từ nút "Chèn từ kho" ở composer cột 3.
 function setMainTab(t: 'profile' | 'media' | 'ai' | 'followup') { mainTab.value = t; }
@@ -1483,6 +1862,79 @@ async function onRegenerateHandoff() {
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
   flex-shrink: 0;
+}
+
+/* ════════ Sales & Customer Service Workspace UI ════════ */
+.customer-summary-header {
+  border-bottom: 1px solid var(--smax-grey-200);
+}
+.csh-avatar {
+  border: 2px solid #fff;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+.csh-details-grid {
+  row-gap: 8px;
+}
+.csh-grid-item {
+  min-width: 45%;
+}
+.csh-item-label {
+  font-weight: 500;
+  color: #6B7785;
+}
+.csh-item-val {
+  font-weight: 600;
+  color: #1F2D3D;
+}
+.csh-item-val.inline-select :deep(.v-field) {
+  border-radius: 6px !important;
+  background-color: #fff !important;
+  border: 1px solid var(--smax-grey-200);
+}
+
+.flat-tabs {
+  background: #f8fafc;
+}
+.flat-tab {
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all 0.2s;
+  outline: none;
+}
+.flat-tab:hover {
+  background-color: rgba(94, 106, 210, 0.05);
+  color: #5E6AD2 !important;
+}
+.flat-tab.active {
+  border-bottom-color: #0284c7;
+  color: #0284c7 !important;
+  background-color: #fff;
+}
+
+.sales-pane {
+  height: 100%;
+}
+.compact-overview .ip-form-row {
+  border-bottom: 1px solid var(--smax-grey-100);
+  padding: 8px 0;
+}
+.compact-overview input, .compact-overview select {
+  font-size: 13px;
+  color: #1F2D3D;
+  background: transparent;
+  border: none;
+  outline: none;
+  flex-grow: 1;
+}
+
+.c360-grid {
+  row-gap: 8px;
+  background: #f8fafc;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--smax-grey-200);
 }
 
 /* ════════ Header (pinned) ════════ */
@@ -2460,4 +2912,199 @@ async function onRegenerateHandoff() {
   font-weight: 600;
 }
 .mtp-link:hover { background: #0050cc; }
+
+/* ════════════════════════════════════════════════════════════
+   SP (Sales Panel) — Glass Card Premium Design System
+   2026-07-22 — Redesign: Nền trắng + card nổi 3D + Pill tabs
+   ════════════════════════════════════════════════════════════ */
+
+/* ── Profile Header ── */
+.sp-header {
+  background: #FFFFFF;
+  border-bottom: 1px solid #E8EEF5;
+  padding: 14px 14px 10px;
+  flex-shrink: 0;
+}
+.sp-header-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.sp-avatar-wrap { position: relative; flex-shrink: 0; }
+.sp-avatar { border: 2.5px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.10); }
+.sp-vip-ring {
+  position: absolute; inset: -3px; border-radius: 50%;
+  border: 2px solid #7C3AED; pointer-events: none;
+}
+.sp-name-block { flex: 1; min-width: 0; }
+.sp-name-input {
+  width: 100%; font-size: 15px; font-weight: 700; color: #0F172A;
+  background: transparent; border: none;
+  border-bottom: 1.5px dashed #CBD5E1; outline: none; padding: 2px 0;
+}
+.sp-name-input:focus { border-bottom-color: #0068FF; }
+.sp-uid-row { margin-top: 4px; }
+.sp-uid-badge {
+  font-size: 10px; font-family: monospace; color: #94A3B8;
+  background: #F1F5F9; padding: 2px 6px; border-radius: 4px;
+}
+
+/* Detail grid */
+.sp-detail-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.sp-field {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  background: #F8FAFC;
+  border: 1px solid #E8EEF5;
+  border-radius: 8px;
+  padding: 5px 8px;
+  min-width: 0;
+  height: 34px;
+  box-sizing: border-box;
+}
+.sp-field-icon {
+  font-size: 12px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+}
+.sp-field-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: #94A3B8;
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sp-field-input {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1E293B;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  font-family: monospace;
+}
+.sp-field-select {
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #1E293B;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  cursor: pointer;
+  text-align-last: right;
+}
+
+/* Customer type chip row */
+.sp-type-row { display: flex; align-items: center; gap: 8px; position: relative; }
+.sp-type-label { font-size: 11px; color: #64748B; font-weight: 500; flex-shrink: 0; }
+.sp-type-chip {
+  display: inline-flex; align-items: center; padding: 3px 10px;
+  border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.3px; transition: all 0.2s; cursor: pointer;
+}
+.sp-chip-vip   { background: #EDE9FE; color: #6D28D9; }
+.sp-chip-loyal { background: #CFFAFE; color: #0E7490; }
+.sp-chip-new   { background: #DCFCE7; color: #15803D; }
+.sp-type-ghost-select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
+
+/* ── Pill Tabs ── */
+.sp-pill-nav {
+  background: #F8FAFC; border-bottom: 1px solid #E8EEF5;
+  padding: 8px 10px; flex-shrink: 0;
+}
+.sp-pill-tabs {
+  display: flex; gap: 4px; background: #EEF2F7;
+  border-radius: 10px; padding: 3px;
+}
+.sp-pill-tab {
+  flex: 1; background: transparent; border: none; border-radius: 8px;
+  padding: 5px 4px; font-size: 10.5px; font-weight: 600; color: #64748B;
+  cursor: pointer; transition: all 0.18s ease; white-space: nowrap; outline: none;
+}
+.sp-pill-tab:hover { background: rgba(255,255,255,0.7); color: #0F172A; }
+.sp-pill-tab.active {
+  background: #0068FF; color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(0, 104, 255, 0.28);
+}
+
+/* ── Tab Content ── */
+.sp-tab-content { flex: 1; overflow-y: auto; background: #F8FAFC; }
+.sp-pane { padding: 10px 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+.sp-pane-padded { padding: 12px; }
+
+/* ── Glass Card ── */
+.sp-glass-card {
+  background: #FFFFFF; border: 1px solid #E8EEF5; border-radius: 12px;
+  box-shadow: 0 2px 12px rgba(0, 30, 80, 0.06); padding: 12px 14px;
+}
+.sp-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
+.sp-card-icon { font-size: 14px; }
+.sp-card-title { flex: 1; font-size: 12px; font-weight: 700; color: #1E293B; }
+.sp-card-badge-mvp {
+  font-size: 9px; font-weight: 800; background: #FEF3C7; color: #B45309;
+  padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; text-transform: uppercase;
+}
+.sp-card-badge-count {
+  font-size: 10px; font-weight: 700; background: #0068FF; color: #FFF;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+
+/* Customer 360 grid */
+.sp-c360-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sp-c360-stat {
+  background: #F8FAFC; border-radius: 8px; padding: 8px 10px;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.sp-c360-full { grid-column: 1 / -1; }
+.sp-c360-label { font-size: 10px; color: #94A3B8; font-weight: 500; }
+.sp-c360-val { font-size: 13px; font-weight: 700; color: #1E293B; font-family: monospace; }
+.sp-val-danger { color: #DC2626 !important; }
+.sp-val-ok     { color: #16A34A !important; }
+.sp-val-primary { color: #0068FF !important; }
+
+/* Appointment list */
+.sp-appt-list { display: flex; flex-direction: column; gap: 6px; }
+.sp-appt-item {
+  display: flex; align-items: flex-start; gap: 8px;
+  background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 8px 10px;
+}
+.sp-appt-icon { font-size: 13px; flex-shrink: 0; }
+.sp-appt-info { display: flex; flex-direction: column; gap: 1px; }
+.sp-appt-date { font-size: 11px; font-weight: 700; color: #0369A1; }
+.sp-appt-note { font-size: 11px; color: #475569; }
+
+/* Empty state */
+.sp-empty-state { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
+.sp-empty-icon { font-size: 18px; opacity: 0.5; }
+.sp-empty-text { font-size: 12px; color: #94A3B8; }
+
+/* ── Coming Soon Card ── */
+.sp-coming-soon-card {
+  background: #F1F5F9; border: 1.5px dashed #CBD5E1;
+  border-radius: 12px; padding: 12px 14px; opacity: 0.85;
+}
+.sp-cs-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.sp-cs-badge {
+  font-size: 9.5px; font-weight: 700; background: #FED7AA; color: #C2410C;
+  padding: 2px 7px; border-radius: 4px;
+}
+.sp-cs-body { display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
+.sp-cs-preview { font-size: 11.5px; font-weight: 600; color: #475569; }
+.sp-cs-desc { font-size: 10.5px; color: #94A3B8; line-height: 1.4; }
 </style>
+

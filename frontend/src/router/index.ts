@@ -6,6 +6,7 @@ import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from '@ee/routes';
 // Edition flag (open-core): EE=true, Community=false. Dùng để chỉ đăng ký menu
 // Marketing CE khi KHÔNG phải EE (tránh đụng /marketing của EE trong eeTopRoutes).
 import { isExtension } from '@ee/edition';
+import { useWorkspaceStore } from '@/workspaces/resolver';
 
 const routes: RouteRecordRaw[] = [
   {
@@ -53,6 +54,18 @@ const routes: RouteRecordRaw[] = [
     path: '/chat/:convId?',
     name: 'Chat',
     component: () => import('@/views/ChatView.vue'),
+    meta: { requiresAuth: true, resource: 'conversation' },
+  },
+  {
+    path: '/sales-chat/:convId?',
+    name: 'SalesChat',
+    component: () => import('@/views/SalesChatView.vue'),
+    meta: { requiresAuth: true, resource: 'conversation' },
+  },
+  {
+    path: '/cs-chat/:convId?',
+    name: 'CsChat',
+    component: () => import('@/views/CsChatView.vue'),
     meta: { requiresAuth: true, resource: 'conversation' },
   },
   {
@@ -307,6 +320,19 @@ router.beforeEach(async (to, _from, next) => {
       if (!authStore.isAuthenticated) {
         return next('/login');
       }
+      // Workspace resolution xảy ra tự động qua watch(auth.user) trong App.vue.
+      // Không cần gọi workspaceStore.resolveForUser() ở đây.
+    }
+
+    // Redirect sales role away from '/' to '/sales-chat'
+    if (to.path === '/') {
+      const workspaceStore = useWorkspaceStore();
+      if (authStore.user) {
+        workspaceStore.resolveForUser(authStore.user);
+      }
+      if (workspaceStore.activeWorkspaceId === 'sales') {
+        return next('/sales-chat');
+      }
     }
     // Phase Onboarding v1 2026-05-24 — force change password lần đầu.
     // passwordChangedAt = null → block tất cả route khác, ép sale qua /setup-password.
@@ -356,6 +382,8 @@ const ROUTE_TITLES: Record<string, string> = {
   Dashboard: 'Tổng quan',
   ChannelConnections: 'Kênh Kết Nối',
   Chat: 'Hội thoại',
+  SalesChat: 'Hội thoại (Sales)',
+  CsChat: 'Hội thoại (CS)',
   Contacts: 'Khách hàng',
   Media: 'Kho phương tiện',
   Profile: 'Hồ sơ cá nhân',

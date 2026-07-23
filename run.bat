@@ -1,13 +1,14 @@
 @echo off
-title Zalo CRM Launcher
+title Zalo CRM Development Server
 
 echo =======================================================
-echo          ZALO CRM SYSTEM LAUNCHER
+echo        ZALO CRM - DEVELOPMENT SERVER
+echo   Auto-reloads frontend (Vite HMR) + backend (tsx watch)
 echo =======================================================
 echo.
 
 :: 1. Check if Docker is running
-echo [1/5] Checking Docker daemon status...
+echo [1/4] Checking Docker daemon status...
 docker info >nul 2>&1
 if %errorlevel% equ 0 goto docker_ready
 
@@ -37,45 +38,11 @@ set APP_PORT=3080
 if exist .env (
     for /f "tokens=2 delims==" %%A in ('findstr /b "APP_PORT=" .env') do set APP_PORT=%%A
 )
-echo Application Port configured: %APP_PORT%
 echo.
 
-:: 3. Select Mode
-echo [2/5] Selecting Launch Mode...
-echo [1] Development Mode (Auto-reloads when you change frontend or backend code)
-echo [2] Production Mode (Pre-built, optimized, no auto-reloads)
-echo.
-choice /c 12 /n /m "Please select launch mode (Press 1 or 2): "
-
-if errorlevel 2 (
-    set LAUNCH_MODE=production
-    set COMPOSE_FILES=-f docker-compose.yml
-    set TARGET_PORT=%APP_PORT%
-    set TARGET_URL=http://localhost:%APP_PORT%/setup
-    set LOG_SERVICES=app
-    echo Selected: Production Mode
-) else (
-    set LAUNCH_MODE=development
-    set COMPOSE_FILES=-f docker-compose.yml -f docker-compose.dev.yml
-    set TARGET_PORT=5173
-    set TARGET_URL=http://localhost:5173/setup
-    set LOG_SERVICES=app frontend
-    echo Selected: Development Mode
-)
-echo.
-
-:: 4. Restart container ports
-echo [3/5] Stopping existing containers to free up ports...
-docker compose %COMPOSE_FILES% down
-if %errorlevel% neq 0 (
-    echo Error: Failed to stop existing containers.
-    pause
-    exit /b 1
-)
-echo.
-
-echo [4/5] Rebuilding and starting containers in the background...
-docker compose %COMPOSE_FILES% up -d --build
+:: 3. Start containers
+echo [2/4] Starting development containers...
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 if %errorlevel% neq 0 (
     echo Error: Failed to build and start containers.
     pause
@@ -83,37 +50,56 @@ if %errorlevel% neq 0 (
 )
 echo.
 
-:: 5. Wait for the application to be ready
-echo [5/5] Waiting for the application to respond on port %TARGET_PORT%...
+:: 4. Wait for the application to be ready (backend healthcheck + frontend)
+echo [3/4] Waiting for backend to be healthy...
 set ATTEMPTS=0
-:wait_app
+:wait_backend
 timeout /t 3 >nul
-set HTTP_STATUS=000
-
-for /f "delims=" %%a in ('curl -s -o nul -w "%%{http_code}" http://localhost:%TARGET_PORT%/') do set HTTP_STATUS=%%a
-
-if "%HTTP_STATUS%"=="200" goto app_ready
-if "%HTTP_STATUS%"=="302" goto app_ready
-if "%HTTP_STATUS%"=="307" goto app_ready
+docker inspect --format="{{.State.Health.Status}}" zalo-crm-app-dev 2>nul | findstr /i "healthy" >nul
+if %errorlevel% equ 0 goto backend_ready
 
 set /a ATTEMPTS=ATTEMPTS+1
-if %ATTEMPTS% gtr 40 (
+if %ATTEMPTS% gtr 60 (
     echo.
-    echo Error: Application failed to respond after 2 minutes.
-    echo Please check container logs with command: docker compose logs app
+    echo Error: Backend failed to become healthy after 3 minutes.
+    echo Check logs: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs app
     pause
     exit /b 1
 )
+echo Backend not ready yet. Waiting... (%ATTEMPTS%/60)
+goto wait_backend
 
-echo Application not ready yet (HTTP Status: %HTTP_STATUS%). Retrying (%ATTEMPTS%/40)...
-goto wait_app
+:backend_ready
+echo ✓ Backend is healthy!
+echo.
+
+echo [4/4] Waiting for frontend (Vite) on port 5173...
+set ATTEMPTS=0
+:wait_frontend
+timeout /t 2 >nul
+set HTTP_STATUS=000
+for /f "delims=" %%a in ('curl -s -o nul -w "%%{http_code}" http://localhost:5173/ 2^>nul') do set HTTP_STATUS=%%a
+
+if "%HTTP_STATUS%"=="200" goto app_ready
+if "%HTTP_STATUS%"=="302" goto app_ready
+if "%HTTP_STATUS%"=="304" goto app_ready
+
+set /a ATTEMPTS=ATTEMPTS+1
+if %ATTEMPTS% gtr 30 (
+    echo.
+    echo Error: Frontend failed to respond after 1 minute.
+    echo Check logs: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs frontend
+    pause
+    exit /b 1
+)
+echo Frontend not ready yet (HTTP: %HTTP_STATUS%). Waiting... (%ATTEMPTS%/30)
+goto wait_frontend
 
 :app_ready
-echo.
-echo ✓ Application is ready and healthy!
+echo ✓ Frontend is ready!
 echo.
 
-:: 6. Find and open link in Coc Coc or default browser
+:: 5. Open browser
 set COCCOC_PATH=
 if exist "%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe" (
     set "COCCOC_PATH=%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe"
@@ -124,19 +110,25 @@ if exist "%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe" (
 )
 
 if defined COCCOC_PATH (
-    echo Opening link in Coc Coc browser...
-    start "" "%COCCOC_PATH%" "%TARGET_URL%"
+    echo Opening in Coc Coc browser...
+    start "" "%COCCOC_PATH%" "http://localhost:5173/setup"
 ) else (
-    echo Coc Coc browser not found. Opening in default browser...
-    start "" "%TARGET_URL%"
+    echo Opening in default browser...
+    start "" "http://localhost:5173/setup"
 )
 
 echo.
 echo =======================================================
-echo  ✓ Launch sequence complete!
-echo  → streaming logs from: %LOG_SERVICES%
-echo  → Press Ctrl+C inside this window to stop streaming logs.
+echo  ✓ Development server is running!
+echo.
+echo  Frontend (Vite HMR) : http://localhost:5173
+echo  Backend API          : http://localhost:%APP_PORT%
+echo.
+echo  → Edit .vue/.ts files and changes auto-reload!
+echo  → Logs streaming below. Press Ctrl+C to stop logs.
+echo  → Containers keep running in background after Ctrl+C.
+echo  → To stop all: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
 echo =======================================================
 echo.
 
-docker compose %COMPOSE_FILES% logs -f %LOG_SERVICES%
+docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f app frontend

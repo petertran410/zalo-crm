@@ -7,31 +7,34 @@ import { logger } from '../../shared/utils/logger.js';
 import { commandDispatcher } from '../../shared/commands/command-dispatcher.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 
-// Import để đảm bảo các Customer Commands được đăng ký vào Dispatcher
+// Import để đảm bảo các Commands được đăng ký vào Dispatcher
 import './commands/customer-commands.js';
+import './commands/order-commands.js';
 
 export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
   // GET /api/v1/pos/products — list products from local Read Model with cursor pagination
   app.get('/api/v1/pos/products', async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const query = request.query as any;
+    logger.info(`[pos-routes] GET /api/v1/pos/products called. orgId: ${user.orgId}, keyword: ${query.keyword}`);
     try {
-      const user = request.user!;
-      const query = request.query as any;
-
       const limit = parseInt(query.limit) || 20;
       const cursor = query.cursor;
       const keyword = query.keyword;
       const sortBy = query.sortBy;
       const sortOrder = query.sortOrder;
 
-      return await PosPaginationService.getProducts(user.orgId, {
+      const res = await PosPaginationService.getProducts(user.orgId, {
         limit,
         cursor,
         keyword,
         sortBy,
         sortOrder,
       });
+      logger.info(`[pos-routes] products response success. items count: ${res.items?.length || 0}`);
+      return res;
     } catch (err: any) {
       logger.error('[pos-routes] Fetch products failed:', err);
       return reply.status(500).send({ error: 'Failed to fetch POS products' });
@@ -301,4 +304,108 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       }
     }
   );
+
+  // ════════════════════════════════════════════════════════════════════════
+  // ORDER ENDPOINTS
+  // ════════════════════════════════════════════════════════════════════════
+
+  // GET /api/v1/pos/branches — Lấy danh sách chi nhánh POS
+  app.get('/api/v1/pos/branches', async (request: FastifyRequest, reply: FastifyReply) => {
+    logger.info('[pos-routes] GET /api/v1/pos/branches called');
+    try {
+      const mcpClient = getPosMcpClient();
+      const res = await mcpClient.branches.list();
+      logger.info(`[pos-routes] branches.list res keys: ${Object.keys(res || {})}`);
+      const branches = (res as any).data || res;
+      const responseData = { success: true, data: Array.isArray(branches) ? branches : [] };
+      logger.info(`[pos-routes] branches response success. count: ${responseData.data.length}`);
+      return responseData;
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch branches failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch POS branches' });
+    }
+  });
+
+  // POST /api/v1/pos/orders — Tạo đơn hàng trên POS qua MCP Command
+  app.post(
+    '/api/v1/pos/orders',
+    {
+      schema: {
+        body: {
+          type: 'object',
+          required: ['posCustomerId', 'branchId', 'items'],
+          properties: {
+            contactId: { type: 'string' },
+            posCustomerId: { type: 'integer' },
+            branchId: { type: 'integer' },
+            priceBookId: { type: 'string' },
+            discount: { type: 'number' },
+            items: {
+              type: 'array',
+              minItems: 1,
+              items: {
+                type: 'object',
+                required: ['productId', 'productCode', 'productName', 'quantity', 'unitPrice'],
+                properties: {
+                  productId: { type: 'integer' },
+                  productCode: { type: 'string' },
+                  productName: { type: 'string' },
+                  quantity: { type: 'number', minimum: 0.01 },
+                  unitPrice: { type: 'number', minimum: 0 },
+                  discount: { type: 'number' },
+                  note: { type: 'string' },
+                },
+              },
+            },
+            paidAmount: { type: 'number' },
+            paymentMethod: { type: 'string' },
+            description: { type: 'string' },
+            delivery: {
+              type: 'object',
+              properties: {
+                receiver: { type: 'string' },
+                phone: { type: 'string' },
+                address: { type: 'string' },
+              },
+            },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const body = request.body as any;
+
+      const result = await commandDispatcher.dispatch({
+        name: 'CreateOrder',
+        payload: body,
+      }, { orgId: user.orgId, userId: user.id });
+
+      if (!result.success) {
+        return reply.status(400).send(result);
+      }
+      return result;
+    }
+  );
+
+  // GET /api/v1/pos/orders/contact/:contactId — Lấy đơn hàng theo Contact
+  app.get('/api/v1/pos/orders/contact/:contactId', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { contactId } = request.params as { contactId: string };
+
+      const result = await commandDispatcher.dispatch({
+        name: 'GetContactOrders',
+        payload: { contactId },
+      }, { orgId: user.orgId, userId: user.id });
+
+      if (!result.success) {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch contact orders failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch orders' });
+    }
+  });
 }

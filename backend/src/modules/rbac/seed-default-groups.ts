@@ -2,6 +2,7 @@
  * seed-default-groups.ts — Seed 7 default permission groups (system, is_system=true)
  *
  * Idempotent: chạy nhiều lần OK, chỉ tạo nếu group chưa tồn tại trong org.
+ * Workspace Architecture 2026-07-22: seed kèm workspaceId → resolver đọc chính xác.
  * Gọi từ migration script D13 hoặc admin endpoint.
  */
 import { randomUUID } from 'node:crypto';
@@ -11,20 +12,30 @@ import { DEFAULT_PERMISSION_GROUPS } from './permission-types.js';
 export interface SeedResult {
   created: number;
   existing: number;
+  updated: number;
   groups: Array<{ id: string; name: string; isSystem: boolean }>;
 }
 
 export async function seedDefaultPermissionGroups(orgId: string): Promise<SeedResult> {
-  const result: SeedResult = { created: 0, existing: 0, groups: [] };
+  const result: SeedResult = { created: 0, existing: 0, updated: 0, groups: [] };
 
   for (const tmpl of DEFAULT_PERMISSION_GROUPS) {
     // Idempotent: check by (orgId, name, isSystem)
     const existing = await prisma.permissionGroup.findFirst({
       where: { orgId, name: tmpl.name, isSystem: true },
-      select: { id: true, name: true, isSystem: true },
+      select: { id: true, name: true, isSystem: true, workspaceId: true },
     });
     if (existing) {
-      result.existing++;
+      // Backfill workspaceId nếu group đã tồn tại nhưng chưa có workspaceId (migration)
+      if (tmpl.workspaceId && existing.workspaceId !== tmpl.workspaceId) {
+        await prisma.permissionGroup.update({
+          where: { id: existing.id },
+          data: { workspaceId: tmpl.workspaceId },
+        });
+        result.updated++;
+      } else {
+        result.existing++;
+      }
       result.groups.push(existing);
       continue;
     }
@@ -36,6 +47,7 @@ export async function seedDefaultPermissionGroups(orgId: string): Promise<SeedRe
         name: tmpl.name,
         isSystem: tmpl.isSystem,
         grants: tmpl.grants as object,
+        workspaceId: tmpl.workspaceId ?? null,
       },
       select: { id: true, name: true, isSystem: true },
     });
@@ -88,3 +100,4 @@ export async function migrateLegacyUsersToPermissionGroups(orgId: string): Promi
     memberCount: memberRes.count,
   };
 }
+

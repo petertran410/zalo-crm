@@ -63,10 +63,13 @@ function createPrismaClient() {
 
   const base = new PrismaClient({
     adapter,
-    log:
-      process.env.NODE_ENV === 'development'
-        ? ['query', 'error', 'warn']
-        : ['error'],
+    // Tắt log SQL mặc định — bật khi cần debug bằng PRISMA_LOG_QUERIES=true trong .env
+    // (trước đây bật tự động theo NODE_ENV=development gây ngập terminal + chậm)
+    log: [
+      ...(process.env.PRISMA_LOG_QUERIES === 'true' ? [{ emit: 'stdout' as const, level: 'query' as const }] : []),
+      'error',
+      'warn',
+    ],
   });
 
   return base.$extends({
