@@ -38,6 +38,8 @@ import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
 import { deviceRoutes } from './modules/devices/device-routes.js';
 import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
+// Lưu Hội Thoại 2026-07-22 — CHỈ Chủ tài khoản (requireRole('owner')) truy cập được.
+import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
@@ -81,6 +83,8 @@ import { startContactIntelligence } from './modules/contacts/contact-intelligenc
 import { analyticsRoutes } from './modules/analytics/analytics-routes.js';
 import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
+import { hisweetieMcpRoutes } from './modules/integrations/hisweetie-mcp-routes.js';
+import { hisweetieBillingRoutes } from './modules/integrations/hisweetie-billing-routes.js';
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
 // Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
@@ -266,6 +270,7 @@ async function bootstrap() {
   await app.register(deviceRoutes);
   await app.register(configRoutes);
   await app.register(mediaRoutes);
+  await app.register(chatArchiveRoutes);
   await app.register(contactRoutes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
@@ -323,6 +328,8 @@ async function bootstrap() {
   await app.register(analyticsRoutes);
   await app.register(savedReportRoutes);
   await app.register(integrationRoutes);
+  await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
+  await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
   await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
@@ -413,6 +420,15 @@ async function bootstrap() {
     if (config.nodeEnv !== 'test') {
       const { startContactProfileSyncCron } = await import('./modules/contacts/contact-profile-sync-cron.js');
       startContactProfileSyncCron();
+    }
+    // Hisweetie POS customer sync (01:00 VN daily) — pull POS → Contact (goal 1),
+    // + debounced push worker CRM edit → POS (goal 2). Poll-based, KHÔNG webhook
+    // (goal 3, anh chốt 2026-07-15 — xem hisweetie-sync-cron.ts).
+    if (config.nodeEnv !== 'test') {
+      const { startHisweetieSyncCron } = await import('./modules/integrations/hisweetie-sync-cron.js');
+      startHisweetieSyncCron();
+      const { startHisweetiePushWorker } = await import('./modules/integrations/hisweetie-push-queue.js');
+      startHisweetiePushWorker();
     }
     // Phase ZaloAccounts redesign 2026-05-22 — status log: backfill open records 1
     // lần lúc startup (idempotent), rồi start checkpoint cron (*/5 min) reconcile

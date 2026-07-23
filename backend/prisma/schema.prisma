@@ -185,6 +185,10 @@ model Organization {
   mediaUsageEvents        MediaUsageEvent[]
   // Work attachments V1 2026-07-13 — ảnh/video/file đính kèm task/ticket
   workItemAttachments     WorkItemAttachment[]
+  // Phase Kho Lưu Trữ 2026-07-22 — chia sẻ tệp riêng tư qua liên kết.
+  mediaShares             MediaShare[]
+  // Phase Lưu Hội Thoại 2026-07-22 — bản lưu hội thoại (CHỈ Chủ tài khoản xem).
+  chatArchives            ChatArchive[]
 
   @@map("organizations")
 }
@@ -330,6 +334,11 @@ model User {
   createdMediaAlbums        MediaAlbum[]                 @relation("MediaAlbumCreatedBy")
   // Work attachments V1 2026-07-13 — ảnh/video/file đính kèm task/ticket
   addedWorkItemAttachments  WorkItemAttachment[]         @relation("WorkItemAttachmentAddedBy")
+  // Phase Kho Lưu Trữ 2026-07-22 — chia sẻ tệp riêng tư (người chia sẻ / người được chia sẻ).
+  mediaSharesGiven          MediaShare[]                 @relation("MediaShareSharedBy")
+  mediaSharesReceived       MediaShare[]                 @relation("MediaShareSharedWith")
+  // Phase Lưu Hội Thoại 2026-07-22 — bản lưu hội thoại do người này tạo (chỉ Chủ tài khoản).
+  createdChatArchives       ChatArchive[]                @relation("ChatArchiveCreatedBy")
 
   @@map("users")
 }
@@ -4152,8 +4161,17 @@ model MediaBlob {
   // Work attachments V1 — variant annotated gắn vào attachment (SetNull nếu blob bị xóa)
   workItemAttachments WorkItemAttachment[]
 
-  // Dedup key: cùng org + cùng bytes = 1 blob. statObject + upsert chống trùng.
-  @@unique([orgId, contentHash])
+  // Dedup 2026-07-22 (Phase Kho Lưu Trữ) — NỚI khoá từ [orgId,contentHash] sang
+  // [orgId,contentHash,assetId]. Lý do: tệp tải lên tab Kho là RIÊNG TƯ theo người tải.
+  // Với khoá cũ, người B tải lên đúng bytes mà người A đã có → dedup trả về ASSET CỦA A
+  // → B "tải lên" xong nhận về tệp của người khác (và biết được tệp đó tồn tại) = rò rỉ.
+  // Nới khoá cho phép 2 asset khác chủ cùng trỏ 1 object.
+  //
+  // ⚠️ Dedup BYTE (phần tiết kiệm đĩa thật) KHÔNG đổi: uploadBuffer vẫn skip ghi khi object
+  //    đã tồn tại; 2 hàng blob chỉ cùng minioKey. Xoá 1 asset không đụng byte (GC invariant).
+  @@unique([orgId, contentHash, assetId])
+  // Tra dedup theo bytes (giờ có thể ra nhiều hàng → findFirst, xem media-service).
+  @@index([orgId, contentHash])
   @@index([assetId])
   @@map("media_blobs")
 }
@@ -4181,6 +4199,15 @@ model MediaAsset {
   // đây code suy cờ từ `!!sourceZaloAccountId`; nick thường giờ cũng có id nên PHẢI đọc cờ này.
   sourceIsPrivateNick Boolean   @default(false) @map("source_is_private_nick")
   folderId            String?   @map("folder_id") // MediaAlbum dùng làm "thư mục" (parentId=null)
+  // ── Phase Kho Lưu Trữ 2026-07-22 (anh chốt) ───────────────────────────────
+  // storageScope: 'catalog'        = kho phương tiện CŨ — media.view_all BYPASS được (admin/marketing thấy).
+  //               'private_upload' = tệp tải lên từ tab Kho — view_all KHÔNG bypass. CHỈ người tải lên,
+  //                                  Chủ tài khoản (User.role='owner'), và người được chia sẻ liên kết mới thấy.
+  // Mặc định 'catalog' để mọi hàng CŨ giữ nguyên hành vi; route upload tab Kho set 'private_upload'.
+  storageScope        String    @default("catalog") @map("storage_scope")
+  // Tên tệp (đã bỏ dấu) đã đặt trong thư mục THẬT trên đĩa, vd "bao_gia_q4.pdf". Cần nhớ để
+  // gỡ đúng liên kết khi bỏ vào thùng rác / chuyển thư mục. null = chưa mirror (R2 hoặc lỗi).
+  folderLinkName      String?   @map("folder_link_name")
   tagIds              String[]  @default([]) @map("tag_ids") // tag dự án (EGV/HS...) — Gin index
   originalFilename    String?   @map("original_filename")
   thumbnailUrl        String?   @map("thumbnail_url") // video thumbnail
@@ -4208,11 +4235,14 @@ model MediaAsset {
   albumItems MediaAlbumItem[]
   usageEvents MediaUsageEvent[]
   workItemAttachments WorkItemAttachment[]
+  shares      MediaShare[]
 
   @@index([orgId, kind])
   @@index([orgId, visibility])
   @@index([orgId, ownerUserId])
   @@index([orgId, archivedAt])
+  // Kho Lưu Trữ 2026-07-22 — list tab Kho lọc theo scope + người tải lên.
+  @@index([orgId, storageScope, ownerUserId])
   @@index([folderId])
   @@index([sourceZaloAccountId])
   @@index([tagIds], type: Gin)
@@ -4230,6 +4260,10 @@ model MediaAlbum {
   visibility  String   @default("private")
   ownerUserId String?  @map("owner_user_id")
   createdById String   @map("created_by_id")
+  // Kho Lưu Trữ 2026-07-22 — tên thư mục THẬT trên đĩa, đã bỏ dấu ("việt nam" → "viet_nam").
+  // Lưu lại thay vì slug lại từ `name` mỗi lần: đổi tên thư mục có thể thất bại (slug đích đã
+  // bận) → DB phải nhớ thư mục đĩa ĐANG dùng là cái nào. null = chưa mirror (driver R2 / lỗi).
+  diskSlug    String?  @map("disk_slug")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
@@ -4283,4 +4317,117 @@ model MediaUsageEvent {
   @@index([mediaAssetId])
   @@index([orgId, createdAt])
   @@map("media_usage_events")
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Phase Kho Lưu Trữ (Storage) 2026-07-22 — anh chốt:
+//   • MỌI người đăng nhập đều tải tệp lên được (không cần quyền media.create).
+//   • Tệp tải lên MẶC ĐỊNH chỉ người tải lên thấy. Người khác — KỂ CẢ admin —
+//     phải được CHIA SẺ LIÊN KẾT mới xem được. media.view_all KHÔNG bypass.
+//   • Chủ tài khoản (User.role='owner') xem được tất cả, không cần chia sẻ.
+// ════════════════════════════════════════════════════════════════════════
+
+// MediaShare — 1 lần chia sẻ 1 tệp riêng tư cho người khác trong org.
+// 2 kiểu dùng chung 1 bảng:
+//   • sharedWithUserId != null → chia sẻ ĐÍCH DANH (người đó mở tab Kho là thấy).
+//   • sharedWithUserId == null → liên kết MỞ trong org: ai cầm token + đã đăng nhập là xem được.
+// Thu hồi = set revokedAt (giữ hàng để audit ai từng được xem).
+model MediaShare {
+  id             String    @id @default(uuid())
+  orgId          String    @map("org_id")
+  mediaAssetId   String    @map("media_asset_id")
+  // Token ngẫu nhiên 32 byte base64url — phần bí mật của liên kết chia sẻ.
+  token          String    @unique
+  sharedById     String    @map("shared_by_id")
+  sharedWithUserId String? @map("shared_with_user_id")
+  expiresAt      DateTime? @map("expires_at") // null = không hết hạn
+  revokedAt      DateTime? @map("revoked_at")
+  // Đếm lượt mở (audit: tệp riêng tư đã bị xem bao nhiêu lần).
+  viewCount      Int       @default(0) @map("view_count")
+  lastViewedAt   DateTime? @map("last_viewed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  asset      MediaAsset   @relation(fields: [mediaAssetId], references: [id], onDelete: Cascade)
+  sharedBy   User         @relation("MediaShareSharedBy", fields: [sharedById], references: [id], onDelete: Cascade)
+  sharedWith User?        @relation("MediaShareSharedWith", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+
+  // 1 người chỉ được chia sẻ 1 lần / tệp (chia sẻ lại = tái dùng hàng cũ, clear revokedAt).
+  @@unique([mediaAssetId, sharedWithUserId])
+  @@index([orgId, sharedWithUserId, revokedAt])
+  @@index([mediaAssetId])
+  @@index([token])
+  @@map("media_shares")
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// Phase Lưu Hội Thoại 2026-07-22 — anh chốt:
+//   "Lưu tin nhắn và ảnh vào một cơ sở dữ liệu để dùng về sau."
+//   CHỈ Chủ tài khoản (User.role='owner') xem được. Nhân viên VÀ admin đều KHÔNG.
+//   Không đi qua ma trận phân quyền RBAC — gác bằng requireRole('owner').
+//
+// 2 cách lưu (anh chốt) nằm CHUNG 1 bản lưu:
+//   • summaryText          — bản tóm tắt do AI sinh (tái dùng generateAiOutput type='summary')
+//   • ChatArchiveMessage[] — bản chép TỪNG DÒNG, kèm liên kết ảnh/tệp
+// mode ghi lại lần lưu này sinh ra cái gì để UI biết mà hiện.
+// ════════════════════════════════════════════════════════════════════════
+
+model ChatArchive {
+  id             String   @id @default(uuid())
+  orgId          String   @map("org_id")
+  conversationId String   @map("conversation_id")
+  // 'summary' | 'verbatim' | 'both' — lần lưu này sinh ra nội dung gì.
+  mode           String   @default("both")
+  // Ảnh chụp danh tính hội thoại TẠI THỜI ĐIỂM lưu — hội thoại/khách có thể bị xoá
+  // hay đổi tên về sau, bản lưu vẫn phải đọc được độc lập.
+  contactName    String?  @map("contact_name")
+  contactId      String?  @map("contact_id")
+  channel        String   @default("zalo")
+  zaloAccountId  String?  @map("zalo_account_id")
+  nickName       String?  @map("nick_name")
+  summaryText    String?  @map("summary_text") @db.Text
+  // Khoảng thời gian + số dòng đã chép (hiện ở danh sách, khỏi đếm lại).
+  messageCount   Int      @default(0) @map("message_count")
+  mediaCount     Int      @default(0) @map("media_count")
+  firstMessageAt DateTime? @map("first_message_at")
+  lastMessageAt  DateTime? @map("last_message_at")
+  createdById    String   @map("created_by_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  org          Organization         @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  // Xoá hội thoại KHÔNG được xoá bản lưu — bản lưu tồn tại chính để đọc lại sau khi
+  // hội thoại đã mất. SetNull cần cột nullable, nên KHÔNG khai FK sang Conversation:
+  // conversationId giữ dạng id trần (mọi truy vấn đã có orgId + createdById).
+  createdBy    User                 @relation("ChatArchiveCreatedBy", fields: [createdById], references: [id])
+  messages     ChatArchiveMessage[]
+
+  @@index([orgId, createdAt(sort: Desc)])
+  @@index([orgId, conversationId, createdAt(sort: Desc)])
+  @@index([orgId, contactId])
+  @@map("chat_archives")
+}
+
+// ChatArchiveMessage — 1 DÒNG trong bản chép từng dòng.
+// KHÔNG FK sang Message: bản lưu phải sống sót khi tin gốc bị xoá/gỡ. sourceMessageId
+// chỉ để đối chiếu. mediaUrls trỏ object trong kho (đã mirror vĩnh viễn từ CDN Zalo).
+model ChatArchiveMessage {
+  id              String   @id @default(uuid())
+  archiveId       String   @map("archive_id")
+  // Thứ tự dòng trong bản lưu (0-based) — sort ổn định, không phụ thuộc sentAt trùng.
+  seq             Int
+  sourceMessageId String?  @map("source_message_id")
+  senderType      String   @map("sender_type") // self | contact | ai_assistant
+  senderName      String?  @map("sender_name")
+  content         String?  @db.Text
+  contentType     String   @default("text") @map("content_type")
+  // Liên kết ảnh/tệp của dòng này (URL công khai trong kho). Rỗng với tin chữ.
+  mediaUrls       String[] @default([]) @map("media_urls")
+  // Key object tương ứng ('media/{hash}.ext') — cần khi muốn đọc byte mà URL đổi tên miền.
+  mediaKeys       String[] @default([]) @map("media_keys")
+  sentAt          DateTime @map("sent_at")
+
+  archive ChatArchive @relation(fields: [archiveId], references: [id], onDelete: Cascade)
+
+  @@index([archiveId, seq])
+  @@map("chat_archive_messages")
 }

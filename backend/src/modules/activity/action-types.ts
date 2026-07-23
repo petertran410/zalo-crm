@@ -124,6 +124,12 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   lead_pool_manual_return: 'customer_info', // sale chủ động trả pool — narrative event
   lead_pool_bonus_grant: 'system',
   lead_pool_zalo_lookup: 'system',
+
+  // Lưu Hội Thoại 2026-07-22 — chỉ Chủ tài khoản thao tác được. Ghi nhật ký MỌI lần
+  // tạo/đọc/xoá bản lưu: bản lưu chứa nguyên văn tin nhắn khách, phải truy vết được.
+  chat_archive_create: 'system',
+  chat_archive_view: 'system',
+  chat_archive_delete: 'system',
 };
 
 export function categoryOf(action: string): ActivityCategory | null {

@@ -19,7 +19,14 @@ import { userHasGrant } from '../rbac/permission-group-service.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
-import { registerAsset, bumpUsage, resolveSavedVisibility, generateWatermarkVariant, disableWatermark, saveAnnotatedVariant, logMediaUsage, normalizeTags, type MediaKind } from './media-service.js';
+import { registerAsset, bumpUsage, resolveSavedVisibility, generateWatermarkVariant, disableWatermark, saveAnnotatedVariant, logMediaUsage, normalizeTags, type MediaKind, type MediaStorageScope } from './media-service.js';
+// Kho Lưu Trữ 2026-07-22 — luật "ai thấy tệp nào" + thư mục thật trên đĩa.
+import { buildMediaScopeWhere, isOrgOwner, activeShareWhere } from './media-access.js';
+import {
+  createFolderOnDisk, mirrorAssetIntoFolder, unmirrorAssetFromFolder,
+  renameFolderOnDisk, deleteFolderOnDisk,
+} from './media-folder-service.js';
+import { randomBytes } from 'node:crypto';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
 import { createMediaMessage, getUserFullName } from '../chat/chat-helpers.js';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
@@ -132,19 +139,29 @@ export async function mediaRoutes(app: FastifyInstance) {
         // 2026-06-16: phân trang theo trang (block picker) + lọc theo người tải lên.
         skip?: string;         // offset — bỏ qua N kết quả đầu (page * limit)
         ownerUserId?: string;  // chỉ ảnh của 1 sale cụ thể (dropdown người upload)
+        // Kho Lưu Trữ 2026-07-22: lọc theo phạm vi — 'catalog' (kho chung) | 'private_upload'
+        // (tệp tải lên tab Kho). Bỏ trống = cả hai (đúng quyền xem của người gọi).
+        storageScope?: string;
       };
 
-      // view_all → xem cả org; thường → chỉ asset của mình HOẶC public.
+      // Kho Lưu Trữ 2026-07-22: luật scope gom về media-access.buildMediaScopeWhere.
+      // view_all vẫn bypass kho CŨ, nhưng KHÔNG bypass tệp riêng tư của tab Kho.
       const canViewAll = await userHasGrant(userId, 'media', 'view_all');
-      const scopeWhere = canViewAll
-        ? {}
-        : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] };
+      const scopeWhere = buildMediaScopeWhere({
+        userId,
+        canViewAll,
+        isOwnerRole: isOrgOwner(user),
+      });
 
       const where: any = {
         orgId: user.orgId,
         archivedAt: null,
         ...scopeWhere,
       };
+      if (q.storageScope === 'catalog' || q.storageScope === 'private_upload') {
+        // AND với scopeWhere: lọc hiển thị, KHÔNG nới quyền.
+        where.AND = [...(where.AND ?? []), { storageScope: q.storageScope }];
+      }
       if (q.kind) where.kind = q.kind;
       if (q.visibility) where.visibility = q.visibility;
       if (q.folderId) where.folderId = q.folderId;
@@ -217,6 +234,10 @@ export async function mediaRoutes(app: FastifyInstance) {
           kind: a.kind,
           name: a.name,
           visibility: a.visibility,
+          // Kho Lưu Trữ 2026-07-22 — FE hiện huy hiệu "Riêng tư / đã chia sẻ" + nút Chia sẻ
+          // (chỉ chủ tệp mới thấy nút). mine=false + private_upload = xem nhờ liên kết.
+          storageScope: a.storageScope,
+          mine: a.ownerUserId === userId,
           ownerUserId: a.ownerUserId,
           tagIds: a.tagIds,
           usageCount: a.usageCount,
@@ -295,15 +316,22 @@ export async function mediaRoutes(app: FastifyInstance) {
   );
 
   // ── POST /api/v1/media/upload — tải ảnh/file lên kho (multipart) ───────────
+  // Kho Lưu Trữ 2026-07-22 (anh chốt): BỎ requireGrant('media','create') — mọi người đăng
+  // nhập đều tải lên được, không cần quyền. Bù lại tệp vào thẳng phạm vi RIÊNG TƯ
+  // (storageScope='private_upload'): chỉ người tải lên + Chủ tài khoản + người được chia sẻ
+  // liên kết mới thấy; media.view_all KHÔNG bypass. Cùng khuôn "auth-only" như tasks/tickets.
+  //
+  // Tương thích ngược: truyền field `storageScope=catalog` để tải lên KHO CHUNG như trước —
+  // đường này VẪN đòi quyền media.create (kiểm trong thân hàm, xem bên dưới).
   app.post(
     '/api/v1/media/upload',
-    { preHandler: requireGrant('media', 'create') },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = request.user!;
       const userId = (user as any).userId ?? user.id;
       let visibility: 'private' | 'public' = 'private';
       let folderId: string | null = null;
       let tagIds: string[] = [];
+      let storageScope: MediaStorageScope = 'private_upload';
       // BUG self-verify 2026-06-11: field 'visibility' có thể đến SAU file trong multipart
       // → đọc khi register thì còn 'private'. Fix: GOM file buffers + fields TRƯỚC, register SAU.
       const pending: Array<{ buffer: Buffer; mimeType: string; kind: MediaKind; filename: string }> = [];
@@ -316,6 +344,7 @@ export async function mediaRoutes(app: FastifyInstance) {
             if (part.fieldname === 'tagIds' && part.value) {
               try { tagIds = JSON.parse(String(part.value)); } catch { /* ignore */ }
             }
+            if (part.fieldname === 'storageScope' && part.value === 'catalog') storageScope = 'catalog';
             continue;
           }
           if (part.type !== 'file') continue;
@@ -336,6 +365,12 @@ export async function mediaRoutes(app: FastifyInstance) {
           pending.push({ buffer: buf, mimeType: part.mimetype, kind, filename: part.filename });
         }
 
+        // Tải lên KHO CHUNG vẫn là hành vi đặc quyền → giữ nguyên yêu cầu media.create.
+        // Chỉ nhánh 'private_upload' (mặc định, tab Kho) mới mở cho mọi người.
+        if (storageScope === 'catalog' && !(await userHasGrant(userId, 'media', 'create'))) {
+          return reply.status(403).send({ error: 'Không có quyền tải lên kho chung' });
+        }
+
         // Register SAU khi đã đọc hết parts → visibility/folderId/tagIds chắc chắn đầy đủ.
         const created: any[] = [];
         for (const p of pending) {
@@ -351,7 +386,11 @@ export async function mediaRoutes(app: FastifyInstance) {
             source: 'upload',
             tagIds,
             folderId,
+            storageScope,
           });
+          // Thư mục THẬT trên đĩa (anh chốt): đặt liên kết cứng của tệp vào thư mục đã bỏ dấu.
+          // Fire-and-forget — hỏng thư mục đĩa KHÔNG được làm hỏng lần tải lên.
+          if (folderId) void mirrorAssetIntoFolder(user.orgId, res.asset.id, folderId);
           created.push({ id: res.asset.id, name: res.asset.name, deduped: res.deduped });
         }
         if (created.length === 0) return reply.status(400).send({ error: 'Không có tệp nào' });
@@ -702,12 +741,24 @@ export async function mediaRoutes(app: FastifyInstance) {
       const userId = (user as any).userId ?? user.id;
       const { id } = request.params as { id: string };
       const canViewAll = await userHasGrant(userId, 'media', 'view_all');
+      // Kho Lưu Trữ 2026-07-22: tệp riêng tư của tab Kho KHÔNG cho view_all xoá hộ —
+      // chỉ chủ tệp hoặc Chủ tài khoản. (Kho chung giữ nguyên luật cũ.)
       const asset = await prisma.mediaAsset.findFirst({
-        where: { id, orgId: user.orgId, archivedAt: null, ...(canViewAll ? {} : { ownerUserId: userId }) },
+        where: {
+          id, orgId: user.orgId, archivedAt: null,
+          ...(isOrgOwner(user)
+            ? {}
+            : canViewAll
+              ? { OR: [{ storageScope: 'catalog' }, { ownerUserId: userId }] }
+              : { ownerUserId: userId }),
+        },
       });
       if (!asset) return reply.status(404).send({ error: 'Không tìm thấy media' });
       // INVARIANT: chỉ vào thùng rác, KHÔNG xóa object MinIO (giữ lịch sử chat cũ trỏ tới).
       await prisma.mediaAsset.update({ where: { id }, data: { archivedAt: new Date(), trashedById: userId } });
+      // Gỡ TÊN khỏi thư mục đĩa để cây thư mục không hiện tệp đã bỏ vào thùng rác.
+      // Byte kho phẳng GIỮ NGUYÊN → khôi phục lại được.
+      void unmirrorAssetFromFolder(user.orgId, id);
       logger.info(`[media][audit] trash asset=${id} user=${userId}`);
       return { ok: true };
     },
@@ -963,19 +1014,24 @@ export async function mediaRoutes(app: FastifyInstance) {
       const folders = await prisma.mediaAlbum.findMany({
         where: {
           orgId: user.orgId,
-          ...(canViewAll ? {} : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] }),
+          ...(canViewAll || isOrgOwner(user)
+            ? {}
+            : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] }),
         },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, kind: true, visibility: true, ownerUserId: true },
+        // diskSlug: tên thư mục THẬT trên đĩa — FE hiện để anh biết mở đường dẫn nào.
+        select: { id: true, name: true, kind: true, visibility: true, ownerUserId: true, diskSlug: true },
       });
       return { folders };
     },
   );
 
   // ── POST /api/v1/media/folders — tạo thư mục ──────────────────────────────
+  // Kho Lưu Trữ 2026-07-22 (anh chốt): BỎ requireGrant — ai tải tệp lên được thì tạo được
+  // thư mục để xếp tệp. Đồng thời tạo LUÔN thư mục THẬT trên đĩa với tên đã bỏ dấu
+  // ("việt nam" → "viet_nam") để mở ổ đĩa trên máy chủ là thấy đúng cây thư mục.
   app.post(
     '/api/v1/media/folders',
-    { preHandler: requireGrant('media', 'create') },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = request.user!;
       const userId = (user as any).userId ?? user.id;
@@ -991,7 +1047,63 @@ export async function mediaRoutes(app: FastifyInstance) {
           createdById: userId,
         },
       });
-      return { folder: { id: folder.id, name: folder.name } };
+      // ĐỢI mkdir (không fire-and-forget): FE hiện tên thư mục đĩa ngay sau khi tạo, và
+      // mkdir chỉ tốn vài ms. Lỗi đĩa KHÔNG làm hỏng việc tạo thư mục trong kho (hàm tự nuốt).
+      const diskSlug = await createFolderOnDisk(folder.id, folder.name);
+      return { folder: { id: folder.id, name: folder.name, diskSlug } };
+    },
+  );
+
+  // ── PATCH /api/v1/media/folders/:id — đổi tên thư mục (kéo theo thư mục đĩa) ──
+  app.patch(
+    '/api/v1/media/folders/:id',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { name?: string };
+      if (!body.name?.trim()) return reply.status(400).send({ error: 'Tên thư mục bắt buộc' });
+
+      // Chỉ chủ thư mục (hoặc Chủ tài khoản) mới đổi tên được.
+      const folder = await prisma.mediaAlbum.findFirst({
+        where: { id, orgId: user.orgId, ...(isOrgOwner(user) ? {} : { ownerUserId: userId }) },
+        select: { id: true },
+      });
+      if (!folder) return reply.status(404).send({ error: 'Không tìm thấy thư mục' });
+
+      const updated = await prisma.mediaAlbum.update({
+        where: { id: folder.id }, data: { name: body.name.trim() },
+      });
+      await renameFolderOnDisk(user.orgId, folder.id, updated.name);
+      const after = await prisma.mediaAlbum.findUnique({
+        where: { id: folder.id }, select: { diskSlug: true },
+      });
+      return { folder: { id: updated.id, name: updated.name, diskSlug: after?.diskSlug ?? null } };
+    },
+  );
+
+  // ── DELETE /api/v1/media/folders/:id — xoá thư mục (kéo theo thư mục đĩa) ──
+  // Tệp bên trong KHÔNG mất: MediaAsset.folderId SetNull (schema), byte kho phẳng giữ nguyên.
+  // Chỉ các LIÊN KẾT trong thư mục đĩa bị gỡ (force=true).
+  app.delete(
+    '/api/v1/media/folders/:id',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params as { id: string };
+      const folder = await prisma.mediaAlbum.findFirst({
+        where: { id, orgId: user.orgId, kind: 'folder', ...(isOrgOwner(user) ? {} : { ownerUserId: userId }) },
+        select: { id: true },
+      });
+      if (!folder) return reply.status(404).send({ error: 'Không tìm thấy thư mục' });
+
+      await deleteFolderOnDisk(user.orgId, folder.id, true);
+      await prisma.mediaAsset.updateMany({
+        where: { orgId: user.orgId, folderId: folder.id },
+        data: { folderId: null, folderLinkName: null },
+      });
+      await prisma.mediaAlbum.delete({ where: { id: folder.id } });
+      return { ok: true };
     },
   );
 
@@ -1265,6 +1377,218 @@ export async function mediaRoutes(app: FastifyInstance) {
       } finally {
         for (const t of tmps) await t.cleanup().catch(() => {});
       }
+    },
+  );
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // CHIA SẺ TỆP RIÊNG TƯ — Phase Kho Lưu Trữ 2026-07-22
+  // Tệp tải lên tab Kho mặc định chỉ người tải lên thấy. Muốn người khác xem →
+  // chủ tệp tạo liên kết chia sẻ. KỂ CẢ admin cũng phải qua đường này (anh chốt).
+  // Chỉ CHỦ TỆP (hoặc Chủ tài khoản) mới chia sẻ/thu hồi được.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  /** Tệp này có phải của người đang gọi không (Chủ tài khoản coi như luôn đúng). */
+  async function findOwnedAsset(orgId: string, assetId: string, userId: string, user: any) {
+    return prisma.mediaAsset.findFirst({
+      where: {
+        id: assetId, orgId, archivedAt: null,
+        ...(isOrgOwner(user) ? {} : { ownerUserId: userId }),
+      },
+      select: { id: true, name: true, ownerUserId: true, storageScope: true },
+    });
+  }
+
+  // ── POST /api/v1/media/:id/share — tạo liên kết chia sẻ ────────────────────
+  // body.userId (tuỳ chọn): chia sẻ ĐÍCH DANH — người đó mở tab Kho là thấy tệp.
+  //   Bỏ trống → liên kết MỞ trong org: ai đã đăng nhập + cầm token đều xem được.
+  // body.expiresInHours (tuỳ chọn): tự hết hạn sau N giờ.
+  app.post(
+    '/api/v1/media/:id/share',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params as { id: string };
+      const body = (request.body ?? {}) as { userId?: string; expiresInHours?: number };
+
+      try {
+        const asset = await findOwnedAsset(user.orgId, id, userId, user);
+        if (!asset) return reply.status(404).send({ error: 'Không tìm thấy tệp (hoặc tệp không phải của bạn)' });
+
+        // Người nhận phải cùng org — chống chia sẻ xuyên tổ chức.
+        if (body.userId) {
+          const target = await prisma.user.findFirst({
+            where: { id: body.userId, orgId: user.orgId }, select: { id: true },
+          });
+          if (!target) return reply.status(400).send({ error: 'Người nhận không thuộc tổ chức' });
+          if (target.id === asset.ownerUserId) {
+            return reply.status(400).send({ error: 'Tệp đã là của người này' });
+          }
+        }
+
+        const expiresAt = body.expiresInHours && body.expiresInHours > 0
+          ? new Date(Date.now() + Math.min(body.expiresInHours, 24 * 365) * 3600_000)
+          : null;
+        const token = randomBytes(32).toString('base64url');
+
+        // Chia sẻ lại cho người đã từng bị thu hồi → tái dùng hàng cũ + cấp token mới,
+        // clear revokedAt (thay vì đẻ hàng mới mỗi lần bấm Chia sẻ).
+        let share;
+        if (body.userId) {
+          // Đích danh: unique [mediaAssetId, sharedWithUserId] dùng được vì cả 2 đều khác null.
+          share = await prisma.mediaShare.upsert({
+            where: { mediaAssetId_sharedWithUserId: { mediaAssetId: asset.id, sharedWithUserId: body.userId } },
+            create: {
+              orgId: user.orgId, mediaAssetId: asset.id, token,
+              sharedById: userId, sharedWithUserId: body.userId, expiresAt,
+            },
+            update: { token, revokedAt: null, expiresAt, sharedById: userId },
+          });
+        } else {
+          // Liên kết MỞ (sharedWithUserId=null): KHÔNG upsert được — Postgres coi mỗi NULL là
+          // khác nhau nên unique không ràng buộc nhánh này, và Prisma không nhận null trong
+          // khoá phức. Tự tìm-rồi-sửa/tạo để mỗi tệp chỉ có đúng 1 liên kết mở.
+          const existing = await prisma.mediaShare.findFirst({
+            where: { mediaAssetId: asset.id, orgId: user.orgId, sharedWithUserId: null },
+            orderBy: { createdAt: 'asc' },
+          });
+          share = existing
+            ? await prisma.mediaShare.update({
+                where: { id: existing.id },
+                data: { token, revokedAt: null, expiresAt, sharedById: userId },
+              })
+            : await prisma.mediaShare.create({
+                data: {
+                  orgId: user.orgId, mediaAssetId: asset.id, token,
+                  sharedById: userId, sharedWithUserId: null, expiresAt,
+                },
+              });
+        }
+
+        logger.info(`[media][audit] share asset=${asset.id} by=${userId} to=${body.userId ?? 'link'}`);
+        return {
+          share: {
+            id: share.id,
+            token: share.token,
+            // Đường dẫn FE mở tệp bằng liên kết (FE ghép với origin của nó).
+            path: `/media/shared/${share.token}`,
+            sharedWithUserId: share.sharedWithUserId,
+            expiresAt: share.expiresAt,
+          },
+        };
+      } catch (err: any) {
+        logger.error('[media] share error:', err);
+        return reply.status(500).send({ error: err?.message ?? 'share failed' });
+      }
+    },
+  );
+
+  // ── GET /api/v1/media/:id/shares — ai đang xem được tệp này ────────────────
+  app.get(
+    '/api/v1/media/:id/shares',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { id } = request.params as { id: string };
+
+      const asset = await findOwnedAsset(user.orgId, id, userId, user);
+      if (!asset) return reply.status(404).send({ error: 'Không tìm thấy tệp' });
+
+      const shares = await prisma.mediaShare.findMany({
+        where: { mediaAssetId: asset.id, orgId: user.orgId },
+        include: { sharedWith: { select: { id: true, fullName: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+      return {
+        shares: shares.map((s) => ({
+          id: s.id,
+          sharedWithUserId: s.sharedWithUserId,
+          sharedWithName: s.sharedWith?.fullName ?? null, // null = liên kết mở
+          token: s.token,
+          path: `/media/shared/${s.token}`,
+          expiresAt: s.expiresAt,
+          revokedAt: s.revokedAt,
+          viewCount: s.viewCount,
+          lastViewedAt: s.lastViewedAt,
+        })),
+      };
+    },
+  );
+
+  // ── DELETE /api/v1/media/shares/:shareId — thu hồi ────────────────────────
+  // Giữ hàng (audit: ai từng xem được, bao nhiêu lượt), chỉ set revokedAt.
+  app.delete(
+    '/api/v1/media/shares/:shareId',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { shareId } = request.params as { shareId: string };
+
+      const share = await prisma.mediaShare.findFirst({
+        where: { id: shareId, orgId: user.orgId },
+        include: { asset: { select: { ownerUserId: true } } },
+      });
+      if (!share) return reply.status(404).send({ error: 'Không tìm thấy lượt chia sẻ' });
+      if (!isOrgOwner(user) && share.asset.ownerUserId !== userId) {
+        return reply.status(403).send({ error: 'Chỉ chủ tệp mới thu hồi được' });
+      }
+      await prisma.mediaShare.update({ where: { id: shareId }, data: { revokedAt: new Date() } });
+      logger.info(`[media][audit] share_revoke share=${shareId} by=${userId}`);
+      return { ok: true };
+    },
+  );
+
+  // ── GET /api/v1/media/shared/:token — mở tệp bằng liên kết chia sẻ ─────────
+  // VẪN cần đăng nhập (authMiddleware ở hook đầu file) — liên kết chỉ mở trong org,
+  // không phải liên kết công khai ra Internet. Token sai/thu hồi/hết hạn → 404 (không
+  // phân biệt lý do, tránh dò token).
+  app.get(
+    '/api/v1/media/shared/:token',
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      const user = request.user!;
+      const userId = (user as any).userId ?? user.id;
+      const { token } = request.params as { token: string };
+
+      const share = await prisma.mediaShare.findFirst({
+        where: { token, orgId: user.orgId, ...activeShareWhere() },
+        include: {
+          asset: {
+            include: {
+              blobs: { where: { variantType: 'original' }, take: 1 },
+              owner: { select: { fullName: true } },
+            },
+          },
+        },
+      });
+      if (!share || share.asset.archivedAt) {
+        return reply.status(404).send({ error: 'Liên kết không hợp lệ hoặc đã hết hạn' });
+      }
+      // Chia sẻ ĐÍCH DANH: chỉ đúng người đó mới mở được, dù có token.
+      if (share.sharedWithUserId && share.sharedWithUserId !== userId && !isOrgOwner(user)) {
+        return reply.status(404).send({ error: 'Liên kết không hợp lệ hoặc đã hết hạn' });
+      }
+
+      // Đếm lượt mở (audit tệp riêng tư đã bị xem bao nhiêu lần). Không chặn phản hồi.
+      void prisma.mediaShare
+        .update({ where: { id: share.id }, data: { viewCount: { increment: 1 }, lastViewedAt: new Date() } })
+        .catch((err) => logger.warn('[media] đếm lượt xem chia sẻ lỗi:', err?.message));
+
+      const a = share.asset;
+      const blob = a.blobs[0];
+      return {
+        asset: {
+          id: a.id,
+          kind: a.kind,
+          name: a.name,
+          url: blob?.publicUrl ?? null,
+          thumbnailUrl: a.thumbnailUrl ?? (a.kind === 'image' ? blob?.publicUrl ?? null : null),
+          sizeBytes: blob?.sizeBytes ?? null,
+          durationSec: blob?.durationSec ?? null,
+          width: blob?.width ?? null,
+          height: blob?.height ?? null,
+          createdAt: a.createdAt,
+          ownerName: a.owner?.fullName ?? null,
+        },
+      };
     },
   );
 }

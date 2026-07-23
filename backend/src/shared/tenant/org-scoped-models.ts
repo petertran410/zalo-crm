@@ -28,4 +28,7 @@ export const ORG_SCOPED_MODELS: ReadonlySet<string> = new Set([
   'FacebookLeadgenForm', 'WebhookLog', 'MetaCampaignCache', 'NotifyDedupState',
   'ZaloOaAppConfig', 'ZaloOaConnection', 'ZaloFormMapping', 'ZaloLeadEvent',
   'Task', 'Ticket', 'PosBillingDraft',
+  // Phase Kho Lưu Trữ + Lưu Hội Thoại 2026-07-22.
+  // (ChatArchiveMessage KHÔNG có orgId — luôn truy vấn qua archiveId của ChatArchive.)
+  'MediaShare', 'ChatArchive',
 ]);

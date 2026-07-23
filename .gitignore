@@ -54,3 +54,11 @@ secrets/
 # Telegram
 public-key-telegram
 public-key-telegram-product
+
+# Tệp người dùng tải lên khi chạy dev (kho phẳng theo vân tay nội dung) — KHÔNG commit:
+# đây là dữ liệu thật của khách (ảnh/tệp), vào lịch sử git là nằm đó vĩnh viễn.
+backend/uploads/
+# Thư mục thật do tính năng Kho Lưu Trữ sinh ra (2026-07-22) nằm trong backend/uploads/folders.
+
+# Artifact của phiên AI khác
+claude_todo/
