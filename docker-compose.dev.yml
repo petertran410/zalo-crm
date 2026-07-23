@@ -1,32 +1,71 @@
 version: "3.8"
 
-# Development-only compose: starts only the database.
-# Run the backend with: cd backend && npm run dev
+# ─────────────────────────────────────────────────────────────────────────────
+# Development overlay — docker compose -f docker-compose.yml -f docker-compose.dev.yml
+# Overrides `app` to run tsx watch (hot-reload backend) and adds `frontend`
+# service running Vite dev server (HMR). Source dirs are bind-mounted from host;
+# node_modules stay inside the container (anonymous volume) to avoid OS mismatch.
+#
+# IMPORTANT (Windows): Docker on Windows/WSL2 does NOT forward filesystem inotify
+# events into containers. All watchers MUST use polling mode (CHOKIDAR_USEPOLLING).
+# ─────────────────────────────────────────────────────────────────────────────
 
 services:
-  db:
-    image: postgres:16-alpine
-    container_name: zalo-crm-db-dev
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev
+    container_name: zalo-crm-app-dev
+    restart: on-failure
+    command: sh -c "npx prisma generate && npx prisma db push && npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
     environment:
-      POSTGRES_USER: crmuser
-      POSTGRES_PASSWORD: devpassword
-      POSTGRES_DB: zalocrm
-      TZ: Asia/Ho_Chi_Minh
-    # Cùng quy ước với prod: log giờ VN, NHƯNG timezone=UTC để @default(now()) lưu UTC
-    # (Prisma đọc cột timestamp như UTC — đổi sang ICT sẽ lệch +7h).
-    command: >
-      postgres
-      -c timezone=UTC
-      -c log_timezone=Asia/Ho_Chi_Minh
-    ports:
-      - "5433:5432"
+      - NODE_ENV=development
+      - DATABASE_URL=postgresql://${DB_USER:-crmuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-zalocrm}
+      # Polling cho tsx watch trên Windows Docker (inotify không hoạt động)
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=500
+      # Tắt Prisma query log mặc định (bật khi cần debug: PRISMA_LOG_QUERIES=true)
+      - PRISMA_LOG_QUERIES=false
+    env_file:
+      - .env
     volumes:
-      - pg_data_dev:/var/lib/postgresql/data
+      - ./backend:/app/backend
+      - /app/backend/node_modules
+      - file_storage:/var/lib/zalo-crm/files
+    ports:
+      - "${APP_PORT:-3080}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U crmuser"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 5s
-      timeout: 3s
-      retries: 3
+      timeout: 5s
+      retries: 60
+      # Backend cần ~60-90s: prisma generate (~10s) + db push (~10s) + app boot (~20s)
+      # + Zalo reconnect (~20s). 120s grace để không bị đánh unhealthy sớm.
+      start_period: 120s
 
-volumes:
-  pg_data_dev:
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dev-frontend
+    container_name: zalo-crm-frontend-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - IS_DOCKER=true
+      # Polling cho Vite/chokidar trên Windows Docker
+      - CHOKIDAR_USEPOLLING=true
+      - CHOKIDAR_INTERVAL=500
+    volumes:
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
+    depends_on:
+      app:
+        condition: service_healthy

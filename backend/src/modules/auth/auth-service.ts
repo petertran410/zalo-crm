@@ -189,9 +189,11 @@ export async function getProfile(userId: string) {
       passwordChangedAt: true,
       onboardingDismissedAt: true,
       onboardingStepsCompleted: true,
+      customGrants: true,
       org: { select: { id: true, name: true, timezone: true } },
       // RBAC enforce 2026-06-08 — trả grants để frontend biết user hiện tại được vào màn nào.
-      permissionGroup: { select: { id: true, name: true, grants: true, archivedAt: true } },
+      // Workspace 2026-07-22 — kèm workspaceId để resolver không phải đoán từ tên nhóm.
+      permissionGroup: { select: { id: true, name: true, grants: true, archivedAt: true, workspaceId: true } },
       // Dashboard v4 2026-06-11 — vai trò phòng ban để FE quyết hiện mấy tab dashboard
       // (sale 1 tab / trưởng phòng 2 / admin 3).
       departmentMember: { select: { deptRole: true, departmentId: true } },
@@ -207,7 +209,22 @@ export async function getProfile(userId: string) {
   // Flatten grants cho frontend đọc trực tiếp qua canAccess(resource, action).
   // Nhóm đã archive → coi như không có quyền (khớp logic userHasGrant).
   const pg = user.permissionGroup && !user.permissionGroup.archivedAt ? user.permissionGroup : null;
-  const grants = (pg?.grants ?? {}) as Record<string, Record<string, boolean>>;
+  const roleGrants = (pg?.grants ?? {}) as Record<string, Record<string, boolean>>;
+  const customGrants = (user.customGrants ?? {}) as Record<string, Record<string, boolean>>;
+
+  // Merge custom overrides into roleGrants (clone first to avoid mutating DB cache)
+  const mergedGrants = JSON.parse(JSON.stringify(roleGrants));
+  for (const resource of Object.keys(customGrants)) {
+    if (!mergedGrants[resource]) {
+      mergedGrants[resource] = {};
+    }
+    for (const action of Object.keys(customGrants[resource])) {
+      if (customGrants[resource][action] === true) {
+        mergedGrants[resource][action] = true;
+      }
+    }
+  }
+
   // owner + admin = toàn quyền (anh chốt 2026-06-08) — khớp fallback trong userHasGrant.
   const isFullAccess = user.role === 'owner' || user.role === 'admin';
 
@@ -224,8 +241,8 @@ export async function getProfile(userId: string) {
 
   return {
     ...rest,
-    permissionGroup: pg ? { id: pg.id, name: pg.name, grants } : null,
-    grants,
+    permissionGroup: pg ? { id: pg.id, name: pg.name, grants: roleGrants, workspaceId: pg.workspaceId ?? null } : null,
+    grants: mergedGrants,
     isFullAccess,
     deptRole,
     departmentId,

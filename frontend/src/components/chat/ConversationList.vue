@@ -2,73 +2,76 @@
   <div class="conv-list">
     <!-- ════════ Header: search + label chip + tabs ════════ -->
     <div class="cl-header">
-      <div class="cl-search-row">
-        <div class="cl-search-box">
-          <input
-            class="cl-search"
-            name="conv-list-search"
-            ref="searchInputEl"
-            autocomplete="off"
-            :value="search"
-            :class="{ 'cl-search--flash': searchFlash, 'has-text': !!search }"
-            placeholder="Tìm theo tên, SĐT, nội dung tin nhắn…"
-            @input="onSearchInput"
-            @keydown.esc="clearSearch"
-            @keydown.enter.prevent="onSearchEnter"
-            @animationend="searchFlash = false"
-          />
-          <!-- 2026-06-12 — nút X mờ hiện khi có text → click xóa kết quả tìm + focus lại
-               (anh báo: search dính mãi tới khi xóa thủ công/reload). Esc cũng xóa. -->
+      <!-- Collapsible: search row + label chip bar ẩn khi filterCollapsed -->
+      <div class="cl-search-collapsible" :class="{ 'cl-search-collapsible--open': !filterCollapsed }">
+        <div class="cl-search-row">
+          <div class="cl-search-box">
+            <input
+              class="cl-search"
+              name="conv-list-search"
+              ref="searchInputEl"
+              autocomplete="off"
+              :value="search"
+              :class="{ 'cl-search--flash': searchFlash, 'has-text': !!search }"
+              placeholder="Tìm theo tên, SĐT, nội dung tin nhắn…"
+              @input="onSearchInput"
+              @keydown.esc="clearSearch"
+              @keydown.enter.prevent="onSearchEnter"
+              @animationend="searchFlash = false"
+            />
+            <!-- 2026-06-12 — nút X mờ hiện khi có text → click xóa kết quả tìm + focus lại
+                 (anh báo: search dính mãi tới khi xóa thủ công/reload). Esc cũng xóa. -->
+            <button
+              v-if="search"
+              type="button"
+              class="cl-search-clear"
+              title="Xóa tìm kiếm (Esc)"
+              @click="clearSearch"
+            ><XIcon :size="14" :stroke-width="2.5" /></button>
+          </div>
           <button
-            v-if="search"
-            type="button"
-            class="cl-search-clear"
-            title="Xóa tìm kiếm (Esc)"
-            @click="clearSearch"
-          ><XIcon :size="14" :stroke-width="2.5" /></button>
+            class="cl-new-msg"
+            ref="newMsgBtnEl"
+            data-nick-picker-trigger
+            title="Bắt đầu cuộc trò chuyện mới"
+            @click="onClickNewMessage"
+          >
+            <v-icon size="18">mdi-message-plus</v-icon>
+            <span>Tin nhắn mới</span>
+            <span v-if="newMsgPickerOpen" class="cl-new-msg-caret"><ChevronUpIcon :size="14" :stroke-width="2" /></span>
+          </button>
+
+          <!-- Wedge A 2026-05-28: NickPickerPopup xổ từ nút Tin nhắn mới
+               Chỉ mở khi search có SĐT (>= 9 digits) -->
+          <NickPickerPopup
+            v-model="newMsgPickerOpen"
+            :accounts="composeAccounts as any"
+            :trigger-el="newMsgBtnEl"
+            title="Chọn nick gửi tin nhắn"
+            @pick="onPickNickForNewMsg"
+          />
         </div>
-        <button
-          class="cl-new-msg"
-          ref="newMsgBtnEl"
-          data-nick-picker-trigger
-          title="Bắt đầu cuộc trò chuyện mới"
-          @click="onClickNewMessage"
-        >
-          <v-icon size="18">mdi-message-plus</v-icon>
-          <span>Tin nhắn mới</span>
-          <span v-if="newMsgPickerOpen" class="cl-new-msg-caret"><ChevronUpIcon :size="14" :stroke-width="2" /></span>
-        </button>
 
-        <!-- Wedge A 2026-05-28: NickPickerPopup xổ từ nút Tin nhắn mới
-             Chỉ mở khi search có SĐT (>= 9 digits) -->
-        <NickPickerPopup
-          v-model="newMsgPickerOpen"
-          :accounts="composeAccounts as any"
-          :trigger-el="newMsgBtnEl"
-          title="Chọn nick gửi tin nhắn"
-          @pick="onPickNickForNewMsg"
-        />
-      </div>
+        <!-- Label chip bar (filter theo tag CRM) — SINGLE-SELECT.
+             Khi 1 tag active → ẩn tag khác. Click lại để clear (show all). -->
+        <div v-if="visibleTags.length" class="cl-label-bar">
+          <span
+            v-for="tag in visibleTags"
+            :key="tag"
+            class="cl-label-chip"
+            :class="{ active: filters.tags.includes(tag), 'is-zalo': isZaloManaged(tag) }"
+            :style="{ '--tag-color': tagColor(tag) || '#6B7280' }"
+            @click="toggleTag(tag)"
+          >{{ cleanTagName(tag) }}</span>
 
-      <!-- Label chip bar (filter theo tag CRM) — SINGLE-SELECT.
-           Khi 1 tag active → ẩn tag khác. Click lại để clear (show all). -->
-      <div v-if="visibleTags.length" class="cl-label-bar">
-        <span
-          v-for="tag in visibleTags"
-          :key="tag"
-          class="cl-label-chip"
-          :class="{ active: filters.tags.includes(tag), 'is-zalo': isZaloManaged(tag) }"
-          :style="{ '--tag-color': tagColor(tag) || '#6B7280' }"
-          @click="toggleTag(tag)"
-        >{{ cleanTagName(tag) }}</span>
-
-        <button
-          v-if="filters.tags.length"
-          class="clear-tags"
-          @click="filters.tags = []"
-          title="Bỏ lọc tag · hiển thị lại tất cả"
-        ><XIcon :size="13" :stroke-width="2" /></button>
-      </div>
+          <button
+            v-if="filters.tags.length"
+            class="clear-tags"
+            @click="filters.tags = []"
+            title="Bỏ lọc tag · hiển thị lại tất cả"
+          ><XIcon :size="13" :stroke-width="2" /></button>
+        </div>
+      </div><!-- end cl-search-collapsible -->
 
       <!-- Phase 6+ Inbox Triage Filter Bar (Pills + 4 tabs + Mini counter) -->
       <!-- Old "Chính/Khác" tabs replaced by 4-tab single-active trong slot này. -->
@@ -350,6 +353,8 @@ const props = defineProps<{
   /** Theo dõi (anh chốt 2026-06-15) — Set các cặp "contactId|nickId" ĐANG theo dõi.
    *  Row khớp → hiện chuông sau tên. ChatView fetch /care-sessions/listening-pairs. */
   followingPairs?: Set<string>;
+  /** 2026-07-22 — khi true thì ẩn cl-search-row + cl-label-bar (user đã thu gọn bộ lọc). */
+  filterCollapsed?: boolean;
 }>();
 
 // Perf 2026-07 — tắt .conv-list-move khi đổi tab (ChatView dispatch 'conv-tab-switch').
@@ -589,12 +594,17 @@ function computeDisplayTags(conv: Conversation): DisplayTag[] {
   if (Array.isArray(autoTagsRaw)) {
     for (const key of autoTagsRaw) {
       if (!key || seen.has('a:' + key)) continue;
-      seen.add('a:' + key);
+      // 2026-07-22 (anh chốt): Bỏ hiển thị "Đang chat" / "Hoạt động" (active/hot) trên list chat
+      if (key === 'active' || key === 'hot' || key === 'engagement-hot') continue;
       const taxDef = findTagBySlug(key);
       if (taxDef) {
+        if (taxDef.name.includes('Đang chat') || taxDef.name === 'Hoạt động') continue;
+        seen.add('a:' + key);
         out.push({ name: taxDef.name, color: taxDef.color || '#9CA3AF', emoji: taxDef.emoji, isZalo: false, isAuto: true, key: 'a:' + key });
       } else {
         const def = getAutoTagDef(key);
+        if (def.label.includes('Đang chat') || def.label === 'Hoạt động') continue;
+        seen.add('a:' + key);
         out.push({ name: def.label, color: def.color, emoji: def.icon, isZalo: false, isAuto: true, key: 'a:' + key });
       }
     }
@@ -607,8 +617,11 @@ function computeDisplayTags(conv: Conversation): DisplayTag[] {
   for (const t of [...friendTags, ...contactTags]) {
     if (t.startsWith('🔵 ')) continue; // tag Zalo mirror → đã lấy từ zaloLabels
     if (seen.has('c:' + t)) continue;
+    const tagObj = resolveCrmTag(t);
+    // Bỏ tag nếu chứa nhãn "Đang chat" / "Hoạt động"
+    if (tagObj.name.includes('Đang chat') || tagObj.name === 'Hoạt động') continue;
     seen.add('c:' + t);
-    out.push(resolveCrmTag(t));
+    out.push(tagObj);
   }
   return out;
 }
@@ -1205,6 +1218,16 @@ function onPatternLeave() {
   border-bottom: 1px solid var(--smax-grey-200);
   background: var(--smax-grey-50);
 }
+/* ── Collapsible search area (controlled by FilterBar collapse button) ── */
+.cl-search-collapsible {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.cl-search-collapsible.cl-search-collapsible--open {
+  max-height: 180px; /* đủ cho search row + label bar */
+}
+
 .cl-search-row {
   display: flex; gap: 6px; align-items: center;
   position: relative; /* anchor cho NickPickerPopup */
@@ -1460,19 +1483,69 @@ function onPatternLeave() {
 }
 .conv-item.active .ci-nick-mini { border-color: var(--smax-primary-soft, #e3f2fd); }
 .conv-item:hover { background: var(--smax-grey-50); }
-.conv-item.unread .ci-name { font-weight: 700; }
-/* Active: nền xanh nhạt đồng nhất + bo góc + viền xanh nhẹ */
+
+/* ════ 2026-07-22: OPTION 1 CLEAN SOFT TINT CARDS ════ */
+/* Active Item (Ô đang chọn chat) */
 .conv-item.active,
 .conv-item.is-group.active {
-  background: var(--smax-primary-soft) !important;
-  border-radius: 12px;
-  margin: 2px 6px;
-  border-bottom-color: transparent !important;
-  box-shadow: inset 0 0 0 1.5px #64b5f6 !important;
+  background: #EFF6FF !important;
+  color: #0F172A !important;
+  border-radius: 12px !important;
+  margin: 3px 6px !important;
+  border: 1.5px solid #93C5FD !important;
+  border-left: 1.5px solid #93C5FD !important;
+  padding-left: 13px !important;
+  border-bottom-color: #93C5FD !important;
+  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.10) !important;
 }
 .conv-item.active:hover,
 .conv-item.is-group.active:hover {
-  background: var(--smax-primary-soft) !important;
+  background: #E0F2FE !important;
+  border-color: #60A5FA !important;
+}
+.conv-item.active .ci-name {
+  color: #0068FF !important;
+  font-weight: 750 !important;
+}
+.conv-item.active .ci-preview {
+  color: #334155 !important;
+  font-weight: 500 !important;
+}
+.conv-item.active .ci-time {
+  color: #0068FF !important;
+  font-weight: 700 !important;
+}
+.conv-item.active .group-icon {
+  filter: none;
+}
+
+/* Unread Item (Ô chưa đọc) */
+.conv-item.unread {
+  background: #FFFBEB !important;
+  border-radius: 12px !important;
+  margin: 3px 6px !important;
+  border: 1px solid #FCD34D !important;
+  border-left: 1px solid #FCD34D !important;
+  padding-left: 13px !important;
+  border-bottom-color: #FCD34D !important;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08) !important;
+  transition: all 0.18s ease !important;
+}
+.conv-item.unread:hover {
+  background: #FEF3C7 !important;
+  border-color: #FBBF24 !important;
+}
+.conv-item.unread .ci-name {
+  font-weight: 750 !important;
+  color: #0F172A !important;
+}
+.conv-item.unread .ci-preview {
+  font-weight: 600 !important;
+  color: #1E293B !important;
+}
+.conv-item.unread .ci-time {
+  color: #D97706 !important;
+  font-weight: 700 !important;
 }
 
 /* M53 2026-05-30: Virtual conversation — nền cam nhạt + chip 🔒 */

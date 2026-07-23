@@ -10,99 +10,113 @@
   return this.toString();
 };
 
-import Fastify, { type FastifyRequest } from 'fastify';
-import cors from '@fastify/cors';
-import fastifyJwt from '@fastify/jwt';
-import rateLimit from '@fastify/rate-limit';
-import fastifyStatic from '@fastify/static';
-import fastifyMultipart from '@fastify/multipart';
-import fastifyFormbody from '@fastify/formbody';
-import { Server } from 'socket.io';
-import path from 'node:path';
-import { mkdirSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import Fastify, { type FastifyRequest } from "fastify";
+import cors from "@fastify/cors";
+import fastifyJwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
+import fastifyStatic from "@fastify/static";
+import fastifyMultipart from "@fastify/multipart";
+import fastifyFormbody from "@fastify/formbody";
+import { Server } from "socket.io";
+import path from "node:path";
+import { mkdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
-import { Prisma } from '@prisma/client';
-import { config } from './config/index.js';
-import { prisma } from './shared/database/prisma-client.js';
-import { logger } from './shared/utils/logger.js';
-import { authRoutes } from './modules/auth/auth-routes.js';
-import { orgBrandingRoutes } from './modules/branding/org-branding-routes.js';
-import { zaloRoutes } from './modules/zalo/zalo-routes.js';
-import { customerListRoutes } from './modules/lists/list-routes.js';
-import { customerListEntryRoutes } from './modules/lists/list-entry-routes.js';
-import { chatRoutes } from './modules/chat/chat-routes.js';
-import { folderRoutes } from './modules/chat/folder-routes.js';
-import { presetRoutes } from './modules/chat/preset-routes.js';
-import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
-import { deviceRoutes } from './modules/devices/device-routes.js';
-import { configRoutes } from './modules/config/config-routes.js';
-import { mediaRoutes } from './modules/media/media-routes.js';
+import { Prisma } from "@prisma/client";
+import { config } from "./config/index.js";
+import { prisma } from "./shared/database/prisma-client.js";
+import { logger } from "./shared/utils/logger.js";
+import { authRoutes } from "./modules/auth/auth-routes.js";
+import { orgBrandingRoutes } from "./modules/branding/org-branding-routes.js";
+import { zaloRoutes } from "./modules/zalo/zalo-routes.js";
+import { customerListRoutes } from "./modules/lists/list-routes.js";
+import { customerListEntryRoutes } from "./modules/lists/list-entry-routes.js";
+import { chatRoutes } from "./modules/chat/chat-routes.js";
+import { folderRoutes } from "./modules/chat/folder-routes.js";
+import { presetRoutes } from "./modules/chat/preset-routes.js";
+import { chatAttachmentRoutes } from "./modules/chat/chat-attachment-routes.js";
+import { deviceRoutes } from "./modules/devices/device-routes.js";
+import { configRoutes } from "./modules/config/config-routes.js";
+import { mediaRoutes } from "./modules/media/media-routes.js";
 // Lưu Hội Thoại 2026-07-22 — CHỈ Chủ tài khoản (requireRole('owner')) truy cập được.
-import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
-import { contactRoutes } from './modules/contacts/contact-routes.js';
-import { statusRoutes } from './modules/contacts/status-routes.js';
-import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
-import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
-import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
-import { appointmentPublicRoutes } from './modules/contacts/appointment-public-routes.js';
-import { notesRoutes } from './modules/contacts/notes-routes.js';
-import { tasksRoutes } from './modules/tasks/task-routes.js';
-import { ticketsRoutes } from './modules/tickets/ticket-routes.js';
-import { facebookWebhookRoutes, facebookChannelRoutes } from './modules/channels/facebook/facebook-routes.js';
-import { startInteractionCron } from './modules/contacts/interaction-cron.js';
-import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
-import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
-import { userPreferenceRoutes } from './modules/auth/user-preference-routes.js';
-import { timelineRoutes } from './modules/activity/timeline-routes.js';
-import { scoringRoutes } from './modules/scoring/scoring-routes.js';
-import { zaloLabelsRoutes, startLabelsBackgroundSync } from './modules/zalo/zalo-labels-routes.js';
-import { startAppointmentReminder } from './modules/contacts/appointment-reminder.js';
-import { zinstantProxyRoutes } from './modules/contacts/zinstant-proxy-routes.js';
-import { dashboardRoutes } from './modules/dashboard/dashboard-routes.js';
-import { dashboardActionHubRoutes } from './modules/dashboard/dashboard-action-hub-routes.js';
-import { reportRoutes } from './modules/dashboard/report-routes.js';
-import { reportAnalyticsRoutes } from './modules/dashboard/report-analytics-routes.js';
-import { userRoutes } from './modules/auth/user-routes.js';
-import { teamRoutes } from './modules/auth/team-routes.js';
-import { orgRoutes } from './modules/auth/org-routes.js';
-import { zaloAccessRoutes } from './modules/zalo/zalo-access-routes.js';
-import { zaloSyncRoutes } from './modules/zalo/zalo-sync-routes.js';
-import { zaloDashboardRoutes } from './modules/zalo/zalo-dashboard-routes.js';
-import { zaloPool } from './modules/zalo/zalo-pool.js';
-import { registerZaloSocketHandlers } from './modules/zalo/zalo-socket.js';
-import { registerSocketAuth } from './shared/realtime/socket-auth.js';
-import { registerPrivacyLeakGuard } from './modules/privacy/privacy-leak-guard.js';
-import { registerSecurityHeaders } from './shared/security/security-headers.js';
-import { notificationRoutes } from './modules/notifications/notification-routes.js';
-import { searchRoutes } from './modules/search/search-routes.js';
-import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
-import { publicApiRoutes } from './modules/api/public-api-routes.js';
-import { webhookSettingsRoutes } from './modules/api/webhook-settings-routes.js';
-import { startContactIntelligence } from './modules/contacts/contact-intelligence.js';
-import { analyticsRoutes } from './modules/analytics/analytics-routes.js';
-import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
-import { integrationRoutes } from './modules/integrations/integration-routes.js';
-import { hisweetieMcpRoutes } from './modules/integrations/hisweetie-mcp-routes.js';
-import { hisweetieBillingRoutes } from './modules/integrations/hisweetie-billing-routes.js';
+import { chatArchiveRoutes } from "./modules/chat-archive/chat-archive-routes.js";
+import { contactRoutes } from "./modules/contacts/contact-routes.js";
+import { statusRoutes } from "./modules/contacts/status-routes.js";
+import { contactSubResourceRoutes } from "./modules/contacts/contact-sub-resource-routes.js";
+import { cockpitRoutes } from "./modules/contacts/cockpit-routes.js";
+import { appointmentRoutes } from "./modules/contacts/appointment-routes.js";
+import { appointmentPublicRoutes } from "./modules/contacts/appointment-public-routes.js";
+import { notesRoutes } from "./modules/contacts/notes-routes.js";
+import { tasksRoutes } from "./modules/tasks/task-routes.js";
+import { ticketsRoutes } from "./modules/tickets/ticket-routes.js";
+import {
+  facebookWebhookRoutes,
+  facebookChannelRoutes,
+} from "./modules/channels/facebook/facebook-routes.js";
+import { startInteractionCron } from "./modules/contacts/interaction-cron.js";
+import { crmTagRoutes } from "./modules/contacts/crm-tag-routes.js";
+import { crmTagGroupRoutes } from "./modules/contacts/crm-tag-group-routes.js";
+import { userPreferenceRoutes } from "./modules/auth/user-preference-routes.js";
+import { timelineRoutes } from "./modules/activity/timeline-routes.js";
+import { scoringRoutes } from "./modules/scoring/scoring-routes.js";
+import {
+  zaloLabelsRoutes,
+  startLabelsBackgroundSync,
+} from "./modules/zalo/zalo-labels-routes.js";
+import { startAppointmentReminder } from "./modules/contacts/appointment-reminder.js";
+import { zinstantProxyRoutes } from "./modules/contacts/zinstant-proxy-routes.js";
+import { dashboardRoutes } from "./modules/dashboard/dashboard-routes.js";
+import { dashboardActionHubRoutes } from "./modules/dashboard/dashboard-action-hub-routes.js";
+import { reportRoutes } from "./modules/dashboard/report-routes.js";
+import { reportAnalyticsRoutes } from "./modules/dashboard/report-analytics-routes.js";
+import { userRoutes } from "./modules/auth/user-routes.js";
+import { teamRoutes } from "./modules/auth/team-routes.js";
+import { orgRoutes } from "./modules/auth/org-routes.js";
+import { zaloAccessRoutes } from "./modules/zalo/zalo-access-routes.js";
+import { zaloSyncRoutes } from "./modules/zalo/zalo-sync-routes.js";
+import { zaloDashboardRoutes } from "./modules/zalo/zalo-dashboard-routes.js";
+import { zaloPool } from "./modules/zalo/zalo-pool.js";
+import { registerZaloSocketHandlers } from "./modules/zalo/zalo-socket.js";
+import { registerSocketAuth } from "./shared/realtime/socket-auth.js";
+import { registerPrivacyLeakGuard } from "./modules/privacy/privacy-leak-guard.js";
+import { registerSecurityHeaders } from "./shared/security/security-headers.js";
+import { notificationRoutes } from "./modules/notifications/notification-routes.js";
+import { searchRoutes } from "./modules/search/search-routes.js";
+import { startZaloHealthCheck } from "./modules/zalo/zalo-health-check.js";
+import { publicApiRoutes } from "./modules/api/public-api-routes.js";
+import { webhookSettingsRoutes } from "./modules/api/webhook-settings-routes.js";
+import { startContactIntelligence } from "./modules/contacts/contact-intelligence.js";
+import { analyticsRoutes } from "./modules/analytics/analytics-routes.js";
+import { savedReportRoutes } from "./modules/analytics/saved-report-routes.js";
+import { integrationRoutes } from "./modules/integrations/integration-routes.js";
+import { hisweetieMcpRoutes } from "./modules/integrations/hisweetie-mcp-routes.js";
+import { hisweetieBillingRoutes } from "./modules/integrations/hisweetie-billing-routes.js";
+import { posRoutes } from "./modules/pos/pos-routes.js";
+import { syncRoutes } from "./modules/pos/sync-routes.js";
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
 // Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
-import { initTelegramBridge } from './modules/integrations/providers/telegram-bridge/index.js';
+import { initTelegramBridge } from "./modules/integrations/providers/telegram-bridge/index.js";
 // Telegram bridge routes (Zalo↔Telegram /link + provisioner) — core, stays outside _ee.
-import { telegramBridgeRoutes } from './modules/integrations/providers/telegram-bridge/telegram-bridge-routes.js';
-import { aiRoutes } from './modules/ai/ai-routes.js';
-import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat/chat-operations-routes.js';
-import { groupRoutes } from './modules/zalo/group-routes.js';
-import { groupScanRoutes } from './modules/zalo/group-scan-routes.js';
-import { startGroupScanWorker, stopGroupScanWorker } from './modules/zalo/group-scan-queue.js';
-import { groupModerationRoutes } from './modules/zalo/group-moderation-routes.js';
-import { friendRoutes } from './modules/zalo/friend-routes.js';
-import { profileRoutes } from './modules/zalo/profile-routes.js';
-import { credentialRoutes } from './modules/zalo/credential-routes.js';
-import { eventBuffer } from './shared/event-buffer.js';
-import { systemNotifyRoutes } from './modules/system-notifications/system-notify-routes.js';
-import { userCreateWithZaloRoutes } from './modules/system-notifications/user-create-with-zalo-routes.js';
+import { telegramBridgeRoutes } from "./modules/integrations/providers/telegram-bridge/telegram-bridge-routes.js";
+import { aiRoutes } from "./modules/ai/ai-routes.js";
+import {
+  chatOperationsRoutes,
+  registerChatSocketHandlers,
+} from "./modules/chat/chat-operations-routes.js";
+import { groupRoutes } from "./modules/zalo/group-routes.js";
+import { groupScanRoutes } from "./modules/zalo/group-scan-routes.js";
+import {
+  startGroupScanWorker,
+  stopGroupScanWorker,
+} from "./modules/zalo/group-scan-queue.js";
+import { groupModerationRoutes } from "./modules/zalo/group-moderation-routes.js";
+import { friendRoutes } from "./modules/zalo/friend-routes.js";
+import { profileRoutes } from "./modules/zalo/profile-routes.js";
+import { credentialRoutes } from "./modules/zalo/credential-routes.js";
+import { eventBuffer } from "./shared/event-buffer.js";
+import { systemNotifyRoutes } from "./modules/system-notifications/system-notify-routes.js";
+import { userCreateWithZaloRoutes } from "./modules/system-notifications/user-create-with-zalo-routes.js";
 // Lead Pool → extension bundle (src/_ee/lead-pool).
 // Facebook Lead Ads (Multi-Source + Form ingestion) → extension bundle (src/_ee/facebook).
 
@@ -118,18 +132,21 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 type ExtensionBundle = {
   registerExtensionEarly?: (app: typeof Fastify.prototype) => Promise<void>;
   registerExtensionRoutes?: (app: typeof Fastify.prototype) => Promise<void>;
-  startExtensionJobs?: (app: typeof Fastify.prototype, io: Server) => Promise<void>;
+  startExtensionJobs?: (
+    app: typeof Fastify.prototype,
+    io: Server
+  ) => Promise<void>;
 };
 let extensionBundle: ExtensionBundle | null | undefined;
 async function loadExtension(): Promise<ExtensionBundle | null> {
   if (extensionBundle !== undefined) return extensionBundle;
-  const spec: string = './_ee/index.js';
+  const spec: string = "./_ee/index.js";
   try {
     extensionBundle = (await import(spec)) as ExtensionBundle;
-    logger.info('Extension edition — _ee bundle loaded');
+    logger.info("Extension edition — _ee bundle loaded");
   } catch {
     extensionBundle = null;
-    logger.info('Community edition — _ee bundle absent');
+    logger.info("Community edition — _ee bundle absent");
   }
   return extensionBundle;
 }
@@ -163,14 +180,15 @@ async function bootstrap() {
   // hồ sơ KH + quan hệ + tags). Đếm PER-USER → mỗi sale có hạn mức riêng, không ảnh
   // hưởng nhau. Token decode rẻ (không +DB). Fallback IP cho request không có token.
   await app.register(rateLimit, {
-    max: 1200,                    // /phút/USER — sale active mở ~40 conv/phút × 13 req + tab/panel vẫn dư
-    timeWindow: '1 minute',
+    max: 1200, // /phút/USER — sale active mở ~40 conv/phút × 13 req + tab/panel vẫn dư
+    timeWindow: "1 minute",
     // Key theo user CRM (sub=id trong JWT access token). Không có/sai token → theo IP
     // (đã đúng nhờ trustProxy đọc X-Forwarded-For).
     keyGenerator: (request: FastifyRequest) => {
       try {
-        const auth = request.headers['authorization'];
-        const token = typeof auth === 'string' ? auth.replace(/^Bearer\s+/i, '') : '';
+        const auth = request.headers["authorization"];
+        const token =
+          typeof auth === "string" ? auth.replace(/^Bearer\s+/i, "") : "";
         if (token) {
           const payload = app.jwt.verify<{ id?: string }>(token);
           if (payload?.id) return `u:${payload.id}`;
@@ -181,7 +199,7 @@ async function bootstrap() {
       return `ip:${request.ip}`;
     },
     // Skip rate limiting for static assets — only limit API routes
-    allowList: (request: { url: string }) => !request.url.startsWith('/api/'),
+    allowList: (request: { url: string }) => !request.url.startsWith("/api/"),
   });
 
   await app.register(fastifyMultipart, {
@@ -196,15 +214,15 @@ async function bootstrap() {
   // STORAGE 2026-06-20 — driver 'local': serve file đã upload từ UPLOAD_DIR tại /files.
   // Zalo CDN + trình duyệt tải ảnh qua URL {localPublicUrl}/{key} = {host}/files/media/...
   // decorateReply:false để KHÔNG đụng decorator của static frontend (đăng ký bên dưới).
-  if (config.storageDriver === 'local') {
+  if (config.storageDriver === "local") {
     mkdirSync(config.uploadDir, { recursive: true }); // @fastify/static lỗi nếu root chưa tồn tại
     await app.register(fastifyStatic, {
       root: config.uploadDir,
-      prefix: '/files/',
+      prefix: "/files/",
       decorateReply: false,
       // Ảnh dedup theo content-hash, bất biến → cache dài hạn.
       cacheControl: true,
-      maxAge: '365d',
+      maxAge: "365d",
       immutable: true,
     });
   }
@@ -212,8 +230,8 @@ async function bootstrap() {
   // Serve compiled frontend assets in production
   if (config.isProduction) {
     await app.register(fastifyStatic, {
-      root: path.join(__dirname, '../static'),
-      prefix: '/',
+      root: path.join(__dirname, "../static"),
+      prefix: "/",
     });
   }
 
@@ -221,13 +239,13 @@ async function bootstrap() {
 
   const io = new Server(app.server, {
     cors: {
-      origin: config.isProduction ? config.appUrl : '*',
+      origin: config.isProduction ? config.appUrl : "*",
       credentials: true,
     },
   });
 
   // Attach io to app so route handlers can emit events
-  app.decorate('io', io);
+  app.decorate("io", io);
 
   // Pass io to zalo pool for real-time event emission
   zaloPool.setIO(io);
@@ -236,9 +254,9 @@ async function bootstrap() {
   // io.use() verify JWT + auto-join org room từ token (vá P0 IDOR cross-tenant WS).
   registerSocketAuth(io, app);
 
-  io.on('connection', (socket) => {
+  io.on("connection", (socket) => {
     logger.info(`Socket connected: ${socket.id}`);
-    socket.on('disconnect', () => {
+    socket.on("disconnect", () => {
       logger.debug(`Socket disconnected: ${socket.id}`);
     });
   });
@@ -286,25 +304,36 @@ async function bootstrap() {
   await app.register(crmTagGroupRoutes);
   // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 2026-05-31
   // Mount 3 prefix: /api/v1/tags (definitions), /api/v1/friends/:id/tags, /api/v1/contacts/:id/crm-tags
-  const { registerTagRoutes, registerFriendTagRoutes, registerContactCrmTagRoutes } = await import('./modules/tags/tag-routes.js');
-  await app.register(registerTagRoutes, { prefix: '/api/v1/tags' });
-  await app.register(registerFriendTagRoutes, { prefix: '/api/v1/friends' });
-  await app.register(registerContactCrmTagRoutes, { prefix: '/api/v1/contacts' });
+  const {
+    registerTagRoutes,
+    registerFriendTagRoutes,
+    registerContactCrmTagRoutes,
+  } = await import("./modules/tags/tag-routes.js");
+  await app.register(registerTagRoutes, { prefix: "/api/v1/tags" });
+  await app.register(registerFriendTagRoutes, { prefix: "/api/v1/friends" });
+  await app.register(registerContactCrmTagRoutes, {
+    prefix: "/api/v1/contacts",
+  });
   await app.register(userPreferenceRoutes);
   await app.register(timelineRoutes);
   await app.register(scoringRoutes);
   // Phase 8 — Engagement heatmap timeline + admin recompute/backfill
-  const { registerEngagementRoutes } = await import('./modules/engagement/engagement-routes.js');
+  const { registerEngagementRoutes } =
+    await import("./modules/engagement/engagement-routes.js");
   await registerEngagementRoutes(app);
   // RBAC Phase Phân Quyền 2026-05-21 — Department + PermissionGroup (M2 Getfly Clone)
-  const { registerDepartmentRoutes } = await import('./modules/rbac/department-routes.js');
+  const { registerDepartmentRoutes } =
+    await import("./modules/rbac/department-routes.js");
   await registerDepartmentRoutes(app);
-  const { registerPermissionGroupRoutes } = await import('./modules/rbac/permission-group-routes.js');
+  const { registerPermissionGroupRoutes } =
+    await import("./modules/rbac/permission-group-routes.js");
   await registerPermissionGroupRoutes(app);
-  const { registerUserAssignmentRoutes } = await import('./modules/rbac/user-assignment-routes.js');
+  const { registerUserAssignmentRoutes } =
+    await import("./modules/rbac/user-assignment-routes.js");
   await registerUserAssignmentRoutes(app);
   // Phase Riêng Tư 2026-05-22 — PIN-gated visual privacy
-  const { registerPrivacyRoutes } = await import('./modules/privacy/privacy-routes.js');
+  const { registerPrivacyRoutes } =
+    await import("./modules/privacy/privacy-routes.js");
   await registerPrivacyRoutes(app);
   await app.register(zaloLabelsRoutes);
   await app.register(zinstantProxyRoutes);
@@ -330,6 +359,8 @@ async function bootstrap() {
   await app.register(integrationRoutes);
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
+  await app.register(posRoutes);
+  await app.register(syncRoutes);
   // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
   await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
@@ -348,38 +379,48 @@ async function bootstrap() {
   await ee?.registerExtensionRoutes?.(app);
 
   // Liveness/readiness probe — also checks DB connectivity
-  app.get('/health', async () => {
+  app.get("/health", async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
-      return { status: 'ok', db: 'connected', timestamp: new Date().toISOString() };
+      return {
+        status: "ok",
+        db: "connected",
+        timestamp: new Date().toISOString(),
+      };
     } catch {
-      return { status: 'error', db: 'disconnected', timestamp: new Date().toISOString() };
+      return {
+        status: "error",
+        db: "disconnected",
+        timestamp: new Date().toISOString(),
+      };
     }
   });
 
   // API version banner
-  app.get('/api/v1/status', async () => {
-    return { version: '1.0.0', name: 'Hi-CRM' };
+  app.get("/api/v1/status", async () => {
+    return { version: "1.0.0", name: "Hi-CRM" };
   });
 
   // SPA fallback — serve index.html for non-API routes in production
   if (config.isProduction) {
     app.setNotFoundHandler(async (request, reply) => {
-      if (request.url.startsWith('/api/')) {
-        return reply.status(404).send({ error: 'not_found' });
+      if (request.url.startsWith("/api/")) {
+        return reply.status(404).send({ error: "not_found" });
       }
-      return reply.sendFile('index.html');
+      return reply.sendFile("index.html");
     });
   }
 
   // ── Error handler ─────────────────────────────────────────────────────────
 
-  app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {
-    logger.error('Request error:', error.message);
-    reply.status(error.statusCode ?? 500).send({
-      error: error.message || 'Internal Server Error',
-    });
-  });
+  app.setErrorHandler(
+    (error: Error & { statusCode?: number }, _request, reply) => {
+      logger.error("Request error:", error.message);
+      reply.status(error.statusCode ?? 500).send({
+        error: error.message || "Internal Server Error",
+      });
+    }
+  );
 
   // ── Start ─────────────────────────────────────────────────────────────────
 
@@ -392,59 +433,74 @@ async function bootstrap() {
     startContactIntelligence();
     startLabelsBackgroundSync(60_000); // realtime-ish 2-way pull every 60s
     // E1 Quét group (🟢 Community) — BullMQ worker xử lý group-scan job.
-    if (config.nodeEnv !== 'test') startGroupScanWorker();
+    if (config.nodeEnv !== "test") startGroupScanWorker();
     startInteractionCron(); // daily silent_30d detection (02:00 VN)
     // Phase 8 — Engagement heatmap classification (02:30 VN daily)
-    const { startEngagementCron } = await import('./modules/engagement/engagement-cron.js');
+    const { startEngagementCron } =
+      await import("./modules/engagement/engagement-cron.js");
     startEngagementCron();
     // Phase A — Real-time Zalo presence cache + bulk refresh 60s + socket emit
-    const { startPresenceCron } = await import('./modules/zalo/presence-service.js');
+    const { startPresenceCron } =
+      await import("./modules/zalo/presence-service.js");
     startPresenceCron(io);
     // Friend full-sync periodic (*/15 min) — catch alias/name/avatar drift từ Zalo
     // native app mà friend_event listener không bắt được (xem friend-sync-cron.ts)
-    const { startFriendSyncCron } = await import('./modules/zalo/friend-sync-cron.js');
+    const { startFriendSyncCron } =
+      await import("./modules/zalo/friend-sync-cron.js");
     startFriendSyncCron(io);
     // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).
-    const { startGroupInfoSyncCron } = await import('./modules/zalo/group-info-sync-cron.js');
+    const { startGroupInfoSyncCron } =
+      await import("./modules/zalo/group-info-sync-cron.js");
     startGroupInfoSyncCron();
     // Tệp khách hàng (🟢 Community): enrichment worker + event handlers
-    if (config.nodeEnv !== 'test') {
-      const { startListEnrichmentWorker } = await import('./modules/lists/list-enrichment-service.js');
-      const { registerCustomerListEventHandlers } = await import('./modules/lists/list-event-handlers.js');
+    if (config.nodeEnv !== "test") {
+      const { startListEnrichmentWorker } =
+        await import("./modules/lists/list-enrichment-service.js");
+      const { registerCustomerListEventHandlers } =
+        await import("./modules/lists/list-event-handlers.js");
       startListEnrichmentWorker();
       registerCustomerListEventHandlers();
     }
     // Contact profile enrichment (3am daily) — kéo gender + ngày sinh KH từ Zalo getUserInfo
     // cho KH đang trống. 24h/lần để tránh rate-limit (Anh chốt 2026-06-06).
-    if (config.nodeEnv !== 'test') {
-      const { startContactProfileSyncCron } = await import('./modules/contacts/contact-profile-sync-cron.js');
+    if (config.nodeEnv !== "test") {
+      const { startContactProfileSyncCron } =
+        await import("./modules/contacts/contact-profile-sync-cron.js");
       startContactProfileSyncCron();
     }
     // Hisweetie POS customer sync (01:00 VN daily) — pull POS → Contact (goal 1),
     // + debounced push worker CRM edit → POS (goal 2). Poll-based, KHÔNG webhook
     // (goal 3, anh chốt 2026-07-15 — xem hisweetie-sync-cron.ts).
-    if (config.nodeEnv !== 'test') {
-      const { startHisweetieSyncCron } = await import('./modules/integrations/hisweetie-sync-cron.js');
+    if (config.nodeEnv !== "test") {
+      const { startHisweetieSyncCron } =
+        await import("./modules/integrations/hisweetie-sync-cron.js");
       startHisweetieSyncCron();
-      const { startHisweetiePushWorker } = await import('./modules/integrations/hisweetie-push-queue.js');
+      const { startHisweetiePushWorker } =
+        await import("./modules/integrations/hisweetie-push-queue.js");
       startHisweetiePushWorker();
     }
     // Phase ZaloAccounts redesign 2026-05-22 — status log: backfill open records 1
     // lần lúc startup (idempotent), rồi start checkpoint cron (*/5 min) reconcile
     // orphan records sau crash. Uptime accuracy = 5p resolution.
-    const { backfillStatusLog } = await import('./modules/zalo/status-log-backfill.js');
-    backfillStatusLog().catch((err) => logger.error('[status-log-backfill] failed:', err));
-    const { startStatusLogCheckpointCron } = await import('./modules/zalo/status-log-checkpoint-cron.js');
+    const { backfillStatusLog } =
+      await import("./modules/zalo/status-log-backfill.js");
+    backfillStatusLog().catch((err) =>
+      logger.error("[status-log-backfill] failed:", err)
+    );
+    const { startStatusLogCheckpointCron } =
+      await import("./modules/zalo/status-log-checkpoint-cron.js");
     startStatusLogCheckpointCron();
     // Phase 6 — Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
-    const { startScoringScheduler } = await import('./modules/scoring/scoring-scheduler.js');
-    startScoringScheduler({ enabled: config.nodeEnv !== 'test' });
+    const { startScoringScheduler } =
+      await import("./modules/scoring/scoring-scheduler.js");
+    startScoringScheduler({ enabled: config.nodeEnv !== "test" });
     // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 (Issue 6A)
     // Cron 5 phút batch UPDATE Contact.autoTags từ Redis dirty set.
     // Wave 5 Slim drop Contact.autoTags → bỏ luôn cron.
-    if (config.nodeEnv !== 'test') {
-      const { startAutoTagsAggregateCron } = await import('./modules/tags/contact-autotags-dirty.js');
+    if (config.nodeEnv !== "test") {
+      const { startAutoTagsAggregateCron } =
+        await import("./modules/tags/contact-autotags-dirty.js");
       startAutoTagsAggregateCron();
     }
     // XÓA 2026-06-10 (CEO-review): cron cleanup handshake pending — cơ chế setup nick
@@ -452,8 +508,9 @@ async function bootstrap() {
     // Lead Pool auto-return cron → started by extension bundle (startExtensionJobs).
     // GĐ13a 2026-06-13 — tự dọn thùng rác Media sau 30 ngày (03:30 VN). Chỉ xóa hàng DB,
     // KHÔNG đụng byte MinIO. DRY-RUN mặc định BẬT (env MEDIA_TRASH_GC_DRYRUN='0' để bật xóa thật).
-    if (config.nodeEnv !== 'test') {
-      const { startMediaTrashGcCron } = await import('./modules/media/media-trash-gc-cron.js');
+    if (config.nodeEnv !== "test") {
+      const { startMediaTrashGcCron } =
+        await import("./modules/media/media-trash-gc-cron.js");
       startMediaTrashGcCron();
     }
     // Facebook Lead Ads workers (outbox dispatch, pull worker, form ingestion,
@@ -466,11 +523,11 @@ async function bootstrap() {
 
     // 2026-06-19 — Cầu Telegram (Phase 1): subscribe bridge-bus, mirror tin Zalo→Telegram.
     // Core feature (outside _ee) — chạy ở cả Extension lẫn Community.
-    if (config.nodeEnv !== 'test') {
+    if (config.nodeEnv !== "test") {
       try {
         initTelegramBridge();
       } catch (err) {
-        logger.error('[telegram-bridge] init failed (non-fatal):', err);
+        logger.error("[telegram-bridge] init failed (non-fatal):", err);
       }
     }
 
@@ -483,23 +540,27 @@ async function bootstrap() {
       shuttingDown = true;
       logger.info(`[shutdown] nhận ${signal} — đóng worker + server...`);
       const force = setTimeout(() => {
-        logger.warn('[shutdown] quá 10s, thoát cưỡng bức');
+        logger.warn("[shutdown] quá 10s, thoát cưỡng bức");
         process.exit(1);
       }, 10_000);
       force.unref();
       try {
-        await stopGroupScanWorker().catch((e) => logger.warn('[shutdown] stopGroupScanWorker lỗi:', e));
-        await app.close().catch((e) => logger.warn('[shutdown] app.close lỗi:', e));
-        logger.info('[shutdown] đóng gọn xong.');
+        await stopGroupScanWorker().catch((e) =>
+          logger.warn("[shutdown] stopGroupScanWorker lỗi:", e)
+        );
+        await app
+          .close()
+          .catch((e) => logger.warn("[shutdown] app.close lỗi:", e));
+        logger.info("[shutdown] đóng gọn xong.");
       } finally {
         clearTimeout(force);
         process.exit(0);
       }
     };
-    process.once('SIGTERM', () => void shutdown('SIGTERM'));
-    process.once('SIGINT', () => void shutdown('SIGINT'));
+    process.once("SIGTERM", () => void shutdown("SIGTERM"));
+    process.once("SIGINT", () => void shutdown("SIGINT"));
   } catch (err) {
-    logger.error('Failed to start server:', err);
+    logger.error("Failed to start server:", err);
     process.exit(1);
   }
 
@@ -509,7 +570,11 @@ async function bootstrap() {
     // chưa ẩn. Guard chính ở zaloPool.reconnect; đây là lớp 2 chặn thẻ ma bật WS lúc khởi
     // động server → tránh tranh chấp session với nick thật ngay sau boot.
     const accounts = await prisma.zaloAccount.findMany({
-      where: { sessionData: { not: Prisma.JsonNull }, archivedAt: null, zaloUid: { not: null } },
+      where: {
+        sessionData: { not: Prisma.JsonNull },
+        archivedAt: null,
+        zaloUid: { not: null },
+      },
       select: { id: true, sessionData: true },
     });
     logger.info(`Attempting reconnect for ${accounts.length} Zalo account(s)`);
@@ -526,16 +591,16 @@ async function bootstrap() {
       }
     }
   } catch (err) {
-    logger.error('Failed to load accounts for reconnect:', err);
+    logger.error("Failed to load accounts for reconnect:", err);
   }
 }
 
 // Keep process alive — log but never crash on unhandled errors
-process.on('uncaughtException', (err) => {
-  logger.error('Uncaught Exception:', err);
+process.on("uncaughtException", (err) => {
+  logger.error("Uncaught Exception:", err);
 });
-process.on('unhandledRejection', (reason) => {
-  logger.error('Unhandled Rejection:', reason);
+process.on("unhandledRejection", (reason) => {
+  logger.error("Unhandled Rejection:", reason);
 });
 
 bootstrap();

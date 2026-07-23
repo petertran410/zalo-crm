@@ -189,6 +189,10 @@ model Organization {
   mediaShares             MediaShare[]
   // Phase Lưu Hội Thoại 2026-07-22 — bản lưu hội thoại (CHỈ Chủ tài khoản xem).
   chatArchives            ChatArchive[]
+  posCustomers            PosCustomer[]
+  posProducts             PosProduct[]
+  posOrders               PosOrder[]
+  syncJobs                SyncJob[]
 
   @@map("organizations")
 }
@@ -266,6 +270,7 @@ model User {
   // null = chưa từng login (phối hợp với passwordChangedAt=null để hiện "Chưa kích hoạt").
   lastLoginAt                  DateTime?            @map("last_login_at")
   isActive                     Boolean              @default(true) @map("is_active")
+  customGrants                 Json?                @map("custom_grants")
   createdAt                    DateTime             @default(now()) @map("created_at")
   updatedAt                    DateTime             @updatedAt @map("updated_at")
 
@@ -339,6 +344,7 @@ model User {
   mediaSharesReceived       MediaShare[]                 @relation("MediaShareSharedWith")
   // Phase Lưu Hội Thoại 2026-07-22 — bản lưu hội thoại do người này tạo (chỉ Chủ tài khoản).
   createdChatArchives       ChatArchive[]                @relation("ChatArchiveCreatedBy")
+  syncJobs                  SyncJob[]                    @relation("SyncJobUser")
 
   @@map("users")
 }
@@ -580,6 +586,8 @@ model Contact {
   leadScore        Int       @default(0) @map("lead_score")
   lastActivity     DateTime? @map("last_activity")
   mergedInto       String?   @map("merged_into")
+  posCustomerId   Int?      @map("pos_customer_id")
+  posCustomerCode String?   @map("pos_customer_code")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -749,12 +757,11 @@ model Contact {
   // Match key khi backfill: phoneNormalized trước (dedup với KH đã có), fallback
   // tạo Contact mới nếu không tìm thấy số khớp. Field CRM chỉ được điền khi đang
   // trống (never overwrite dữ liệu sale đã nhập tay) — xem hisweetie-sync-cron.ts.
-  posCustomerId     Int?      @map("pos_customer_id")
-  posCustomerCode   String?   @map("pos_customer_code")
   posSyncedAt       DateTime? @map("pos_synced_at")
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
+  @@index([orgId, posCustomerId])
   @@index([orgId, phoneNormalized])
   @@index([orgId, zaloUid])
   // Default sort cho ContactsView list: tương tác mới nhất lên đầu.
@@ -786,7 +793,6 @@ model Contact {
   @@index([orgId, stuckSinceAggregate])
   @@index([orgId, aggregateScoreUpdatedAt(sort: Desc)])
   @@index([orgId, posCustomerCode])
-  @@index([orgId, posCustomerId])
   @@map("contacts")
 }
 
@@ -3473,6 +3479,12 @@ model PermissionGroup {
   parentId     String?   @map("parent_id") // tree UI grouping, mỗi node độc lập permission
   isSystem     Boolean   @default(false) @map("is_system") // Admin = protected, không xóa
   displayOrder Int       @default(0) @map("display_order")
+  // Workspace Architecture 2026-07-22 — gắn nhóm quyền với workspace tương ứng.
+  // Frontend WorkspaceResolver đọc field này thay vì đoán từ tên nhóm (string matching).
+  // Giá trị hợp lệ: sales | customer-care | manager | admin |
+  //                  marketing | finance | director | warehouse | call-center | null
+  // null = chưa xác định → resolver fallback về logic cũ (backward compat).
+  workspaceId  String?   @map("workspace_id")
   // FIX eng-review 2026-05-21: JSONB blob thay row-per-action (Issue 7).
   // Shape: { "<resource>": { "access": true, "create": false, "view_all": true, ... } }
   // 1 query lấy full matrix, parse in-memory, không N+1.
@@ -3487,6 +3499,7 @@ model PermissionGroup {
   users    User[]
 
   @@index([orgId])
+  @@index([workspaceId]) // lookup ngược: workspace → groups
   @@map("permission_groups")
 }
 
@@ -4430,4 +4443,154 @@ model ChatArchiveMessage {
 
   @@index([archiveId, seq])
   @@map("chat_archive_messages")
+}
+
+// Read Model cho Khách hàng từ POS
+model PosCustomer {
+  id               String   @id @default(uuid())
+  posId            Int      @map("pos_id")
+  code             String?
+  name             String
+  phone            String?
+  address          String?
+  customerType     String?  @map("customer_type")
+  assignedSaleName String?  @map("assigned_sale_name")
+  status           String?
+  tags             Json     @default("[]") // mảng string tag của POS
+  orgId            String   @map("org_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([posId, orgId]) // mỗi org có bản ghi riêng, tránh conflict giữa các org
+  @@index([orgId])
+  @@index([phone])
+  @@index([createdAt])
+  @@map("pos_customers")
+}
+
+// Read Model cho Sản phẩm từ POS
+model PosProduct {
+  id               String   @id @default(uuid())
+  posId            Int      @map("pos_id")
+  code             String
+  name             String
+  basePrice        Float?   @map("base_price") // giá gốc hiển thị
+  orgId            String   @map("org_id")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([posId, orgId]) // mỗi org có bản ghi riêng, tránh conflict giữa các org
+  @@unique([code, orgId])  // code cũng unique theo org
+  @@index([orgId])
+  @@index([code])
+  @@index([createdAt])
+  @@map("pos_products")
+}
+
+// SyncJob model for background synchronization jobs
+model SyncJob {
+  id          String    @id @default(uuid())
+  orgId       String    @map("org_id")
+  userId      String?   @map("user_id")
+  entity      String    // e.g. "Customer" | "Product"
+  status      String    // "Pending" | "Running" | "Completed" | "Failed"
+  total       Int       @default(0)
+  processed   Int       @default(0)
+  currentPage Int       @default(0) @map("current_page")
+  errorCount  Int       @default(0) @map("error_count")
+  lastError   String?   @map("last_error") @db.Text
+  retryCount  Int       @default(0) @map("retry_count")
+  startTime   DateTime  @default(now()) @map("start_time")
+  endTime     DateTime? @map("end_time")
+
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User?        @relation("SyncJobUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([orgId])
+  @@index([status])
+  @@map("sync_jobs")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// POS Order Read Model — đồng bộ đơn hàng từ POS qua MCP
+// CRM KHÔNG tạo đơn trực tiếp trong DB, mà gửi qua MCP tới POS, rồi lưu kết
+// quả trả về vào Read Model cục bộ để hiển thị + tra cứu nhanh.
+// ════════════════════════════════════════════════════════════════════════════
+
+model PosOrder {
+  id              String             @id @default(uuid())
+  posOrderId      Int                @unique @map("pos_order_id")
+  code            String             @unique
+  customerId      Int?               @map("customer_id")
+  branchId        Int?               @map("branch_id")
+  soldById        Int?               @map("sold_by_id")
+  orderDate       DateTime           @default(now()) @map("order_date")
+  totalAmount     Float              @default(0) @map("total_amount")
+  discount        Float              @default(0)
+  grandTotal      Float              @default(0) @map("grand_total")
+  paidAmount      Float              @default(0) @map("paid_amount")
+  debtAmount      Float              @default(0) @map("debt_amount")
+  paymentStatus   String             @default("Draft") @map("payment_status")
+  orderStatus     String             @default("Draft") @map("order_status")
+  description     String?
+  orgId           String             @map("org_id")
+  // Soft FK: contact CRM đã liên kết (dùng để hiển thị đơn hàng trong sidebar KH)
+  contactId       String?            @map("contact_id")
+  createdByUserId String?            @map("created_by_user_id")
+  createdAt       DateTime           @default(now()) @map("created_at")
+  updatedAt       DateTime           @updatedAt @map("updated_at")
+
+  org             Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  items           PosOrderDetail[]
+  payments        PosOrderPayment[]
+
+  @@index([orgId])
+  @@index([code])
+  @@index([contactId])
+  @@index([createdAt])
+  @@map("pos_orders")
+}
+
+model PosOrderDetail {
+  id            String   @id @default(uuid())
+  orderId       String   @map("order_id")
+  productId     Int      @map("product_id")
+  productCode   String   @map("product_code")
+  productName   String   @map("product_name")
+  quantity      Float    @default(0)
+  unitPrice     Float    @default(0) @map("unit_price")
+  discount      Float    @default(0)
+  totalPrice    Float    @default(0) @map("total_price")
+  note          String?
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  order         PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("pos_order_details")
+}
+
+model PosOrderPayment {
+  id              String   @id @default(uuid())
+  orderId         String   @map("order_id")
+  posPaymentId    Int?     @map("pos_payment_id")
+  amount          Float
+  paymentDate     DateTime @default(now()) @map("payment_date")
+  paymentMethod   String   @default("cash") @map("payment_method")
+  description     String?
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  order           PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("pos_order_payments")
 }

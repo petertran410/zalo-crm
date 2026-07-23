@@ -20,20 +20,20 @@ export const vuetify = createVuetify({
       'hsLight': {
         dark: false,
         colors: {
-          primary: '#1786be',          // --brand
-          'primary-darken-1': '#0f6fa0',
-          secondary: '#5bb8e5',        // --brand-bright
-          accent: '#0b5880',           // --brand-700
-          background: '#f7f9fc',       // --surface-2
+          primary: '#0068FF',          // Zalo Blue #0068FF
+          'primary-darken-1': '#0057d6',
+          secondary: '#2980ff',        // Zalo tint
+          accent: '#0046b8',
+          background: '#f7f9fb',       // Surface light
           surface: '#ffffff',
           'surface-variant': '#f1f4f9',
           success: '#12b76a',
           warning: '#f5a524',
           error: '#f04438',
-          info: '#1786be',
-          'nav-a': '#0e445a',
-          'nav-b': '#06222f',
-          'nav-accent': '#5bb8e5',
+          info: '#0068FF',
+          'nav-a': '#0068FF',
+          'nav-b': '#0046b8',
+          'nav-accent': '#2980ff',
           'on-surface': '#141a24',
           'on-background': '#141a24',
           'on-primary': '#ffffff',

@@ -83,6 +83,9 @@
       <!-- Flexible spacer pushes everything after it to the right edge. -->
       <div class="topnav-spacer" />
 
+      <!-- Global Sync Widget -->
+      <SyncHeaderWidget />
+
       <!-- Global search trigger -->
       <GlobalSearch class="topnav-search" />
 
@@ -147,6 +150,7 @@ import { isExtension } from '@ee/edition';
 import { useRouter } from 'vue-router';
 import NotificationBell from '@/components/NotificationBell.vue';
 import GlobalSearch from '@/components/GlobalSearch.vue';
+import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import { fetchPublicBranding } from '@/api/public-branding';
@@ -277,12 +281,14 @@ interface NavTab {
 // Icons MDI line stroke-2 (mdi-*-outline) thay emoji để nhất quán + đổi màu theo theme.
 const primaryTabs: NavTab[] = [
   { path: '/',                       label: 'Dashboard',   icon: 'mdi-view-dashboard-outline', matchPrefix: '/$' },
+  { path: '/channels',               label: 'Kênh Kết Nối', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
   { path: '/chat',                   label: 'Tin nhắn',    icon: 'mdi-message-text-outline', resource: 'conversation' },
   { path: '/friends',                label: 'Bạn bè',      icon: 'mdi-account-multiple-outline', resource: 'friend' },
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
   { path: '/appointments',           label: 'Lịch hẹn',    icon: 'mdi-calendar-outline' },
   { path: '/tasks',                  label: 'Công việc',   icon: 'mdi-checkbox-marked-outline' },
   { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
+  { path: '/pos',                    label: 'Cửa hàng POS', icon: 'mdi-storefront-outline' },
 ];
 
 // RBAC 2026-06-09 — tab Marketing là module gồm nhiều chức năng. Hiện nếu user có

@@ -150,6 +150,7 @@
 import { ref, computed, watch } from 'vue';
 import { useRbacStore, type PermissionGroupNode, type RbacUser } from '@/stores/rbac';
 import { api } from '@/api/index';
+import { resourceLabel, actionLabel } from '@/constants/permission-meta';
 
 const props = defineProps<{
   open: boolean;
@@ -306,41 +307,6 @@ async function confirmArchive() {
   } finally {
     busy.value = false;
   }
-}
-
-const ACTION_LABELS: Record<string, string> = {
-  access: 'Truy cập',
-  create: 'Thêm',
-  edit: 'Sửa',
-  delete: 'Xóa',
-  view_all: 'Xem all',
-};
-function actionLabel(a: string) {
-  return ACTION_LABELS[a] ?? a;
-}
-
-const RESOURCE_LABELS: Record<string, string> = {
-  department: 'Quản lý phòng ban',
-  user: 'Quản lý người dùng',
-  permission_group: 'Quản lý quyền',
-  conversation: 'Hội thoại',
-  contact: 'Khách hàng',
-  friend: 'Friends Zalo',
-  customer_list: 'Tệp khách hàng',
-  broadcast: 'Chiến dịch',
-  sequence: 'Sequence',
-  trigger: 'Trigger',
-  block: 'Message Block',
-  zalo_account: 'Nick Zalo',
-  webhook: 'Webhook',
-  engagement_score: 'Engagement / Score',
-  audit_log: 'Audit Log',
-  settings: 'Cài đặt',
-  care_session: 'Phiên chăm sóc',
-  media: 'Kho phương tiện',
-};
-function resourceLabel(r: string) {
-  return RESOURCE_LABELS[r] ?? r;
 }
 
 function initials(name: string): string {

@@ -21,6 +21,7 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
     const scope = await getZaloScope(userId, user.orgId, user.role);
     // 2026-06-09: mặc định ẩn nick đã xóa mềm. ?includeArchived=true → admin xem lại để khôi phục.
     const includeArchived = (request.query as Record<string, string>)?.includeArchived === 'true';
+    const groupByDept = (request.query as Record<string, string>)?.groupByDept === 'true';
 
     const accounts = await prisma.zaloAccount.findMany({
       where: {
@@ -41,13 +42,27 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
         lastConnectedAt: true,
         archivedAt: true,
         createdAt: true,
-        owner: { select: { id: true, fullName: true, email: true } },
+        owner: {
+          select: {
+            id: true,
+            fullName: true,
+            email: true,
+            avatarUrl: true,
+            departmentMember: {
+              select: {
+                deptRole: true,
+                department: {
+                  select: { id: true, name: true }
+                }
+              }
+            }
+          }
+        },
       },
       orderBy: { createdAt: 'asc' },
     });
 
-    // Merge live status from pool; mask proxy credentials; thêm canManage flag
-    return accounts.map((a) => ({
+    const enrichedAccounts = accounts.map((a) => ({
       ...a,
       proxyUrl: a.proxyUrl ? maskProxyUrl(a.proxyUrl) : null,
       hasProxy: !!a.proxyUrl,
@@ -55,6 +70,40 @@ export async function zaloRoutes(app: FastifyInstance): Promise<void> {
       canManage: canManageAccount(a.ownerUserId, userId, user.role),
       isOwnedByMe: a.ownerUserId === userId,
     }));
+
+    if (groupByDept) {
+      // Nhóm tài khoản Zalo theo Phòng ban (Department)
+      const groupsMap = new Map<string | null, { deptId: string | null; deptName: string; accounts: typeof enrichedAccounts }>();
+
+      for (const account of enrichedAccounts) {
+        const deptInfo = account.owner?.departmentMember?.department;
+        const deptId = deptInfo?.id ?? null;
+        const deptName = deptInfo?.name ?? 'Chưa xếp phòng ban';
+
+        if (!groupsMap.has(deptId)) {
+          groupsMap.set(deptId, {
+            deptId,
+            deptName,
+            accounts: [],
+          });
+        }
+        groupsMap.get(deptId)!.accounts.push(account);
+      }
+
+      // Sắp xếp nhóm phòng ban (Nhóm có phòng ban trước, nhóm không phòng ban xuống cuối)
+      const sortedGroups = Array.from(groupsMap.values()).sort((a, b) => {
+        if (a.deptId === null) return 1;
+        if (b.deptId === null) return -1;
+        return a.deptName.localeCompare(b.deptName);
+      });
+
+      return {
+        groups: sortedGroups,
+        accounts: enrichedAccounts,
+      };
+    }
+
+    return enrichedAccounts;
   });
 
   // POST /api/v1/zalo-accounts — create a new account record

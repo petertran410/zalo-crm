@@ -4,11 +4,21 @@
     <header class="sb-header" :class="{ stacked: collapsed }">
       <div v-if="!collapsed" class="ws">
         <div class="ws-dot">{{ workspaceInitial }}</div>
-        <div class="ws-name" :title="workspaceName">{{ workspaceName }}</div>
-        <PrivacyLockBadge v-if="canUsePrivacy" @click="onLockBadgeClick" />
+        <div class="ws-info">
+          <div class="ws-name" :title="workspaceName">{{ workspaceName }}</div>
+          <div class="ws-role-select-wrap">
+            <span v-if="currentRole === 'sales'" class="ws-role-static">💰 Sales Workspace</span>
+            <select v-else :value="currentRole" @change="$emit('update:current-role', ($event.target as HTMLSelectElement).value)" class="ws-role-select">
+              <option value="manager">💼 Full Workspace</option>
+              <option value="sales">💰 Sales Workspace</option>
+              <option value="cs">❤️ Customer Workspace</option>
+            </select>
+          </div>
+        </div>
+        <PrivacyLockBadge v-if="canUsePrivacy" @click="onLockBadgeClick" style="margin-left: auto;" />
       </div>
       <div v-else class="ws-collapsed-stack">
-        <div class="ws-dot ws-dot-only">{{ workspaceInitial }}</div>
+        <div class="ws-dot ws-dot-only" :title="`Workspace: ${currentRole}`">{{ workspaceInitial }}</div>
         <PrivacyLockBadge v-if="canUsePrivacy" @click="onLockBadgeClick" />
       </div>
       <button class="collapse-btn" :title="collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'" :aria-label="collapsed ? 'Mở rộng sidebar' : 'Thu gọn sidebar'" @click="toggleCollapsed">
@@ -31,7 +41,9 @@
         <LeadFloatingButton inline />
       </div>
       <div class="c-icon-strip" role="toolbar" aria-label="Bộ lọc sidebar (thu gọn)">
+        <!-- SALES: FolderTree icon ẩn — sales chỉ xem 1 nick cố định, không cần chọn phạm vi -->
         <button
+          v-if="currentRole !== 'sales'"
           type="button"
           class="c-icon-btn"
           :class="{ active: filters.state.folderId !== null }"
@@ -43,8 +55,9 @@
           <span v-if="filters.state.folderId !== null" class="dot-only"></span>
         </button>
 
+        <!-- SALES: Star/preset icon ẩn — sales không cần saved presets trong collapsed mode -->
         <button
-          v-if="filters.presets.value.length > 0"
+          v-if="filters.presets.value.length > 0 && currentRole !== 'sales'"
           type="button"
           class="c-icon-btn"
           :class="{ active: filters.activePresetId.value !== null, open: openPopover === 'preset' }"
@@ -56,7 +69,8 @@
           <span class="badge">{{ filters.presets.value.length }}</span>
         </button>
 
-        <div class="c-divider"></div>
+        <!-- SALES: divider ẩn cùng với FolderTree + Star icons bên trên -->
+        <div v-if="currentRole !== 'sales'" class="c-divider"></div>
 
         <button
           type="button"
@@ -85,6 +99,7 @@
         </button>
 
         <button
+          v-if="currentRole === 'manager'"
           type="button"
           class="c-icon-btn"
           :class="{ active: scoreActiveCount > 0, open: openPopover === 'score' }"
@@ -97,6 +112,7 @@
         </button>
 
         <button
+          v-if="currentRole === 'manager'"
           type="button"
           class="c-icon-btn"
           :class="{ active: timeActiveCount > 0, open: openPopover === 'time' }"
@@ -375,7 +391,8 @@
     <div v-else class="sb-content">
 
       <!-- ══════ FOLDER PICKER (compact, 3 modes) ══════ -->
-      <div class="folder-picker">
+      <!-- SALES: folder-picker (Phạm vi xem) ẩn — sales chỉ hoạt động trên 1 nick cố định -->
+      <div v-if="currentRole !== 'sales'" class="folder-picker">
         <div class="fp-label"><FolderTreeIcon :size="14" :stroke-width="2" /> Phạm vi xem</div>
         <button class="fp-current" type="button" @click="$emit('manage-folders')" :title="folderPickerTitle">
           <div class="fp-thumb">
@@ -421,7 +438,8 @@
       </div>
 
       <!-- ══════ SAVED PRESET BAR (horizontal) ══════ -->
-      <div class="saved-bar">
+      <!-- SALES: saved-bar ẩn — sales dùng preset trong list hội thoại đã có sẵn -->
+      <div v-if="currentRole !== 'sales'" class="saved-bar">
         <span class="saved-label"><StarIcon :size="14" :stroke-width="2" /></span>
         <button
           v-for="preset in filters.presets.value"
@@ -543,7 +561,7 @@
         </section>
 
         <!-- 📊 SCORE & STAGE -->
-        <section class="section" :class="{ collapsed: !sectionsOpen.score }">
+        <section v-if="currentRole === 'manager'" class="section" :class="{ collapsed: !sectionsOpen.score }">
           <header class="section-header" :title="TIPS.score" tabindex="0" role="button" :aria-expanded="sectionsOpen.score" @click="toggleSection('score')" @keydown.enter.prevent="toggleSection('score')" @keydown.space.prevent="toggleSection('score')">
             <div class="left"><span class="emoji"><Gauge :size="14" :stroke-width="2" /></span>Điểm &amp; Trạng thái</div>
             <div class="right">
@@ -626,7 +644,7 @@
         </section>
 
         <!-- 🕐 THỜI GIAN -->
-        <section class="section" :class="{ collapsed: !sectionsOpen.time }">
+        <section v-if="currentRole === 'manager'" class="section" :class="{ collapsed: !sectionsOpen.time }">
           <header class="section-header" :title="TIPS.time" tabindex="0" role="button" :aria-expanded="sectionsOpen.time" @click="toggleSection('time')" @keydown.enter.prevent="toggleSection('time')" @keydown.space.prevent="toggleSection('time')">
             <div class="left"><span class="emoji"><Clock :size="14" :stroke-width="2" /></span>Thời gian</div>
             <div class="right">
@@ -670,7 +688,7 @@
         <!-- 📅 SỰ KIỆN -->
         <section class="section" :class="{ collapsed: !sectionsOpen.event }">
           <header class="section-header" :title="TIPS.event" tabindex="0" role="button" :aria-expanded="sectionsOpen.event" @click="toggleSection('event')" @keydown.enter.prevent="toggleSection('event')" @keydown.space.prevent="toggleSection('event')">
-            <div class="left"><span class="emoji"><CalendarClock :size="14" :stroke-width="2" /></span>Sự kiện sắp tới</div>
+            <div class="left"><span class="emoji"><CalendarClock :size="14" :stroke-width="2" /></span>{{ currentRole === 'manager' ? 'Sự kiện sắp tới' : 'Lịch hẹn' }}</div>
             <div class="right">
               <span v-if="eventActiveCount > 0" class="count-badge">{{ eventActiveCount }}</span>
               <span v-else class="count-badge zero">0</span>
@@ -678,7 +696,7 @@
             </div>
           </header>
           <div class="section-body">
-            <div class="event-row" :class="{ checked: filters.state.birthdayWithin7d }" :title="TIPS.birthday" @click="filters.state.birthdayWithin7d = !filters.state.birthdayWithin7d">
+            <div v-if="currentRole === 'manager'" class="event-row" :class="{ checked: filters.state.birthdayWithin7d }" :title="TIPS.birthday" @click="filters.state.birthdayWithin7d = !filters.state.birthdayWithin7d">
               <div class="left"><span class="icon"><CakeIcon :size="14" :stroke-width="2" /></span><span class="lbl">Sinh nhật 7 ngày tới</span></div>
               <span v-if="eventCounts.birthday > 0" class="right-count">{{ eventCounts.birthday }}</span>
             </div>
@@ -720,7 +738,7 @@
         </section>
 
         <!-- TIER 2: TƯƠNG TÁC (Phase 8 — Engagement pattern filter) -->
-        <section class="section" :class="{ collapsed: !sectionsOpen.engagement }">
+        <section v-if="currentRole === 'manager'" class="section" :class="{ collapsed: !sectionsOpen.engagement }">
           <header class="section-header" :title="TIPS.engagement" tabindex="0" role="button" :aria-expanded="sectionsOpen.engagement" @click="toggleEngagementSection" @keydown.enter.prevent="toggleEngagementSection" @keydown.space.prevent="toggleEngagementSection">
             <div class="left"><span class="emoji"><MessageCircleIcon :size="14" :stroke-width="2" /></span>Tương tác</div>
             <div class="right">
@@ -741,7 +759,7 @@
         </section>
 
         <!-- TIER 2: HỒ SƠ KH -->
-        <section class="section collapsed">
+        <section v-if="currentRole === 'manager'" class="section collapsed">
           <header class="section-header" title="Lọc theo thông tin hồ sơ KH (sắp ra mắt)" tabindex="0" role="button" aria-expanded="false">
             <div class="left"><span class="emoji"><UserCircleIcon :size="14" :stroke-width="2" /></span>Hồ sơ KH</div>
             <div class="right">
@@ -752,7 +770,7 @@
         </section>
 
         <!-- TIER 2: NGUỒN -->
-        <section class="section collapsed">
+        <section v-if="currentRole === 'manager'" class="section collapsed">
           <header class="section-header" title="Lọc theo nguồn KH đến từ đâu (sắp ra mắt)" tabindex="0" role="button" aria-expanded="false">
             <div class="left"><span class="emoji"><MegaphoneIcon :size="14" :stroke-width="2" /></span>Nguồn khách hàng</div>
             <div class="right">
@@ -763,7 +781,7 @@
         </section>
 
         <!-- TIER 3: BUSINESS (defer) -->
-        <section class="section collapsed disabled">
+        <section v-if="currentRole === 'manager'" class="section collapsed disabled">
           <header class="section-header" title="Lọc theo giá trị đơn hàng — chờ tích hợp hoá đơn">
             <div class="left"><span class="emoji"><BriefcaseIcon :size="14" :stroke-width="2" /></span>Giá trị kinh doanh</div>
             <div class="right">
@@ -774,7 +792,7 @@
         </section>
 
         <!-- TIER 3: AI SIGNAL (defer) -->
-        <section class="section collapsed disabled">
+        <section v-if="currentRole === 'manager'" class="section collapsed disabled">
           <header class="section-header" title="Lọc theo tín hiệu do AI phân tích — sắp ra mắt">
             <div class="left"><span class="emoji"><BotIcon :size="14" :stroke-width="2" /></span>Tín hiệu AI</div>
             <div class="right">
@@ -860,12 +878,14 @@ const props = defineProps<{
   currentAccount?: { id: string; displayName: string | null; avatarUrl?: string | null; status: string } | null;
   // 2026-06-11: trạng thái live từng nick để đếm online/offline ở fp-sub.
   accountStatuses?: { id: string; online: boolean }[];
+  currentRole?: string;
 }>();
 
 defineEmits<{
   'manage-folders': [];
   'clear-account-filter': [];
   'change': [];
+  'update:current-role': [role: string];
 }>();
 
 // ─── Privacy lock badge ──────────────────────────────────
@@ -873,7 +893,10 @@ defineEmits<{
 // Hiển thị HH:MM countdown khi đã unlock. Badge chỉ hiện khi user có hasPin.
 const _privacyStore = usePrivacyStore();
 const _authStore = useAuthStore();
-const canUsePrivacy = computed(() => !!_authStore.user?.id);
+// DISABLED 2026-07-22 (anh chốt): tắt toàn bộ Privacy Lock Badge — hệ thống nội bộ,
+// mọi nhân viên đều biết thông tin KH, không cần che. Giữ code gốc để mở lại khi cần:
+// const canUsePrivacy = computed(() => !!_authStore.user?.id);
+const canUsePrivacy = computed(() => false);
 const privacyDialogOpen = ref(false);
 async function onLockBadgeClick(_wasUnlocked: boolean) {
   // Anh chốt 2026-05-22: badge tự lock khi đang unlocked. Parent chỉ mở modal
@@ -1478,7 +1501,10 @@ watch(
 .filter-sidebar {
   width: 100%;
   height: 100%;
-  background: #FAFAFC;
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-right: 1px solid rgba(0, 0, 0, 0.05);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1490,6 +1516,36 @@ watch(
   -webkit-font-smoothing: antialiased;
 }
 .filter-sidebar.collapsed { width: 56px; }
+
+.ws-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+}
+.ws-role-select-wrap {
+  margin-top: 2px;
+}
+.ws-role-select,
+.ws-role-static {
+  font-size: 11px;
+  font-weight: 600;
+  color: #0068FF;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: default;
+  outline: none;
+  font-family: inherit;
+}
+.ws-role-select {
+  cursor: pointer;
+}
+.ws-role-select option {
+  background: #fff;
+  color: #1F2D3D;
+  font-size: 12px;
+}
 
 /* ════════════════ COLLAPSED MODE ════════════════ */
 .sb-header.stacked {
