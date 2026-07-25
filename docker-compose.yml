@@ -24,12 +24,10 @@ services:
       - FRIEND_INVITE_TEST_MODE=${FRIEND_INVITE_TEST_MODE:-true}
       # ── Luồng Mục Tiêu M1 (2026-06-01) ── BullMQ Redis URL
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
-      # ── GĐ13b (2026-06-13) Antivirus ClamAV ── mặc định TẮT (fail-open). Bật bằng
-      # MEDIA_AV_ENABLED=1 trong .env SAU khi service clamav 'healthy' (tải DB virus xong ~vài phút).
+      # ── Antivirus (ClamAV service đã gỡ khỏi stack, 2026-07-25) ── mặc định TẮT.
+      # scanBuffer() fail-open: không có clamav thì trả 'skipped', không chặn upload.
       - MEDIA_AV_ENABLED=${MEDIA_AV_ENABLED:-0}
       - MEDIA_AV_FAIL_CLOSED=${MEDIA_AV_FAIL_CLOSED:-0}
-      # - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
-      # - CLAMAV_PORT=${CLAMAV_PORT:-3310}
     depends_on:
       db:
         condition: service_healthy
@@ -187,34 +185,8 @@ services:
     depends_on:
       - db
 
-  # ── GĐ13b (2026-06-13) Antivirus — quét virus file upload (clamd INSTREAM TCP 3310) ──
-  # App KHÔNG depends_on service này (fail-open): app chạy bình thường kể cả khi clamav
-  # đang tải DB virus (~vài phút sau khi start) hoặc tắt. App chỉ THẬT SỰ quét khi
-  # MEDIA_AV_ENABLED=1. Chưa bật → scanBuffer trả 'skipped' ngay, 0 kết nối.
-  # clamav:
-  #   image: clamav/clamav:1.4
-  #   container_name: zalo-crm-clamav
-  #   restart: unless-stopped
-  #   environment:
-  #     - TZ=Asia/Ho_Chi_Minh # log ClamAV giờ VN (Cách 2)
-  #   # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
-  #   volumes:
-  #     - clamav_data:/var/lib/clamav # giữ DB virus qua restart (đỡ tải lại mỗi lần)
-  #   healthcheck:
-  #     test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
-  #     interval: 60s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 300s # lần đầu freshclam tải DB virus có thể vài phút
-  #   logging:
-  #     driver: json-file
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
-
 volumes:
   pg_data:
   file_storage:
   redis_data:
   minio_data:
-  clamav_data:
