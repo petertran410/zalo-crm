@@ -164,4 +164,11 @@ export const config = {
 
   /* --- POS Realtime Webhook Secret (R3) --- */
   posWebhookSecret: envValue('POS_WEBHOOK_SECRET') || 'default_pos_webhook_secret_key_change_me_in_prod',
+  /* --- Hisweetie POS MCP (CRM → POS gateway) 2026-07 ---
+   * Client SDK @dieptra/mcp-client: OAuth client_credentials + Streamable HTTP /mcp.
+   * baseUrl = origin only (vd https://sandbox-mcp.hisweetievietnam.com), không kèm /mcp.
+   * Để trống clientId/secret → feature disabled (routes trả 503). */
+  hisweetieMcpUrl: (envValue('HISWEETIE_MCP_URL') || '').replace(/\/+$/, ''),
+  hisweetieClientId: envValue('HISWEETIE_CLIENT_ID') || '',
+  hisweetieClientSecret: envValue('HISWEETIE_CLIENT_SECRET') || '',
 };

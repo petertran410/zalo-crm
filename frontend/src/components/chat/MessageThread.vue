@@ -605,7 +605,30 @@
       @save-media="onSaveToMedia"
       @favorite-media="onFavoriteFromChat"
       @download-media="onDownloadMedia"
+      @create-task="onCreateWorkFromMessage('task')"
+      @create-complaint="onCreateWorkFromMessage('complaint')"
+      @create-billing="onCreateBillingFromMessage"
+      :can-billing="canBillingFromMessage"
       @copy="() => {}"
+    />
+
+    <!-- Tạo công việc / khiếu nại từ tin nhắn (group chat 2026-07-10) -->
+    <WorkItemEditor
+      v-model="showWorkEditor"
+      :from-message="workFromMessage"
+      :conversation-id="conversation?.id ?? null"
+      @created="onWorkFromMessageCreated"
+    />
+
+    <!-- Tạo hoá đơn từ tin nhắn (goal 4, 2026-07-18) — chỉ user-thread + KH đã link POS -->
+    <BillingDraftEditor
+      v-if="billingContact"
+      v-model="showBillingEditor"
+      :contact-id="billingContact.id"
+      :pos-customer-id="billingContact.posCustomerId!"
+      :contact-name="billingContact.crmName || billingContact.fullName"
+      :from-message="billingFromMessage"
+      @created="onBillingFromMessageCreated"
     />
 
     <!-- Menu chuột phải cho ảnh trong ALBUM (3 mức: 1 tấm / cả album / chọn nhiều) -->
@@ -862,6 +885,8 @@ import StickerPicker from '@/components/chat/StickerPicker.vue';
 import ZaloUserInfoDialog from '@/components/chat/ZaloUserInfoDialog.vue';
 import LinkParentDialog from '@/components/chat/LinkParentDialog.vue';
 import MessageContextMenu from '@/components/chat/message-context-menu.vue';
+import WorkItemEditor from '@/components/work/WorkItemEditor.vue';
+import BillingDraftEditor from '@/components/chat/BillingDraftEditor.vue';
 import TypingIndicator from '@/components/chat/typing-indicator.vue';
 import ReplyPreviewBar from '@/components/chat/reply-preview-bar.vue';
 import ForwardDialog from '@/components/chat/forward-dialog.vue';
@@ -1051,6 +1076,90 @@ function onMessageCallback(_msg: Message) {
 // Context menu state
 const showContextMenu = ref(false);
 const contextMsg = ref<Message | null>(null);
+
+// ── Tạo công việc/khiếu nại từ tin nhắn (group chat 2026-07-10) ──
+const showWorkEditor = ref(false);
+const workFromMessage = ref<{
+  kind: 'task' | 'complaint';
+  text: string;
+  sourceMessageId: string;
+  sourceMessageIds?: string[];
+  senderName: string | null;
+  senderIsCustomer: boolean;
+} | null>(null);
+
+/** Trích text hiển thị "sạch" từ content để prefill — tin rich/rtf lưu dạng JSON
+ *  {title, action, params}, lấy title (giữ nguyên xuống dòng) thay vì show raw JSON. */
+function messagePlainText(m: Message): string {
+  const content = m.content || '';
+  if (m.contentType === 'text') return content;
+  if (content.startsWith('{')) {
+    try {
+      const p = JSON.parse(content);
+      if (typeof p?.title === 'string') return p.title;
+    } catch { /* not json → rơi xuống dưới */ }
+    return ''; // JSON đặc biệt (ảnh/gọi/…) không có title → không prefill rác
+  }
+  return content;
+}
+
+/** Resolve album siblings for auto-attach (image messages with same albumKey). */
+function resolveSourceMessageIds(m: Message): string[] {
+  if (m.contentType === 'image' && m.albumKey) {
+    const siblings = (props.messages || []).filter(
+      (x) => x.contentType === 'image' && x.albumKey === m.albumKey && !x.isDeleted,
+    );
+    if (siblings.length > 1) return siblings.map((x) => x.id);
+  }
+  // image/video/file single → just this message (BE save-from-chat)
+  if (['image', 'video', 'file'].includes(m.contentType || '')) return [m.id];
+  return [m.id];
+}
+
+function onCreateWorkFromMessage(kind: 'task' | 'complaint') {
+  const m = contextMsg.value;
+  if (!m) return;
+  const allowed = ['text', 'image', 'video', 'file'].includes(m.contentType || '');
+  if (!allowed) {
+    toast.push('Chỉ tạo công việc/khiếu nại từ tin nhắn text, ảnh, video hoặc tệp', 'default');
+    return;
+  }
+  workFromMessage.value = {
+    kind,
+    text: messagePlainText(m),
+    sourceMessageId: m.id,
+    sourceMessageIds: resolveSourceMessageIds(m),
+    senderName: m.senderName,
+    senderIsCustomer: m.senderType !== 'self' && !!m.senderUid,
+  };
+  showWorkEditor.value = true;
+}
+
+function onWorkFromMessageCreated() {
+  toast.push(workFromMessage.value?.kind === 'complaint' ? 'Đã tạo khiếu nại' : 'Đã tạo công việc', 'success');
+}
+
+// ── Tạo hoá đơn từ tin nhắn (goal 4, 2026-07-18) ──
+// Chỉ user-thread (group không rõ đơn của KH nào) + KH đã liên kết POS.
+const showBillingEditor = ref(false);
+const billingFromMessage = ref<{ sourceMessageId: string; text: string } | null>(null);
+const billingContact = computed(() => {
+  const c = props.conversation?.contact;
+  return props.conversation?.threadType === 'user' && c && c.posCustomerId != null ? c : null;
+});
+const canBillingFromMessage = computed(() => !!billingContact.value);
+
+function onCreateBillingFromMessage() {
+  const m = contextMsg.value;
+  if (!m || !billingContact.value) return;
+  billingFromMessage.value = { sourceMessageId: m.id, text: messagePlainText(m) };
+  showBillingEditor.value = true;
+}
+
+function onBillingFromMessageCreated() {
+  // BillingSection (panel phải) là component anh em — báo qua window event để nó reload list.
+  window.dispatchEvent(new CustomEvent('billing:draft-created'));
+}
 const contextPos = ref({ x: 0, y: 0 });
 const showForwardDialog = ref(false);
 const showLinkParentDialog = ref(false);

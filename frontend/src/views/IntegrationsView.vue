@@ -9,6 +9,22 @@
       <v-btn color="primary" prepend-icon="mdi-plus" @click="openCreate">Thêm tích hợp</v-btn>
     </div>
 
+    <!-- Hisweetie POS MCP — browse POS DB in CRM (no curl) -->
+    <v-card class="mb-4" variant="outlined" color="primary">
+      <v-card-title class="d-flex align-center">
+        <v-icon class="mr-2">mdi-storefront-outline</v-icon>
+        Hisweetie POS (MCP)
+        <v-spacer />
+        <v-btn color="primary" variant="flat" size="small" :to="{ name: 'Settings.HisweetiePos' }">
+          Mở xem dữ liệu POS
+        </v-btn>
+      </v-card-title>
+      <v-card-text class="text-body-2">
+        Xem chi nhánh, khách hàng, sản phẩm POS trong CRM. Cấu hình
+        <code>HISWEETIE_MCP_*</code> trên backend — không cần curl.
+      </v-card-text>
+    </v-card>
+
     <v-alert v-if="error" type="error" variant="tonal" class="mb-4" closable @click:close="error = ''">
       {{ error }}
     </v-alert>

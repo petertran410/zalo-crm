@@ -391,6 +391,9 @@ let filterApplyTimer: ReturnType<typeof setTimeout> | null = null;
 // Tab click cần FEEDBACK NGAY (cache hit paint instant), 150ms debounce làm user
 // cảm giác lag 280-420ms thay vì <100ms. Filter khác (tags/pills) vẫn debounce
 // để tránh refetch khi user gõ nhiều ký tự.
+//
+// Perf 2026-07 — trustFreshCache: tab switch dùng cache tươi (~12s), bỏ HTTP nếu có.
+// Socket vẫn patch unread/live list. Folders: chỉ refetch khi cache tab miss (không tươi).
 watch(
   () => inboxFilters.state.activeTab,
   () => {
@@ -401,9 +404,14 @@ watch(
     if (searchQuery.value) searchQuery.value = '';
     const params = inboxFilters.buildQueryParams();
     extraFilters.value = params;
-    fetchConversations();
-    // Bộ lọc link với nhau: số đếm folder cột 1 lọc theo cùng tab (anh chốt).
-    void inboxFilters.fetchFolders();
+    // Báo ConversationList tắt move-transition 1 nhịp (tránh FLIP cross-tab).
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('conv-tab-switch'));
+    }
+    void fetchConversations({ trustFreshCache: true }).then(() => {
+      // Folder counts theo tab — vẫn cần; không chặn paint list.
+      void inboxFilters.fetchFolders();
+    });
   },
 );
 

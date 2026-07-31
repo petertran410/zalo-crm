@@ -20,7 +20,10 @@ import { listProviderModels, invalidateModelCache } from './providers/list-model
 import { logger } from '../../shared/utils/logger.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 
-async function assertConversationReadAccess(request: FastifyRequest, reply: FastifyReply, conversationId: string) {
+// Ticket V1 2026-07-09 — export để ticket-routes.ts tái dùng khi draft ticket từ hội thoại
+// (POST /conversations/:id/ticket-draft): cùng 1 bộ kiểm tra quyền đọc + privacy như mọi
+// nơi khác gọi AI trên conversation, tránh viết lại logic (đặc biệt privacy — rủi ro cao).
+export async function assertConversationReadAccess(request: FastifyRequest, reply: FastifyReply, conversationId: string) {
   const user = request.user!;
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId: user.orgId },
@@ -31,6 +34,8 @@ async function assertConversationReadAccess(request: FastifyRequest, reply: Fast
     return null;
   }
   if (['owner', 'admin'].includes(user.role)) return conversation;
+  // Multi-channel Phase 2 (2026-07-21): hội thoại FB (zaloAccountId=null) không gate theo Zalo access.
+  if (!conversation.zaloAccountId) return conversation;
 
   const access = await prisma.zaloAccountAccess.findFirst({
     where: { zaloAccountId: conversation.zaloAccountId, userId: user.id },
@@ -49,7 +54,7 @@ async function assertConversationReadAccess(request: FastifyRequest, reply: Fast
  * dung nên không thể chỉ blur output — phải ngăn AI đọc input. Trả false (đã gửi
  * 403) nếu không được phép; true nếu OK.
  */
-async function assertPrivacyAllowsAi(request: FastifyRequest, reply: FastifyReply, conversationId: string): Promise<boolean> {
+export async function assertPrivacyAllowsAi(request: FastifyRequest, reply: FastifyReply, conversationId: string): Promise<boolean> {
   const conv = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId: request.user!.orgId },
     select: { zaloAccount: { select: { privacyMode: true, ownerUserId: true } } },

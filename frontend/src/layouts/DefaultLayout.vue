@@ -21,6 +21,7 @@
           <v-icon :icon="tab.icon" size="16" class="ic-svg" />{{ tab.label }}
         </RouterLink>
 
+
         <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
              RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
              2026-06-09 (anh báo menu bar kẹt không click được, phải F5): đổi
@@ -304,6 +305,7 @@ const primaryTabs: NavTab[] = [
   { path: '/friends',                label: 'Bạn bè',      icon: 'mdi-account-multiple-outline', resource: 'friend' },
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
   { path: '/appointments',           label: 'Lịch hẹn',    icon: 'mdi-calendar-outline' },
+  { path: '/tasks',                  label: 'Công việc',   icon: 'mdi-checkbox-marked-outline' },
   { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
   { path: '/pos',                    label: 'Cửa hàng POS', icon: 'mdi-storefront-outline' },
 ];

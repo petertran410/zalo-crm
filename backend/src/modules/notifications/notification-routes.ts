@@ -104,6 +104,91 @@ export async function notificationRoutes(app: FastifyInstance) {
       });
     }
 
+    // 3.5 Công việc quá hạn: thông báo khi <1d, <6h, <1h, <30m
+    const nowMs = Date.now();
+    const [overdueTasks, upcomingTasks] = await Promise.all([
+      prisma.task.count({
+        where: { orgId: user.orgId, assigneeUserId: user.id, status: 'open', dueAt: { lt: new Date(nowMs) } },
+      }),
+      prisma.task.findMany({
+        where: {
+          orgId: user.orgId,
+          assigneeUserId: user.id,
+          status: 'open',
+          dueAt: { gte: new Date(nowMs), lt: new Date(nowMs + 24 * 3600_000) },
+        },
+        include: { contact: { select: { fullName: true } } },
+        orderBy: { dueAt: 'asc' },
+        take: 5,
+      }),
+    ]);
+    if (overdueTasks > 0) {
+      notifications.push({
+        id: 'tasks-overdue',
+        type: 'warning',
+        priority: 'high',
+        title: `${overdueTasks} công việc quá hạn`,
+        detail: 'Mở trang Công việc để xử lý',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    for (const t of upcomingTasks) {
+      const hoursLeft = (t.dueAt!.getTime() - nowMs) / 3600_000;
+      const tierLabel =
+        hoursLeft <= 0.5 ? 'trong 30 phút tới'
+        : hoursLeft <= 1 ? 'trong 1 giờ tới'
+        : hoursLeft <= 6 ? 'trong 6 giờ tới'
+        : 'trong 24 giờ tới';
+      notifications.push({
+        id: `task-${t.id}`,
+        type: 'info',
+        priority: hoursLeft < 6 ? 'high' : 'medium',
+        title: `Công việc: ${t.title}`,
+        detail: `Đến hạn ${tierLabel}${t.contact?.fullName ? ' · ' + t.contact.fullName : ''}`,
+        createdAt: t.dueAt!.toISOString(),
+      });
+    }
+
+    // 3.6 Ticket của TÔI: đang mở/xử lý (gộp 1 dòng) + urgent/high hiện riêng (tối đa 5).
+    // Ticket V1 2026-07-09 — nhẹ hơn Task: không tính tầng thời gian (ticket không có deadline),
+    // chỉ báo tổng số + nổi bật ticket mức ưu tiên cao.
+    const [openTicketsCount, urgentTickets] = await Promise.all([
+      prisma.ticket.count({
+        where: { orgId: user.orgId, assigneeUserId: user.id, status: { in: ['open', 'in_progress'] } },
+      }),
+      prisma.ticket.findMany({
+        where: {
+          orgId: user.orgId,
+          assigneeUserId: user.id,
+          status: { in: ['open', 'in_progress'] },
+          priority: { in: ['high', 'urgent'] },
+        },
+        include: { contact: { select: { fullName: true } } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+      }),
+    ]);
+    if (openTicketsCount > 0) {
+      notifications.push({
+        id: 'tickets-open',
+        type: 'info',
+        priority: 'medium',
+        title: `${openTicketsCount} ticket đang mở được giao cho bạn`,
+        detail: 'Mở trang Ticket để xử lý',
+        createdAt: new Date().toISOString(),
+      });
+    }
+    for (const t of urgentTickets) {
+      notifications.push({
+        id: `ticket-${t.id}`,
+        type: 'warning',
+        priority: t.priority === 'urgent' ? 'high' : 'medium',
+        title: `Ticket ${t.priority === 'urgent' ? 'KHẨN' : 'ưu tiên cao'}: ${t.title}`,
+        detail: t.contact?.fullName || 'Chưa liên kết KH',
+        createdAt: t.createdAt.toISOString(),
+      });
+    }
+
     // 4. Disconnected Zalo accounts (2026-06-10: ẩn nick đã xóa mềm).
     const accounts = await prisma.zaloAccount.findMany({
       where: { orgId: user.orgId, archivedAt: null, ...accountScope },

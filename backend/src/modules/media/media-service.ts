@@ -31,12 +31,21 @@ import type { MediaAsset, MediaBlob } from '@prisma/client';
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 // Ngưỡng nén: cạnh dài tối đa + chất lượng webp. Ảnh bảng giá/mặt bằng giữ rõ chữ.
 const MAX_EDGE = 2000;
-const WEBP_QUALITY = 82;
+// 2026-07-22 (anh chốt "nén 80%"): hạ 82 → 80. Ảnh chụp điện thoại thường còn ~10-20%
+// dung lượng gốc; bảng giá/mặt bằng vẫn đọc rõ chữ ở mức này.
+const WEBP_QUALITY = 80;
 // GIF (ảnh động) KHÔNG nén qua sharp (mất animation) — giữ nguyên.
 const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export type MediaKind = 'image' | 'video' | 'file';
 export type MediaSource = 'upload' | 'saved_from_chat';
+/**
+ * Phạm vi lưu trữ (2026-07-22, anh chốt):
+ *   'catalog'        — kho phương tiện CŨ. media.view_all bypass được (admin/marketing thấy hết).
+ *   'private_upload' — tệp tải lên từ tab Kho. CHỈ người tải lên + Chủ tài khoản (role='owner')
+ *                      + người được chia sẻ liên kết. view_all KHÔNG bypass.
+ */
+export type MediaStorageScope = 'catalog' | 'private_upload';
 
 /**
  * Chuẩn hóa tag/dự án (anh chốt 2026-06-15): gộp tag+dự án làm 1, KHÔNG phân biệt hoa/thường.
@@ -74,6 +83,8 @@ export interface RegisterAssetInput {
   sourceIsPrivateNick?: boolean;
   tagIds?: string[];
   folderId?: string | null;
+  /** Mặc định 'catalog' (hành vi cũ). Tab Kho truyền 'private_upload'. */
+  storageScope?: MediaStorageScope;
 }
 
 export interface RegisterAssetResult {
@@ -191,6 +202,7 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
     sourceZaloAccountId = null,
     sourceIsPrivateNick = false,
     folderId = null,
+    storageScope = 'catalog',
   } = input;
   // Chuẩn hóa tag NGAY tại tầng service — mọi nguồn ghi tag (upload/save-from-chat) đi qua đây.
   const tagIds = normalizeTags(input.tagIds ?? []);
@@ -212,10 +224,24 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
   const up = await uploadBuffer(processed.buffer, processed.mimeType, originalFilename ?? undefined);
 
   // 3. Đã có blob với contentHash này trong org? → dedup-hit ở tầng DB.
-  const existingBlob = await prisma.mediaBlob.findUnique({
-    where: { orgId_contentHash: { orgId, contentHash: up.contentHash } },
+  //
+  // 2026-07-22 (Phase Kho Lưu Trữ) — dedup phải BIẾT CHỦ. Trước đây chỉ tra theo bytes:
+  // người B tải lên đúng tệp người A đã có → trả về asset CỦA A. Với kho riêng tư điều đó
+  // vừa sai (B không sở hữu gì cả) vừa rò rỉ (B biết tệp đó tồn tại, và cầm được id của nó).
+  // Quy tắc: chỉ tái dùng asset khi nó KHÔNG riêng tư, hoặc riêng tư nhưng CÙNG CHỦ.
+  const blobCandidates = await prisma.mediaBlob.findMany({
+    where: { orgId, contentHash: up.contentHash },
     include: { asset: true },
+    orderBy: { createdAt: 'asc' },
   });
+  const isPrivateUpload = storageScope === 'private_upload';
+  const existingBlob = blobCandidates.find((b) => {
+    const a = b.asset;
+    if (!a) return false;
+    const assetIsPrivate = a.storageScope === 'private_upload';
+    if (!assetIsPrivate && !isPrivateUpload) return true;      // kho chung ↔ kho chung: như cũ
+    return assetIsPrivate && isPrivateUpload && a.ownerUserId === ownerUserId; // riêng tư: phải cùng chủ
+  }) ?? null;
   if (existingBlob) {
     // S8 observability: log dedup-hit (đo tiết kiệm thật — bao nhiêu ô lưu trữ né được).
     logger.info(`[media][dedup] hit org=${orgId} hash=${up.contentHash.slice(0, 12)} reusedAsset=${existingBlob.assetId} source=${source}`);
@@ -304,6 +330,7 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
           sourceIsPrivateNick,
           folderId,
           tagIds,
+          storageScope,
           originalFilename,
           // VIDEO: ảnh đại diện (ffmpeg) để kho không hiện <img> vỡ.
           thumbnailUrl: videoMeta.thumbnailUrl,
@@ -331,9 +358,11 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
     // D10(1): 2 sale upload cùng bytes đồng thời → 1 ăn P2002 trên [orgId,contentHash].
     // Coi như dedup-hit: đọc lại blob bản kia + tăng usageCount, KHÔNG báo lỗi 500.
     if ((err as { code?: string }).code === 'P2002') {
-      const blob = await prisma.mediaBlob.findUnique({
-        where: { orgId_contentHash: { orgId, contentHash: up.contentHash } },
+      // Khoá giờ là [orgId,contentHash,assetId] → tra theo bytes có thể ra nhiều hàng.
+      const blob = await prisma.mediaBlob.findFirst({
+        where: { orgId, contentHash: up.contentHash },
         include: { asset: true },
+        orderBy: { createdAt: 'asc' },
       });
       if (blob) {
         const asset = await prisma.mediaAsset.update({
@@ -517,7 +546,10 @@ export async function generateWatermarkVariant(args: {
   }).catch(async (err) => {
     // P2002: hash trùng blob khác (cực hiếm) → đọc lại.
     if ((err as { code?: string }).code === 'P2002') {
-      const b = await prisma.mediaBlob.findUnique({ where: { orgId_contentHash: { orgId: args.orgId, contentHash: up.contentHash } } });
+      // Khoá [orgId,contentHash,assetId]: variant của CHÍNH asset này mới là bản cần đọc lại.
+      const b = await prisma.mediaBlob.findFirst({
+        where: { orgId: args.orgId, contentHash: up.contentHash, assetId: asset.id },
+      });
       if (b) return b;
     }
     throw err;
@@ -534,6 +566,77 @@ export async function generateWatermarkVariant(args: {
  * TẮT watermark per-ảnh: gỡ blob 'watermarked' + đặt watermarkEnabled=false.
  * Bản gốc luôn giữ. Gửi đi sau đó dùng lại bản gốc.
  */
+/**
+ * Lưu bản ANNOTATED từ FE canvas (PNG/JPEG base64 hoặc buffer).
+ * Tạo MediaBlob variantType='annotated'. Bản gốc giữ nguyên.
+ */
+export async function saveAnnotatedVariant(args: {
+  orgId: string;
+  assetId: string;
+  buffer: Buffer;
+  mimeType?: string;
+}): Promise<{ blobId: string; url: string; width: number | null; height: number | null; deduped: boolean }> {
+  const asset = await prisma.mediaAsset.findFirst({
+    where: { id: args.assetId, orgId: args.orgId },
+    select: { id: true, kind: true, name: true },
+  });
+  if (!asset) throw new Error('Asset không tồn tại');
+  if (asset.kind !== 'image') throw new Error('Chỉ ảnh mới annotate được');
+
+  let outBuf = args.buffer;
+  let mime = args.mimeType || 'image/png';
+  let width: number | null = null;
+  let height: number | null = null;
+  try {
+    const out = await sharp(args.buffer, { failOn: 'error' })
+      .rotate()
+      .webp({ quality: 88 })
+      .toBuffer({ resolveWithObject: true });
+    outBuf = out.data;
+    mime = 'image/webp';
+    width = out.info.width ?? null;
+    height = out.info.height ?? null;
+  } catch {
+    try {
+      const dim = imageSize(args.buffer);
+      width = dim.width ?? null;
+      height = dim.height ?? null;
+    } catch { /* keep null */ }
+  }
+
+  const up = await uploadBuffer(outBuf, mime, `${asset.name}-annotated.webp`);
+  const blob = await prisma.mediaBlob.create({
+    data: {
+      orgId: args.orgId,
+      assetId: asset.id,
+      contentHash: up.contentHash,
+      variantType: 'annotated',
+      minioKey: up.key,
+      publicUrl: up.url,
+      mimeType: up.mimeType,
+      sizeBytes: up.size,
+      width,
+      height,
+    },
+  }).catch(async (err) => {
+    if ((err as { code?: string }).code === 'P2002') {
+      const b = await prisma.mediaBlob.findFirst({
+        where: { orgId: args.orgId, contentHash: up.contentHash, assetId: asset.id },
+      });
+      if (b) return b;
+    }
+    throw err;
+  });
+
+  return {
+    blobId: blob.id,
+    url: blob.publicUrl,
+    width: blob.width,
+    height: blob.height,
+    deduped: up.deduped,
+  };
+}
+
 export async function disableWatermark(orgId: string, assetId: string): Promise<void> {
   const asset = await prisma.mediaAsset.findFirst({
     where: { id: assetId, orgId }, include: { blobs: { where: { variantType: 'watermarked' } } },

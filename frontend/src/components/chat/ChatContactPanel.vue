@@ -1,7 +1,8 @@
 <template>
   <aside class="info-panel">
     <!-- Close button for Sales/CS workspace -->
-    <button v-if="currentRole && currentRole !== 'manager'" class="ip-close" title="Đóng" @click="$emit('close')">×</button>    <!-- ════════ ROLE-BASED WORKSPACE: Sales & Customer Service ════════ -->
+    <button v-if="currentRole && currentRole !== 'manager'" class="ip-close" title="Đóng" @click="$emit('close')">×</button>
+    <!-- ════════ ROLE-BASED WORKSPACE: Sales & Customer Service ════════ -->
     <template v-if="currentRole && currentRole !== 'manager'">
 
       <!-- ══════════════════════════════════════════

@@ -60,10 +60,38 @@ const router = useRouter();
 const bellMenu = ref(false); // 2026-06-09 — điều khiển đóng menu chủ động
 let interval: ReturnType<typeof setInterval>;
 
+// Âm thanh cảnh báo (2026-07-08, anh chốt "audio cue cho mọi loại thông báo") —
+// phát file /sounds/notify.mp3 (đặt trong frontend/public/sounds/, Vite serve nguyên
+// trạng nên không cần import). key() gộp id+title+detail: nếu 1 công việc leo tầng
+// cảnh báo (vd <24h → <6h) thì detail đổi chữ → vẫn coi là "mới" và kêu lại dù id task
+// giữ nguyên. Bỏ qua ping ở lần fetch ĐẦU TIÊN (mount) — tránh kêu ngay khi mở app chỉ
+// vì đã có sẵn thông báo từ trước.
+let knownKeys = new Set<string>();
+let isFirstFetch = true;
+const pingAudio = new Audio('/sounds/notify.mp3');
+
+function playPing() {
+  // .play() trả Promise reject nếu bị chặn autoplay (chưa có tương tác user) — bắt
+  // để tránh unhandled rejection, im lặng bỏ qua.
+  pingAudio.currentTime = 0;
+  pingAudio.play().catch(() => {});
+}
+
+function notificationKey(n: Notification): string {
+  return `${n.id}::${n.title}::${n.detail}`;
+}
+
 async function fetchNotifications() {
   try {
     const res = await api.get('/notifications');
-    notifications.value = res.data.notifications || [];
+    const list: Notification[] = res.data.notifications || [];
+    if (!isFirstFetch) {
+      const hasNewOrChanged = list.some((n) => !knownKeys.has(notificationKey(n)));
+      if (hasNewOrChanged) playPing();
+    }
+    isFirstFetch = false;
+    knownKeys = new Set(list.map(notificationKey));
+    notifications.value = list;
   } catch {
     // silently ignore fetch errors
   }
@@ -75,6 +103,7 @@ function handleClick(n: Notification) {
   else if (n.id.startsWith('apt-')) router.push('/appointments');
   else if (n.id.startsWith('zalo-')) router.push('/zalo-accounts');
   else if (n.id === 'tmr-apts') router.push('/appointments');
+  else if (n.id === 'tasks-overdue' || n.id.startsWith('task-')) router.push('/tasks');
 }
 
 onMounted(() => {

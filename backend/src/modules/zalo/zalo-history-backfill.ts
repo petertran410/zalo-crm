@@ -20,6 +20,17 @@ const DM_MAX_PAGES = 50;
 const DM_PAGE_TIMEOUT_MS = 15_000;
 
 /**
+ * Tuỳ chọn giới hạn cho backfill. Reconnect catch-up (2026-07-17) dùng bound NHỎ +
+ * skipFriends (autoSyncOnConnect đã sync bạn bè) để nhẹ tải + tránh rate-limit khi
+ * chạy MỖI lần reconnect, thay vì full 50 page như first-login.
+ */
+export interface BackfillOptions {
+  maxGroups?: number;
+  dmMaxPages?: number;
+  skipFriends?: boolean;
+}
+
+/**
  * Multi-cursor strategy ported from openzca CLI `getRecentPageCursors`.
  * Tries oldest-by-ts / last-in-array / first-in-array — different cursors
  * sometimes unlock different next-page slices from Zalo.
@@ -64,7 +75,7 @@ interface PumpStats { pagesRequested: number; messagesInserted: number; messages
  * incoming batch via `handleIncomingMessage`. This bypasses the main listener's
  * `old_messages` handler so insertion is deterministic and counted.
  */
-async function pumpOldMessages(api: any, threadType: number, accountId: string): Promise<PumpStats> {
+async function pumpOldMessages(api: any, threadType: number, accountId: string, maxPages: number = DM_MAX_PAGES): Promise<PumpStats> {
   return new Promise((resolve) => {
     const stats: PumpStats = { pagesRequested: 0, messagesInserted: 0, messagesReceived: 0 };
     const requestedCursors = new Set<string>();
@@ -147,7 +158,7 @@ async function pumpOldMessages(api: any, threadType: number, accountId: string):
         }
       }
 
-      if (stats.pagesRequested >= DM_MAX_PAGES) { finish(); return; }
+      if (stats.pagesRequested >= maxPages) { finish(); return; }
 
       // Try multi-cursor candidates — different cursors may unlock different
       // page slices (oldest-by-ts / last / first).
@@ -164,7 +175,9 @@ async function pumpOldMessages(api: any, threadType: number, accountId: string):
   });
 }
 
-export async function backfillAccountHistory(api: any, accountId: string): Promise<BackfillResult> {
+export async function backfillAccountHistory(api: any, accountId: string, opts: BackfillOptions = {}): Promise<BackfillResult> {
+  const maxGroups = opts.maxGroups ?? MAX_GROUPS;
+  const dmMaxPages = opts.dmMaxPages ?? DM_MAX_PAGES;
   const result: BackfillResult = {
     friendsSynced: 0,
     groupsSynced: 0,
@@ -182,8 +195,10 @@ export async function backfillAccountHistory(api: any, accountId: string): Promi
     return result;
   }
 
-  // ── 1. Sync friends → contacts ─────────────────────────────────────────
-  try {
+  // ── 1. Sync friends → contacts (skip khi reconnect — autoSyncOnConnect đã làm) ──
+  if (opts.skipFriends) {
+    // no-op: bạn bè đã được syncAccountFully xử lý trên đường reconnect
+  } else try {
     const friendsRaw = await api.getAllFriends();
     const friends = Array.isArray(friendsRaw) ? friendsRaw : Object.values(friendsRaw || {});
     for (const friend of friends as any[]) {
@@ -234,7 +249,7 @@ export async function backfillAccountHistory(api: any, accountId: string): Promi
     return result;
   }
 
-  const groupSubset = groups.slice(0, MAX_GROUPS);
+  const groupSubset = groups.slice(0, maxGroups);
   for (const group of groupSubset) {
     const groupId = String(group?.groupId || group?.id || '');
     if (!groupId) continue;
@@ -298,7 +313,7 @@ export async function backfillAccountHistory(api: any, accountId: string): Promi
   let dmReceived = 0;
   try {
     if (api?.listener?.requestOldMessages) {
-      const stats = await pumpOldMessages(api, THREAD_TYPE_USER, accountId);
+      const stats = await pumpOldMessages(api, THREAD_TYPE_USER, accountId, dmMaxPages);
       result.dmPagesRequested = stats.pagesRequested;
       dmReceived = stats.messagesReceived;
       // Count by raw received — main listener may win the insert race, but
@@ -330,14 +345,35 @@ export async function backfillAccountHistory(api: any, accountId: string): Promi
 }
 
 /**
- * Backfill only if account has no conversations yet (first-time login).
- * Returns true if backfill was triggered.
+ * On connect, decide the right history sync:
+ *   - Empty DB (first login) → FULL backfill (friends + all groups + 50 DM pages).
+ *   - Non-empty (reconnect)  → LIGHT catch-up để lấp khoảng thời gian offline
+ *     (BUG-FIX 2026-07-17, anh báo: tin nhắn + KH mới gửi lúc backend tắt KHÔNG tự
+ *     sync tới khi bấm "Đồng bộ lịch sử chat" thủ công).
+ *
+ * Vì sao catch-up phải NHẸ + throttle: chạy MỖI lần reconnect (có thể vài lần/ngày
+ * nếu mạng chập chờn). Full 50-page pump mỗi lần = rủi ro rate-limit/khoá nick
+ * (zca-js 429). Bound nhỏ: skipFriends (autoSyncOnConnect đã sync bạn bè),
+ * dmMaxPages=5, maxGroups=10 — đủ bắt tin gần đây, dedup guard lo phần trùng.
+ * Live listener bắt tin mới realtime; catch-up chỉ cần lấp cửa sổ offline gần nhất.
+ */
+export async function syncHistoryOnConnect(api: any, accountId: string): Promise<'full' | 'catchup'> {
+  const existing = await prisma.conversation.count({ where: { zaloAccountId: accountId } });
+  if (existing === 0) {
+    logger.info(`[backfill:${accountId}] Empty conversation set — starting initial FULL backfill`);
+    await backfillAccountHistory(api, accountId);
+    return 'full';
+  }
+  logger.info(`[backfill:${accountId}] Reconnect — starting bounded catch-up (lấp cửa sổ offline)`);
+  await backfillAccountHistory(api, accountId, { skipFriends: true, dmMaxPages: 5, maxGroups: 10 });
+  return 'catchup';
+}
+
+/**
+ * @deprecated Dùng syncHistoryOnConnect (chạy cả reconnect catch-up). Giữ export
+ * để không vỡ chỗ gọi cũ — nay ủy quyền sang syncHistoryOnConnect.
  */
 export async function backfillIfEmpty(api: any, accountId: string): Promise<boolean> {
-  const existing = await prisma.conversation.count({ where: { zaloAccountId: accountId } });
-  if (existing > 0) return false;
-
-  logger.info(`[backfill:${accountId}] Empty conversation set detected — starting initial backfill`);
-  await backfillAccountHistory(api, accountId);
-  return true;
+  const mode = await syncHistoryOnConnect(api, accountId);
+  return mode === 'full';
 }
