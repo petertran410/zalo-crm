@@ -29,11 +29,4 @@ export const customerCareMenu: MenuItemConfig[] = [
     icon: 'mdi-calendar-outline',
     to: '/appointments',
   },
-  {
-    key: 'friends',
-    title: 'Bạn bè',
-    icon: 'mdi-account-multiple-outline',
-    to: '/friends',
-    resource: 'friend',
-  },
 ];

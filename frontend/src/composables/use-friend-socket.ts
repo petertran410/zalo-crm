@@ -6,9 +6,12 @@
  *  - applyFriendAggregate (tin nhắn mới → đổi displayName/avatar/relationshipKind)
  *  - friend-sync-service diff-then-emit (cron 15min, on-connect, manual sync)
  *
- * FE consume:
- *  - FriendsView: mutate row in friendsDb cache → instant cell update
- *  - ContactsView: mutate row in friendshipCache[contactId] (chỉ khi đã expand)
+ * FE consume (cập nhật 2026-07-29 sau khi gộp Bạn bè + Khách hàng):
+ *  - PeopleView: mutate row theo payload.contactId → cell update + flash dòng
+ *  - MessageThread: sync trạng thái kết bạn vào thread đang mở
+ *  - TagCrmBar: reload nhãn Zalo khi patch.zaloLabels đổi
+ *  ⚠ ChatView / CsChatView / SalesChatView listen RAW event `friend:updated`
+ *    (không qua composable này) → đổi shape payload phải sửa cả 3 chỗ đó.
  *
  * Lifecycle: caller pass handler vào onFriendUpdated, composable manage subscribe
  * + cleanup on unmount tránh leak. Multiple subscribers share 1 underlying socket

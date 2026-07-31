@@ -36,13 +36,6 @@ export const managerMenu: MenuItemConfig[] = [
     to: '/appointments',
   },
   {
-    key: 'friends',
-    title: 'Bạn bè',
-    icon: 'mdi-account-multiple-outline',
-    to: '/friends',
-    resource: 'friend',
-  },
-  {
     key: 'pos',
     title: 'Cửa hàng POS',
     icon: 'mdi-storefront-outline',

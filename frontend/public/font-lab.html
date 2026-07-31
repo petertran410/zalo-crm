@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Chọn font cho CRM · Font Lab</title>
+<!--
+  Trang TẠM so sánh font (2026-07-29).
+  Static trong public/ — KHÔNG qua Vue router / auth guard / axios interceptor,
+  nên mở được ngay không cần đăng nhập và không đụng gì tới app.
+  Dữ liệu mock, nhiều dấu tiếng Việt (ễ ữ ộ ằ ỹ) để soi phần khó nhất.
+  XOÁ file này sau khi chốt font.
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Be+Vietnam+Pro:wght@400;500;600;700;800&family=Montserrat:wght@400;500;600;700;800&family=Roboto:wght@400;500;700;900&family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@500;600;700;800;900&display=swap">
+<style>
+  :root{
+    --bg:#F0EFF6; --panel:#fff; --card:#F7F6FC; --ink:#1B1A24; --muted:#736F84;
+    --faint:#9C97AC; --line:#E7E4F0; --accent:#5B4BE6; --on:#fff; --chip:#EDEAFB; --chipFg:#4C3FBF;
+    --font:"Plus Jakarta Sans",-apple-system,"Segoe UI",Roboto,sans-serif;
+    --fdisp:var(--font);   /* tiêu đề */
+    --flabel:var(--font);  /* nhãn nhỏ in hoa */
+    --size:14px; --lh:1.5; --tnum:tabular-nums;
+  }
+  html[data-theme="dark"]{
+    --bg:#121121; --panel:#1B1930; --card:#232040; --ink:#EFEDF8; --muted:#9A95B0;
+    --faint:#7A7593; --line:#2C2846; --accent:#9686FF; --on:#16132B; --chip:#2A2647; --chipFg:#C5BEF5;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:var(--size);line-height:var(--lh)}
+  button{font-family:inherit;cursor:pointer}
+  input{font-family:inherit;font-size:inherit;border:0;background:transparent;color:var(--ink)}
+  input:focus{outline:none}
+  .num{font-variant-numeric:var(--tnum)}
+
+  /* ── Vai trò font: tiêu đề / nhãn ── */
+  h1,.drnm,.big,.hz1,.hz2,.hz3{font-family:var(--fdisp)}
+  .st,.cols,.inp span,.hzl{font-family:var(--flabel)}
+
+  header{position:sticky;top:0;z-index:5;padding:16px 26px 12px;background:var(--panel);border-bottom:1px solid var(--line)}
+  .top{display:flex;align-items:center;gap:14px;margin-bottom:12px}
+  h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.02em}
+  .modeSeg{display:inline-flex;padding:2px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+  .modeSeg button{border:0;background:transparent;color:var(--muted);padding:6px 14px;border-radius:999px;font-size:12.5px;font-weight:700}
+  .modeSeg button.on{background:var(--accent);color:var(--on)}
+  .theme{margin-left:auto;height:34px;padding:0 14px;border-radius:999px;border:1px solid var(--line);background:var(--panel);color:var(--muted);font-size:12.5px;font-weight:600}
+
+  .fonts{display:flex;gap:8px;flex-wrap:wrap}
+  .fbtn{flex:1;min-width:170px;padding:10px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--ink);text-align:left;display:flex;flex-direction:column;gap:2px;transition:border-color .12s,transform .12s}
+  .fbtn:hover{transform:translateY(-1px)}
+  .fbtn.on{border-color:var(--accent);background:var(--chip)}
+  .fbtn b{font-size:14.5px;font-weight:700}
+  .fbtn i{font-size:11px;color:var(--muted);font-style:normal;font-weight:500}
+
+  .pair{display:flex;flex-direction:column;gap:9px}
+  .prow{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .plbl{width:88px;flex:none;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .pchip{padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--muted);font-size:12.5px;font-weight:700}
+  .pchip.on{border-color:var(--accent);background:var(--accent);color:var(--on)}
+
+  .ctrls{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-top:12px}
+  .ctrl{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.06em}
+  .seg{display:inline-flex;padding:2px;border-radius:999px;background:var(--card);border:1px solid var(--line)}
+  .seg button{border:0;background:transparent;color:var(--muted);padding:5px 11px;border-radius:999px;font-size:12px;font-weight:700}
+  .seg button.on{background:var(--accent);color:var(--on)}
+  .now{margin-left:auto;font-size:12.5px;color:var(--muted)}
+  .now b{color:var(--ink)}
+  .hide{display:none !important}
+
+  main{padding:22px 26px 60px;display:flex;flex-direction:column;gap:22px}
+  section{display:flex;flex-direction:column;gap:9px;min-width:0}
+  .st{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .card{padding:16px;border-radius:16px;background:var(--panel);border:1px solid var(--line)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+  @media(max-width:1000px){.two{grid-template-columns:1fr}}
+
+  .wrap{overflow-x:auto}
+  .cols,.row{display:flex;align-items:center;min-width:1080px}
+  .cols{padding:0 16px 7px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}
+  .cName{flex:1 1 auto;min-width:230px}.cChan{width:176px;flex:none}.cTags{width:196px;flex:none}.cTime{width:152px;flex:none}
+  .row{padding:11px 16px;border-radius:13px;background:var(--panel);border:1px solid var(--line);margin-bottom:7px}
+  .row .cTime{font-size:12px;color:var(--muted);white-space:nowrap}
+  .person{display:flex;align-items:center;gap:11px;overflow:hidden}
+  .av{width:36px;height:36px;flex:none;border-radius:12px;color:#1B1024;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800}
+  .ptxt{min-width:0;display:flex;flex-direction:column;gap:2px}
+  .nm{font-size:14px;font-weight:700;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sub{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:7px;white-space:nowrap}
+  .d{width:3px;height:3px;border-radius:50%;background:currentColor;opacity:.5}
+  .chan{display:flex;align-items:center;gap:7px;min-width:0;font-size:12.5px;color:var(--muted)}
+  .cdot{width:8px;height:8px;flex:none;border-radius:3px}
+  .cnm{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tags{display:flex;align-items:center;gap:5px;overflow:hidden}
+  .tag{flex:none;padding:3px 9px;border-radius:999px;background:var(--chip);color:var(--chipFg);font-size:11px;font-weight:700;white-space:nowrap}
+
+  .drh{display:flex;gap:12px;align-items:center;margin-bottom:13px}
+  .drav{width:52px;height:52px;flex:none;border-radius:17px;background:oklch(.84 .08 20);color:#1B1024;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800}
+  .drnm{font-size:19px;font-weight:800;letter-spacing:-.02em}
+  .drmeta{font-size:12.5px;color:var(--muted);margin-top:3px}
+  .tabs{display:flex;gap:4px;padding:3px;border-radius:999px;background:var(--card);margin-bottom:13px}
+  .tab{flex:1;text-align:center;padding:7px 0;border-radius:999px;font-size:12.5px;font-weight:700;color:var(--muted)}
+  .tab.on{background:var(--accent);color:var(--on)}
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:13px}
+  .inp{padding:8px 12px;border-radius:11px;border:1px solid var(--line)}
+  .inp span{display:block;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:2px}
+  .inp input{width:100%;font-size:13.5px;font-weight:600}
+  .vars{display:flex;flex-direction:column;gap:4px}
+  .var{display:flex;align-items:center;gap:10px;padding:7px 11px;border-radius:10px;background:var(--card);font-size:12px}
+  .var b{flex:none;color:var(--accent);font-weight:600}
+  .var i{flex:1;text-align:right;color:var(--muted);font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+  .big{font-size:27px;font-weight:800;letter-spacing:-.03em}
+  .vi{font-size:21px;font-weight:600;margin-top:9px;color:var(--accent)}
+  .sent{font-size:14px;margin-top:11px}
+  .nums{font-size:14px;margin-top:7px;color:var(--muted);font-weight:600}
+  .ws{display:flex;flex-direction:column;gap:3px;margin-top:13px;font-size:15px}
+
+  /* ── Thang bậc chữ: chỗ thấy rõ nhất cặp font ăn nhau hay không ── */
+  .hz{display:flex;flex-direction:column;gap:3px}
+  .hz1{font-size:29px;font-weight:800;letter-spacing:-.03em;line-height:1.15}
+  .hz2{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:14px}
+  .hz3{font-size:15px;font-weight:700;margin-top:12px}
+  .hzl{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-top:14px}
+  .hzb{font-size:14px;margin-top:5px;max-width:62ch}
+  .hzc{font-size:12px;color:var(--muted);margin-top:8px}
+
+  .stack{display:flex;flex-direction:column;gap:4px}
+  .srow{display:flex;gap:14px;align-items:center;padding:11px 13px;border-radius:12px;cursor:pointer;border:1px solid transparent;transition:border-color .12s,background-color .12s}
+  .srow:hover{background:var(--card)}
+  .srow.on{border-color:var(--accent);background:var(--chip)}
+  .slbl{width:150px;flex:none;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .stxt{min-width:0}
+  .svi{font-size:16px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .snum{font-size:13px;color:var(--muted);margin-top:2px;font-weight:600}
+</style>
+</head>
+<body>
+<header>
+  <div class="top">
+    <h1>Chọn font cho CRM</h1>
+    <span class="modeSeg" id="modeSeg">
+      <button data-mode="single">1 font</button>
+      <button data-mode="pair">Ghép 2 font</button>
+    </span>
+    <button class="theme" id="themeBtn">Nền tối</button>
+  </div>
+
+  <div class="prow" style="margin-bottom:10px">
+    <span class="plbl">Cặp dựng sẵn</span><span id="segPreset"></span>
+  </div>
+
+  <div class="fonts" id="fontBtns"></div>
+
+  <div class="pair hide" id="pairCtl">
+    <div class="prow"><span class="plbl">Tiêu đề</span><span id="segDisp"></span></div>
+    <div class="prow"><span class="plbl">Nội dung</span><span id="segBody"></span></div>
+    <div class="prow"><span class="plbl">Nhãn nhỏ</span><span id="segLabel"></span>
+      <span style="font-size:11.5px;color:var(--faint)">nhãn 10.5px in hoa — thử cả hai để thấy có đáng dùng font tiêu đề không</span>
+    </div>
+  </div>
+
+  <div class="ctrls">
+    <div class="ctrl"><span>Cỡ chữ</span><span class="seg" id="segSize"></span></div>
+    <div class="ctrl"><span>Giãn dòng</span><span class="seg" id="segLh"></span></div>
+    <div class="ctrl"><span>Số cột đều</span><span class="seg" id="segTnum"></span></div>
+    <div class="now" id="now">—</div>
+  </div>
+</header>
+
+<main>
+  <section>
+    <div class="st">1 · Thang bậc chữ — chỗ thấy rõ nhất cặp font có ăn nhau không</div>
+    <div class="card hz">
+      <div class="hz1">Khách hàng</div>
+      <div class="hzb">Toàn bộ bạn bè Zalo, người được mời, người lạ đang nhắn và khách nhập tay đều nằm chung một danh sách. Bộ lọc theo mốc thời gian giúp anh khoanh nhanh nhóm cần chăm trong tuần.</div>
+      <div class="hz2">Nguyễn Thị Bảo Ngọc</div>
+      <div class="hzb">Nữ · 34 tuổi · Quận 7, TP. Hồ Chí Minh. Đã mua lại 3 lần trong 6 tháng gần nhất, thường trả lời trong khoảng 19:00–21:30.</div>
+      <div class="hzl">Thông tin chăm sóc</div>
+      <div class="hz3">Sale phụ trách — Trần Đức Hưng</div>
+      <div class="hzc num">Cập nhật 17:31 22/07/2026 · 1.250.000 ₫</div>
+    </div>
+  </section>
+
+  <section>
+    <div class="st">2 · Bảng khách hàng — chỗ font phải làm việc nhiều nhất</div>
+    <div class="wrap">
+      <div class="cols">
+        <span class="cName">Khách hàng</span><span class="cChan">Kênh phụ trách</span>
+        <span class="cTags">Thẻ</span><span class="cTime">Nhắn cuối</span>
+        <span class="cTime">Ngày tạo</span><span class="cTime">Tương tác cuối</span>
+      </div>
+      <div id="rows"></div>
+    </div>
+  </section>
+
+  <div class="two">
+    <section>
+      <div class="st">3 · Panel chi tiết — nhãn nhỏ in hoa + input</div>
+      <div class="card">
+        <div class="drh">
+          <div class="drav">NB</div>
+          <div>
+            <div class="drnm">Nguyễn Thị Bảo Ngọc</div>
+            <div class="drmeta">Nữ · 34 tuổi · <span class="num">0908 278 807</span> · Quận 7, TP. Hồ Chí Minh</div>
+          </div>
+        </div>
+        <div class="tabs"><span class="tab on">Tổng quan</span><span class="tab">Kênh</span><span class="tab">Lịch sử</span><span class="tab">Ghi chú</span></div>
+        <div class="g2">
+          <div class="inp"><span>Tên CRM</span><input value="Ngọc — khách sỉ Q7" readonly></div>
+          <div class="inp"><span>Nghề nghiệp</span><input value="Chủ cửa hàng mỹ phẩm" readonly></div>
+          <div class="inp"><span>Nhân viên phụ trách</span><input value="Trần Đức Hưng" readonly></div>
+          <div class="inp"><span>Trạng thái KH</span><input value="Đang thương lượng" readonly></div>
+        </div>
+        <div class="vars">
+          <div class="var"><b>{name_full}</b><i>Nguyễn Thị Bảo Ngọc</i></div>
+          <div class="var"><b>{phone}</b><i class="num">0908 278 807</i></div>
+          <div class="var"><b>{last_interaction}</b><i class="num">17:31 22/07/2026</i></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="st">4 · Mẫu chữ &amp; dấu tiếng Việt</div>
+      <div class="card">
+        <div class="big">Khách hàng thân thiết</div>
+        <div class="vi">ế ề ễ ệ · ữ ự ừ · ộ ổ ỗ · ằ ẳ ẵ · ỹ ỵ · Đ đ · ₫</div>
+        <div class="sent">Chào Anh/Chị, đơn hàng đã được xác nhận và sẽ giao trước thứ Năm.</div>
+        <div class="nums num">0123456789 · 17:30 22/07/2026 · 1.250.000 ₫</div>
+        <div class="ws">
+          <span style="font-weight:400">400 Nguyễn Đức Hưng</span>
+          <span style="font-weight:500">500 Nguyễn Đức Hưng</span>
+          <span style="font-weight:700">700 Nguyễn Đức Hưng</span>
+          <span style="font-weight:800">800 Nguyễn Đức Hưng</span>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <div class="st">5 · Cùng một câu, 5 font cạnh nhau — bấm để chọn</div>
+    <div class="card stack" id="stack"></div>
+  </section>
+</main>
+
+<script>
+const FONTS = [
+  { key:'jakarta', label:'Plus Jakarta Sans', note:'Đang dùng hiện tại', stack:'"Plus Jakarta Sans",-apple-system,"Segoe UI",Roboto,sans-serif' },
+  { key:'bevn',    label:'Be Vietnam Pro',    note:'Làm riêng cho tiếng Việt', stack:'"Be Vietnam Pro",-apple-system,"Segoe UI",Roboto,sans-serif' },
+  { key:'mont',    label:'Montserrat',        note:'Hình học, chữ rộng — mạnh ở tiêu đề', stack:'"Montserrat",-apple-system,"Segoe UI",Roboto,sans-serif' },
+  { key:'roboto',  label:'Roboto',            note:'Trung tính, gọn — chuẩn Android', stack:'"Roboto",-apple-system,"Segoe UI",sans-serif' },
+  { key:'inter',   label:'Inter',             note:'An toàn — tối ưu chữ nhỏ', stack:'"Inter",-apple-system,"Segoe UI",Roboto,sans-serif' },
+  { key:'playfair',label:'Playfair Display',  note:'SERIF tương phản cao — CHỈ hợp tiêu đề lớn', stack:'"Playfair Display",Georgia,serif' },
+  { key:'system',  label:'Segoe UI (hệ thống)', note:'0 request · nét nhất trên Windows', stack:'system-ui,"Segoe UI",Roboto,sans-serif' },
+];
+
+// Cặp dựng sẵn — bấm 1 phát đổi cả tiêu đề lẫn nội dung
+const PRESETS = [
+  { key:'p1', label:'Montserrat + Roboto',      mode:'pair', disp:'mont',     body:'roboto', labelRole:'body' },
+  { key:'p2', label:'Playfair Display + Inter', mode:'pair', disp:'playfair', body:'inter',  labelRole:'body' },
+  { key:'p3', label:'Be Vietnam Pro (1 font)',  mode:'single', font:'bevn' },
+  { key:'p0', label:'Hiện tại (Plus Jakarta)',  mode:'single', font:'jakarta' },
+];
+
+const ROWS = [
+  ['Nguyễn Thị Bảo Ngọc','NB','Nữ','0908 278 807','Nick 01 · Kinh doanh','#0E9F6E',['Khách VIP','Đã báo giá'],'17:30 22/07/2026','09:12 04/03/2026','17:31 22/07/2026',20],
+  ['Trần Đức Hưng','TH','Nam','0912 004 215','Nick 02 · Hỗ trợ','#0E9F6E',['Chờ duyệt'],'08:05 21/07/2026','14:48 19/11/2025','11:20 22/07/2026',140],
+  ['Lê Hoàng Phương Uyên','LU','Nữ','0938 771 460','Nick 01 · Kinh doanh','#C2810C',['Đã mời','Sỉ'],'19:44 18/07/2026','07:30 02/01/2026','09:02 20/07/2026',300],
+  ['Nguyễn Thị Hoàng Phương Thảo Nguyên','NN','Nữ','0977 512 038','Nick 04 · Đối tác miền Bắc','#0E9F6E',['Doanh nghiệp'],'13:07 15/07/2026','16:22 28/08/2025','13:55 21/07/2026',240],
+  ['Phạm Thị Mỹ Duyên','PD','Nữ','0903 118 902','Nick 03 · Marketing','#736F84',['Khách lạ'],'—','10:41 12/06/2026','15:36 19/07/2026',60],
+  ['Võ Nguyễn Tuấn Kiệt','VK','Nam','0961 245 700','Nick 02 · Hỗ trợ','#DC3A5B',['Đã ngắt'],'21:18 09/07/2026','11:03 30/04/2026','21:18 09/07/2026',180],
+  ['Đặng Khánh Hoà','ĐH','Nam','0918 660 341','Chưa có kênh','transparent',['Nhập tay'],'—','08:00 22/07/2026','08:00 22/07/2026',340],
+  ['Bùi Thị Kiều Diễm','BD','Nữ','0949 073 128','Nick 05 · Bán lẻ','#0E9F6E',['Mua lại','Thân thiết'],'16:52 22/07/2026','13:15 07/02/2026','16:59 22/07/2026',100],
+];
+
+// Mặc định mở thẳng cặp anh định dùng: Montserrat tiêu đề + Roboto nội dung
+const S = { preset:'p2', mode:'pair', font:'jakarta', disp:'playfair', body:'inter', labelRole:'body',
+            size:14, lh:1.5, tnum:true, theme:'light' };
+const el = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+const stackOf = k => FONTS.find(f => f.key === k).stack;
+const labelOf = k => FONTS.find(f => f.key === k).label;
+
+function apply(){
+  const r = document.documentElement.style;
+  const pair = S.mode === 'pair';
+  const body = pair ? S.body : S.font;
+  const disp = pair ? S.disp : S.font;
+  const lab  = pair ? (S.labelRole === 'disp' ? S.disp : S.body) : S.font;
+
+  r.setProperty('--font', stackOf(body));
+  r.setProperty('--fdisp', stackOf(disp));
+  r.setProperty('--flabel', stackOf(lab));
+  r.setProperty('--size', S.size + 'px');
+  r.setProperty('--lh', S.lh);
+  r.setProperty('--tnum', S.tnum ? 'tabular-nums' : 'normal');
+  document.documentElement.dataset.theme = S.theme;
+
+  el('now').innerHTML = pair
+    ? 'Tiêu đề <b>' + esc(labelOf(disp)) + '</b> · Nội dung <b>' + esc(labelOf(body)) + '</b>'
+    : 'Đang xem: <b>' + esc(labelOf(body)) + '</b>';
+  el('themeBtn').textContent = S.theme === 'dark' ? 'Nền sáng' : 'Nền tối';
+  el('fontBtns').classList.toggle('hide', pair);
+  el('pairCtl').classList.toggle('hide', !pair);
+
+  document.querySelectorAll('[data-preset]').forEach(b => b.classList.toggle('on', b.dataset.preset === S.preset));
+  document.querySelectorAll('[data-mode]').forEach(b => b.classList.toggle('on', b.dataset.mode === S.mode));
+  document.querySelectorAll('[data-font]').forEach(b => b.classList.toggle('on', b.dataset.font === S.font));
+  document.querySelectorAll('[data-disp]').forEach(b => b.classList.toggle('on', b.dataset.disp === S.disp));
+  document.querySelectorAll('[data-body]').forEach(b => b.classList.toggle('on', b.dataset.body === S.body));
+  document.querySelectorAll('[data-lrole]').forEach(b => b.classList.toggle('on', b.dataset.lrole === S.labelRole));
+  document.querySelectorAll('[data-size]').forEach(b => b.classList.toggle('on', +b.dataset.size === S.size));
+  document.querySelectorAll('[data-lh]').forEach(b => b.classList.toggle('on', +b.dataset.lh === S.lh));
+  document.querySelectorAll('[data-tnum]').forEach(b => b.classList.toggle('on', (b.dataset.tnum === '1') === S.tnum));
+}
+
+el('fontBtns').innerHTML = FONTS.map(f =>
+  `<button class="fbtn" data-font="${f.key}" style="font-family:${f.stack}"><b>${esc(f.label)}</b><i>${esc(f.note)}</i></button>`).join('');
+el('segDisp').innerHTML  = FONTS.map(f => `<button class="pchip" data-disp="${f.key}" style="font-family:${f.stack}">${esc(f.label)}</button>`).join(' ');
+el('segBody').innerHTML  = FONTS.map(f => `<button class="pchip" data-body="${f.key}" style="font-family:${f.stack}">${esc(f.label)}</button>`).join(' ');
+el('segLabel').innerHTML = `<button class="pchip" data-lrole="disp">Theo tiêu đề</button> <button class="pchip" data-lrole="body">Theo nội dung</button>`;
+el('segPreset').innerHTML = PRESETS.map(p => `<button class="pchip" data-preset="${p.key}">${esc(p.label)}</button>`).join(' ');
+el('segSize').innerHTML  = [13,14,15].map(s => `<button data-size="${s}">${s}px</button>`).join('');
+el('segLh').innerHTML    = [1.4,1.5,1.6].map(l => `<button data-lh="${l}">${l}</button>`).join('');
+el('segTnum').innerHTML  = `<button data-tnum="1">Bật</button><button data-tnum="0">Tắt</button>`;
+
+el('rows').innerHTML = ROWS.map(r => `
+  <div class="row">
+    <span class="cName person">
+      <span class="av" style="background:oklch(.84 .08 ${r[10]})">${esc(r[1])}</span>
+      <span class="ptxt">
+        <span class="nm">${esc(r[0])}</span>
+        <span class="sub"><span>${esc(r[2])}</span><span class="d"></span><span class="num">${esc(r[3])}</span></span>
+      </span>
+    </span>
+    <span class="cChan chan"><span class="cdot" style="background:${r[5]}"></span><span class="cnm">${esc(r[4])}</span></span>
+    <span class="cTags tags">${r[6].map(t => `<span class="tag">${esc(t)}</span>`).join('')}</span>
+    <span class="cTime num">${esc(r[7])}</span>
+    <span class="cTime num">${esc(r[8])}</span>
+    <span class="cTime num">${esc(r[9])}</span>
+  </div>`).join('');
+
+el('stack').innerHTML = FONTS.map(f => `
+  <div class="srow" data-font="${f.key}">
+    <div class="slbl">${esc(f.label)}</div>
+    <div class="stxt" style="font-family:${f.stack}">
+      <div class="svi">Nguyễn Thị Bảo Ngọc · Đặng Khánh Hoà · Bùi Thị Kiều Diễm</div>
+      <div class="snum num">0908 278 807 · 17:30 22/07/2026 · 1.250.000 ₫</div>
+    </div>
+  </div>`).join('');
+
+// Một handler uỷ quyền — không lồng button trong <label>
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-preset],[data-mode],[data-font],[data-disp],[data-body],[data-lrole],[data-size],[data-lh],[data-tnum],#themeBtn');
+  if (!t) return;
+  const d = t.dataset;
+  if (t.id === 'themeBtn') S.theme = S.theme === 'dark' ? 'light' : 'dark';
+  else if (d.preset) {
+    const p = PRESETS.find(x => x.key === d.preset);
+    S.mode = p.mode;
+    if (p.font) S.font = p.font;
+    if (p.disp) S.disp = p.disp;
+    if (p.body) S.body = p.body;
+    if (p.labelRole) S.labelRole = p.labelRole;
+    S.preset = p.key;
+  }
+  else if (d.mode)  S.mode = d.mode;
+  else if (d.font)  { S.font = d.font; S.mode = 'single'; }
+  else if (d.disp)  S.disp = d.disp;
+  else if (d.body)  S.body = d.body;
+  else if (d.lrole) S.labelRole = d.lrole;
+  else if (d.size)  S.size = +d.size;
+  else if (d.lh)    S.lh = +d.lh;
+  else if (d.tnum)  S.tnum = d.tnum === '1';
+  apply();
+});
+
+apply();
+</script>
+</body>
+</html>

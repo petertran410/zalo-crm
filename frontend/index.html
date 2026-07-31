@@ -13,6 +13,19 @@
     <meta name="theme-color" content="#0A192F" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <!-- Font cho màn Khách hàng (anh chốt 2026-07-29): Montserrat cho tiêu đề,
+         Roboto cho nội dung. Chỉ nạp weight thật sự dùng — tiêu đề 700/800,
+         nội dung 400–800 (PeopleView dùng 24 chỗ weight 800, 10 chỗ 600 nên
+         KHÔNG cắt bớt được, cắt là trình duyệt tự bôi đậm giả trông rất bẩn).
+         Số/mã dùng lại --mono (Roboto Mono) đã có sẵn
+         trong main.css → cùng superfamily với Roboto, không nạp thêm font mono.
+         Thay cho Bricolage Grotesque + Figtree + JetBrains Mono của bản Atlas. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@700;800&family=Roboto:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <title>ZaloCRM</title>
   </head>
   <body>

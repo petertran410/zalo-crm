@@ -36,13 +36,6 @@ export const adminMenu: MenuItemConfig[] = [
     resource: 'conversation',
   },
   {
-    key: 'friends',
-    title: 'Bạn bè',
-    icon: 'mdi-account-multiple-outline',
-    to: '/friends',
-    resource: 'friend',
-  },
-  {
     key: 'contacts',
     title: 'Khách hàng',
     icon: 'mdi-account-outline',
