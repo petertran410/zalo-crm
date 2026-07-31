@@ -802,6 +802,215 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // ── GET /api/v1/contacts/pos-link-candidates — KH POS khớp SĐT ────────────
+  // 2026-07-31 (anh chốt): modal "Liên kết khách hàng" tìm trong bảng PosCustomer
+  // (read model POS), KHÔNG phải trong Contact. KH POS nào đã có Contact mang
+  // posCustomerId đó thì trả linked=true → FE hiện "đã có", làm mờ, không cho bấm.
+  // Chỉ KH POS chưa liên kết mới chọn được.
+  //
+  // Cố ý KHÔNG lọc theo contact-scope khi dò linked: KH POS đã nằm trong CRM là
+  // sự thật cấp org, kể cả khi sale hiện tại không có quyền xem KH đó. Lọc theo
+  // scope sẽ khiến sale liên kết lại → tạo Contact trùng posCustomerId.
+  app.get('/api/v1/contacts/pos-link-candidates', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { phone = '' } = request.query as { phone?: string };
+      const digits = phone.replace(/\D/g, '');
+      if (digits.length < 3) return { candidates: [] };
+
+      // PosCustomer.phone giữ raw từ POS (chủ yếu 0xxx) → dò cả các biến thể.
+      const variants = new Set<string>([digits]);
+      if (digits.startsWith('0')) variants.add('84' + digits.slice(1));
+      else if (digits.startsWith('84')) variants.add('0' + digits.slice(2));
+      const canonical = normalizePhone(phone);
+      if (canonical) {
+        variants.add(canonical);
+        variants.add('0' + canonical.slice(2));
+      }
+
+      const variantList = [...variants];
+      const posCustomers = await prisma.posCustomer.findMany({
+        where: {
+          orgId: user.orgId,
+          OR: variantList.map((v) => ({ phone: { contains: v } })),
+        },
+        select: { posId: true, code: true, name: true, phone: true },
+        orderBy: { name: 'asc' },
+        take: 10,
+      });
+
+      // KH đã có trong CRM khớp SĐT — tìm RIÊNG trên Contact, không chỉ dựa vào
+      // bảng POS. Lý do (anh chốt 2026-07-31): record POS thường thiếu SĐT, sale
+      // điền vào Contact sau. Nếu chỉ dò POS thì KH đó coi như không tồn tại →
+      // sale liên kết lại thành bản ghi trùng.
+      //
+      // Lấy CẢ Contact chưa gắn POS (danh bạ Zalo/Facebook sync về) — vẫn phải
+      // hiện ra để sale tìm thấy, chỉ khác là KHÔNG xám: "đã có" = đã là KH bên
+      // POS, không phải "có mặt trong CRM". Lần đầu nick Zalo kết nối, CRM sync
+      // toàn bộ danh bạ — phần lớn chưa mua gì nên không tính là KH.
+      // (Lọc posCustomerId ở đây làm nhóm Zalo-only biến mất khỏi kết quả — sale
+      // search đúng SĐT vẫn ra rỗng. Phân biệt bằng `linked` bên dưới, không lọc.)
+      const existingContacts = await prisma.contact.findMany({
+        where: {
+          orgId: user.orgId,
+          mergedInto: null,
+          OR: [
+            ...(canonical ? [{ phoneNormalized: canonical }] : []),
+            ...variantList.flatMap((v) => [
+              { phone: { contains: v } },
+              { phone2: { contains: v } },
+              { phone3: { contains: v } },
+            ]),
+          ],
+        },
+        select: { id: true, fullName: true, crmName: true, phone: true, posCustomerId: true },
+        take: 10,
+      });
+
+      if (posCustomers.length === 0 && existingContacts.length === 0) {
+        return { candidates: [] };
+      }
+
+      const linkedRows = posCustomers.length
+        ? await prisma.contact.findMany({
+            where: {
+              orgId: user.orgId,
+              posCustomerId: { in: posCustomers.map((c) => c.posId) },
+            },
+            select: { id: true, posCustomerId: true },
+          })
+        : [];
+      const linkedByPosId = new Map(
+        linkedRows.map((r) => [r.posCustomerId as number, r.id]),
+      );
+
+      const candidates: Array<{
+        posCustomerId: number | null;
+        contactId: string | null;
+        code: string | null;
+        name: string;
+        phone: string | null;
+        linked: boolean;
+      }> = [];
+      const seenPosId = new Set<number>();
+
+      for (const p of posCustomers) {
+        const contactId = linkedByPosId.get(p.posId) ?? null;
+        seenPosId.add(p.posId);
+        candidates.push({
+          posCustomerId: p.posId,
+          contactId,
+          code: p.code,
+          name: p.name,
+          phone: p.phone,
+          linked: contactId !== null,
+        });
+      }
+      // Contact khớp SĐT chưa xuất hiện qua dòng POS ở trên → thêm vào.
+      // linked (xám, "đã có") CHỈ khi đã gắn posCustomerId = đã là KH bên POS.
+      // Contact Zalo/Facebook chưa có POS → linked=false, sale vẫn chọn được để
+      // mở hồ sơ KH đó (không tạo bản ghi mới).
+      for (const c of existingContacts) {
+        if (c.posCustomerId != null && seenPosId.has(c.posCustomerId)) continue;
+        candidates.push({
+          posCustomerId: c.posCustomerId,
+          contactId: c.id,
+          code: null,
+          name: c.crmName || c.fullName || c.phone || '—',
+          phone: c.phone,
+          linked: c.posCustomerId != null,
+        });
+      }
+
+      return { candidates };
+    } catch (err) {
+      logger.error('[contacts] pos-link-candidates error:', err);
+      return reply.status(500).send({ error: 'Failed to search POS customers' });
+    }
+  });
+
+  // ── POST /api/v1/contacts/link-pos — kéo 1 KH POS vào CRM ─────────────────
+  // 2026-07-31: thay quick-create ở modal "Liên kết khách hàng". Tạo Contact từ
+  // record POS, dùng đúng bộ field mapping của hisweetie-sync-cron để đêm sau
+  // cron match theo posCustomerId chứ không tạo bản ghi thứ hai.
+  app.post('/api/v1/contacts/link-pos', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { posCustomerId } = request.body as { posCustomerId?: number };
+      if (typeof posCustomerId !== 'number' || !Number.isFinite(posCustomerId)) {
+        return reply.status(400).send({ error: 'posCustomerId required' });
+      }
+
+      const posCustomer = await prisma.posCustomer.findFirst({
+        where: { orgId: user.orgId, posId: posCustomerId },
+        select: { posId: true, code: true, name: true, phone: true, address: true },
+      });
+      if (!posCustomer) {
+        return reply.status(404).send({ error: 'POS customer not found' });
+      }
+
+      // Race guard: 2 sale bấm liên kết cùng lúc → người sau nhận lại KH đã có.
+      const existing = await prisma.contact.findFirst({
+        where: { orgId: user.orgId, posCustomerId },
+        select: { id: true, fullName: true, crmName: true, phone: true },
+      });
+      if (existing) {
+        return reply.status(200).send({ exists: true, contact: existing });
+      }
+
+      const phoneNormalized = posCustomer.phone ? normalizePhone(posCustomer.phone) : null;
+      const contact = await prisma.contact.create({
+        data: {
+          orgId: user.orgId,
+          source: 'POS',
+          posCustomerId: posCustomer.posId,
+          posCustomerCode: posCustomer.code,
+          posSyncedAt: new Date(),
+          fullName: posCustomer.name,
+          phone: posCustomer.phone,
+          phoneNormalized,
+          addressLine: posCustomer.address,
+          status: 'new',
+          hasZalo: null,
+          assignedUserId: user.id,
+          tags: [],
+          metadata: {},
+        },
+        select: {
+          id: true, fullName: true, crmName: true, phone: true,
+          posCustomerId: true, source: true, assignedUserId: true,
+        },
+      });
+
+      // ContactAccess primary cho sale liên kết (giống quick-create).
+      await prisma.contactAccess.upsert({
+        where: { contactId_userId: { contactId: contact.id, userId: user.id } },
+        update: { role: 'primary' },
+        create: {
+          orgId: user.orgId,
+          contactId: contact.id,
+          userId: user.id,
+          role: 'primary',
+          source: 'pos_link',
+        },
+      });
+
+      logActivity({
+        orgId: user.orgId,
+        userId: user.id,
+        action: 'customer_create',
+        entityType: 'contact',
+        entityId: contact.id,
+        details: { via: 'pos_link', posCustomerId: posCustomer.posId },
+      });
+
+      return reply.status(201).send({ exists: false, contact });
+    } catch (err) {
+      logger.error('[contacts] link-pos error:', err);
+      return reply.status(500).send({ error: 'Failed to link POS customer' });
+    }
+  });
+
   // ── POST /api/v1/contacts/:id/virtual-conversation — M53 2026-05-30 ──────
   // Anh chốt Approach A: KH no-Zalo có conversation ảo trong /chat để sale ghi nhật ký + AI trợ lý.
   // Idempotent: nếu virtual conv đã tồn tại cho cặp (contact, nick mặc định của sale) thì return luôn.
@@ -1448,17 +1657,22 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
 
   // ── Soft delete (Thùng rác) — 2026-06-30 ─────────────────────────────────
   // DELETE /api/v1/contacts/:id → set archivedAt = now() (ẩn khỏi list chính).
-  // Xóa vĩnh viễn chỉ qua /permanent ở Thùng rác (owner-only).
-  // RBAC Phase Phân Quyền 2026-05-21: require contact.delete grant.
+  // 2026-07-31 (anh chốt): SIẾT còn owner-only. Trước đây là
+  // requireGrant('contact','delete') nên Admin / Trưởng phòng / Sale Senior đều
+  // archive được. Giờ mọi thao tác xoá KH (archive, restore, purge) đều chung
+  // một tầng quyền duy nhất: user.role === 'owner'. Không dùng grant nữa để
+  // không ai cấp lại quyền này qua nhóm quyền được.
   app.delete('/api/v1/contacts/:id', {
-    preHandler: async (request, reply) => {
-      const { requireGrant } = await import('../rbac/rbac-middleware.js');
-      return requireGrant('contact', 'delete')(request, reply);
-    },
-    config: { contentClass: 'mixed', rbacResource: 'contact', rbacAction: 'delete' },
+    config: { contentClass: 'mixed' },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
+      if (user.role !== 'owner') {
+        return reply.status(403).send({
+          error: 'Chỉ owner mới có quyền xoá khách hàng',
+          code: 'OWNER_ONLY',
+        });
+      }
       const { id } = request.params as { id: string };
 
       const existing = await prisma.contact.findFirst({
@@ -1480,15 +1694,18 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── POST /api/v1/contacts/bulk-archive — soft-delete hàng loạt ─────────────
+  // Owner-only 2026-07-31 — xem docblock ở DELETE /contacts/:id.
   app.post('/api/v1/contacts/bulk-archive', {
-    preHandler: async (request, reply) => {
-      const { requireGrant } = await import('../rbac/rbac-middleware.js');
-      return requireGrant('contact', 'delete')(request, reply);
-    },
-    config: { contentClass: 'mixed', rbacResource: 'contact', rbacAction: 'delete' },
+    config: { contentClass: 'mixed' },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
+      if (user.role !== 'owner') {
+        return reply.status(403).send({
+          error: 'Chỉ owner mới có quyền xoá khách hàng',
+          code: 'OWNER_ONLY',
+        });
+      }
       const { ids } = request.body as { ids: string[] };
       if (!Array.isArray(ids) || ids.length === 0) {
         return reply.status(400).send({ error: 'ids phải là mảng không rỗng' });
@@ -1510,15 +1727,18 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── POST /api/v1/contacts/:id/restore — khôi phục từ Thùng rác ────────────
+  // Owner-only 2026-07-31 — khôi phục cũng là một tầng với xoá.
   app.post('/api/v1/contacts/:id/restore', {
-    preHandler: async (request, reply) => {
-      const { requireGrant } = await import('../rbac/rbac-middleware.js');
-      return requireGrant('contact', 'delete')(request, reply);
-    },
-    config: { contentClass: 'mixed', rbacResource: 'contact', rbacAction: 'delete' },
+    config: { contentClass: 'mixed' },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
+      if (user.role !== 'owner') {
+        return reply.status(403).send({
+          error: 'Chỉ owner mới có quyền khôi phục khách hàng',
+          code: 'OWNER_ONLY',
+        });
+      }
       const { id } = request.params as { id: string };
 
       const existing = await prisma.contact.findFirst({
@@ -1540,15 +1760,18 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ── POST /api/v1/contacts/bulk-restore — khôi phục hàng loạt ────────────────
+  // Owner-only 2026-07-31 — khôi phục cũng là một tầng với xoá.
   app.post('/api/v1/contacts/bulk-restore', {
-    preHandler: async (request, reply) => {
-      const { requireGrant } = await import('../rbac/rbac-middleware.js');
-      return requireGrant('contact', 'delete')(request, reply);
-    },
-    config: { contentClass: 'mixed', rbacResource: 'contact', rbacAction: 'delete' },
+    config: { contentClass: 'mixed' },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
+      if (user.role !== 'owner') {
+        return reply.status(403).send({
+          error: 'Chỉ owner mới có quyền khôi phục khách hàng',
+          code: 'OWNER_ONLY',
+        });
+      }
       const { ids } = request.body as { ids: string[] };
       if (!Array.isArray(ids) || ids.length === 0) {
         return reply.status(400).send({ error: 'ids phải là mảng không rỗng' });

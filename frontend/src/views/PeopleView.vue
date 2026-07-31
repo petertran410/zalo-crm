@@ -16,6 +16,8 @@
           <span v-if="q" class="ppl-search-x" @click="clearQuery">×</span>
         </label>
 
+        <!-- 2026-07-31: modal giờ làm 2 việc — liên kết KH có sẵn bên POS, hoặc
+             tạo KH mới (Zalo/Facebook chưa có ở POS). Nhãn giữ "Thêm khách". -->
         <button class="ppl-btn-primary" @click="openAdd">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 4v12M4 10h12" /></svg>
           Thêm khách
@@ -35,17 +37,8 @@
           <span v-if="activeCount" class="ppl-count-badge">{{ activeCount }}</span>
         </button>
 
-        <!-- Thùng rác: chỉ role có grant contact.delete mới thấy (2026-07-29).
-             Xoá vĩnh viễn KHÔNG ở đây — nằm ở Cài đặt › Thùng rác (owner-only). -->
-        <button
-          v-if="canArchive"
-          class="ppl-chip-btn" :class="{ open: viewArchived }"
-          @click="toggleArchived"
-        >
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 6h12M6.5 6V4.5h7V6M6 6l.7 10h6.6L14 6" /></svg>
-          {{ viewArchived ? 'Đang xem thùng rác' : 'Thùng rác' }}
-        </button>
-
+        <!-- Thùng rác đã gỡ khỏi màn này 2026-07-31 (anh chốt) — xem/khôi phục/xoá
+             vĩnh viễn đều ở Cài đặt › Thùng rác, owner-only. -->
         <button class="ppl-chip-btn" :class="{ open: menu === 'sort' }" @click="toggleMenu('sort')">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="14" height="12.5" rx="2.2" /><path d="M3 8h14M7 2.5v3M13 2.5v3" /></svg>
           Thời gian &amp; sắp xếp
@@ -241,11 +234,8 @@
       <span class="ppl-bulk-n">Đã chọn <b>{{ selected.size }}</b> khách</span>
       <span class="ppl-clear" @click="selected = new Set()">Bỏ chọn</span>
       <div class="ppl-bulk-sp"></div>
-      <button v-if="!viewArchived" class="ppl-bulk-btn danger" :disabled="bulkWorking" @click="onBulkArchive">
+      <button class="ppl-bulk-btn danger" :disabled="bulkWorking" @click="onBulkArchive">
         {{ bulkWorking ? 'Đang xử lý…' : 'Chuyển vào thùng rác' }}
-      </button>
-      <button v-else class="ppl-bulk-btn" :disabled="bulkWorking" @click="onBulkRestore">
-        {{ bulkWorking ? 'Đang xử lý…' : 'Khôi phục' }}
       </button>
     </div>
 
@@ -556,27 +546,58 @@
       </div>
     </div>
 
-    <!-- ═══════════ THÊM NHANH ═══════════ -->
+    <!-- ═══════════ LIÊN KẾT KHÁCH HÀNG (2026-07-31) ═══════════
+         Trước đây là "Thêm nhanh" (Họ tên + SĐT → quick-create). Anh chốt: bỏ
+         tạo mới, bắt buộc gõ SĐT rồi chọn đúng KH đã có để liên kết. -->
     <div v-if="addOpen" class="ppl-modal-wrap">
       <div class="ppl-modal-scrim" @click="closeAdd"></div>
       <div class="ppl-modal">
         <h3>Thêm khách hàng</h3>
+        <div class="ppl-modal-sub">Nhập SĐT để tìm khách có sẵn bên POS. Khách mới từ Zalo/Facebook chưa có ở POS thì tạo mới bên dưới.</div>
         <label class="ppl-input-box">
-          <span class="ppl-input-l">Họ tên</span>
-          <input v-model="addName" placeholder="Nguyễn Văn A" />
-        </label>
-        <label class="ppl-input-box" :class="{ warn: !!dupeName }">
           <span class="ppl-input-l">Số điện thoại</span>
-          <input v-model="addPhone" class="mono" placeholder="09…" />
+          <input v-model="addPhone" class="mono" placeholder="09…" @input="onAddPhoneInput" />
         </label>
-        <div v-if="dupeName" class="ppl-dupe">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3.5 17 16H3z" /><path d="M10 8v3.5M10 13.5v.5" /></svg>
-          <div title="Lưu tiếp sẽ tạo bản ghi thứ hai, có thể phải gộp sau"><strong>{{ dupeName }}</strong> đã dùng số này</div>
+
+        <div class="ppl-link-res">
+          <div v-if="linkSearching" class="ppl-link-note">Đang tìm…</div>
+          <div v-else-if="linkError" class="ppl-link-note warn">{{ linkError }}</div>
+          <div v-else-if="linkSearched && !linkResults.length" class="ppl-link-note">
+            Không có khách nào khớp SĐT này.
+          </div>
+          <!-- linked = đã có Contact trong CRM → làm mờ, không bấm được (2026-07-31) -->
+          <button
+            v-for="c in linkResults" :key="candidateKey(c)" type="button"
+            class="ppl-link-row"
+            :class="{ on: linkPicked && candidateKey(linkPicked) === candidateKey(c), off: c.linked }"
+            :disabled="c.linked || linkSaving"
+            :title="c.linked ? 'Khách này đã có trong tab Khách hàng' : ''"
+            @click="linkPicked = c"
+          >
+            <span class="ppl-link-nm">{{ candidateDisplayName(c) }}</span>
+            <span class="ppl-link-meta">
+              <span class="ppl-link-ph mono">{{ c.phone || '—' }}</span>
+              <!-- đã có = KH bên POS (xám). chưa mua = contact Zalo/FB, chọn được -->
+              <span v-if="c.linked" class="ppl-link-tag">đã có</span>
+              <span v-else-if="c.contactId" class="ppl-link-tag">chưa mua</span>
+            </span>
+          </button>
         </div>
+
+        <!-- KH mới tinh từ Zalo/Facebook — chưa có ở POS lẫn CRM. Chỉ mở khi
+             không có dòng "đã có" nào, để không tạo trùng KH sẵn có. -->
+        <div v-if="canCreate" class="ppl-link-new">
+          <div class="ppl-link-new-t">Không thấy khách? Tạo mới với SĐT này.</div>
+          <label class="ppl-input-box">
+            <span class="ppl-input-l">Họ tên</span>
+            <input v-model="createName" placeholder="Nguyễn Văn A" @input="linkPicked = null" />
+          </label>
+        </div>
+
         <div class="ppl-modal-foot">
           <span class="ppl-clear" @click="closeAdd">Huỷ</span>
-          <button class="ppl-btn-primary sm" :disabled="!canAdd || addSaving" @click="submitAdd">
-            {{ addSaving ? 'Đang lưu…' : 'Lưu khách' }}
+          <button class="ppl-btn-primary sm" :disabled="primaryDisabled" @click="submitPrimary">
+            {{ primaryLabel }}
           </button>
         </div>
       </div>
@@ -629,6 +650,7 @@ import {
   type Contact,
 } from '@/composables/use-contacts';
 import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-friend-socket';
+import { useContactPhoneSearch, candidateDisplayName, candidateKey, type PosLinkCandidate } from '@/composables/use-contact-phone-search';
 import { displayCustomerName, customerInitials } from '@/composables/use-friend-display';
 import { TEMPLATE_VARIABLES } from '@/constants/template-variables';
 import { useToast } from '@/composables/use-toast';
@@ -643,12 +665,12 @@ const { confirm } = useConfirm();
 const {
   updateContact,
   bulkArchiveContacts,
-  bulkRestoreContacts,
 } = useContacts();
 
-// Archive/restore gate theo grant contact.delete (Admin / Trưởng phòng / Sale Senior).
-// Xoá vĩnh viễn KHÔNG ở màn này — Cài đặt › Thùng rác, owner-only.
-const canArchive = computed(() => authStore.canAccess('contact', 'delete'));
+// 2026-07-31 (anh chốt): xoá KH giờ CHỈ owner — trước đây mở cho grant
+// contact.delete (Admin / Trưởng phòng / Sale Senior). Backend cũng đã siết
+// theo user.role === 'owner' nên đây chỉ là lớp ẩn UI, không phải lớp chặn.
+const canArchive = computed(() => authStore.isOwner);
 
 // ─────────────────────── Hằng số UI ───────────────────────
 const PAGE_SIZE = 20;
@@ -713,9 +735,9 @@ const q = ref('');
 const menu = ref<'filters' | 'sort' | null>(null);
 const fetchError = ref<string | null>(null);
 
-// ─── Chọn nhiều + thùng rác (2026-07-29) ───
+// ─── Chọn nhiều để chuyển vào thùng rác (owner-only từ 2026-07-31) ───
+// Không còn chế độ "xem thùng rác" tại đây; khôi phục ở Cài đặt › Thùng rác.
 const selected = ref<Set<string>>(new Set());
-const viewArchived = ref(false);
 const bulkWorking = ref(false);
 
 const allSelected = computed(
@@ -735,13 +757,6 @@ function toggleSelectOne(id: string, on: boolean) {
   else next.delete(id);
   selected.value = next;
 }
-function toggleArchived() {
-  viewArchived.value = !viewArchived.value;
-  selected.value = new Set();
-  closeDrawer();
-  fetchPage(true);
-}
-
 async function onBulkArchive() {
   const ids = [...selected.value];
   const ok = await confirm({
@@ -761,19 +776,6 @@ async function onBulkArchive() {
     bulkWorking.value = false;
   }
 }
-async function onBulkRestore() {
-  const ids = [...selected.value];
-  bulkWorking.value = true;
-  try {
-    const n = await bulkRestoreContacts(ids);
-    selected.value = new Set();
-    showToast(`Đã khôi phục ${n} khách`);
-    await fetchPage(true);
-  } finally {
-    bulkWorking.value = false;
-  }
-}
-
 const f = reactive({
   rel: [] as string[],
   employee: '',
@@ -839,7 +841,6 @@ async function fetchPage(reset: boolean) {
       params: {
         page: page.value,
         limit: PAGE_SIZE,
-        archived: viewArchived.value ? 'true' : undefined,
         search: q.value.trim() || undefined,
         relationshipKindAny: f.rel.length ? f.rel.join(',') : undefined,
         assignedUserId: f.employee || undefined,
@@ -1667,20 +1668,83 @@ async function saveNote() {
   }
 }
 
-// ─────────────────────── Thêm nhanh ───────────────────────
+// ─────────────────────── Liên kết KH POS theo SĐT (2026-07-31) ───────────────
+// Bỏ tạo KH trắng ở màn này — tìm KH bên POS theo SĐT rồi kéo vào CRM. KH POS
+// đã có Contact (linked) bị disable ở template nên không chọn được; nút "Liên
+// kết" cũng disable tới khi có linkPicked, không thể bỏ qua bước chọn.
 const addOpen = ref(false);
-const addName = ref('');
 const addPhone = ref('');
-const addSaving = ref(false);
+const linkPicked = ref<PosLinkCandidate | null>(null);
+const linkSaving = ref(false);
+const {
+  results: linkResults,
+  searching: linkSearching,
+  searched: linkSearched,
+  error: linkError,
+  search: runLinkSearch,
+  reset: resetLinkSearch,
+} = useContactPhoneSearch();
 
-const canAdd = computed(() => !!addName.value.trim() && !!addPhone.value.trim());
-const dupeName = computed(() => {
-  const digits = addPhone.value.replace(/\D/g, '');
-  if (digits.length < 6) return '';
-  // Dò trùng trên toàn bộ dòng đã tải, không chỉ dòng đang hiện sau bộ lọc.
-  const hit = rawRows.value.find((c) => (c.phone || '').replace(/\D/g, '').includes(digits));
-  return hit ? displayNameOf(hit) : '';
+function onAddPhoneInput() {
+  // Đổi SĐT thì bỏ lựa chọn cũ — tránh liên kết nhầm KH của lần gõ trước.
+  linkPicked.value = null;
+  runLinkSearch(addPhone.value);
+}
+
+// ── Tạo KH mới (Zalo/Facebook, chưa có ở POS) ───────────────────────────────
+// 2026-07-31: KH thật sự mới thì không có record POS để liên kết. Cho tạo mới,
+// nhưng CHẶN khi SĐT đã thuộc về một Contact đang có (dòng linked) — đó mới là
+// case trùng. Có record POS trùng số thì vẫn cho tạo: KH buôn hay dùng chung số.
+const createName = ref('');
+// Chặn tạo mới khi SĐT đã thuộc BẤT KỲ Contact nào — kể cả contact Zalo chưa
+// phải KH POS: người đó không "mới", đã có dòng chọn được ở danh sách trên.
+const hasExistingContact = computed(() => linkResults.value.some((c) => c.contactId !== null));
+const phoneDigits = computed(() => addPhone.value.replace(/\D/g, ''));
+const canCreate = computed(() =>
+  linkSearched.value
+  && !linkSearching.value
+  && !hasExistingContact.value
+  && phoneDigits.value.length >= 9,
+);
+const primaryDisabled = computed(() => {
+  if (linkSaving.value) return true;
+  if (linkPicked.value) return false;
+  return !(canCreate.value && createName.value.trim());
 });
+const primaryLabel = computed(() => {
+  if (linkSaving.value) return 'Đang lưu…';
+  if (!linkPicked.value) return 'Tạo khách mới';
+  // Contact Zalo đã có trong CRM thì chỉ mở hồ sơ, không "liên kết" gì.
+  return linkPicked.value.posCustomerId == null ? 'Mở hồ sơ' : 'Liên kết';
+});
+function submitPrimary() {
+  return linkPicked.value ? submitLink() : submitCreate();
+}
+
+async function submitCreate() {
+  const name = createName.value.trim();
+  if (!canCreate.value || !name || linkSaving.value) return;
+  linkSaving.value = true;
+  try {
+    // leadSource (không phải `source`) — đúng tên field route quick-create đọc.
+    const res = await api.post('/contacts/quick-create', {
+      fullName: name,
+      phone: addPhone.value.trim(),
+      leadSource: 'quick_add',
+    });
+    const created = res.data?.contact;
+    closeAdd();
+    showToast(res.data?.exists ? 'Khách đã có sẵn — mở hồ sơ' : 'Đã tạo khách mới');
+    await fetchPage(true);
+    if (created?.id) await openDrawerById(created.id);
+  } catch (err) {
+    console.error('[PeopleView] quick-create failed:', err);
+    const msg = (err as { response?: { data?: { message?: string } } }).response?.data?.message;
+    toast.error(msg || 'Không tạo được khách hàng');
+  } finally {
+    linkSaving.value = false;
+  }
+}
 
 function openAdd() {
   addOpen.value = true;
@@ -1688,34 +1752,41 @@ function openAdd() {
 }
 function closeAdd() {
   addOpen.value = false;
-  addName.value = '';
   addPhone.value = '';
+  createName.value = '';
+  linkPicked.value = null;
+  resetLinkSearch();
 }
-async function submitAdd() {
-  if (!canAdd.value) return;
-  addSaving.value = true;
-  try {
-    const res = await api.post('/contacts/quick-create', {
-      fullName: addName.value.trim(),
-      phone: addPhone.value.trim(),
-      source: 'quick_add',
-    });
+async function submitLink() {
+  const picked = linkPicked.value;
+  // Dòng "đã có" đã disable ở template; guard này chặn nốt đường bàn phím.
+  if (!picked || picked.linked || linkSaving.value) return;
+
+  // Contact Zalo/Facebook đã nằm sẵn trong CRM (chưa phải KH POS) → không tạo
+  // hay liên kết gì thêm, chỉ mở hồ sơ KH đó ra.
+  if (picked.posCustomerId == null) {
+    const id = picked.contactId;
+    if (!id) return;
     closeAdd();
-    showToast('Đã thêm — mở hồ sơ để điền tiếp');
+    await openDrawerById(id);
+    return;
+  }
+
+  linkSaving.value = true;
+  try {
+    const res = await api.post('/contacts/link-pos', { posCustomerId: picked.posCustomerId });
+    const linked = res.data?.contact;
+    closeAdd();
+    showToast(res.data?.exists ? 'Khách đã có sẵn — mở hồ sơ' : 'Đã liên kết khách từ POS');
     await fetchPage(true);
-    const created = res.data?.contact;
-    if (created?.id) {
-      const row = rawRows.value.find((r) => r.id === created.id);
-      if (row) openDrawer(row);
-    }
+    if (linked?.id) await openDrawerById(linked.id);
   } catch (err) {
-    console.error('[PeopleView] quick-create failed:', err);
-    toast.error('Không thêm được khách hàng');
+    console.error('[PeopleView] link-pos failed:', err);
+    toast.error('Không liên kết được khách hàng');
   } finally {
-    addSaving.value = false;
+    linkSaving.value = false;
   }
 }
-
 // ─────────────────────── Toast cục bộ (khớp design) ───────────────────────
 const toastMsg = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout>;
@@ -2287,6 +2358,32 @@ onBeforeUnmount(() => {
 .ppl-warn-ico svg { width: 20px; height: 20px; }
 .ppl-dupe { padding: 12px 14px; border-radius: 13px; background: var(--pp-chip); display: flex; gap: 10px; align-items: flex-start; font-size: 12.5px; line-height: 1.55; }
 .ppl-dupe svg { width: 16px; height: 16px; color: var(--pp-warn); flex: none; margin-top: 1px; }
+
+/* Kết quả tìm KH theo SĐT để liên kết (2026-07-31) */
+.ppl-link-res { display: flex; flex-direction: column; gap: 6px; max-height: 244px; overflow-y: auto; }
+.ppl-link-note { padding: 10px 13px; border-radius: 12px; background: var(--pp-chip); font-size: 12.5px; color: var(--pp-muted); line-height: 1.5; }
+.ppl-link-note.warn { color: var(--pp-warn); }
+.ppl-link-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; padding: 10px 13px; border-radius: 12px;
+  border: 1px solid var(--pp-line); background: transparent;
+  font-family: inherit; font-size: 13px; text-align: left; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.ppl-link-row:hover:not(:disabled) { border-color: var(--pp-accent); }
+.ppl-link-row.on { border-color: var(--pp-accent); background: var(--pp-chip); }
+/* linked = đã có trong tab Khách hàng → mờ, con trỏ không mời bấm */
+.ppl-link-row.off { opacity: .5; cursor: not-allowed; }
+.ppl-link-row:disabled { cursor: not-allowed; }
+.ppl-link-nm { font-weight: 600; color: var(--pp-fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ppl-link-meta { display: flex; align-items: center; gap: 8px; flex: none; }
+.ppl-link-ph { color: var(--pp-muted); font-size: 12px; }
+.ppl-link-tag {
+  padding: 2px 8px; border-radius: 999px; background: var(--pp-chip);
+  font-size: 11px; font-weight: 600; color: var(--pp-muted); white-space: nowrap;
+}
+.ppl-link-new { display: flex; flex-direction: column; gap: 8px; padding-top: 4px; border-top: 1px dashed var(--pp-line); }
+.ppl-link-new-t { font-size: 12px; color: var(--pp-muted); }
 
 .ppl-toast {
   position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 90;
