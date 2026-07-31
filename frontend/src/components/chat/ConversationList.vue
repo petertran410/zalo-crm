@@ -2,79 +2,8 @@
   <div class="conv-list">
     <!-- ════════ Header: search + label chip + tabs ════════ -->
     <div class="cl-header">
-      <!-- Collapsible: search row + label chip bar ẩn khi filterCollapsed -->
-      <div class="cl-search-collapsible" :class="{ 'cl-search-collapsible--open': !filterCollapsed }">
-        <div class="cl-search-row">
-          <div class="cl-search-box">
-            <input
-              class="cl-search"
-              name="conv-list-search"
-              ref="searchInputEl"
-              autocomplete="off"
-              :value="search"
-              :class="{ 'cl-search--flash': searchFlash, 'has-text': !!search }"
-              placeholder="Tìm theo tên, SĐT, nội dung tin nhắn…"
-              @input="onSearchInput"
-              @keydown.esc="clearSearch"
-              @keydown.enter.prevent="onSearchEnter"
-              @animationend="searchFlash = false"
-            />
-            <!-- 2026-06-12 — nút X mờ hiện khi có text → click xóa kết quả tìm + focus lại
-                 (anh báo: search dính mãi tới khi xóa thủ công/reload). Esc cũng xóa. -->
-            <button
-              v-if="search"
-              type="button"
-              class="cl-search-clear"
-              title="Xóa tìm kiếm (Esc)"
-              @click="clearSearch"
-            ><XIcon :size="14" :stroke-width="2.5" /></button>
-          </div>
-          <button
-            class="cl-new-msg"
-            ref="newMsgBtnEl"
-            data-nick-picker-trigger
-            title="Bắt đầu cuộc trò chuyện mới"
-            @click="onClickNewMessage"
-          >
-            <v-icon size="18">mdi-message-plus</v-icon>
-            <span>Tin nhắn mới</span>
-            <span v-if="newMsgPickerOpen" class="cl-new-msg-caret"><ChevronUpIcon :size="14" :stroke-width="2" /></span>
-          </button>
 
-          <!-- Wedge A 2026-05-28: NickPickerPopup xổ từ nút Tin nhắn mới
-               Chỉ mở khi search có SĐT (>= 9 digits) -->
-          <NickPickerPopup
-            v-model="newMsgPickerOpen"
-            :accounts="composeAccounts as any"
-            :trigger-el="newMsgBtnEl"
-            title="Chọn nick gửi tin nhắn"
-            @pick="onPickNickForNewMsg"
-          />
-        </div>
-
-        <!-- Label chip bar (filter theo tag CRM) — SINGLE-SELECT.
-             Khi 1 tag active → ẩn tag khác. Click lại để clear (show all). -->
-        <div v-if="visibleTags.length" class="cl-label-bar">
-          <span
-            v-for="tag in visibleTags"
-            :key="tag"
-            class="cl-label-chip"
-            :class="{ active: filters.tags.includes(tag), 'is-zalo': isZaloManaged(tag) }"
-            :style="{ '--tag-color': tagColor(tag) || '#6B7280' }"
-            @click="toggleTag(tag)"
-          >{{ cleanTagName(tag) }}</span>
-
-          <button
-            v-if="filters.tags.length"
-            class="clear-tags"
-            @click="filters.tags = []"
-            title="Bỏ lọc tag · hiển thị lại tất cả"
-          ><XIcon :size="13" :stroke-width="2" /></button>
-        </div>
-      </div><!-- end cl-search-collapsible -->
-
-      <!-- Phase 6+ Inbox Triage Filter Bar (Pills + 4 tabs + Mini counter) -->
-      <!-- Old "Chính/Khác" tabs replaced by 4-tab single-active trong slot này. -->
+      <!-- Phase 6+ Inbox Triage Filter Bar (Mini counter + sort) -->
       <slot name="filters" />
     </div>
 
@@ -114,29 +43,9 @@
             :platform="platformOf(conv)"
             :gradient-seed="conv.id"
           />
-          <!-- Mini nick avatar — góc dưới-trái cho biết conv thuộc nick Zalo nào.
-               Anh chốt 2026-05-28: tránh phải click vào conv mới biết nick. -->
-          <img
-            v-if="conv.zaloAccount?.avatarUrl"
-            :src="conv.zaloAccount.avatarUrl"
-            :alt="conv.zaloAccount.displayName || ''"
-            :title="conv.zaloAccount.displayName ? `Nick: ${conv.zaloAccount.displayName}` : 'Nick Zalo'"
-            class="ci-nick-mini"
-          />
-          <span
-            v-else-if="conv.zaloAccount?.displayName"
-            class="ci-nick-mini ci-nick-mini--initial"
-            :title="`Nick: ${conv.zaloAccount.displayName}`"
-          >{{ (conv.zaloAccount.displayName || '?').charAt(0).toUpperCase() }}</span>
 
-          <!-- M55 2026-05-30: Badge cùng chăm — góc trên-phải avatar KH.
-               Chỉ hiện khi có >=2 sale chăm KH này (avoid noise khi chỉ 1 sale).
-               Tooltip = list collaborators. Click conv để vào panel chi tiết. -->
-          <span
-            v-if="cungChamCount(conv) >= 2"
-            class="ci-cung-cham-badge"
-            :title="cungChamTooltip(conv)"
-          >🤝 {{ cungChamCount(conv) }}</span>
+
+
         </div>
 
 
@@ -161,16 +70,7 @@
                 v-if="conv.unreadCount > 0 && conv.id !== selectedId"
                 class="ci-unread-count"
               >{{ conv.unreadCount > 5 ? '5+' : conv.unreadCount }}</div>
-              <!-- Phase 8 — Engagement pattern badge (tooltip teleport to body) -->
-              <span
-                v-if="(conv as any).contact?.engagementPattern && (conv as any).contact?.engagementPattern !== 'noise'"
-                class="engagement-badge"
-                :class="`pattern-${(conv as any).contact?.engagementPattern}`"
-                @mouseenter="onPatternHover($event, (conv as any).contact)"
-                @mouseleave="onPatternLeave"
-              >
-                {{ patternIcon((conv as any).contact?.engagementPattern) }}
-              </span>
+
             </div>
           </div>
 
@@ -284,24 +184,7 @@
       @opened="onComposeOpened"
     />
 
-    <!-- Phase 8 — Engagement pattern tooltip (teleport ra body để escape overflow:hidden) -->
-    <Teleport to="body">
-      <div
-        v-if="patternTipVisible && patternTipData"
-        class="engagement-pattern-tip-portal"
-        :style="patternTipStyle"
-        role="tooltip"
-      >
-        <strong class="ept-title">{{ patternIcon(patternTipData.pattern) }} {{ patternLabel(patternTipData.pattern) }}</strong>
-        <span class="ept-meaning">{{ patternMeaning(patternTipData.pattern) }}</span>
-        <span v-if="patternTipData.score != null" class="ept-detail">
-          Điểm {{ patternTipData.score }}/100
-          <template v-if="patternTipData.trend != null">
-            · trend {{ patternTipData.trend > 0 ? '+' : '' }}{{ patternTipData.trend }}%
-          </template>
-        </span>
-      </div>
-    </Teleport>
+
   </div>
 </template>
 
@@ -633,29 +516,7 @@ function computeDisplayTags(conv: Conversation): DisplayTag[] {
 function isUsableName(s: string | null | undefined): s is string {
   return !!s && s.trim().length > 0 && s.trim().toLowerCase() !== 'unknown';
 }
-// M55 2026-05-30 — Cùng chăm counter cho ConversationList badge.
-// 2026-06-20 (anh báo lệch cache vs detail): dùng _count CHÍNH XÁC (không bị cap take:5),
-// fallback length mảng nếu thiếu _count → badge khớp số thật + sau reload.
-function cungChamCount(conv: Conversation): number {
-  const c = conv.contact as { contactAccess?: unknown[]; _count?: { contactAccess?: number } } | null | undefined;
-  return c?._count?.contactAccess ?? c?.contactAccess?.length ?? 0;
-}
-function cungChamTooltip(conv: Conversation): string {
-  const c = conv.contact as { contactAccess?: Array<{
-    role: string;
-    user: { fullName: string | null; email: string | null } | null;
-  }>; _count?: { contactAccess?: number } } | null | undefined;
-  const list = c?.contactAccess ?? [];
-  const total = c?._count?.contactAccess ?? list.length;
-  if (!total) return '';
-  const names = list.map((a) => {
-    const n = a.user?.fullName || a.user?.email || 'Sale';
-    return a.role === 'primary' ? `⭐ ${n} (chính)` : `🤝 ${n}`;
-  });
-  const more = total - list.length;
-  if (more > 0) names.push(`… và ${more} người khác`);
-  return `${total} sale đang/đã chăm KH này:\n${names.join('\n')}`;
-}
+
 
 // Theo dõi (anh chốt 2026-06-15) — khách đang trong "theo dõi" → hiện chuông sau tên.
 // Khớp cặp (contactId, nickId) với Set followingPairs từ /care-sessions/listening-pairs.

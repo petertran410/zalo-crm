@@ -325,6 +325,35 @@
               </div>
             </section>
 
+            <!-- ─── TAB: Đơn POS ─── -->
+            <section v-else-if="activeTab === 'pos_orders'" class="cpd-pane pa-4">
+              <CustomerOrdersWidget
+                :contact-id="c?.id || props.contactId"
+                :is-pos-linked="!!(c?.posCustomerId || (c as any)?.posCustomerCode)"
+                :pos-customer-id="c?.posCustomerId || undefined"
+                :pos-customer-code="c?.posCustomerCode || undefined"
+                :customer-name="displayName"
+                :customer-phone="primaryPhone"
+                @open-detail="openOrderDetail"
+              />
+            </section>
+
+            <!-- ─── TAB: Công nợ POS ─── -->
+            <section v-else-if="activeTab === 'pos_debt'" class="cpd-pane pa-4">
+              <CustomerDebtWidget
+                :contact-id="c?.id || props.contactId"
+                :customer-name="displayName"
+                :customer-code="c?.posCustomerCode || undefined"
+                :is-pos-linked="!!(c?.posCustomerId || (c as any)?.posCustomerCode)"
+                @insert-debt-reminder="handleInsertReminder"
+              />
+            </section>
+
+            <!-- ─── TAB: Tồn kho chi nhánh ─── -->
+            <section v-else-if="activeTab === 'inventory'" class="cpd-pane pa-4">
+              <BranchInventoryWidget @insert-inventory-info="handleInsertReminder" />
+            </section>
+
             <!-- ─── TAB: Nick chăm ─── -->
             <section v-else-if="activeTab === 'nicks'" class="cpd-pane">
               <div v-if="loadingFriends" class="cpd-empty">Đang tải nick chăm…</div>
@@ -417,6 +446,9 @@
           </footer>
         </template>
       </div>
+
+      <!-- Order Detail Modal -->
+      <OrderDetailModal v-model="orderDetailModalOpen" :order="selectedOrderForModal" />
     </div>
   </teleport>
 </template>
@@ -429,6 +461,10 @@ import { useToast } from '@/composables/use-toast';
 import { formatRecentDateTime, cleanPreview } from '@/composables/use-contacts';
 import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 import TagCrmBar from '@/components/chat/TagCrmBar.vue';
+import CustomerDebtWidget from '@/components/pos/CustomerDebtWidget.vue';
+import BranchInventoryWidget from '@/components/pos/BranchInventoryWidget.vue';
+import CustomerOrdersWidget from '@/components/pos/CustomerOrdersWidget.vue';
+import OrderDetailModal from '@/components/chat/OrderDetailModal.vue';
 import { TEMPLATE_VARIABLES } from '@/constants/template-variables';
 import type { Contact } from '@/composables/use-contacts';
 
@@ -456,8 +492,30 @@ const isCreate = computed(() => props.mode === 'create');
 const router = useRouter();
 const toast = useToast();
 
-type TabKey = 'overview' | 'nicks' | 'timeline' | 'notes';
+type TabKey = 'overview' | 'pos_orders' | 'pos_debt' | 'inventory' | 'nicks' | 'timeline' | 'notes';
 const activeTab = ref<TabKey>('overview');
+
+const tabs = computed(() => [
+  { key: 'overview' as TabKey, label: 'Tổng quan', count: undefined },
+  { key: 'pos_orders' as TabKey, label: '🛒 Đơn POS', count: undefined },
+  { key: 'pos_debt' as TabKey, label: '💳 Công nợ', count: undefined },
+  { key: 'inventory' as TabKey, label: '🏢 Tồn kho', count: undefined },
+  { key: 'nicks' as TabKey, label: 'Nick chăm', count: friends.value.length || (c.value as any)?.childrenCount || undefined },
+  { key: 'timeline' as TabKey, label: 'Lịch sử', count: undefined },
+  { key: 'notes' as TabKey, label: 'Ghi chú', count: notes.value.length || undefined },
+]);
+
+const selectedOrderForModal = ref<any | null>(null);
+const orderDetailModalOpen = ref(false);
+
+function openOrderDetail(order: any) {
+  selectedOrderForModal.value = order;
+  orderDetailModalOpen.value = true;
+}
+
+function handleInsertReminder(text: string) {
+  toast.info('Đã chèn nội dung vào bộ nhớ tạm!');
+}
 
 const c = ref<Contact | null>(null);
 // P2 Hồ sơ — cast gọn để bind các attribute read-only (field có sẵn từ API full-row).
@@ -788,12 +846,6 @@ const assistSales = computed(() =>
   (c.value?.contactAccess || []).filter((a) => a.role === 'collaborator'),
 );
 
-const tabs = computed(() => [
-  { key: 'overview' as TabKey, label: 'Tổng quan', count: undefined },
-  { key: 'nicks' as TabKey, label: 'Nick chăm', count: friends.value.length || (c.value as any)?.childrenCount || 0 },
-  { key: 'timeline' as TabKey, label: 'Lịch sử', count: undefined },
-  { key: 'notes' as TabKey, label: 'Ghi chú', count: notes.value.length || undefined },
-]);
 
 // ── Friend helpers ──
 function friendName(f: any) { return f.zaloAccount?.displayName || f.zaloDisplayName || f.aliasInNick || 'Nick'; }

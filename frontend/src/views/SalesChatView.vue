@@ -146,7 +146,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
@@ -166,6 +166,8 @@ import { useWorkScope } from '@/composables/use-work-scope';
 import { shouldAdoptNickScope } from '@/composables/work-scope-logic';
 import MobileChatView from '@/views/MobileChatView.vue';
 import { useMobile } from '@/composables/use-mobile';
+import { useSalesSearch } from '@/composables/use-sales-search';
+import { useMiniChatBridgeStore } from '@/stores/use-mini-chat-bridge';
 
 const { isMobile } = useMobile();
 const route = useRoute();
@@ -183,6 +185,25 @@ const {
   outOfScopeCounts, clearOutOfScopeBadge,
   patchContactProfile,
 } = useChat();
+
+// ── Sync topbar search (useSalesSearch) → useChat searchQuery ─────────────────
+// SalesLayout topbar input ghi vào singleton `salesSearch.query`;
+// watch này đồng bộ xuống useChat.searchQuery để API lọc conv list.
+const salesSearch = useSalesSearch();
+watch(salesSearch.query, (q) => { searchQuery.value = q; }, { immediate: true });
+
+// ── Mini Chat Context ────────────────────────────────────────────────────────
+// TRƯỚC: provide('miniChat', ...) — chỉ hoạt động khi MiniChatPanel nằm trong
+// component tree của SalesChatView (VisualOrderModal cũ). SAU khi OrderBuilderWorkspace
+// chuyển lên SalesLayout, inject thất bại → polling. Fix: dùng Pinia bridge store.
+const miniChatBridge = useMiniChatBridgeStore();
+// Giữ provide() để tương thích ngược với VisualOrderModal cũ (nếu còn)
+provide('miniChat', {
+  conversation: selectedConv,
+  messages,
+  sendMessage,
+  sendingMsg,
+});
 
 const {
   typingUsers, replyingTo, editingMessage,
@@ -688,6 +709,9 @@ onMounted(async () => {
     fetchAiConfig();
     initSocket();
     registerSocketListeners(getSocket());
+    // Bridge realtime chat state → MiniChatPanel (thay thế inject/provide không hoạt động
+    // qua component tree boundary khi OrderBuilderWorkspace mount ở SalesLayout)
+    miniChatBridge.publish(selectedConv, messages, sendingMsg, sendMessage);
     // 2026-06-06 (Anh chốt): listen 'friend:updated' để sync realtime giai đoạn KH
     // cross-device. BE emit patch.statusId cho mọi friend của contact khi đổi trạng thái.
     // Cập nhật conversations[].contact.statusId → cột 3 (DealStageSelector watch) + cột 4 đổi ngay.
@@ -739,10 +763,12 @@ onMounted(async () => {
 onUnmounted(() => {
   if (!isMobile.value) {
     destroySocket();
+    miniChatBridge.unpublish();
     window.removeEventListener('zalo-labels-synced', onLabelsSynced);
     window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
   }
 });
+
 
 // Đổi trạng thái ở cột 4 (panel) → cập nhật selectedConv.contact.statusId → cột 3 sync (cùng tab).
 function onPanelStatusChanged(statusId: string | null) {
@@ -790,9 +816,11 @@ watch(searchQuery, () => {
 }
 
 /* ══════ SALES WORKSPACE — ẩn cột 1, chỉ còn cột 2 (conv-list) + cột 3 (thread) + cột 4 (panel) ══════
-   Sales không có sidebar → thu hồi toàn bộ width cho cột 2 và cột 3. */
+   Sales không có sidebar → thu hồi toàn bộ width cho cột 2 và cột 3.
+   Chat (3fr) : Info panel (2fr) — chat ~60%, info ~40% khoảng còn lại sau conv-list.
+   Tối ưu 27" monitor: info-panel rộng hơn để xem KH360 mà không cuộn. */
 .is-sales-workspace {
-  grid-template-columns: 400px 1fr 350px;
+  grid-template-columns: 400px 3fr 2fr;
 }
 .is-sales-workspace:not(:has(.smax-info-col)) {
   grid-template-columns: 400px 1fr;
@@ -884,8 +912,8 @@ watch(searchQuery, () => {
   .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
     grid-template-columns: 56px 340px 1fr;
   }
-  /* Sales: 3 cột */
-  .is-sales-workspace { grid-template-columns: 380px 1fr 310px; }
+  /* Sales: 3 cột — tỉ lệ 3fr:2fr giữ nhất quán ở mọi breakpoint */
+  .is-sales-workspace { grid-template-columns: 380px 3fr 2fr; }
   .is-sales-workspace:not(:has(.smax-info-col)) { grid-template-columns: 380px 1fr; }
 }
 /* Tight: filter rail vẫn show nhưng compact */
@@ -903,7 +931,7 @@ watch(searchQuery, () => {
     grid-template-columns: 56px 320px 1fr;
   }
   /* Sales: 3 cột */
-  .is-sales-workspace { grid-template-columns: 360px 1fr 280px; }
+  .is-sales-workspace { grid-template-columns: 360px 3fr 2fr; }
   .is-sales-workspace:not(:has(.smax-info-col)) { grid-template-columns: 360px 1fr; }
 }
 /* HD 1366 — target chính sale VN. Chèn 2026-06-06 (/plan-design-review), giữ :has() động đủ 4 trạng thái. */
@@ -921,7 +949,7 @@ watch(searchQuery, () => {
     grid-template-columns: 56px 296px 1fr;
   }
   /* Sales: 3 cột */
-  .is-sales-workspace { grid-template-columns: 320px 1fr 288px; }
+  .is-sales-workspace { grid-template-columns: 320px 3fr 2fr; }
   .is-sales-workspace:not(:has(.smax-info-col)) { grid-template-columns: 320px 1fr; }
 }
 /* 1280 — XGA, vẫn giữ 4 cột, thread giữa ~450px đủ rộng. */
@@ -939,7 +967,7 @@ watch(searchQuery, () => {
     grid-template-columns: 56px 280px 1fr;
   }
   /* Sales: 3 cột */
-  .is-sales-workspace { grid-template-columns: 300px 1fr 280px; }
+  .is-sales-workspace { grid-template-columns: 300px 3fr 2fr; }
   .is-sales-workspace:not(:has(.smax-info-col)) { grid-template-columns: 300px 1fr; }
 }
 /* < 1200: drop filter rail */

@@ -31,6 +31,8 @@ TODO.local.md
 backend/static/
 
 # Dev/AI tooling + artifacts (không commit) — 2026-06-05
+.agent/
+.agents/
 .claude/
 .understand-anything/
 screenshots/

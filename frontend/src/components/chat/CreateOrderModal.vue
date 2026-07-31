@@ -167,46 +167,10 @@
           </div>
         </div>
 
-        <!-- ═══════ Payment Section ═══════ -->
+        <!-- ═══════ Status Notice ═══════ -->
         <div v-if="cartItems.length > 0" class="com-section mb-3">
-          <div class="com-label mb-1">Thanh toán</div>
-          <div class="d-flex gap-3 mb-2">
-            <v-text-field
-              v-model.number="paidAmount"
-              label="Số tiền đặt cọc / thanh toán"
-              type="number"
-              min="0"
-              density="compact"
-              variant="outlined"
-              hide-details
-              class="flex-grow-1"
-              suffix="đ"
-            />
-            <v-select
-              v-model="paymentMethod"
-              :items="paymentMethods"
-              item-title="label"
-              item-value="value"
-              label="Hình thức"
-              density="compact"
-              variant="outlined"
-              hide-details
-              style="max-width: 180px"
-            />
-          </div>
-          <!-- Trạng thái đơn hàng -->
-          <v-select
-            v-model="orderStatusCode"
-            :items="orderStatusOptions"
-            item-title="label"
-            item-value="value"
-            label="Trạng thái đơn hàng"
-            density="compact"
-            variant="outlined"
-            hide-details
-          />
-          <div v-if="paidAmount > 0 && paidAmount < grandTotal" class="text-caption text-warning mt-1">
-            Còn nợ: <strong class="font-mono">{{ formatCurrency(grandTotal - paidAmount) }}</strong>
+          <div class="text-caption text-grey-darken-1 d-flex align-center gap-1">
+            <span class="font-weight-bold">Trạng thái đơn:</span> 📝 Phiếu tạm (Tự động gửi POS dưới dạng Phiếu tạm)
           </div>
         </div>
 
@@ -478,9 +442,10 @@ async function submitOrder() {
         discount: c.discount,
         note: c.note,
       })),
-      paidAmount: paidAmount.value || 0,
-      paymentMethod: paymentMethod.value,
-      orderStatus: orderStatusCode.value,
+      paidAmount: 0,
+      paymentMethod: 'cash',
+      orderStatus: 1,
+      priceBookId: 1,
       description: description.value || '',
     };
 

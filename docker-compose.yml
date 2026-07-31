@@ -33,10 +33,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio:
-        condition: service_healthy
       redis:
         condition: service_healthy
+      # minio: đã chuyển sang profile 'storage-s3' (2026-07-24) — không còn là dependency
+      # cứng. Bật lại: docker compose --profile storage-s3 up -d minio minio-init
     volumes:
       - file_storage:/var/lib/zalo-crm/files
     tmpfs:
@@ -75,11 +75,41 @@ services:
     #   timezone=UTC (GIỮ NGUYÊN)     → CURRENT_TIMESTAMP / @default(now()) lưu UTC.
     #   ĐỪNG đổi timezone sang Asia/Ho_Chi_Minh: Prisma đọc cột timestamp như UTC
     #   → toàn bộ mốc thời gian sẽ lệch +7h (xem notes/claude-memory timezone).
+    #
+    # ── POSTGRES SCALING GUIDE ───────────────────────────────────────────────────
+    # Điều chỉnh 3 tham số bên dưới theo quy mô server. Quy tắc chung:
+    #   shared_buffers     = 25% RAM server dành cho Postgres (không vượt 8GB).
+    #   effective_cache_size = 50-75% tổng RAM server.
+    #   max_connections    = (số sale đồng thời × 2) + 10 dự phòng (tools/backup).
+    #                        Prisma pool mặc định: DATABASE_URL?connection_limit=10
+    #
+    # ┌─────────────────────────┬────────────────┬─────────────────┬────────────────┐
+    # │ Quy mô hệ thống         │ shared_buffers │ eff_cache_size  │ max_connections│
+    # ├─────────────────────────┼────────────────┼─────────────────┼────────────────┤
+    # │ Hiện tại (≤20 sale,     │     64MB  ←    │     128MB  ←    │     25  ←      │
+    # │  server dùng chung)     │                │                 │                │
+    # ├─────────────────────────┼────────────────┼─────────────────┼────────────────┤
+    # │ Server riêng 4GB RAM,   │    512MB       │      1GB        │     50         │
+    # │ 20-50 sale              │                │                 │                │
+    # ├─────────────────────────┼────────────────┼─────────────────┼────────────────┤
+    # │ Server riêng 8GB RAM,   │      1GB       │      4GB        │    100         │
+    # │ 50-100 sale             │                │                 │                │
+    # ├─────────────────────────┼────────────────┼─────────────────┼────────────────┤
+    # │ Dedicated DB 16GB+      │      4GB       │      8GB        │    200         │
+    # │ 100+ sale               │ (dùng PgBouncer│                 │ (bắt buộc      │
+    # │                         │  connection    │                 │  PgBouncer)    │
+    # │                         │  pooler)       │                 │                │
+    # └─────────────────────────┴────────────────┴─────────────────┴────────────────┘
+    #
+    # ⚠️  Khi tăng max_connections > 100: cân nhắc dùng PgBouncer (connection pooler)
+    #     thay vì tăng trực tiếp — mỗi connection tốn ~5-10MB RAM Postgres.
+    # ⚠️  Sau khi sửa: docker compose restart db (KHÔNG cần xóa volume — data an toàn).
+    # ─────────────────────────────────────────────────────────────────────────────
     command: >
       postgres
-      -c shared_buffers=128MB
-      -c effective_cache_size=256MB
-      -c max_connections=50
+      -c shared_buffers=64MB
+      -c effective_cache_size=128MB
+      -c max_connections=25
       -c timezone=UTC
       -c log_timezone=Asia/Ho_Chi_Minh
 
@@ -110,29 +140,27 @@ services:
       retries: 3
     # profiles: redis  ← REMOVED M1 2026-06-01: Redis là dependency cứng của BullMQ
 
+  # ── MinIO (S3-compatible local object storage) ────────────────────────────
+  # TẮT MẶC ĐỊNH (2026-07-24): STORAGE_DRIVER=local → file lưu thẳng ra ổ đĩa
+  # qua local-driver.ts, MinIO không được dùng. Container vẫn chạy tốn ~200-400MB
+  # RAM vô ích. Chuyển sang profile 'storage-s3'.
+  #
+  # ĐỂ BẬT LẠI KHI CẦN (chuyển sang MinIO hoặc S3-compatible):
+  #   1. Đổi STORAGE_DRIVER=r2 + điền S3_* trong .env
+  #   2. docker compose --profile storage-s3 up -d minio minio-init
   minio:
+    profiles: ["storage-s3"]   # ← KHÔNG start khi `docker compose up` bình thường
     image: minio/minio:latest
     container_name: zalo-crm-minio
     restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
-      # SECURITY: no defaults — deploy MUST set MINIO_ROOT_USER and
-      # MINIO_ROOT_PASSWORD in .env. Previously fell back to minioadmin/
-      # minioadmin which let anyone with network access pop the admin console.
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
-      TZ: Asia/Ho_Chi_Minh # log MinIO giờ VN (Cách 2)
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - minio_data:/data
     ports:
-      # Port 9000 (S3 API) MUST stay reachable from Zalo CDN — Zalo's servers
-      # fetch attachment URLs we send via zca-js sendImage/sendVideo, so we
-      # can't bind to loopback. In production this MUST sit behind a TLS
-      # reverse proxy (nginx/Caddy) on the host that:
-      #   - serves /<bucket>/<key> with HTTPS
-      #   - rate-limits per IP
-      #   - keeps the admin console (:9001) firewalled to ops VPN only.
-      # The :9001 admin console IS bound to 127.0.0.1 below — never expose it.
       - "${MINIO_PORT:-9000}:9000"
       - "127.0.0.1:${MINIO_CONSOLE_PORT:-9001}:9001"
     healthcheck:
@@ -142,6 +170,7 @@ services:
       retries: 3
 
   minio-init:
+    profiles: ["storage-s3"]   # ← KHÔNG start khi `docker compose up` bình thường
     image: minio/mc:latest
     container_name: zalo-crm-minio-init
     depends_on:
@@ -154,15 +183,8 @@ services:
       mc anonymous set download local/${S3_BUCKET:-zalocrm-attachments};
       exit 0;
       "
-    # Anonymous DOWNLOAD on the bucket is intentional: Zalo's CDN fetches
-    # attachment URLs we hand to zca-js. Keys are random UUIDs (see
-    # backend/src/shared/storage/minio-client.ts: `${date}/${randomUUID()}${ext}`)
-    # so listing is disabled and enumeration is infeasible.
-    # Anonymous UPLOAD is NOT enabled — only the backend can write via
-    # access-key auth.
     environment:
-      # Same hard-fail pattern as minio service — no default credentials.
-      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
+      MINIO_ROOT_USER:     "${MINIO_ROOT_USER:?MINIO_ROOT_USER must be set in .env}"
       MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?MINIO_ROOT_PASSWORD must be set in .env}"
       S3_BUCKET: ${S3_BUCKET:-zalocrm-attachments}
 
@@ -188,29 +210,34 @@ services:
       - db
 
   # ── GĐ13b (2026-06-13) Antivirus — quét virus file upload (clamd INSTREAM TCP 3310) ──
-  # App KHÔNG depends_on service này (fail-open): app chạy bình thường kể cả khi clamav
-  # đang tải DB virus (~vài phút sau khi start) hoặc tắt. App chỉ THẬT SỰ quét khi
-  # MEDIA_AV_ENABLED=1. Chưa bật → scanBuffer trả 'skipped' ngay, 0 kết nối.
-  # clamav:
-  #   image: clamav/clamav:1.4
-  #   container_name: zalo-crm-clamav
-  #   restart: unless-stopped
-  #   environment:
-  #     - TZ=Asia/Ho_Chi_Minh # log ClamAV giờ VN (Cách 2)
-  #   # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
-  #   volumes:
-  #     - clamav_data:/var/lib/clamav # giữ DB virus qua restart (đỡ tải lại mỗi lần)
-  #   healthcheck:
-  #     test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
-  #     interval: 60s
-  #     timeout: 10s
-  #     retries: 3
-  #     start_period: 300s # lần đầu freshclam tải DB virus có thể vài phút
-  #   logging:
-  #     driver: json-file
-  #     options:
-  #       max-size: "10m"
-  #       max-file: "3"
+  # TẮT MẶC ĐỊNH (2026-07-24): MEDIA_AV_ENABLED=0 → app không quét, container vô ích
+  # mà vẫn ngốn ~1–1.5 GB RAM để tải DB virus. Chuyển sang profile 'antivirus' để
+  # không khởi động tự động.
+  #
+  # ĐỂ BẬT LẠI KHI CẦN:
+  #   1. Đổi MEDIA_AV_ENABLED=1 trong .env
+  #   2. docker compose --profile antivirus up -d clamav
+  clamav:
+    profiles: ["antivirus"]   # ← KHÔNG start khi `docker compose up` bình thường
+    image: clamav/clamav:1.4
+    container_name: zalo-crm-clamav
+    restart: unless-stopped
+    environment:
+      - TZ=Asia/Ho_Chi_Minh   # log ClamAV giờ VN (Cách 2)
+    # KHÔNG mở port ra host — chỉ app trong cùng network gọi clamav:3310.
+    volumes:
+      - clamav_data:/var/lib/clamav   # giữ DB virus qua restart (đỡ tải lại mỗi lần)
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/clamdcheck.sh"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 300s   # lần đầu freshclam tải DB virus có thể vài phút
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pg_data:

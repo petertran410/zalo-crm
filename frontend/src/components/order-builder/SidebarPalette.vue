@@ -1,35 +1,45 @@
 <template>
   <aside class="ob-sidebar">
-    <!-- Category Tabs -->
+    <!-- Tab bar: Sản phẩm | Chính sách (locked) -->
     <div class="ob-sidebar__tabs">
       <button
-        v-for="tab in tabs"
-        :key="tab.key"
         class="ob-sidebar__tab"
-        :class="{ 'ob-sidebar__tab--active': activeTab === tab.key }"
-        @click="activeTab = tab.key; searchQuery = ''"
+        :class="{ 'ob-sidebar__tab--active': activeTab === 'products' }"
+        @click="activeTab = 'products'; searchQuery = ''"
       >
-        <component :is="tab.icon" :size="16" />
-        <span>{{ tab.label }}</span>
+        <ShoppingBag :size="16" />
+        <span>Sản phẩm</span>
+      </button>
+
+      <!-- Khuyến mãi tab với badge số chương trình -->
+      <button
+        class="ob-sidebar__tab ob-sidebar__tab--promo"
+        :class="{ 'ob-sidebar__tab--active': activeTab === 'policies' }"
+        @click="activeTab = 'policies'"
+        title="Khuyến mãi — Nhấp để áp dụng"
+      >
+        <Tag :size="16" />
+        <span>Khuyến mãi</span>
+        <span class="ob-sidebar__tab-badge">{{ promotions.length }}</span>
       </button>
     </div>
 
-    <!-- Search Input -->
-    <div v-if="activeTab !== 'logistics'" class="ob-sidebar__search">
+    <!-- Search (only for products tab) -->
+    <div v-if="activeTab === 'products'" class="ob-sidebar__search">
       <div class="ob-sidebar__search-wrap">
         <Search :size="14" class="ob-sidebar__search-icon" />
         <input
           v-model="searchQuery"
           type="text"
-          :placeholder="searchPlaceholder"
+          placeholder="Tìm sản phẩm (Tên, mã SP...)"
           class="ob-sidebar__search-input"
           @input="onSearchInput"
         />
       </div>
     </div>
 
-    <!-- Tab Contents -->
-    <div class="ob-sidebar__content">
+    <!-- Tab content -->
+    <div class="ob-sidebar__content" @scroll="handleListScroll">
 
       <!-- ═══ PRODUCTS TAB ═══ -->
       <div v-if="activeTab === 'products'" class="ob-sidebar__list">
@@ -47,8 +57,18 @@
           class="ob-product-card"
           :class="{ 'ob-product-card--selected': isProductSelected(product.id) }"
           @click="$emit('add-product', product)"
+          @mouseenter="handleMouseEnter(product, $event)"
+          @mouseleave="handleMouseLeave"
         >
-          <div class="ob-product-card__color" :style="{ background: getProductColor(product.categoryName) }">
+          <div v-if="product.imageUrl && !failedImgMap[product.id]" class="ob-product-card__img-wrap">
+            <img
+              :src="product.imageUrl"
+              :alt="product.name"
+              class="ob-product-card__img"
+              @error="handleTileImgError($event, product)"
+            />
+          </div>
+          <div v-else class="ob-product-card__color" :style="{ background: getProductColor(product.categoryName) }">
             {{ (product.code || '').substring(0, 3) }}
           </div>
           <div class="ob-product-card__info">
@@ -72,170 +92,207 @@
         </div>
       </div>
 
-      <!-- ═══ CUSTOMER TAB ═══ -->
-      <div v-if="activeTab === 'customers'" class="ob-sidebar__list">
-        <div class="ob-customer-locked">
-          <div class="ob-customer-locked__badge">
-            <Lock :size="12" />
-            <span>Khách hàng liên kết từ Chat</span>
-          </div>
-          <div class="ob-customer-card">
-            <div class="ob-customer-card__avatar">
-              {{ (customer.name || '?')[0] }}
-            </div>
-            <div class="ob-customer-card__info">
-              <h4>{{ customer.name }}</h4>
-              <p v-if="customer.phone" class="ob-customer-card__phone">SĐT: {{ customer.phone }}</p>
-              <p v-if="customer.posCustomerId" class="ob-customer-card__pos">
-                POS ID: {{ customer.posCustomerId }}
-                <span v-if="customer.posCustomerCode"> • {{ customer.posCustomerCode }}</span>
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ═══ POLICIES TAB ═══ -->
+      <!-- ═══ KHUYẾN MÃI TAB ═══ -->
       <div v-if="activeTab === 'policies'" class="ob-sidebar__list">
-        <div class="ob-policy-coming-soon">
-          <div class="ob-policy-coming-soon__icon">🚧</div>
-          <h4>Tính năng đang phát triển</h4>
-          <p>Chính sách khuyến mãi tự động & thủ công sẽ được tích hợp khi hệ thống POS cung cấp API chính sách.</p>
-          <div class="ob-policy-coming-soon__badge">Sắp ra mắt</div>
+        <!-- Tóm tắt -->
+        <div class="ob-promo-header">
+          <span class="ob-promo-header__count">{{ promotions.length }} chương trình</span>
+          <span class="ob-promo-header__hint ob-promo-header__hint--eligible" v-if="eligibleCount > 0">
+            🟢 {{ eligibleCount }} sẵn sàng áp dụng
+          </span>
+          <span v-else class="ob-promo-header__hint">Thêm SP để kích hoạt</span>
         </div>
-      </div>
 
-      <!-- ═══ LOGISTICS TAB ═══ -->
-      <div v-if="activeTab === 'logistics'" class="ob-sidebar__list">
-        <!-- Branch Selection -->
-        <div class="ob-logistics-section">
-          <h4 class="ob-logistics-section__title">
-            <MapPin :size="16" class="ob-text-blue" />
-            Chi nhánh POS
-          </h4>
-          <div class="ob-logistics-options">
-            <div
-              v-for="branch in branches"
-              :key="branch.id"
-              class="ob-logistics-option"
-              :class="{ 'ob-logistics-option--selected': selectedBranchId === branch.id }"
-              @click="$emit('select-branch', branch.id)"
-            >
-              <h5>{{ branch.name }}</h5>
-              <p v-if="branch.address">{{ branch.address }}</p>
+        <!-- Promo cards -->
+        <div
+          v-for="promo in promotions"
+          :key="promo.id"
+          class="ob-promo-card"
+          :class="{
+            'ob-promo-card--applied':  isApplied(promo.id),
+            'ob-promo-card--eligible': isEligible(promo) && !isApplied(promo.id),
+            'ob-promo-card--disabled': !isEligible(promo) && !isApplied(promo.id),
+          }"
+          :style="{ '--promo-color': promo.color, '--promo-bg': promo.colorBg }"
+          @click="handleApplyPromo(promo)"
+        >
+          <!-- Left accent bar -->
+          <div
+            class="ob-promo-card__bar"
+            :style="{ background: (isEligible(promo) || isApplied(promo.id)) ? promo.color : '#cbd5e1' }"
+          />
+
+          <div class="ob-promo-card__body">
+            <!-- Header row -->
+            <div class="ob-promo-card__header">
+              <span
+                class="ob-promo-card__badge"
+                :style="(isEligible(promo) || isApplied(promo.id))
+                  ? { background: promo.colorBg, color: promo.color, borderColor: promo.color + '33' }
+                  : { background: '#f1f5f9', color: '#94a3b8', borderColor: '#e2e8f0' }"
+              >
+                {{ promo.badge }} {{ promo.tag }}
+              </span>
+
+              <!-- Applied -->
+              <span v-if="isApplied(promo.id)" class="ob-promo-card__applied">
+                <Check :size="10" />
+                Đã dùng
+              </span>
+              <!-- Eligible -->
+              <span v-else-if="isEligible(promo)" class="ob-promo-card__add-btn" :style="{ color: promo.color }">
+                ▶ Áp dụng
+              </span>
+              <!-- Not eligible -->
+              <span v-else class="ob-promo-card__locked">🔒 Chưa đủ</span>
             </div>
-          </div>
-        </div>
 
-        <!-- Payment Method -->
-        <div class="ob-logistics-section">
-          <h4 class="ob-logistics-section__title">
-            <CreditCard :size="16" class="ob-text-blue" />
-            Phương thức thanh toán
-          </h4>
-          <div class="ob-logistics-options">
-            <div
-              v-for="method in paymentMethods"
-              :key="method.value"
-              class="ob-logistics-option ob-logistics-option--radio"
-              :class="{ 'ob-logistics-option--selected': selectedPaymentMethod === method.value }"
-              @click="$emit('select-payment', method.value)"
-            >
-              <div class="ob-radio" :class="{ 'ob-radio--active': selectedPaymentMethod === method.value }">
-                <div v-if="selectedPaymentMethod === method.value" class="ob-radio__dot" />
+            <!-- Name -->
+            <h4
+              class="ob-promo-card__name"
+              :class="{ 'ob-promo-card__name--dim': !isEligible(promo) && !isApplied(promo.id) }"
+            >{{ promo.name }}</h4>
+
+            <!-- Condition & reward -->
+            <div class="ob-promo-card__info">
+              <div class="ob-promo-card__row">
+                <span class="ob-promo-card__label">ĐK:</span>
+                <span>{{ promo.conditionText }}</span>
               </div>
-              <div>
-                <h5>{{ method.icon }} {{ method.label }}</h5>
-                <p>{{ method.description }}</p>
+              <div
+                class="ob-promo-card__row ob-promo-card__row--reward"
+                :class="{ 'ob-promo-card__row--reward-dim': !isEligible(promo) && !isApplied(promo.id) }"
+              >
+                <span class="ob-promo-card__label">Thưởng:</span>
+                <span>{{ promo.rewardText }}</span>
               </div>
             </div>
-          </div>
-        </div>
 
-        <!-- Order Status -->
-        <div class="ob-logistics-section">
-          <h4 class="ob-logistics-section__title">
-            <FileText :size="16" class="ob-text-blue" />
-            Trạng thái đơn hàng
-          </h4>
-          <div class="ob-logistics-options">
-            <div
-              v-for="status in orderStatuses"
-              :key="status.value"
-              class="ob-logistics-option ob-logistics-option--radio"
-              :class="{ 'ob-logistics-option--selected': selectedOrderStatus === status.value }"
-              @click="$emit('select-order-status', status.value)"
-            >
-              <div class="ob-radio" :class="{ 'ob-radio--active': selectedOrderStatus === status.value }">
-                <div v-if="selectedOrderStatus === status.value" class="ob-radio__dot" />
+            <!-- Progress bar (chưa đủ điều kiện) -->
+            <div v-if="!isEligible(promo) && !isApplied(promo.id)" class="ob-promo-card__progress">
+              <div class="ob-promo-card__progress-track">
+                <div
+                  class="ob-promo-card__progress-fill"
+                  :style="{
+                    width: Math.min(100, progressOf(promo).required > 0
+                      ? (progressOf(promo).current / progressOf(promo).required) * 100
+                      : 0) + '%',
+                    background: promo.color,
+                  }"
+                />
               </div>
-              <div><h5>{{ status.label }}</h5></div>
+              <span class="ob-promo-card__progress-text">{{ formatProgress(promo) }}</span>
+            </div>
+
+            <!-- Footer -->
+            <div v-if="promo.validUntil" class="ob-promo-card__footer">
+              <span>⏰ HSD: {{ promo.validUntil }}</span>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Safety Footer -->
-    <div class="ob-sidebar__footer">
-      <ShieldCheck :size="14" class="ob-text-green" />
-      <span>Quy trình tự động hóa đã kích hoạt.</span>
-    </div>
+    <!-- Product Detail Hover Preview Popover -->
+    <ProductPreviewPopover
+      :product="hoveredProduct"
+      :target-rect="hoverTargetRect"
+      :visible="isHoverVisible"
+      :category-color="hoveredProduct ? getProductColor(hoveredProduct.categoryName) : undefined"
+      @keep-open="handleKeepOpen"
+      @close="handleMouseLeave"
+    />
   </aside>
 </template>
 
+
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import {
-  Search, ShoppingBag, User, Tag, Truck,
-  Plus, Check, Lock, MapPin, CreditCard, FileText,
-  ShieldCheck, Loader2,
-} from 'lucide-vue-next';
-import type { POSProduct, POSBranch, CustomerInfo, PaymentMethodOption, OrderStatusOption } from './types';
-import { formatVND, PAYMENT_METHODS, ORDER_STATUSES } from './types';
+import { ref, reactive, computed, watch, onUnmounted } from 'vue';
+import { Search, ShoppingBag, Plus, Check, Tag, Loader2 } from 'lucide-vue-next';
+import ProductPreviewPopover from './ProductPreviewPopover.vue';
+import type { POSProduct, CartItem, PromotionProgram } from './types';
+import { formatVND, MOCK_PROMOTIONS, evaluatePromoCondition, promoConditionProgress } from './types';
 
 const props = defineProps<{
-  customer: CustomerInfo;
   products: POSProduct[];
-  branches: POSBranch[];
-  selectedProductIds: Record<number, number>;  // productId -> quantity
-  selectedBranchId: number | null;
-  selectedPaymentMethod: string;
-  selectedOrderStatus: number;
+  selectedProductIds: Record<number, number>;
+  appliedPromoIds: string[];
+  cartItems: CartItem[];    // để evaluate điều kiện KM
+  orderTotal: number;       // tổng tiền đơn (trước giảm) để check KM loại amount
   loading?: boolean;
 }>();
 
 const emit = defineEmits<{
   'add-product': [product: POSProduct];
-  'select-branch': [branchId: number];
-  'select-payment': [method: string];
-  'select-order-status': [status: number];
   'search': [keyword: string];
+  'apply-promotion': [promo: PromotionProgram];
+  'remove-promotion': [promoId: string];
+  'promo-became-eligible': [promo: PromotionProgram];
 }>();
 
-type TabType = 'products' | 'customers' | 'policies' | 'logistics';
+const promotions = MOCK_PROMOTIONS;
 
+/** Kiểm tra điều kiện đủ dùng KM */
+function isEligible(promo: PromotionProgram): boolean {
+  return evaluatePromoCondition(promo.condition, props.cartItems, props.orderTotal);
+}
+
+/** Số KM đang đủ điều kiện nhưng chưa apply */
+const eligibleCount = computed(() =>
+  promotions.filter(p => isEligible(p) && !isApplied(p.id)).length,
+);
+
+/** Progress của một promo so với điều kiện */
+function progressOf(promo: PromotionProgram) {
+  return promoConditionProgress(promo.condition, props.cartItems, props.orderTotal);
+}
+
+/** Text mô tả tiến trình đủ điều kiện */
+function formatProgress(promo: PromotionProgram): string {
+  const { current, required } = progressOf(promo);
+  const cond = promo.condition;
+  if (cond.type === 'min_order_amount') {
+    return `${formatVND(current)} / ${formatVND(required)}`;
+  }
+  return `Còn thiếu ${required - current} ${cond.type === 'min_cart_count' ? 'sản phẩm' : 'sp'}`;
+}
+
+// Watch giỏ hàng: phát hiện khi một promo vừa đủ điều kiện → toast
+const prevEligible = new Set<string>();
+watch(
+  () => props.cartItems,
+  () => {
+    for (const promo of promotions) {
+      const eligible = isEligible(promo);
+      if (eligible && !prevEligible.has(promo.id) && !isApplied(promo.id)) {
+        emit('promo-became-eligible', promo);
+      }
+      if (eligible) prevEligible.add(promo.id);
+      else prevEligible.delete(promo.id);
+    }
+  },
+  { deep: true },
+);
+
+/** Kiểm tra xem một promo đã được áp dụng chưa */
+function isApplied(promoId: string): boolean {
+  return props.appliedPromoIds.includes(promoId);
+}
+
+/** Xử lý click vào promo card: chỉ cho phép nếu đủ điều kiện hoặc đang applied */
+function handleApplyPromo(promo: PromotionProgram) {
+  if (isApplied(promo.id)) {
+    emit('remove-promotion', promo.id);
+  } else if (isEligible(promo)) {
+    emit('apply-promotion', promo);
+  }
+  // Nếu chưa đủ điều kiện: không làm gì (card mờ)
+}
+
+
+type TabType = 'products' | 'policies';
 const activeTab = ref<TabType>('products');
 const searchQuery = ref('');
-
-const tabs = [
-  { key: 'products' as TabType, label: 'Sản phẩm', icon: ShoppingBag },
-  { key: 'customers' as TabType, label: 'Khách hàng', icon: User },
-  { key: 'policies' as TabType, label: 'Chính sách', icon: Tag },
-  { key: 'logistics' as TabType, label: 'Vận chuyển', icon: Truck },
-];
-
-const paymentMethods = PAYMENT_METHODS;
-const orderStatuses = ORDER_STATUSES;
-
-const searchPlaceholder = computed(() => {
-  switch (activeTab.value) {
-    case 'products': return 'Tìm sản phẩm (Tên, mã SP...)';
-    case 'customers': return 'Tìm khách hàng...';
-    case 'policies': return 'Tìm chính sách ưu đãi...';
-    default: return 'Tìm kiếm...';
-  }
-});
 
 const filteredProducts = computed(() => {
   if (!searchQuery.value) return props.products;
@@ -252,12 +309,10 @@ function isProductSelected(productId: number): boolean {
 
 let searchTimer: ReturnType<typeof setTimeout> | null = null;
 function onSearchInput() {
-  if (activeTab.value === 'products') {
-    if (searchTimer) clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      emit('search', searchQuery.value);
-    }, 300);
-  }
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => {
+    emit('search', searchQuery.value);
+  }, 300);
 }
 
 const CATEGORY_COLORS: Record<string, string> = {};
@@ -274,13 +329,92 @@ function getProductColor(category?: string): string {
   }
   return CATEGORY_COLORS[cat];
 }
+
+// ─── Product Image Error Handling ─────────────────────────────────────
+const failedImgMap = reactive<Record<string, boolean>>({});
+
+function handleTileImgError(e: Event, product: any) {
+  const target = e.target as HTMLImageElement;
+  if (product.originalImageUrl && target.src !== product.originalImageUrl) {
+    target.src = product.originalImageUrl;
+  } else {
+    failedImgMap[product.id] = true;
+  }
+}
+
+// ─── Product Hover Preview State & Handlers ───────────────────────────
+const hoveredProduct = ref<POSProduct | null>(null);
+const hoverTargetRect = ref<DOMRect | null>(null);
+const isHoverVisible = ref(false);
+let hoverTimer: ReturnType<typeof setTimeout> | null = null;
+let leaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const DWELL_DELAY_MS = 1250; // Chuột dừng cố định 1.25 giây mới kích hoạt
+
+function handleMouseEnter(product: POSProduct, event: MouseEvent) {
+  // Chỉ áp dụng hover trên Desktop (pointer: fine)
+  if (window.matchMedia && !window.matchMedia('(pointer: fine)').matches) return;
+
+  // Luôn hủy timer và ẩn popover cũ ngay khi di chuyển sang sản phẩm mới
+  if (hoverTimer) { clearTimeout(hoverTimer); hoverTimer = null; }
+  if (leaveTimer) { clearTimeout(leaveTimer); leaveTimer = null; }
+
+  isHoverVisible.value = false;
+  hoveredProduct.value = null;
+  hoverTargetRect.value = null;
+
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+
+  // Chỉ khi chuột dừng cố định 1.25 giây trên sản phẩm này mới bật Popover
+  hoverTimer = setTimeout(() => {
+    hoveredProduct.value = product;
+    hoverTargetRect.value = rect;
+    isHoverVisible.value = true;
+  }, DWELL_DELAY_MS);
+}
+
+function handleMouseLeave() {
+  if (hoverTimer) {
+    clearTimeout(hoverTimer);
+    hoverTimer = null;
+  }
+  if (leaveTimer) {
+    clearTimeout(leaveTimer);
+    leaveTimer = null;
+  }
+  // Rời khỏi sản phẩm -> Tắt popover ngay lập tức
+  isHoverVisible.value = false;
+  hoveredProduct.value = null;
+  hoverTargetRect.value = null;
+}
+
+function handleKeepOpen() {
+  if (leaveTimer) {
+    clearTimeout(leaveTimer);
+    leaveTimer = null;
+  }
+}
+
+function handleListScroll() {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  if (leaveTimer) clearTimeout(leaveTimer);
+  isHoverVisible.value = false;
+  hoveredProduct.value = null;
+  hoverTargetRect.value = null;
+}
+
+onUnmounted(() => {
+  if (hoverTimer) clearTimeout(hoverTimer);
+  if (leaveTimer) clearTimeout(leaveTimer);
+});
 </script>
 
 <style scoped>
 .ob-sidebar {
-  width: 320px;
-  min-width: 280px;
-  max-width: 340px;
+  width: 300px;
+  min-width: 260px;
+  max-width: 320px;
   background: #fff;
   border-right: 1px solid #e2e8f0;
   display: flex;
@@ -300,11 +434,11 @@ function getProductColor(category?: string): string {
 }
 .ob-sidebar__tab {
   flex: 1;
-  padding: 8px 4px;
+  padding: 9px 4px;
   text-align: center;
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
   border: none;
   background: transparent;
@@ -313,7 +447,7 @@ function getProductColor(category?: string): string {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  transition: all 0.15s ease;
+  transition: all .15s;
 }
 .ob-sidebar__tab:hover {
   color: #1e293b;
@@ -322,22 +456,37 @@ function getProductColor(category?: string): string {
 .ob-sidebar__tab--active {
   background: #fff;
   color: #0068FF;
-  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
-  border: 1px solid rgba(226,232,240,0.5);
+  box-shadow: 0 1px 2px rgba(0,0,0,.05);
+  border: 1px solid rgba(226,232,240,.5);
+}
+
+/* Locked tab */
+.ob-sidebar__tab--locked {
+  color: #94a3b8;
+  position: relative;
+}
+.ob-sidebar__tab--locked:hover {
+  color: #64748b;
+  background: #f1f5f9;
+}
+.ob-sidebar__tab--locked.ob-sidebar__tab--active {
+  color: #94a3b8;
+  background: #f8fafc;
+  border-color: #e2e8f0;
 }
 
 /* ─── Search ─── */
 .ob-sidebar__search {
-  padding: 12px;
+  padding: 10px 12px;
   border-bottom: 1px solid #f1f5f9;
+  flex-shrink: 0;
 }
-.ob-sidebar__search-wrap {
-  position: relative;
-}
+.ob-sidebar__search-wrap { position: relative; }
 .ob-sidebar__search-icon {
   position: absolute;
   left: 10px;
-  top: 9px;
+  top: 50%;
+  transform: translateY(-50%);
   color: #94a3b8;
 }
 .ob-sidebar__search-input {
@@ -345,35 +494,27 @@ function getProductColor(category?: string): string {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  padding: 6px 12px 6px 32px;
+  padding: 7px 12px 7px 32px;
   font-size: 12px;
   outline: none;
-  transition: all 0.15s ease;
+  transition: all .15s;
+  box-sizing: border-box;
 }
-.ob-sidebar__search-input:focus {
-  border-color: #0068FF;
-  background: #fff;
-}
+.ob-sidebar__search-input:focus { border-color: #0068FF; background: #fff; }
 
 /* ─── Content ─── */
 .ob-sidebar__content {
   flex: 1;
   overflow-y: auto;
-  padding: 12px;
+  padding: 10px;
 }
-.ob-sidebar__list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+.ob-sidebar__content::-webkit-scrollbar { width: 4px; }
+.ob-sidebar__content::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+
+.ob-sidebar__list { display: flex; flex-direction: column; gap: 7px; }
 .ob-sidebar__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
-  padding: 32px 16px;
-  color: #94a3b8;
-  font-size: 11px;
+  display: flex; flex-direction: column; align-items: center;
+  gap: 8px; padding: 32px 16px; color: #94a3b8; font-size: 11px;
 }
 
 /* ─── Product Card ─── */
@@ -384,285 +525,358 @@ function getProductColor(category?: string): string {
   border-radius: 10px;
   padding: 10px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all .15s;
   background: #fff;
   user-select: none;
 }
 .ob-product-card:hover {
   border-color: #cbd5e1;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  box-shadow: 0 2px 6px rgba(0,0,0,.05);
 }
 .ob-product-card--selected {
   border-color: #0068FF;
-  background: rgba(0,104,255,0.03);
+  background: rgba(0,104,255,.03);
 }
-.ob-product-card__color {
+.ob-product-card__img-wrap {
   width: 40px;
   height: 40px;
   border-radius: 8px;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-weight: 700;
-  font-size: 10px;
   flex-shrink: 0;
 }
-.ob-product-card__info {
-  flex: 1;
-  min-width: 0;
+.ob-product-card__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
-.ob-product-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 4px;
+
+.ob-product-card__color {
+  width: 40px; height: 40px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700; font-size: 9px;
+  flex-shrink: 0; letter-spacing: -.5px;
 }
+.ob-product-card__info { flex: 1; min-width: 0; }
+.ob-product-card__header { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
 .ob-product-card__name {
-  font-size: 11px;
-  font-weight: 600;
-  color: #1e293b;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  margin: 0;
+  font-size: 11.5px; font-weight: 600; color: #1e293b;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin: 0;
 }
 .ob-product-card__check {
-  background: #22c55e;
-  color: #fff;
-  border-radius: 50%;
-  padding: 2px;
-  font-size: 10px;
-  display: flex;
-  flex-shrink: 0;
+  background: #22c55e; color: #fff;
+  border-radius: 50%; padding: 2px;
+  display: flex; flex-shrink: 0;
 }
-.ob-product-card__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 3px;
-}
+.ob-product-card__meta { display: flex; align-items: center; gap: 8px; margin-top: 3px; }
 .ob-product-card__sku {
-  font-size: 10px;
+  font-size: 10px; background: #f1f5f9; color: #64748b;
+  font-weight: 500; padding: 1px 6px; border-radius: 4px;
+}
+.ob-product-card__stock { font-size: 10px; color: #94a3b8; }
+.ob-product-card__footer { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; }
+.ob-product-card__price { font-size: 12px; font-weight: 700; color: #0068FF; }
+.ob-product-card__add {
+  font-size: 10px; color: #94a3b8; font-weight: 600;
+  display: flex; align-items: center; gap: 2px;
+}
+.ob-product-card:hover .ob-product-card__add { color: #0068FF; }
+
+/* ─── Policy Locked ─── */
+.ob-policy-locked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 32px 16px;
+  background: #f8fafc;
+  border: 1.5px dashed #e2e8f0;
+  border-radius: 14px;
+  gap: 10px;
+}
+.ob-policy-locked__lock-ring {
+  width: 56px; height: 56px;
+  border-radius: 50%;
+  background: #f1f5f9;
+  border: 2px solid #e2e8f0;
+  display: flex; align-items: center; justify-content: center;
+}
+.ob-policy-locked__lock-icon { color: #94a3b8; }
+.ob-policy-locked__title {
+  font-size: 13px; font-weight: 700; color: #475569; margin: 0;
+}
+.ob-policy-locked__desc {
+  font-size: 11px; color: #94a3b8; line-height: 1.6; margin: 0;
+}
+.ob-policy-locked__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
   background: #f1f5f9;
   color: #64748b;
-  font-weight: 500;
-  padding: 1px 6px;
-  border-radius: 4px;
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid #e2e8f0;
 }
-.ob-product-card__stock {
-  font-size: 10px;
-  color: #94a3b8;
+.ob-policy-locked__badge-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
 }
-.ob-product-card__footer {
+
+
+
+/* ─── Utility ─── */
+.ob-text-green { color: #22c55e; }
+.ob-spin { animation: ob-spin 1s linear infinite; }
+@keyframes ob-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+/* Tab badge (số chương trình KM) */
+.ob-sidebar__tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  background: #f59e0b;
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 4px;
+  margin-left: 2px;
+}
+.ob-sidebar__tab--promo.ob-sidebar__tab--active .ob-sidebar__tab-badge {
+  background: #0068FF;
+}
+
+/* ─── Promo Header ─── */
+.ob-promo-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 6px;
+  padding: 4px 2px 8px;
+  border-bottom: 1px solid #f1f5f9;
+  margin-bottom: 4px;
 }
-.ob-product-card__price {
-  font-size: 12px;
-  font-weight: 700;
-  color: #0068FF;
-}
-.ob-product-card__add {
-  font-size: 10px;
-  color: #94a3b8;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.ob-product-card:hover .ob-product-card__add {
-  color: #0068FF;
-}
-
-/* ─── Customer Locked ─── */
-.ob-customer-locked {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.ob-customer-locked__badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 10px;
-  font-weight: 700;
-  color: #64748b;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-.ob-customer-card {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  border: 2px solid #0068FF;
-  border-radius: 12px;
-  padding: 12px;
-  background: rgba(0,104,255,0.03);
-}
-.ob-customer-card__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0068FF, #3b82f6);
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 700;
-  font-size: 16px;
-  flex-shrink: 0;
-}
-.ob-customer-card__info h4 {
-  font-size: 13px;
-  font-weight: 700;
-  color: #1e293b;
-  margin: 0;
-}
-.ob-customer-card__phone {
+.ob-promo-header__count {
   font-size: 11px;
-  color: #64748b;
-  font-family: monospace;
-  margin: 3px 0 0;
-}
-.ob-customer-card__pos {
-  font-size: 10px;
-  color: #0068FF;
-  font-weight: 600;
-  margin: 3px 0 0;
-}
-
-/* ─── Policy Coming Soon ─── */
-.ob-policy-coming-soon {
-  text-align: center;
-  padding: 32px 16px;
-  background: #fffbeb;
-  border: 1px solid rgba(245,158,11,0.2);
-  border-radius: 12px;
-}
-.ob-policy-coming-soon__icon {
-  font-size: 32px;
-  margin-bottom: 8px;
-}
-.ob-policy-coming-soon h4 {
-  font-size: 13px;
-  font-weight: 700;
-  color: #92400e;
-  margin: 0 0 6px;
-}
-.ob-policy-coming-soon p {
-  font-size: 11px;
-  color: #a16207;
-  line-height: 1.5;
-  margin: 0 0 12px;
-}
-.ob-policy-coming-soon__badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  background: #f59e0b;
-  color: #fff;
-  padding: 3px 10px;
-  border-radius: 20px;
-}
-
-/* ─── Logistics Section ─── */
-.ob-logistics-section {
-  margin-bottom: 16px;
-}
-.ob-logistics-section__title {
-  font-size: 12px;
   font-weight: 700;
   color: #475569;
+}
+.ob-promo-header__hint {
+  font-size: 9.5px;
+  color: #94a3b8;
+  font-style: italic;
+}
+
+/* ─── Promo Cards ─── */
+.ob-promo-card {
+  display: flex;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  background: #fff;
+  position: relative;
+}
+.ob-promo-card:hover {
+  border-color: var(--promo-color, #0068FF);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.08);
+  transform: translateY(-1px);
+}
+.ob-promo-card--applied {
+  border-color: #22c55e !important;
+  background: #f0fdf4;
+}
+.ob-promo-card--applied:hover {
+  box-shadow: 0 3px 10px rgba(34,197,94,0.15);
+}
+
+/* Left accent bar */
+.ob-promo-card__bar {
+  width: 4px;
+  flex-shrink: 0;
+}
+
+/* Card body */
+.ob-promo-card__body {
+  flex: 1;
+  padding: 10px 10px 8px;
+  min-width: 0;
+}
+
+/* Header row */
+.ob-promo-card__header {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 6px;
-  margin: 0 0 8px;
+  margin-bottom: 6px;
 }
-.ob-logistics-options {
+.ob-promo-card__badge {
+  font-size: 9px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 20px;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.ob-promo-card__applied {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 9px;
+  font-weight: 700;
+  color: #16a34a;
+  background: #dcfce7;
+  padding: 2px 7px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.ob-promo-card__add-btn {
+  font-size: 9.5px;
+  font-weight: 800;
+  white-space: nowrap;
+  opacity: 0.7;
+  transition: opacity 0.15s;
+}
+.ob-promo-card:hover .ob-promo-card__add-btn {
+  opacity: 1;
+}
+
+/* Name */
+.ob-promo-card__name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e293b;
+  margin: 0 0 6px;
+  line-height: 1.4;
+}
+
+/* Info rows */
+.ob-promo-card__info {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 3px;
 }
-.ob-logistics-option {
-  border: 1px solid #f1f5f9;
-  border-radius: 10px;
-  padding: 10px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  background: #fff;
-}
-.ob-logistics-option:hover {
-  border-color: #cbd5e1;
-}
-.ob-logistics-option--selected {
-  border-color: #0068FF;
-  background: rgba(0,104,255,0.03);
-  box-shadow: 0 1px 2px rgba(0,104,255,0.08);
-}
-.ob-logistics-option--radio {
+.ob-promo-card__row {
   display: flex;
-  align-items: flex-start;
-  gap: 10px;
+  gap: 4px;
+  font-size: 9.5px;
+  color: #475569;
+  line-height: 1.4;
 }
-.ob-logistics-option h5 {
-  font-size: 12px;
+.ob-promo-card__row--reward {
+  color: #047857;
   font-weight: 600;
-  color: #1e293b;
-  margin: 0;
 }
-.ob-logistics-option p {
-  font-size: 10px;
+.ob-promo-card__label {
+  font-weight: 700;
   color: #94a3b8;
-  margin: 3px 0 0;
-}
-
-/* ─── Radio ─── */
-.ob-radio {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 2px solid #cbd5e1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex-shrink: 0;
-  margin-top: 2px;
-  transition: all 0.15s ease;
-}
-.ob-radio--active {
-  background: #0068FF;
-  border-color: #0068FF;
-}
-.ob-radio__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fff;
+  font-size: 8.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  margin-top: 1px;
 }
 
-/* ─── Footer ─── */
-.ob-sidebar__footer {
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-top: 1px solid #f1f5f9;
-  font-size: 10px;
+/* Footer */
+.ob-promo-card__footer {
+  margin-top: 7px;
+  padding-top: 6px;
+  border-top: 1px dashed #f1f5f9;
+  font-size: 9px;
   color: #94a3b8;
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
-/* ─── Utility ─── */
-.ob-text-blue { color: #0068FF; }
-.ob-text-green { color: #22c55e; }
-.ob-spin {
-  animation: ob-spin 1s linear infinite;
+/* ── Eligibility states ── */
+
+/* Eligible: card sáng, viền màu, hover glow */
+.ob-promo-card--eligible {
+  border-color: var(--promo-color, #0068FF);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--promo-color, #0068FF) 15%, transparent);
+  animation: ob-promo-eligible-pulse 2s ease-in-out infinite;
 }
-@keyframes ob-spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+.ob-promo-card--eligible:hover {
+  box-shadow: 0 4px 16px color-mix(in srgb, var(--promo-color, #0068FF) 30%, transparent);
+  transform: translateY(-2px);
+}
+
+@keyframes ob-promo-eligible-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px color-mix(in srgb, var(--promo-color, #0068FF) 15%, transparent); }
+  50%       { box-shadow: 0 0 0 4px color-mix(in srgb, var(--promo-color, #0068FF) 25%, transparent); }
+}
+
+/* Disabled: mờ, không click được */
+.ob-promo-card--disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+.ob-promo-card--disabled:hover {
+  border-color: #e2e8f0;
+  box-shadow: none;
+  transform: none;
+}
+
+/* Lock badge */
+.ob-promo-card__locked {
+  font-size: 8.5px;
+  font-weight: 700;
+  color: #94a3b8;
+  white-space: nowrap;
+}
+
+/* Dim modifiers */
+.ob-promo-card__name--dim {
+  color: #94a3b8;
+}
+.ob-promo-card__row--reward-dim {
+  color: #94a3b8 !important;
+  font-weight: 400 !important;
+}
+
+/* Progress bar */
+.ob-promo-card__progress {
+  margin-top: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ob-promo-card__progress-track {
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.ob-promo-card__progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+  min-width: 2px;
+}
+.ob-promo-card__progress-text {
+  font-size: 8.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+/* Hint color when eligible */
+.ob-promo-header__hint--eligible {
+  color: #16a34a !important;
+  font-weight: 700;
+  font-style: normal !important;
 }
 </style>
+
+

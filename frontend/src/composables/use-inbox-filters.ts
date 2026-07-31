@@ -50,13 +50,10 @@ export interface SavedFilterPreset {
 }
 
 export type QuickPillKey = 'unread' | 'unanswered' | 'stuck' | 'ready';
-/** 4 tabs single-active (mutually exclusive):
- *   personal = chỉ user-user (threadType=user)
- *   group    = chỉ nhóm (threadType=group)
- *   main     = Hộp thư chính (cả user lẫn nhóm)
- *   other    = Move qua Khác
+/** Tab filter — null = tất cả hội thoại (không lọc theo loại). Tabs đã được ẩn
+ *  khỏi UI theo yêu cầu 2026-07-24 ("hiển thị hết tất cả hội thoại luôn").
  */
-export type ActiveTab = 'personal' | 'group' | 'main' | 'other';
+export type ActiveTab = 'personal' | 'group' | 'main' | 'other' | null;
 export type SortMode = 'recent' | 'unread-first';
 export type TimeAxis =
   | 'last-interaction'
@@ -121,7 +118,7 @@ export function defaultFilterState(): FilterState {
   return {
     folderId: null,
     saleAssigneeId: null,
-    activeTab: 'personal', // Default: Cá nhân (user-user 1-1)
+    activeTab: null, // 2026-07-24: null = load tất cả hội thoại, không lọc theo tab
     quickPills: new Set(),
     tagsZalo: [],
     tagsCrm: [],
@@ -165,14 +162,8 @@ export function useInboxFilters() {
   // 2026-06-11 — số đếm folder cột 1 lọc theo CÙNG key tab đang chọn để các bộ
   // lọc link với nhau (anh chốt). Gửi threadType/tab dịch từ activeTab xuống BE.
   async function fetchFolders() {
-    const params: Record<string, string> = {};
-    switch (state.activeTab) {
-      case 'personal': params.threadType = 'user'; break;
-      case 'group':    params.threadType = 'group'; break;
-      case 'main':     params.tab = 'main'; break;
-      case 'other':    params.tab = 'other'; break;
-    }
-    const { data } = await api.get('/account-folders', { params });
+    // 2026-07-24: tabs đã bị ẩn → không lọc folder theo tab nữa, load tất cả.
+    const { data } = await api.get('/account-folders');
     folders.value = data.folders;
   }
 
@@ -289,21 +280,8 @@ export function useInboxFilters() {
     const params: Record<string, string> = {};
     if (state.folderId) params.folderId = state.folderId;
     if (state.searchQuery) params.search = state.searchQuery;
-    // 4 tabs single-active → translate sang threadType + tab Zalo box
-    switch (state.activeTab) {
-      case 'personal':
-        params.threadType = 'user';
-        break;
-      case 'group':
-        params.threadType = 'group';
-        break;
-      case 'main':
-        params.tab = 'main';
-        break;
-      case 'other':
-        params.tab = 'other';
-        break;
-    }
+    // 2026-07-24: Tabs đã bị ẩn → không gửi threadType/tab filter, tải tất cả hội thoại.
+    // (activeTab = null → skip toàn bộ switch, backend trả về mọi conv)
     if (state.sortMode === 'unread-first') params.sortMode = 'unread-first';
 
     // Quick pills → individual query params

@@ -19,7 +19,8 @@ export type ActivityCategory =
   | 'interaction'     // Tổng hợp interaction (first_inbound, silent_30d...) — KHÔNG log từng msg
   | 'system'          // contact_link_parent, merge, import, migration
   | 'automation'      // Bot actions (auto-tag, auto-score...)
-  | 'security';       // Phase 3 2026-06-08 — auth/security events (login, refresh, revoke...)
+  | 'security'        // Phase 3 2026-06-08 — auth/security events (login, refresh, revoke...)
+  | 'pos_integration'; // POS link/unlink audit trail
 
 export type ActorType = 'user' | 'bot' | 'system';
 
@@ -98,6 +99,10 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   silent_30d: 'interaction',
   call_logged: 'interaction',
   meeting_logged: 'interaction',
+
+  // pos_integration — POS Customer Linking audit trail
+  pos_link: 'pos_integration',
+  pos_unlink: 'pos_integration',
 
   // system
   contact_link_parent: 'system',

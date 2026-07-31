@@ -1,6 +1,17 @@
 <template>
+  <TopProgressBar />
   <component :is="layout">
-    <router-view />
+    <!--
+      Fix 3: KeepAlive cache component khi switch tab Sales sidebar.
+      max=8: giữ tối đa 8 component trong bộ nhớ (LRU — cũ nhất bị xoá trước).
+      Kết quả: chuyển từ Tin nhắn → Khách hàng → quay lại Tin nhắn — không fetch lại,
+      không unmount, không giật.
+    -->
+    <router-view v-slot="{ Component }">
+      <KeepAlive :max="8">
+        <component :is="Component" />
+      </KeepAlive>
+    </router-view>
   </component>
   <!-- 2026-06-16 — hộp xác nhận HS theme global (thay window.confirm toàn app) -->
   <ConfirmHost />
@@ -13,6 +24,7 @@ import AuthLayout from '@/layouts/AuthLayout.vue';
 import MobileLayout from '@/layouts/MobileLayout.vue';
 import WorkspaceShell from '@/layouts/WorkspaceShell.vue';
 import ConfirmHost from '@/components/ui/ConfirmHost.vue';
+import TopProgressBar from '@/components/ui/TopProgressBar.vue';
 import { useMobile } from '@/composables/use-mobile';
 import { useAuthStore } from '@/stores/auth';
 import { usePrivacyStore } from '@/stores/privacy';
