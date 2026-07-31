@@ -16,6 +16,7 @@ import { attachZaloListener, type UserInfoCacheEntry } from './zalo-listener-fac
 import { emitWebhook } from '../api/webhook-service.js';
 import { startMessageSync, stopMessageSync } from './zalo-message-sync.js';
 import { syncHistoryOnConnect } from './zalo-history-backfill.js';
+import { enqueuePendingFlush } from './zalo-pending-send-queue.js';
 import { readFile } from 'fs/promises';
 import { imageSize } from 'image-size';
 import { withProxy } from './proxy-util.js';
@@ -315,6 +316,12 @@ class ZaloAccountPool {
         logger.warn(`[zalo:${accountId}] History sync on connect failed:`, err);
       });
 
+      // Fire-and-forget: flush tin nhắn 'pending' (soạn lúc nick mất kết nối, xem
+      // zalo-pending-send-queue.ts 2026-07-27) — gửi thật theo đúng thứ tự đã soạn.
+      enqueuePendingFlush(accountId).catch((err) => {
+        logger.warn(`[zalo:${accountId}] Pending-send flush on connect failed:`, err);
+      });
+
       // Fire-and-forget: pull Zalo labels lần đầu để Friend.zaloLabels + crmTagsPerNick
       // có data ngay sau khi connect — tránh phải bấm "Đồng bộ ngay" thủ công.
       this.autoSyncOnConnect(accountId);
@@ -443,6 +450,12 @@ class ZaloAccountPool {
       // nào → tin lúc downtime chỉ hiện sau khi bấm "Đồng bộ lịch sử chat" thủ công.
       syncHistoryOnConnect(api, accountId).catch((err) => {
         logger.warn(`[zalo:${accountId}] History sync on reconnect failed:`, err);
+      });
+
+      // Fire-and-forget: flush tin nhắn 'pending' — cùng lý do path connectAccount()
+      // phía trên (xem zalo-pending-send-queue.ts 2026-07-27).
+      enqueuePendingFlush(accountId).catch((err) => {
+        logger.warn(`[zalo:${accountId}] Pending-send flush on reconnect failed:`, err);
       });
 
       // Fire-and-forget: pull Zalo labels sau reconnect — bắt kịp thay đổi label

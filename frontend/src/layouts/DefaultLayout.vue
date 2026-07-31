@@ -302,7 +302,8 @@ const primaryTabs: NavTab[] = [
   { path: '/',                       label: 'Dashboard',   icon: 'mdi-view-dashboard-outline', matchPrefix: '/$' },
   { path: '/channels',               label: 'Kênh Kết Nối', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
   { path: '/chat',                   label: 'Tin nhắn',    icon: 'mdi-message-text-outline', resource: 'conversation' },
-  { path: '/friends',                label: 'Bạn bè',      icon: 'mdi-account-multiple-outline', resource: 'friend' },
+  // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
+  // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
   { path: '/appointments',           label: 'Lịch hẹn',    icon: 'mdi-calendar-outline' },
   { path: '/tasks',                  label: 'Công việc',   icon: 'mdi-checkbox-marked-outline' },

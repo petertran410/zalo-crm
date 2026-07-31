@@ -9,34 +9,15 @@
     <v-card class="acqd-card" elevation="24">
       <!-- Header -->
       <header class="acqd-head">
-        <h2 class="acqd-title">＋ Thêm khách hàng nhanh</h2>
+        <h2 class="acqd-title">＋ Thêm khách hàng</h2>
         <v-btn icon variant="text" size="small" @click="close" :aria-label="'Đóng'">
           <v-icon size="20">mdi-close</v-icon>
         </v-btn>
       </header>
 
-      <!-- Body -->
+      <!-- Body — 2026-07-31: bỏ ô Họ tên + tạo KH mới. SĐT giờ là ô TÌM KIẾM,
+           bắt buộc chọn 1 KH đã có trong danh sách kết quả mới đi tiếp được. -->
       <div class="acqd-body">
-        <!-- Field: Họ tên -->
-        <div class="acqd-field">
-          <label class="acqd-label" for="acqd-name">
-            Họ tên
-            <span class="acqd-required">*</span>
-          </label>
-          <input
-            id="acqd-name"
-            v-model.trim="form.fullName"
-            ref="nameInputRef"
-            type="text"
-            class="acqd-input"
-            placeholder="Vd: Nguyễn Văn A"
-            autocomplete="name"
-            :disabled="loading"
-            @keydown.enter.prevent="onEnterName"
-          />
-        </div>
-
-        <!-- Field: SĐT -->
         <div class="acqd-field">
           <label class="acqd-label" for="acqd-phone">
             Số điện thoại
@@ -48,55 +29,69 @@
             ref="phoneInputRef"
             type="tel"
             class="acqd-input acqd-input--phone"
-            :class="{
-              'has-error': phoneError,
-              'has-warning': duplicateContact,
-            }"
             placeholder="0936 668 266 hoặc 84936668266"
             autocomplete="tel"
             :disabled="loading"
             @input="onPhoneInput"
+          />
+          <div v-if="!searched && !searching" class="acqd-hint">
+            Gõ SĐT để tìm khách bên POS (0xxx / 84xxx / +84xxx)
+          </div>
+          <div v-if="searchError" class="acqd-msg acqd-msg--error">
+            🔴 {{ searchError }}
+          </div>
+        </div>
+
+        <!-- Kết quả tìm — KH đã có trong CRM bị làm mờ, chỉ chọn được KH chưa liên kết -->
+        <div class="acqd-results">
+          <div v-if="searching" class="acqd-hint">Đang tìm…</div>
+          <div v-else-if="searched && !results.length" class="acqd-msg acqd-msg--warning">
+            🟡 Không có KH POS nào khớp SĐT này.
+          </div>
+          <button
+            v-for="c in results" :key="candidateKey(c)"
+            type="button"
+            class="acqd-result"
+            :class="{ 'is-picked': picked && candidateKey(picked) === candidateKey(c), 'is-linked': c.linked }"
+            :disabled="c.linked || loading"
+            :title="c.linked ? 'Khách này đã có trong tab Khách hàng' : ''"
+            @click="picked = c"
+          >
+            <span class="acqd-result-nm">{{ candidateDisplayName(c) }}</span>
+            <span class="acqd-result-meta">
+              <span class="acqd-result-ph">{{ c.phone || '—' }}</span>
+              <!-- đã có = KH bên POS (xám). chưa mua = contact Zalo/FB, chọn được -->
+              <span v-if="c.linked" class="acqd-result-tag">đã có</span>
+              <span v-else-if="c.contactId" class="acqd-result-tag">chưa mua</span>
+            </span>
+          </button>
+        </div>
+
+        <!-- KH mới tinh từ Zalo/Facebook — chưa có ở POS lẫn CRM. Chỉ mở khi không
+             có dòng "đã có" nào, để không tạo trùng KH sẵn có. -->
+        <div v-if="canCreate" class="acqd-new">
+          <div class="acqd-new-t">Không thấy khách? Tạo mới với SĐT này.</div>
+          <label class="acqd-label" for="acqd-name">
+            Họ tên
+            <span class="acqd-required">*</span>
+          </label>
+          <input
+            id="acqd-name"
+            v-model.trim="createName"
+            type="text"
+            class="acqd-input"
+            placeholder="Vd: Nguyễn Văn A"
+            autocomplete="name"
+            :disabled="loading"
+            @input="picked = null"
             @keydown.enter.prevent="onSubmit"
           />
-          <!-- Hint default -->
-          <div
-            v-if="!phoneError && !duplicateContact"
-            class="acqd-hint"
-          >
-            Hệ thống tự nhận diện số Việt Nam (0xxx / 84xxx / +84xxx)
-          </div>
-          <!-- Error state -->
-          <div v-if="phoneError" class="acqd-msg acqd-msg--error">
-            🔴 {{ phoneError }}
-          </div>
-          <!-- Duplicate warning state -->
-          <div v-if="duplicateContact" class="acqd-msg acqd-msg--warning">
-            🟡 KH
-            <strong>"{{ duplicateContact.fullName || '—' }}"</strong>
-            đã có trong hệ thống với SĐT này
-            <a class="acqd-link" @click.prevent="openDuplicate">Mở chi tiết</a>
-          </div>
-          <!-- Owner info nếu trùng có chủ -->
-          <div
-            v-if="duplicateContact && duplicateContact.ownerName"
-            class="acqd-hint"
-          >
-            Sale đang chăm: <strong>{{ duplicateContact.ownerName }}</strong>
-          </div>
-          <!-- M55.2: Note gần nhất ngày — chỉ ngày, không nội dung (privacy + compact) -->
-          <div
-            v-if="duplicateContact && duplicateContact.lastNoteAt"
-            class="acqd-hint"
-          >
-            📝 Note gần nhất: <strong>{{ formatNoteDate(duplicateContact.lastNoteAt) }}</strong>
-          </div>
         </div>
       </div>
 
       <!-- Footer hint -->
       <div class="acqd-footer-hint">
-        💡 Sau khi lưu, anh có thể bổ sung thông tin chi tiết (email, địa chỉ, tag, sale phụ trách...)
-        bằng cách click vào KH trong danh sách.
+        💡 Thông tin chi tiết (email, địa chỉ, tag, sale phụ trách...) sửa được ở trang Khách hàng.
       </div>
 
       <!-- Actions -->
@@ -109,26 +104,14 @@
         >
           Hủy
         </button>
-        <!-- M55.2: Khi trùng SĐT → CTA chính là "Mở chat" (sale flow liền mạch) -->
         <button
-          v-if="duplicateContact"
           type="button"
           class="acqd-btn acqd-btn--primary"
-          :disabled="openingChat"
-          @click="openChatWithDuplicate"
-        >
-          <span v-if="openingChat" class="acqd-spinner" />
-          {{ openingChat ? 'Đang mở...' : '💬 Mở chat' }}
-        </button>
-        <button
-          v-else
-          type="button"
-          class="acqd-btn acqd-btn--primary"
-          :disabled="!canSubmit || loading"
+          :disabled="primaryDisabled"
           @click="onSubmit"
         >
           <span v-if="loading" class="acqd-spinner" />
-          {{ loading ? 'Đang lưu...' : 'Lưu nhanh' }}
+          {{ primaryLabel }}
         </button>
       </div>
     </v-card>
@@ -140,10 +123,11 @@ import { ref, computed, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { useToast } from '@/composables/use-toast';
 import { api } from '@/api/index';
+import { useContactPhoneSearch, candidateDisplayName, candidateKey, type PosLinkCandidate } from '@/composables/use-contact-phone-search';
 
 interface Props {
   modelValue: boolean;
-  /** Optional: nguồn lead — defaults to 'quick_add'. Override: 'lead_pool' | 'manual' | 'chat_fab' | 'chat_compose_lookup_miss' */
+  /** Nguồn lead khi tạo KH mới — 'quick_add' | 'chat_compose_lookup_miss' | ... */
   leadSource?: string;
   /** Pre-fill SĐT — dùng từ NewMessageDialog khi lookup Zalo miss (sale đã gõ SĐT) */
   defaultPhone?: string;
@@ -166,49 +150,64 @@ const emit = defineEmits<{
 const router = useRouter();
 const toast = useToast();
 
-const form = ref({ fullName: '', phone: '' });
+const form = ref({ phone: '' });
 const loading = ref(false);
-const phoneError = ref<string | null>(null);
-const duplicateContact = ref<null | {
-  id: string;
-  fullName: string | null;
-  phone: string | null;
-  hasZalo: boolean | null;
-  ownerUserId: string | null;
-  ownerName: string | null;
-  /** M55.2 2026-05-30 — Note gần nhất ngày (ISO), không nội dung */
-  lastNoteAt: string | null;
-}>(null);
+const picked = ref<PosLinkCandidate | null>(null);
+const {
+  results,
+  searching,
+  searched,
+  error: searchError,
+  search: runSearch,
+  reset: resetSearch,
+} = useContactPhoneSearch();
 
-// M55.2 — Mở chat trực tiếp từ duplicate warning (sale flow liền mạch)
-const openingChat = ref(false);
-
-const nameInputRef = ref<HTMLInputElement | null>(null);
 const phoneInputRef = ref<HTMLInputElement | null>(null);
 
-const canSubmit = computed(() => {
-  return form.value.fullName.trim().length > 0 && form.value.phone.trim().length > 0;
+// ── Tạo KH mới (Zalo/Facebook, chưa có ở POS) ───────────────────────────────
+// 2026-07-31: đây chính là entry point "Zalo lookup miss" — KH vừa nhắn thường
+// chưa có record POS nào. Cho tạo mới, nhưng CHẶN khi SĐT đã thuộc một Contact
+// đang có (dòng linked) vì đó mới là case trùng.
+const createName = ref('');
+// Chặn tạo mới khi SĐT đã thuộc BẤT KỲ Contact nào — kể cả contact Zalo chưa
+// phải KH POS: người đó không "mới", đã có dòng chọn được ở danh sách trên.
+const hasExistingContact = computed(() => results.value.some((c) => c.contactId !== null));
+const phoneDigits = computed(() => form.value.phone.replace(/\D/g, ''));
+const canCreate = computed(() =>
+  searched.value
+  && !searching.value
+  && !hasExistingContact.value
+  && phoneDigits.value.length >= 9,
+);
+const primaryDisabled = computed(() => {
+  if (loading.value) return true;
+  if (picked.value) return false;
+  return !(canCreate.value && createName.value.trim());
+});
+const primaryLabel = computed(() => {
+  if (loading.value) return 'Đang lưu...';
+  if (!picked.value) return '＋ Tạo khách mới';
+  // Contact Zalo đã có trong CRM thì chỉ mở chat với KH đó, không "liên kết" gì.
+  return picked.value.posCustomerId == null ? '💬 Mở chat' : '🔗 Liên kết';
 });
 
 watch(() => props.modelValue, async (open) => {
   if (open) {
-    form.value = { fullName: '', phone: props.defaultPhone || '' };
-    phoneError.value = null;
-    duplicateContact.value = null;
+    form.value = { phone: props.defaultPhone || '' };
+    picked.value = null;
+    createName.value = '';
+    resetSearch();
+    // defaultPhone có sẵn (NewMessageDialog lookup miss) → tìm luôn, sale khỏi gõ lại.
+    if (form.value.phone) runSearch(form.value.phone);
     await nextTick();
-    // Luôn focus Họ tên — sale gõ tên trước, Enter xuống SĐT (đã pre-fill thì Enter lần 2 = Lưu)
-    nameInputRef.value?.focus();
+    phoneInputRef.value?.focus();
   }
 });
 
 function onPhoneInput() {
-  // Clear validation lúc user gõ — chỉ re-validate khi submit
-  phoneError.value = null;
-  duplicateContact.value = null;
-}
-
-function onEnterName() {
-  phoneInputRef.value?.focus();
+  // Đổi SĐT thì bỏ lựa chọn cũ — tránh liên kết nhầm KH của lần gõ trước.
+  picked.value = null;
+  runSearch(form.value.phone);
 }
 
 function close() {
@@ -216,122 +215,63 @@ function close() {
   emit('update:modelValue', false);
 }
 
-function openDuplicate() {
-  if (!duplicateContact.value) return;
-  const id = duplicateContact.value.id;
-  emit('update:modelValue', false);
-  router.push({ path: '/contacts', query: { focus: id } });
-}
-
-// M55.2 2026-05-30 — Format Note date: "Hôm nay" / "Hôm qua" / "N ngày trước" / dd/MM/yyyy
-function formatNoteDate(iso: string): string {
-  try {
-    const d = new Date(iso);
-    const now = new Date();
-    const dayMs = 86_400_000;
-    const diffMs = now.getTime() - d.getTime();
-    const diffDays = Math.floor(diffMs / dayMs);
-    if (diffDays === 0) {
-      return `Hôm nay (${d.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Ho_Chi_Minh' })})`;
-    }
-    if (diffDays === 1) return 'Hôm qua';
-    if (diffDays < 7) return `${diffDays} ngày trước`;
-    return d.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Ho_Chi_Minh' });
-  } catch {
-    return iso;
-  }
-}
-
-// M55.2 — Mở chat virtual ngay từ dialog warning (skip /contacts navigate vòng)
-async function openChatWithDuplicate() {
-  if (!duplicateContact.value || openingChat.value) return;
-  openingChat.value = true;
-  try {
-    const res = await api.post<{ conversationId: string; created: boolean }>(
-      `/contacts/${duplicateContact.value.id}/virtual-conversation`, {},
-    );
-    const convId = res.data?.conversationId;
-    emit('update:modelValue', false);
-    if (convId) {
-      await router.push(`/chat/${convId}`);
-    }
-  } catch (err: any) {
-    const msg = err?.response?.data?.message || err?.response?.data?.error || 'Không mở được chat';
-    toast.error(msg);
-  } finally {
-    openingChat.value = false;
-  }
-}
-
+/**
+ * 2026-07-31 — Hai đường: kéo KH POS đã chọn về CRM, hoặc tạo KH mới tinh
+ * (Zalo/Facebook, chưa có ở POS). Giữ nguyên contract cũ với parent: emit
+ * 'created' kèm Contact, và khi autoOpenVirtualChat=true thì tự mở virtual chat
+ * như flow M53.1 trước đây.
+ */
 async function onSubmit() {
-  if (!canSubmit.value || loading.value) return;
-  phoneError.value = null;
-  duplicateContact.value = null;
+  if (loading.value || primaryDisabled.value) return;
+  const c = picked.value;
   loading.value = true;
   try {
-    const res = await api.post('/contacts/quick-create', {
-      fullName: form.value.fullName.trim(),
-      phone: form.value.phone.trim(),
-      leadSource: props.leadSource,
-    });
-
-    // exists = true → behavior khác nhau theo entry point
-    if (res.data?.exists) {
-      const dup = res.data.contact;
-      // M55.3 2026-05-30: NewMessageDialog flow (autoOpenVirtualChat=false) → KHÔNG
-      // hiện duplicate warning UI (sale đang bận gửi tin, muốn vào chat ngay).
-      // Skip warning, emit 'created' với KH cũ — parent onQuickAddCreated sẽ chain
-      // POST virtual-conv + emit opened. Backend AI welcome msg #2 sẽ thông báo
-      // "KH đã có sale chăm, note gần nhất ..." vào virtual chat.
-      if (!props.autoOpenVirtualChat) {
-        toast.success(`KH "${dup.fullName || dup.phone}" đã có — mở chat ngay`);
-        emit('created', { id: dup.id, fullName: dup.fullName, phone: dup.phone });
-        emit('update:modelValue', false);
+    let contact: { id: string; fullName: string | null; phone: string | null };
+    if (c?.contactId && c.posCustomerId == null) {
+      // Contact Zalo/Facebook đã có sẵn trong CRM → dùng thẳng, không tạo/liên kết.
+      contact = { id: c.contactId, fullName: c.name, phone: c.phone };
+    } else {
+      try {
+        // Có KH POS được chọn → kéo về CRM. Không thì tạo KH mới từ SĐT + họ tên.
+        const res = c
+          ? await api.post('/contacts/link-pos', { posCustomerId: c.posCustomerId })
+          : await api.post('/contacts/quick-create', {
+              fullName: createName.value.trim(),
+              phone: form.value.phone.trim(),
+              leadSource: props.leadSource,
+            });
+        contact = res.data?.contact;
+        if (!contact?.id) throw new Error('backend trả về contact rỗng');
+      } catch (err: any) {
+        const msg = err?.response?.data?.message || err?.response?.data?.error;
+        toast.error(msg || (c ? 'Không liên kết được khách hàng' : 'Không tạo được khách hàng'));
         return;
       }
-      // ContactsView FAB: vẫn show warning để sale review trước khi vào chat
-      duplicateContact.value = dup;
-      return;
     }
 
-    // M53.1 2026-05-30: Tạo xong KH → tự mở virtual chat để sale ghi nhật ký
-    // + AI Trợ Lý welcome ngay. Anh chốt: nhảy thẳng /chat để workflow liền mạch.
-    // M53.3 2026-05-30: Nếu autoOpenVirtualChat=false (NewMessageDialog),
-    // chỉ emit 'created' để parent tự xử lý — tránh race condition 2 lần POST virtual-conv.
-    const createdContact = res.data.contact;
+    emit('created', { id: contact.id, fullName: contact.fullName, phone: contact.phone });
+
+    // autoOpenVirtualChat=false (NewMessageDialog): parent tự chain virtual-conv
+    // + emit opened — dialog không navigate để tránh race 2 lần POST.
     if (!props.autoOpenVirtualChat) {
-      // Parent quyết định flow (vd NewMessageDialog onQuickAddCreated chain virtual-conv + emit opened)
-      toast.success('Đã lưu khách hàng');
-      emit('created', createdContact);
+      toast.success(c ? `Đã chọn KH "${candidateDisplayName(c)}"` : 'Đã tạo khách mới');
       emit('update:modelValue', false);
       return;
     }
 
-    toast.success('Đã lưu khách hàng — đang mở chat nội bộ...');
-    emit('created', createdContact);
-
     try {
-      const vcRes = await api.post(`/contacts/${createdContact.id}/virtual-conversation`, {});
+      const vcRes = await api.post(`/contacts/${contact.id}/virtual-conversation`, {});
       const conversationId = vcRes.data?.conversationId;
       emit('update:modelValue', false);
       if (conversationId) {
         await router.push(`/chat/${conversationId}`);
       }
     } catch (vcErr: any) {
-      // Tạo virtual conv fail (vd chưa kết nối nick Zalo) → vẫn báo thành công create KH,
-      // không block flow. Sale có thể vào Contacts > KH > nút "Mở chat nội bộ" sau.
+      // Tạo virtual conv fail (vd chưa kết nối nick Zalo) → vẫn coi là liên kết xong,
+      // không block flow. Sale mở chat nội bộ ở trang Khách hàng sau.
       const vcMsg = vcErr?.response?.data?.message;
-      toast.warning(vcMsg || 'KH đã lưu. Mở chat nội bộ ở trang Liên hệ khi cần.', 4000);
+      toast.warning(vcMsg || 'Đã liên kết KH. Mở chat nội bộ ở trang Khách hàng khi cần.', 4000);
       emit('update:modelValue', false);
-    }
-  } catch (err: any) {
-    const msg = err?.response?.data?.message || err?.response?.data?.error;
-    if (msg === 'invalid_phone' || err?.response?.data?.error === 'invalid_phone') {
-      phoneError.value = 'SĐT không hợp lệ — vui lòng nhập đúng định dạng Việt Nam';
-    } else if (msg) {
-      phoneError.value = msg;
-    } else {
-      toast.error('Lưu khách hàng thất bại');
     }
   } finally {
     loading.value = false;
@@ -428,6 +368,75 @@ async function onSubmit() {
 }
 .acqd-msg--error { color: #b91c1c; }
 .acqd-msg--warning { color: #d97706; }
+
+/* Danh sách KH khớp SĐT — bấm để chọn KH cần liên kết (2026-07-31) */
+.acqd-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 232px;
+  overflow-y: auto;
+}
+.acqd-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #dddddd;
+  border-radius: 8px;
+  background: #ffffff;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.acqd-result:hover:not(:disabled) { border-color: #1b61c9; }
+.acqd-result:disabled { cursor: not-allowed; }
+.acqd-result.is-picked { border-color: #1b61c9; background: #eef4fd; }
+/* is-linked = đã có Contact trong CRM → mờ, không chọn được */
+.acqd-result.is-linked { opacity: 0.5; }
+.acqd-result-nm {
+  font-weight: 500;
+  color: #181d26;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.acqd-result-meta {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.acqd-result-ph {
+  font-size: 12px;
+  color: #41454d;
+  font-variant-numeric: tabular-nums;
+}
+.acqd-result-tag {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #f0f1f3;
+  font-size: 11px;
+  font-weight: 500;
+  color: #41454d;
+  white-space: nowrap;
+}
+
+/* Tạo KH mới khi không tìm thấy ai khớp (2026-07-31) */
+.acqd-new {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed #dddddd;
+}
+.acqd-new-t {
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: #41454d;
+}
 
 .acqd-link {
   margin-left: 4px;

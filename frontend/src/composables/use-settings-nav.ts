@@ -98,6 +98,9 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: 'zalo-labels', label: 'Tag Zalo native', icon: 'mdi-label-outline', route: '/settings/crm/zalo-labels', permission: 'admin', resource: 'settings', aliases: ['zalo label', 'nhãn zalo'] },
       { id: 'scoring', label: 'Lead scoring', icon: 'mdi-chart-line', route: '/settings/crm/scoring', permission: 'admin', resource: 'settings', aliases: ['điểm', 'chấm điểm', 'score'] },
       { id: 'appointments', label: 'Lịch hẹn & Nhắc hẹn', icon: 'mdi-calendar-clock-outline', route: '/settings/crm/appointments', permission: 'admin', resource: 'settings', aliases: ['lịch hẹn', 'appointment', 'nhắc hẹn', 'reminder', 'zalo reminder', 'nhắc lịch'] },
+      // 2026-07-29 — chuyển từ menu "Công cụ" của màn Khách hàng cũ.
+      { id: 'data-quality', label: 'Chất lượng dữ liệu', icon: 'mdi-content-duplicate', route: '/settings/crm/data-quality', permission: 'admin', resource: 'settings', aliases: ['trùng', 'trùng lặp', 'duplicate', 'gộp', 'merge', 'dedupe', 'khách cha', 'quét trùng'] },
+      { id: 'trash', label: 'Thùng rác', icon: 'mdi-trash-can-outline', route: '/settings/crm/trash', permission: 'owner', resource: 'contact', aliases: ['thùng rác', 'trash', 'xoá vĩnh viễn', 'đã xoá', 'archive', 'khôi phục'] },
       // Lead Pool — gộp Nhận Lead + Queue chia Lead thành 1 mục 2 tab (2026-06-10).
       // Lead Pool nav item → extension bundle (eeSettingsItems.customer).
     ],

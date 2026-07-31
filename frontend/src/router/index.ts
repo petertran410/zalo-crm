@@ -75,10 +75,17 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
+    // Màn gộp Bạn bè + Khách hàng (design CRM Atlas, 2026-07-29).
+    // Thay ContactsView + FriendsView cũ (đã xoá).
     path: "/contacts",
     name: "Contacts",
-    component: () => import("@/views/ContactsView.vue"),
+    component: () => import("@/views/PeopleView.vue"),
     meta: { requiresAuth: true, resource: "contact" },
+  },
+  {
+    // Giữ /people làm alias để link cũ trong session không vỡ.
+    path: "/people",
+    redirect: "/contacts",
   },
   {
     path: "/media",
@@ -279,6 +286,21 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/components/settings/StatusManagement.vue"),
         meta: { resource: "settings" },
       },
+      // Dò-gộp trùng, chuyển từ menu "Công cụ" của ContactsView cũ (2026-07-29).
+      {
+        path: "crm/data-quality",
+        name: "Settings.DataQuality",
+        component: () => import("@/views/settings/DataQualityPage.vue"),
+        meta: { resource: "settings" },
+      },
+      // Xoá vĩnh viễn (owner-only, backend tự chặn). Chuyển vào thùng rác /
+      // khôi phục vẫn ở màn /contacts.
+      {
+        path: "crm/trash",
+        name: "Settings.Trash",
+        component: () => import("@/views/settings/TrashPage.vue"),
+        meta: { resource: "contact" },
+      },
       {
         path: "crm/tags",
         name: "Settings.Tags",
@@ -423,12 +445,11 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "contact" },
   },
   {
-    // Tab "Hồ sơ KH tổng hợp" — SKELETON, render 3 field ẩn cột 4 (email/address/occupation)
-    // + aggregate Friend rows. Backend route stub, full impl ở phase sau.
+    // "Hồ sơ KH tổng hợp" (ContactProfileView) là skeleton chạy data mock, backend
+    // stub không bao giờ implement — xoá 2026-07-31. Drawer của PeopleView đã là
+    // surface chi tiết thật, nên redirect ?focus= để link/bookmark cũ vẫn mở đúng KH.
     path: "/contacts/:id/profile",
-    name: "ContactProfile",
-    component: () => import("@/views/ContactProfileView.vue"),
-    meta: { requiresAuth: true, resource: "contact" },
+    redirect: (to) => ({ path: "/contacts", query: { focus: to.params.id } }),
   },
   {
     path: "/leads/stuck",
@@ -482,10 +503,10 @@ const routes: RouteRecordRaw[] = [
       ]
     : []),
   {
+    // Bạn bè đã gộp vào /contacts (2026-07-29). Redirect + preset bộ lọc
+    // quan hệ = đã kết bạn để link/bookmark cũ vẫn ra đúng nghĩa.
     path: "/friends",
-    name: "Friends",
-    component: () => import("@/views/FriendsView.vue"),
-    meta: { requiresAuth: true, resource: "friend" },
+    redirect: () => ({ path: "/contacts", query: { rel: "friend" } }),
   },
   // Open-core: extension top-level routes (empty in Community edition).
   ...eeTopRoutes,
@@ -656,7 +677,6 @@ const ROUTE_TITLES: Record<string, string> = {
   "Reports.Audit": "Báo cáo · Audit & Sức khỏe hệ thống",
   Analytics: "Phân tích",
   CustomerActivityLog: "Nhật ký hoạt động KH",
-  ContactProfile: "Hồ sơ khách hàng",
   StuckLeads: "Lead bị kẹt",
   Automation: "Tự động hóa",
   Groups: "Nhóm",

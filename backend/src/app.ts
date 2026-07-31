@@ -463,6 +463,13 @@ async function bootstrap() {
         await import("./modules/integrations/hisweetie-push-queue.js");
       startHisweetiePushWorker();
     }
+    // Offline-send flush (2026-07-27) — gửi thật tin nhắn 'pending' (soạn lúc nick
+    // mất kết nối Zalo) khi zalo-pool.ts báo kết nối lại. Xem zalo-pending-send-queue.ts.
+    if (config.nodeEnv !== "test") {
+      const { startPendingSendWorker } =
+        await import("./modules/zalo/zalo-pending-send-queue.js");
+      startPendingSendWorker();
+    }
     // Phase ZaloAccounts redesign 2026-05-22 — status log: backfill open records 1
     // lần lúc startup (idempotent), rồi start checkpoint cron (*/5 min) reconcile
     // orphan records sau crash. Uptime accuracy = 5p resolution.

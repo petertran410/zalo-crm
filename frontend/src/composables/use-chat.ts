@@ -203,7 +203,9 @@ export interface Message {
     };
     // Bug B 2026-06-22 — tin gửi THẤT BẠI (Zalo từ chối: chặn tin lạ / 119 / 127...):
     // message-bubble đọc 2 key này để hiện "Gửi thất bại: <lý do>" trong bubble.
-    sendStatus?: 'failed';
+    // 'pending' (2026-07-27) — tin soạn lúc nick mất kết nối Zalo, đang chờ flush
+    // worker gửi lại khi nick kết nối lại (xem chat:message-status handler dưới).
+    sendStatus?: 'failed' | 'pending';
     failReason?: string;
     [key: string]: unknown;
   } | null;
@@ -1011,6 +1013,32 @@ export function useChat() {
         if (preview && (preview.id === data.messageId || preview.zaloMsgId === data.zaloMsgId)) {
           const newPreview = { ...preview, content: data.content };
           if (data.editedAt) newPreview.editedAt = data.editedAt;
+          conversations.value.splice(i, 1, {
+            ...conv,
+            messages: [newPreview, ...(conv.messages || []).slice(1)],
+          } as typeof conv);
+          if (data.conversationId) break;
+        }
+      }
+    });
+
+    // 2026-07-27 — tin 'pending' (soạn lúc nick mất kết nối) được flush worker gửi
+    // thật khi nick kết nối lại. KHÔNG dùng lại 'chat:message' vì handler đó dedup
+    // theo id (bubble đã render rồi sẽ bị bỏ qua, không patch được) — event riêng,
+    // cùng khuôn với chat:message-edited (tìm theo id, patch field, update preview).
+    socket.on('chat:message-status', (data: { messageId: string; conversationId?: string; zaloMsgId?: string | null; zaloMsgIdNum?: string | null; metadata?: Message['metadata'] }) => {
+      const msg = messages.value.find(m => m.id === data.messageId);
+      if (msg) {
+        if (data.zaloMsgId !== undefined) msg.zaloMsgId = data.zaloMsgId;
+        if (data.zaloMsgIdNum !== undefined) msg.zaloMsgIdNum = data.zaloMsgIdNum;
+        if (data.metadata !== undefined) msg.metadata = data.metadata;
+      }
+      for (let i = 0; i < conversations.value.length; i++) {
+        const conv = conversations.value[i];
+        if (data.conversationId && conv.id !== data.conversationId) continue;
+        const preview = conv.messages?.[0];
+        if (preview && preview.id === data.messageId) {
+          const newPreview = { ...preview, zaloMsgId: data.zaloMsgId ?? preview.zaloMsgId };
           conversations.value.splice(i, 1, {
             ...conv,
             messages: [newPreview, ...(conv.messages || []).slice(1)],

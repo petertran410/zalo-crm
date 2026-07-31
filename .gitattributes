@@ -8,6 +8,11 @@
 # PowerShell giữ CRLF (chuẩn Windows).
 *.ps1   text eol=crlf
 
+# Batch BẮT BUỘC CRLF 2026-07-25 — cmd.exe không parse được file .bat chỉ có LF:
+# nó thực thi luôn dòng comment `::` và thân block `if (...)` như lệnh rời.
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
 # Nhị phân — không đụng eol.
 *.png   binary
 *.jpg   binary

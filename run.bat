@@ -1,134 +1,142 @@
 @echo off
-title Zalo CRM Development Server
+setlocal enabledelayedexpansion
+title Hi-CRM Development Server (native - no Docker)
 
 echo =======================================================
-echo        ZALO CRM - DEVELOPMENT SERVER
-echo   Auto-reloads frontend (Vite HMR) + backend (tsx watch)
+echo        HI-CRM - DEVELOPMENT SERVER (NATIVE)
+echo   PostgreSQL Windows service + Vite HMR + tsx watch
+echo   Khong dung Docker.
 echo =======================================================
 echo.
 
-:: 1. Check if Docker is running
-echo [1/4] Checking Docker daemon status...
-docker info >nul 2>&1
-if %errorlevel% equ 0 goto docker_ready
+cd /d "%~dp0"
 
-echo Status: Docker is not running. Starting Docker Desktop...
-if exist "C:\Program Files\Docker\Docker\Docker Desktop.exe" (
-    start "" "C:\Program Files\Docker\Docker\Docker Desktop.exe"
+set PG_SERVICE=postgresql-x64-18
+
+:: ────────────────────────────────────────────────────────────────────────────
+:: [1/6] PostgreSQL (thay cho container `db`)
+:: ────────────────────────────────────────────────────────────────────────────
+echo [1/6] Checking PostgreSQL service (%PG_SERVICE%)...
+sc query %PG_SERVICE% >nul 2>&1
+if errorlevel 1 (
+    echo   ERROR: Service %PG_SERVICE% not found.
+    echo   Install PostgreSQL, or edit PG_SERVICE at the top of this file
+    echo   to match your installed service name ^(sc query ^| findstr postgres^).
+    pause
+    exit /b 1
+)
+
+sc query %PG_SERVICE% | findstr /i "RUNNING" >nul
+if errorlevel 1 (
+    echo   Service stopped. Starting...
+    net start %PG_SERVICE% >nul 2>&1
+    if errorlevel 1 (
+        echo   ERROR: Could not start %PG_SERVICE% ^(needs Administrator^).
+        echo   Right-click this file - Run as administrator, or start it from services.msc
+        pause
+        exit /b 1
+    )
+)
+echo   OK: PostgreSQL is running.
+echo.
+
+:: ────────────────────────────────────────────────────────────────────────────
+:: [2/6] Config (thay cho env_file cua docker-compose)
+:: ────────────────────────────────────────────────────────────────────────────
+echo [2/6] Checking config...
+if not exist "backend\.env" (
+    echo   ERROR: backend\.env is missing.
+    pause
+    exit /b 1
+)
+findstr /c:"__SET_ME__" "backend\.env" >nul
+if not errorlevel 1 (
+    echo   ERROR: DATABASE_URL in backend\.env still contains __SET_ME__ - fill it in first.
+    pause
+    exit /b 1
+)
+echo   OK: backend\.env present.
+echo.
+
+:: ────────────────────────────────────────────────────────────────────────────
+:: [3/6] Dependencies (thay cho `docker build`)
+:: ────────────────────────────────────────────────────────────────────────────
+echo [3/6] Checking dependencies...
+if not exist "backend\node_modules" (
+    echo   Installing backend dependencies ^(first run, a few minutes^)...
+    pushd backend
+    call npm install
+    if errorlevel 1 ( echo   ERROR: backend npm install failed. & popd & pause & exit /b 1 )
+    popd
+)
+if not exist "frontend\node_modules" (
+    echo   Installing frontend dependencies ^(first run, a few minutes^)...
+    pushd frontend
+    call npm install
+    if errorlevel 1 ( echo   ERROR: frontend npm install failed. & popd & pause & exit /b 1 )
+    popd
+)
+echo   OK: dependencies present.
+echo.
+
+:: ────────────────────────────────────────────────────────────────────────────
+:: [4/6] Redis - TUY CHON (thay cho container `redis`)
+:: ────────────────────────────────────────────────────────────────────────────
+echo [4/6] Checking Redis on port 6379 ^(optional^)...
+netstat -ano | findstr ":6379" | findstr /i "LISTENING" >nul
+if errorlevel 1 (
+    echo   WARNING: no Redis listening on 6379.
+    echo   The app still boots. BullMQ workers ^(group scan, list enrichment,
+    echo   POS push^) will retry ~6 min, log errors, then give up. Cron jobs
+    echo   and everything else are unaffected.
+    echo   To add it later:  choco install memurai-developer
 ) else (
-    echo Warning: Docker Desktop not found in default path. Please start Docker manually.
-    pause
-    exit /b 1
-)
-
-echo Waiting for Docker daemon to start (this may take 1-2 minutes)...
-:wait_docker
-timeout /t 5 >nul
-docker info >nul 2>&1
-if %errorlevel% equ 0 goto docker_ready
-echo Still waiting for Docker daemon...
-goto wait_docker
-
-:docker_ready
-echo Status: Docker daemon is running.
-echo.
-
-:: 2. Read APP_PORT from .env
-set APP_PORT=3080
-if exist .env (
-    for /f "tokens=2 delims==" %%A in ('findstr /b "APP_PORT=" .env') do set APP_PORT=%%A
+    echo   OK: Redis is listening.
 )
 echo.
 
-:: 3. Start containers
-echo [2/4] Starting development containers...
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
-if %errorlevel% neq 0 (
-    echo Error: Failed to build and start containers.
-    pause
-    exit /b 1
-)
-echo.
-
-:: 4. Wait for the application to be ready (backend healthcheck + frontend)
-echo [3/4] Waiting for backend to be healthy...
-set ATTEMPTS=0
-:wait_backend
-timeout /t 3 >nul
-docker inspect --format="{{.State.Health.Status}}" zalo-crm-app-dev 2>nul | findstr /i "healthy" >nul
-if %errorlevel% equ 0 goto backend_ready
-
-set /a ATTEMPTS=ATTEMPTS+1
-if %ATTEMPTS% gtr 60 (
+:: ────────────────────────────────────────────────────────────────────────────
+:: [5/6] Prisma (thay cho `command:` cua container app-dev)
+:: ────────────────────────────────────────────────────────────────────────────
+:: `migrate deploy`, KHONG `db push`: database nay da co _prisma_migrations that
+:: va DU LIEU THAT (contacts, conversations, Zalo session...). db push khong doc
+:: migration history nen co the lam lech schema; migrate deploy chi APPLY cac
+:: migration con thieu, khong bao gio xoa/ghi de du lieu.
+echo [5/6] Applying pending Prisma migrations...
+pushd backend
+call npx prisma generate
+if errorlevel 1 ( echo   ERROR: prisma generate failed. & popd & pause & exit /b 1 )
+call npx prisma migrate deploy
+if errorlevel 1 (
     echo.
-    echo Error: Backend failed to become healthy after 3 minutes.
-    echo Check logs: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs app
+    echo   ERROR: prisma migrate deploy failed - check DATABASE_URL in backend\.env.
+    popd
     pause
     exit /b 1
 )
-echo Backend not ready yet. Waiting... (%ATTEMPTS%/60)
-goto wait_backend
-
-:backend_ready
-echo ✓ Backend is healthy!
+popd
+echo   OK: schema in sync.
 echo.
 
-echo [4/4] Waiting for frontend (Vite) on port 5173...
-set ATTEMPTS=0
-:wait_frontend
-timeout /t 2 >nul
-set HTTP_STATUS=000
-for /f "delims=" %%a in ('curl -s -o nul -w "%%{http_code}" http://localhost:5173/ 2^>nul') do set HTTP_STATUS=%%a
-
-if "%HTTP_STATUS%"=="200" goto app_ready
-if "%HTTP_STATUS%"=="302" goto app_ready
-if "%HTTP_STATUS%"=="304" goto app_ready
-
-set /a ATTEMPTS=ATTEMPTS+1
-if %ATTEMPTS% gtr 30 (
-    echo.
-    echo Error: Frontend failed to respond after 1 minute.
-    echo Check logs: docker compose -f docker-compose.yml -f docker-compose.dev.yml logs frontend
-    pause
-    exit /b 1
-)
-echo Frontend not ready yet (HTTP: %HTTP_STATUS%). Waiting... (%ATTEMPTS%/30)
-goto wait_frontend
-
-:app_ready
-echo ✓ Frontend is ready!
-echo.
-
-:: 5. Open browser
-@REM set COCCOC_PATH=
-@REM if exist "%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe"
-@REM ) else if exist "%ProgramFiles%\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%ProgramFiles%\CocCoc\Browser\Application\browser.exe"
-@REM ) else if exist "%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe"
-@REM )
-
-@REM if defined COCCOC_PATH (
-@REM     echo Opening in Coc Coc browser...
-@REM     start "" "%COCCOC_PATH%" "http://localhost:5173/setup"
-@REM ) else (
-@REM     echo Opening in default browser...
-@REM     start "" "http://localhost:5173/setup"
-@REM )
+:: ────────────────────────────────────────────────────────────────────────────
+:: [6/6] Launch (thay cho container `app` + `frontend`)
+:: ────────────────────────────────────────────────────────────────────────────
+echo [6/6] Starting backend and frontend in separate windows...
+start "Hi-CRM Backend (tsx watch)" cmd /k "cd /d "%~dp0backend" && npm run dev"
+start "Hi-CRM Frontend (Vite HMR)" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 
 echo.
 echo =======================================================
-echo  ✓ Development server is running!
+echo  Development server is starting.
 echo.
 echo  Frontend (Vite HMR) : http://localhost:5173
-echo  Backend API          : http://localhost:%APP_PORT%
+echo  Backend API         : http://localhost:3000
 echo.
-echo  → Edit .vue/.ts files and changes auto-reload!
-echo  → Logs streaming below. Press Ctrl+C to stop logs.
-echo  → Containers keep running in background after Ctrl+C.
-echo  → To stop all: docker compose -f docker-compose.yml -f docker-compose.dev.yml down
+echo  - Backend and frontend each run in their own window.
+echo  - Edit .vue/.ts files and they auto-reload.
+echo  - Close those two windows to stop the servers.
+echo  - First run: open http://localhost:5173 and complete
+echo    the Setup wizard (creates org + owner account).
 echo =======================================================
 echo.
-
-docker compose -f docker-compose.yml -f docker-compose.dev.yml logs -f app frontend
+pause

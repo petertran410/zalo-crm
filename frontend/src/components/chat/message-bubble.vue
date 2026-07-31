@@ -287,6 +287,12 @@
           Gửi thất bại: {{ sendFailReason }}
         </div>
 
+        <!-- 2026-07-27: tin đang chờ nick kết nối lại để gửi (xem isSendPending). -->
+        <div v-else-if="isSendPending" class="send-pending">
+          <v-icon size="13">mdi-clock-outline</v-icon>
+          Đang chờ kết nối lại để gửi…
+        </div>
+
         <!-- Timestamp -->
         <div class="bubble-time" :class="{ 'text-end': isSelf }">
           {{ formatTime(message.sentAt) }}
@@ -646,7 +652,10 @@ const receiptState = computed<'sending' | 'delivered' | 'seen' | 'sent'>(() => {
   const m = props.message;
   // 2026-06-24 — tin gửi THẤT BẠI (metadata.sendStatus='failed') → trả 'sent' để ẩn chip
   // receipt (tránh kẹt "Đang gửi"); badge "Gửi thất bại + lý do" đã hiện trong bubble.
-  if ((m.metadata as { sendStatus?: string } | null | undefined)?.sendStatus === 'failed') return 'sent';
+  // 2026-07-27 — tin 'pending' (nick mất kết nối) → cùng lý do: ẩn chip receipt, badge
+  // riêng "Đang chờ kết nối lại…" đã hiện trong bubble (xem sendPendingNotice).
+  const status = (m.metadata as { sendStatus?: string } | null | undefined)?.sendStatus;
+  if (status === 'failed' || status === 'pending') return 'sent';
   if (m.seenAt) return 'seen';
   if (m.deliveredAt) return 'delivered';
   // Multi-channel Phase 2 (2026-07-22) — tin kênh KHÔNG-Zalo (FB) có externalMsgId nghĩa là
@@ -710,6 +719,13 @@ const formattedCaption = computed(() => highlightText(messageCaption.value));
 const sendFailReason = computed<string | null>(() => {
   const m = props.message.metadata as { sendStatus?: string; failReason?: string } | null | undefined;
   return m?.sendStatus === 'failed' ? (m.failReason || 'không gửi được') : null;
+});
+
+// 2026-07-27 — tin soạn lúc nick mất kết nối Zalo, đang chờ flush worker gửi lại khi
+// nick kết nối lại (xem zalo-pending-send-queue.ts + chat:message-status handler).
+const isSendPending = computed<boolean>(() => {
+  const m = props.message.metadata as { sendStatus?: string } | null | undefined;
+  return m?.sendStatus === 'pending';
 });
 
 // ── Sticker — fetch metadata + CSS sprite animation cho animated stickers ──
@@ -1231,6 +1247,16 @@ async function openFile(href: string, name?: string) {
   color: #d9534f;
 }
 .send-failed :deep(.v-icon) { color: #d9534f; }
+.send-pending {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #8a7500;
+}
+.send-pending :deep(.v-icon) { color: #8a7500; }
 .media-caption {
   margin-top: 6px;
   font-size: 13.5px;

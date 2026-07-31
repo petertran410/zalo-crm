@@ -37,14 +37,6 @@ export const salesMenu: MenuItemConfig[] = [
     resource: 'contact',
   },
   {
-    key: 'friends',
-    title: 'Bạn bè',
-    icon: 'mdi-account-multiple-outline',
-    materialIcon: 'person_add',
-    to: '/friends',
-    resource: 'friend',
-  },
-  {
     key: 'pos',
     title: 'Bán hàng',
     icon: 'mdi-storefront-outline',
