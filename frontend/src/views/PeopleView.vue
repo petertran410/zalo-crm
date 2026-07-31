@@ -1384,6 +1384,25 @@ function closeDrawer() {
   selectedId.value = null;
 }
 
+// Deep-link ?focus=<contactId> 2026-07-31 — KH cần mở có thể KHÔNG nằm trong
+// trang đầu (list phân trang 20/lần), nên tìm trong rawRows trước rồi mới fetch
+// thẳng theo id. Trước đây chỉ find() trong rows đã tải → link im lặng không mở.
+async function openDrawerById(id: string) {
+  const row = rawRows.value.find((r) => r.id === id);
+  if (row) { void openDrawer(row); return; }
+  try {
+    const res = await api.get(`/contacts/${id}`);
+    if (!res.data) return;
+    selectedId.value = id;
+    drawerOpen.value = true;
+    detail.value = res.data;
+    hydrateDraft(res.data);
+  } catch (err) {
+    console.error('[PeopleView] deep-link load failed:', err);
+    toast.error('Không mở được hồ sơ khách hàng');
+  }
+}
+
 function addTag() {
   const t = tagDraft.value.trim();
   if (!t) return;
@@ -1738,10 +1757,7 @@ onMounted(async () => {
   const focus = route.query.focus;
 
   void fetchPage(true).then(() => {
-    if (typeof focus === 'string') {
-      const row = rawRows.value.find((r) => r.id === focus);
-      if (row) openDrawer(row);
-    }
+    if (typeof focus === 'string') void openDrawerById(focus);
   });
   try {
     const [u, s] = await Promise.all([

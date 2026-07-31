@@ -80,7 +80,7 @@ Contact CRUD (`GET/POST/PUT/DELETE /contacts`, stats, quick-create, archive/rest
 
 | Item | Detail |
 |---|---|
-| ⚫ Pre-existing bug, not a removal target | `contact-routes.ts:1312` does a **bare `io.emit('contact:updated', …)`** with no org-room scoping and no privacy redaction — violates this repo's own CLAUDE.md rule ("Never `io.emit` bare"). It broadcasts contact edits to every connected socket in every org. Worth fixing regardless of the merge, and don't copy this pattern into new merged-tab socket wiring. |
+| ✅ Pre-existing bug — FIXED 2026-07-31 | `contact-routes.ts:1312` used to do a **bare `io.emit('contact:updated', …)`** with no org-room scoping, broadcasting contact edits to every connected socket in every org (violating CLAUDE.md's "Never `io.emit` bare"). Now scoped via ``io.to(`org:${user.orgId}`)``. Note the event has **no frontend consumer yet** — the intended M55 toast was never built — so this was a latent leak, not an observed one. |
 
 ### Supporting backend modules (not routes, but load-bearing)
 - **`contact-scope.ts`** — the Contact-side visibility/edit authority (`getContactScope`, `assertContactVisible/Editable`). Parallel to `zalo-scope.ts` on the Friend side — **two separate scoping systems** (`ContactAccess` table vs Zalo-account ACL) that a merged UI still has to reconcile.

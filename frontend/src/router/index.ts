@@ -448,12 +448,11 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "contact" },
   },
   {
-    // Tab "Hồ sơ KH tổng hợp" — SKELETON, render 3 field ẩn cột 4 (email/address/occupation)
-    // + aggregate Friend rows. Backend route stub, full impl ở phase sau.
+    // "Hồ sơ KH tổng hợp" (ContactProfileView) là skeleton chạy data mock, backend
+    // stub không bao giờ implement — xoá 2026-07-31. Drawer của PeopleView đã là
+    // surface chi tiết thật, nên redirect ?focus= để link/bookmark cũ vẫn mở đúng KH.
     path: "/contacts/:id/profile",
-    name: "ContactProfile",
-    component: () => import("@/views/ContactProfileView.vue"),
-    meta: { requiresAuth: true, resource: "contact" },
+    redirect: (to) => ({ path: "/contacts", query: { focus: to.params.id } }),
   },
   {
     path: "/leads/stuck",
@@ -673,7 +672,6 @@ const ROUTE_TITLES: Record<string, string> = {
   "Reports.Audit": "Báo cáo · Audit & Sức khỏe hệ thống",
   Analytics: "Phân tích",
   CustomerActivityLog: "Nhật ký hoạt động KH",
-  ContactProfile: "Hồ sơ khách hàng",
   StuckLeads: "Lead bị kẹt",
   Automation: "Tự động hóa",
   Groups: "Nhóm",

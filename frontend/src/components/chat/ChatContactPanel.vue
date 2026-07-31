@@ -680,8 +680,7 @@
                   </button>
                 </template>
                 <!-- 3 field Email · Địa chỉ · Nghề: ẨN khỏi cột 4 (quick view chat panel).
-                 Schema giữ nguyên — data vẫn lưu/edit qua tab "Hồ sơ KH tổng hợp" (phase sau).
-                 Xem ContactProfileView.vue stub + use-contact-profile.ts composable. -->
+                 Schema giữ nguyên — data vẫn lưu/edit ở drawer PeopleView (2026-07-31). -->
                 <button
                   v-if="contact?.id"
                   class="info-fullprofile-link"
@@ -1919,13 +1918,13 @@ function onEnrolled(): void {
   }
 }
 
-// ════════ Hồ sơ KH tổng hợp (phase sau) ════════
-// Tạm thời chỉ navigate sang route /contacts/:id/profile (skeleton view).
-// Sau khi backend GET /api/v1/contacts/:id/profile sẵn sàng + ContactProfileView
-// implement đầy đủ → tab này hiển thị 3 field Email/Address/Occupation đã ẩn ở cột 4.
+// ════════ Hồ sơ KH tổng hợp ════════
+// 2026-07-31: ContactProfileView (skeleton, data mock) đã xoá — drawer của
+// PeopleView là surface chi tiết duy nhất và đã render đủ email/địa chỉ/nghề.
+// Điều hướng sang /contacts?focus=<id> để mở thẳng drawer đó.
 function openFullProfile() {
   if (!props.contact?.id) return;
-  router.push(`/contacts/${props.contact.id}/profile`);
+  router.push({ path: '/contacts', query: { focus: props.contact.id } });
 }
 
 // activeFriend dùng cho headerFullName fallback (zaloDisplayName cho KH stub).

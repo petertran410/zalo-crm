@@ -1309,7 +1309,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               select: { userId: true },
             }),
           ]);
-          io.emit('contact:updated', {
+          io.to(`org:${user.orgId}`).emit('contact:updated', {
             contactId: updated.id,
             contactName: updated.crmName || updated.fullName,
             changedBy: {
