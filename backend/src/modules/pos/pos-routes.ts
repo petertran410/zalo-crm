@@ -6,6 +6,7 @@ import { getPosMcpClient } from '../../shared/mcp/mcp-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { commandDispatcher } from '../../shared/commands/command-dispatcher.js';
 import { prisma } from '../../shared/database/prisma-client.js';
+import { logActivity } from '../activity/activity-logger.js';
 
 // Import để đảm bảo các Commands được đăng ký vào Dispatcher
 import './commands/customer-commands.js';
@@ -63,6 +64,78 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       logger.error('[pos-routes] Fetch customers failed:', err);
       return reply.status(500).send({ error: 'Failed to fetch POS customers' });
+    }
+  });
+
+  // GET /api/v1/pos/customers/search — 2-layer search: local Read Model first, then MCP POS
+  // Dùng riêng cho Link Customer Dialog, KHÔNG phải Read Model list.
+  app.get('/api/v1/pos/customers/search', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const query = request.query as any;
+      const keyword = (query.keyword || '').trim();
+
+      if (!keyword) {
+        return { source: 'local', items: [] };
+      }
+
+      // ── Phase 1: Tìm trong Read Model local (nhanh) ──
+      const localResults = await prisma.posCustomer.findMany({
+        where: {
+          orgId: user.orgId,
+          OR: [
+            { name: { contains: keyword, mode: 'insensitive' } },
+            { phone: { contains: keyword, mode: 'insensitive' } },
+            { code: { contains: keyword, mode: 'insensitive' } },
+          ],
+        },
+        select: {
+          posId: true,
+          code: true,
+          name: true,
+          phone: true,
+          customerType: true,
+          status: true,
+        },
+        take: 20,
+      });
+
+      if (localResults.length > 0) {
+        return {
+          source: 'local',
+          items: localResults.map((c) => ({
+            id: c.posId,
+            code: c.code,
+            name: c.name,
+            phone: c.phone,
+            customerType: c.customerType,
+          })),
+        };
+      }
+
+      // ── Phase 2: Không có local → gọi thẳng MCP POS (live) ──
+      try {
+        const mcpClient = getPosMcpClient();
+        const mcpRes = await mcpClient.customers.search(keyword);
+        const mcpItems = (mcpRes as any).data || [];
+
+        return {
+          source: 'mcp',
+          items: mcpItems.map((c: any) => ({
+            id: c.id,
+            code: c.code,
+            name: c.name,
+            phone: c.phone || c.contactNumber,
+            customerType: typeof c.customerType === 'string' ? c.customerType : (c.customerType?.name || null),
+          })),
+        };
+      } catch (mcpErr: any) {
+        logger.warn('[pos-routes] MCP search failed, returning empty:', mcpErr.message || mcpErr);
+        return { source: 'mcp', items: [] };
+      }
+    } catch (err: any) {
+      logger.error('[pos-routes] Search customers 2-layer failed:', err);
+      return reply.status(500).send({ error: 'Failed to search POS customers' });
     }
   });
 
@@ -272,20 +345,69 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           properties: {
             posCustomerId: { type: 'integer' },
             posCustomerCode: { type: 'string' },
+            posCustomerName: { type: 'string' },
+            posCustomerPhone: { type: 'string' },
           },
         },
       },
     },
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
+        const user = request.user!;
         const { contactId } = request.params as { contactId: string };
-        const { posCustomerId, posCustomerCode } = request.body as any;
+        const { posCustomerId, posCustomerCode, posCustomerName, posCustomerPhone } = request.body as any;
+
+        // Lấy thông tin Contact hiện tại để audit & sync
+        const existingContact = await prisma.contact.findUnique({
+          where: { id: contactId },
+          select: { posCustomerId: true, posCustomerCode: true, fullName: true, phone: true },
+        });
+
+        let finalPosPhone = posCustomerPhone;
+        let finalPosName = posCustomerName;
+
+        if (!finalPosPhone || !finalPosName) {
+          const posCust = await prisma.posCustomer.findFirst({
+            where: { posId: posCustomerId, orgId: user.orgId },
+            select: { name: true, phone: true },
+          });
+          if (posCust) {
+            if (!finalPosPhone) finalPosPhone = posCust.phone;
+            if (!finalPosName) finalPosName = posCust.name;
+          }
+        }
+
+        // Cập nhật Contact: link + auto-sync các trường cơ bản từ POS
+        const updateData: any = {
+          posCustomerId,
+          posCustomerCode: posCustomerCode || null,
+        };
+        // Chỉ update tên/sđt nếu Contact chưa có dữ liệu
+        if (finalPosName && !existingContact?.fullName) {
+          updateData.fullName = finalPosName;
+        }
+        if (finalPosPhone && !existingContact?.phone) {
+          updateData.phone = finalPosPhone;
+        }
 
         const updatedContact = await prisma.contact.update({
           where: { id: contactId },
-          data: {
+          data: updateData,
+        });
+
+        // Audit log (fire-and-forget)
+        logActivity({
+          orgId: user.orgId,
+          userId: user.id,
+          action: 'pos_link',
+          entityType: 'contact',
+          entityId: contactId,
+          details: {
             posCustomerId,
             posCustomerCode: posCustomerCode || null,
+            posCustomerName: posCustomerName || null,
+            prevPosCustomerId: existingContact?.posCustomerId || null,
+            prevPosCustomerCode: existingContact?.posCustomerCode || null,
           },
         });
 
@@ -301,6 +423,72 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       } catch (err: any) {
         logger.error('[pos-routes] Link contact to POS failed:', err);
         return reply.status(500).send({ error: 'Failed to link contact to POS' });
+      }
+    }
+  );
+
+  // DELETE /api/v1/pos/contacts/:contactId/link — Unlink (Hủy liên kết) + audit log
+  app.delete(
+    '/api/v1/pos/contacts/:contactId/link',
+    {
+      schema: {
+        params: {
+          type: 'object',
+          required: ['contactId'],
+          properties: {
+            contactId: { type: 'string' },
+          },
+        },
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = request.user!;
+        const { contactId } = request.params as { contactId: string };
+
+        // Lấy thông tin POS hiện tại để lưu vào audit log
+        const existingContact = await prisma.contact.findUnique({
+          where: { id: contactId },
+          select: { posCustomerId: true, posCustomerCode: true },
+        });
+
+        if (!existingContact) {
+          return reply.status(404).send({ error: 'Contact not found' });
+        }
+
+        if (!existingContact.posCustomerId) {
+          return reply.status(400).send({ error: 'Contact chưa được liên kết POS' });
+        }
+
+        // Set null — hủy liên kết
+        await prisma.contact.update({
+          where: { id: contactId },
+          data: {
+            posCustomerId: null,
+            posCustomerCode: null,
+          },
+        });
+
+        // Audit log (fire-and-forget)
+        logActivity({
+          orgId: user.orgId,
+          userId: user.id,
+          action: 'pos_unlink',
+          entityType: 'contact',
+          entityId: contactId,
+          details: {
+            prevPosCustomerId: existingContact.posCustomerId,
+            prevPosCustomerCode: existingContact.posCustomerCode || null,
+          },
+        });
+
+        return {
+          success: true,
+          message: 'Hủy liên kết POS thành công',
+        };
+      } catch (err: any) {
+        logger.error('[pos-routes] Unlink contact from POS failed:', err);
+        return reply.status(500).send({ error: 'Failed to unlink contact from POS' });
       }
     }
   );
@@ -408,4 +596,262 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       return reply.status(500).send({ error: 'Failed to fetch orders' });
     }
   });
+
+  // GET /api/v1/pos/customers/:contactId/orders — Alias route for Customer 360 order history
+  app.get('/api/v1/pos/customers/:contactId/orders', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { contactId } = request.params as { contactId: string };
+
+      const result = await commandDispatcher.dispatch({
+        name: 'GetContactOrders',
+        payload: { contactId },
+      }, { orgId: user.orgId, userId: user.id });
+
+      if (!result.success) {
+        return reply.status(400).send(result);
+      }
+      return result;
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch customer orders failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch orders' });
+    }
+  });
+
+  // GET /api/v1/pos/customers/:contactId/debts — Customer 360 debt statistics & unpaid invoices
+  app.get('/api/v1/pos/customers/:contactId/debts', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { contactId } = request.params as { contactId: string };
+
+      const contact = await prisma.contact.findFirst({
+        where: { id: contactId, orgId: user.orgId },
+        select: { id: true, posCustomerId: true, posCustomerCode: true, fullName: true, crmName: true, phone: true }
+      });
+
+      // 1. Query PosCustomerDebt record
+      const debtRecord = await prisma.posCustomerDebt.findFirst({
+        where: {
+          orgId: user.orgId,
+          OR: [
+            { contactId },
+            ...(contact?.posCustomerId ? [{ posCustomerId: contact.posCustomerId }] : [])
+          ]
+        }
+      });
+
+      // 2. Query unpaid invoices
+      const invoices = await prisma.posInvoice.findMany({
+        where: {
+          orgId: user.orgId,
+          OR: [
+            { contactId },
+            ...(contact?.posCustomerId ? [{ posCustomerId: contact.posCustomerId }] : [])
+          ],
+          status: { in: ['Unpaid', 'Partial', 'Overdue'] }
+        },
+        orderBy: { invoiceDate: 'desc' }
+      });
+
+      let totalDebt = debtRecord ? debtRecord.totalDebt : 0;
+      let currentDebt = debtRecord ? debtRecord.currentDebt : 0;
+      let overdueDebt = debtRecord ? debtRecord.overdueDebt : 0;
+      let dueDate = debtRecord?.dueDate ? debtRecord.dueDate.toISOString() : null;
+
+      // Fallback: If no debtRecord exists, calculate debt from unpaid invoices if available
+      if (!debtRecord && invoices.length > 0) {
+        totalDebt = invoices.reduce((sum, inv) => sum + inv.remainingDebt, 0);
+        currentDebt = totalDebt;
+        const now = new Date();
+        const overdueInvoices = invoices.filter(inv => inv.dueDate && inv.dueDate < now);
+        overdueDebt = overdueInvoices.reduce((sum, inv) => sum + inv.remainingDebt, 0);
+      }
+
+      // Calculate status
+      const status: 'Normal' | 'Warning' | 'Danger' = overdueDebt > 0 || totalDebt >= 5000000
+        ? 'Danger'
+        : totalDebt > 0
+          ? 'Warning'
+          : 'Normal';
+
+      const customerName = contact?.fullName || contact?.crmName || debtRecord?.customerName || 'Quý khách';
+      const customerCodeStr = (contact?.posCustomerCode || debtRecord?.posCustomerCode) ? ` (Mã KH: ${contact?.posCustomerCode || debtRecord?.posCustomerCode})` : '';
+      const totalStr = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(totalDebt);
+      const overdueStr = overdueDebt > 0 ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(overdueDebt) : '0 đ';
+      const dueDateStr = dueDate ? new Date(dueDate).toLocaleDateString('vi-VN') : '—';
+
+      const quickReminderText = `Xin chào ${customerName}${customerCodeStr},\nCRM Hi Sweetie xin gửi thông tin công nợ tính đến hiện tại:\n- Tổng công nợ: ${totalStr}\n- Nợ quá hạn: ${overdueStr}\n- Hạn thanh toán: ${dueDateStr}\n\nQuý khách vui lòng kiểm tra và thanh toán sớm giúp Shop. Xin cảm ơn!`;
+
+      return {
+        success: true,
+        data: {
+          contactId,
+          posCustomerId: contact?.posCustomerId || debtRecord?.posCustomerId || null,
+          posCustomerCode: contact?.posCustomerCode || debtRecord?.posCustomerCode || null,
+          customerName,
+          customerPhone: contact?.phone || debtRecord?.customerPhone || '',
+          totalDebt,
+          currentDebt,
+          overdueDebt,
+          dueDate,
+          status,
+          isThresholdBreached: totalDebt >= 5000000 || overdueDebt > 0,
+          debtThreshold: 5000000,
+          quickReminderText,
+          invoices: invoices.map(inv => ({
+            id: inv.id,
+            posInvoiceId: inv.posInvoiceId,
+            invoiceCode: inv.invoiceCode,
+            totalAmount: inv.totalAmount,
+            paidAmount: inv.paidAmount,
+            remainingDebt: inv.remainingDebt,
+            status: inv.status,
+            invoiceDate: inv.invoiceDate ? inv.invoiceDate.toISOString() : null,
+            dueDate: inv.dueDate ? inv.dueDate.toISOString() : null,
+          })),
+          lastSyncedAt: debtRecord?.lastSyncedAt ? debtRecord.lastSyncedAt.toISOString() : new Date().toISOString(),
+        }
+      };
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch customer debts failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch customer debts' });
+    }
+  });
+
+  // GET /api/v1/pos/inventory — Branch Inventory lookup across store branches
+  app.get('/api/v1/pos/inventory', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const query = request.query as any;
+
+      const keyword = (query.keyword || '').trim();
+      const branchId = query.branchId ? parseInt(query.branchId) : null;
+      const status = query.status;
+      const limit = parseInt(query.limit) || 50;
+
+      const where: any = { orgId: user.orgId };
+
+      if (keyword) {
+        where.OR = [
+          { productName: { contains: keyword, mode: 'insensitive' } },
+          { productCode: { contains: keyword, mode: 'insensitive' } },
+        ];
+      }
+
+      if (branchId && !isNaN(branchId)) {
+        where.branchId = branchId;
+      }
+
+      if (status) {
+        where.status = status;
+      }
+
+      const items = await prisma.posBranchInventory.findMany({
+        where,
+        take: limit,
+        orderBy: [{ productName: 'asc' }, { branchName: 'asc' }],
+      });
+
+      const formattedItems = items.map(item => ({
+        id: item.id,
+        posProductId: item.posProductId,
+        productCode: item.productCode,
+        productName: item.productName,
+        branchId: item.branchId,
+        branchName: item.branchName,
+        onHand: item.onHand,
+        reserved: item.reserved,
+        available: item.available ?? (item.onHand - item.reserved),
+        minStockLevel: item.minStockLevel,
+        status: item.status,
+        lastSyncedAt: item.lastSyncedAt ? item.lastSyncedAt.toISOString() : null,
+      }));
+
+      return {
+        success: true,
+        data: {
+          items: formattedItems,
+          total: formattedItems.length,
+          nextCursor: null,
+        },
+        items: formattedItems,
+      };
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch branch inventory failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch branch inventory' });
+    }
+  });
+
+  // GET /api/v1/pos/sync-status — Realtime POS sync status indicator for Admin and users
+  app.get('/api/v1/pos/sync-status', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+
+      const activeJob = await prisma.syncJob.findFirst({
+        where: {
+          orgId: user.orgId,
+          status: { in: ['Pending', 'Running'] }
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      const recentJobs = await prisma.syncJob.findMany({
+        where: { orgId: user.orgId },
+        orderBy: { createdAt: 'desc' },
+        take: 10
+      });
+
+      const lastCompletedJob = await prisma.syncJob.findFirst({
+        where: {
+          orgId: user.orgId,
+          status: 'Completed'
+        },
+        orderBy: { endTime: 'desc' }
+      });
+
+      const entities = ['Customer', 'Product', 'Order', 'Invoice', 'BranchInventory'];
+      const entityStatusMap: Record<string, { lastSyncedAt: string | null; status: string }> = {};
+
+      for (const entity of entities) {
+        const lastEntityJob = recentJobs.find(j => j.entity === entity);
+        entityStatusMap[entity] = {
+          lastSyncedAt: lastEntityJob?.endTime ? lastEntityJob.endTime.toISOString() : null,
+          status: lastEntityJob?.status || 'Idle',
+        };
+      }
+
+      return {
+        success: true,
+        data: {
+          isSyncing: !!activeJob,
+          lastSyncedAt: lastCompletedJob?.endTime ? lastCompletedJob.endTime.toISOString() : null,
+          activeJob: activeJob ? {
+            id: activeJob.id,
+            entity: activeJob.entity,
+            status: activeJob.status,
+            total: activeJob.total,
+            processed: activeJob.processed,
+            percent: activeJob.total > 0 ? Math.min(Math.round((activeJob.processed / activeJob.total) * 100), 100) : 0,
+            startTime: activeJob.startTime.toISOString(),
+          } : null,
+          entities: entityStatusMap,
+          recentJobs: recentJobs.map(job => ({
+            id: job.id,
+            entity: job.entity,
+            status: job.status,
+            total: job.total,
+            processed: job.processed,
+            errorCount: job.errorCount,
+            lastError: job.lastError,
+            startTime: job.startTime.toISOString(),
+            endTime: job.endTime ? job.endTime.toISOString() : null,
+          })),
+        }
+      };
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch sync status failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch sync status' });
+    }
+  });
 }
+

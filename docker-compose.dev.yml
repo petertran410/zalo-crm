@@ -17,7 +17,7 @@ services:
       dockerfile: docker/Dockerfile.dev
     container_name: zalo-crm-app-dev
     restart: on-failure
-    command: sh -c "npx prisma generate && npx prisma db push && npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
+    command: sh -c "npx prisma generate && npx prisma migrate deploy && npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://${DB_USER:-crmuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-zalocrm}
@@ -39,8 +39,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      minio:
-        condition: service_healthy
+      # minio: đã chuyển sang profile 'storage-s3' (2026-07-24) — không còn là dependency
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
       interval: 5s

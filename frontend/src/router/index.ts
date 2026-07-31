@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
+import { useProgress } from '@/composables/use-progress';
 // Open-core: extension route injection (empty in Community edition via @ee stub).
 import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from '@ee/routes';
 // Edition flag (open-core): EE=true, Community=false. Dùng để chỉ đăng ký menu
@@ -259,6 +260,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/pos/sync-dashboard',
+    name: 'POS.SyncDashboard',
+    component: () => import('@/views/pos/SyncDashboardView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/pos/products',
     name: 'POS.Products',
     component: () => import('@/views/pos/PosProductsView.vue'),
@@ -296,6 +303,8 @@ const LEGACY_TAB_MAP: Record<string, string> = {
 
 // Auth guard + legacy tab redirect
 router.beforeEach(async (to, _from, next) => {
+  useProgress().start();
+
   const authStore = useAuthStore();
 
   // Legacy: /settings?tab=X → /settings/<new-path>
@@ -457,6 +466,11 @@ const ROUTE_TITLES: Record<string, string> = {
   'Marketing.Lists': 'Danh sách KH',
   'Marketing.ListDetail': 'Chi tiết danh sách',
 };
+
+// ── Navigation progress: finish bar sau khi route đã resolve xong ──
+router.afterEach(() => {
+  useProgress().finish();
+});
 
 router.afterEach((to) => {
   const key = typeof to.name === 'string' ? to.name : '';

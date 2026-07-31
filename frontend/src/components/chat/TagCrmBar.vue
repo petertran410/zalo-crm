@@ -1,138 +1,33 @@
 <template>
-  <!-- Refactor 2026-06-01 — thanh tag Friend-row cấp (per-pair sale-nick × KH).
-       /office-hours 2026-06-06 — gom auto-tag 3→2 nhóm (BỎ Auto Score Tier khỏi thanh;
-       điểm Lead vẫn ở ScoreBanner). Layout tách bằng "|":
-       [Zalo Real (R/O)] | [Auto Detect: trạng thái] | [Auto Engagement: độ chăm] | [Manual]
-       Auto Detect + Auto Engagement đều SỐNG (tự cập nhật). Nút "+ Thêm tag" CHỈ gắn manual. -->
   <div class="tag-crm-bar" v-if="friendId">
-    <span class="bar-label"><TagIcon :size="14" :stroke-width="2" /></span>
-
-    <!-- 1. Zalo Real (ưu tiên 1, đầu tiên, READ-ONLY) -->
-    <template v-if="zaloRealTags.length">
-      <span
-        v-for="tag in zaloRealTags"
-        :key="'zalo-' + tag.id"
-        class="t2-tag-pill is-zalo-real"
-        :style="{ '--tag-color': tag.color }"
-        :title="'Tag Zalo Real — đổi/gỡ trên app Zalo, hệ thống tự cập nhật.'"
+    <div class="qt-chips-wrapper">
+      <button
+        v-for="tag in displayTags"
+        :key="tag.slug"
+        type="button"
+        class="qt-chip"
+        :class="{ active: activeTagSlugs.has(tag.slug) }"
+        :style="getChipStyle(tag, activeTagSlugs.has(tag.slug))"
+        :title="activeTagSlugs.has(tag.slug) ? `Nhấp để gỡ nhãn '${tag.name}'` : `Nhấp để gắn nhãn '${tag.name}'`"
+        :disabled="pendingSlugs.has(tag.slug)"
+        @click="toggleTag(tag)"
       >
-        <ZaloBrandIcon class="t2-pill-zalo-icon" />
-        <span class="t2-pill-text">{{ tag.name }}</span>
-      </span>
-      <span class="tag-divider">|</span>
-    </template>
+        <span v-if="tag.emoji" class="qt-chip-emoji">{{ tag.emoji }}</span>
+        <span class="qt-chip-name">{{ tag.name }}</span>
+      </button>
 
-    <!-- 2. Auto Detect — trạng thái KH (🔥 hoạt động / ⏰ đình trệ / 📅 có hẹn / 🧊 nguội), READ-ONLY.
-         2026-06-06: nền THỐNG NHẤT màu VÀNG (giống Lead score). Chữ = bản đậm của tag.color. -->
-    <template v-if="detectTags.length">
-      <span
-        v-for="tag in detectTags"
-        :key="'detect-' + tag.id"
-        class="t2-tag-pill is-auto group-detect"
-        :style="{ '--tag-color': tag.color, '--bar-bg': DETECT_BG }"
-        :title="'Auto Detect — trạng thái KH, hệ thống tự cập nhật'"
-      >
-        <span v-if="tag.emoji" class="t2-pill-emoji">{{ tag.emoji }}</span>
-        <span class="t2-pill-text">{{ tag.name }}</span>
-      </span>
-      <span class="tag-divider">|</span>
-    </template>
-
-    <!-- 3. Auto Engagement — độ chăm chat 28 ngày (Hot/Champion/Cooling/Cold), READ-ONLY.
-         2026-06-06: nền THỐNG NHẤT màu XANH DƯƠNG (khớp Engagement score). Chữ = bản đậm tag.color. -->
-    <template v-if="engagementTags.length">
-      <span
-        v-for="tag in engagementTags"
-        :key="'engagement-' + tag.id"
-        class="t2-tag-pill is-auto group-engagement"
-        :style="{ '--tag-color': tag.color, '--bar-bg': ENGAGEMENT_BG }"
-        :title="'Auto Engagement — mức độ tương tác 28 ngày, hệ thống tự cập nhật'"
-      >
-        <span v-if="tag.emoji" class="t2-pill-emoji">{{ tag.emoji }}</span>
-        <span class="t2-pill-text">{{ tag.name }}</span>
-      </span>
-      <span class="tag-divider">|</span>
-    </template>
-
-    <!-- 3. Manual per Nick (sale gắn được, có nút "X" remove) -->
-    <span
-      v-for="tag in manualTags"
-      :key="'manual-' + tag.id"
-      class="t2-tag-pill is-manual"
-      :style="{ '--tag-color': tag.color }"
-      :title="'Tag riêng cặp nick × KH. Click X để gỡ.'"
-    >
-      <span v-if="tag.emoji" class="t2-pill-emoji">{{ tag.emoji }}</span>
-      <span class="t2-pill-text">{{ tag.name }}</span>
-      <button class="tag-x" title="Gỡ tag" @click="removeManualTag(tag)"><XIcon :size="12" :stroke-width="2.2" /></button>
-    </span>
-
-    <!-- "+ Thêm tag" dropdown CHỈ load + gắn Manual per Nick -->
-    <v-menu v-model="dropdownOpen" :close-on-content-click="false" location="top start" offset="6">
-      <template #activator="{ props: actProps }">
-        <button v-bind="actProps" class="tag-add-btn">+ Thêm tag</button>
-      </template>
-
-      <div class="tag-dropdown">
-        <div class="dd-search">
-          <input
-            ref="searchInput"
-            v-model="search"
-            name="tag-manual-search"
-            autocomplete="off"
-            placeholder="Tìm tag riêng cho nick này..."
-            @keydown.enter.prevent="onEnterSearch"
-            @keydown.escape="dropdownOpen = false"
-          />
-        </div>
-
-        <div v-if="defsLoading && !manualTagDefs.length" class="dd-state">Đang tải…</div>
-        <div v-else-if="!filteredDefs.length && !search" class="dd-state">
-          <p>Chưa có tag thủ công nào.</p>
-          <p class="dd-hint">Gõ tên tag rồi Enter để tạo mới.</p>
-        </div>
-        <div v-else class="dd-list">
-          <button
-            v-for="def in filteredDefs"
-            :key="def.id"
-            class="dd-option"
-            :class="{ active: manualTags.some(t => t.id === def.id) }"
-            @click="onPickTag(def)"
-          >
-            <span class="dd-color-dot" :style="{ background: def.color }"></span>
-            <span class="dd-name">{{ def.name }}</span>
-            <span v-if="manualTags.some(t => t.id === def.id)" class="dd-check"><CheckIcon :size="14" :stroke-width="2.2" /></span>
-          </button>
-          <button
-            v-if="search.trim() && !filteredDefs.some(d => d.name.toLowerCase() === search.trim().toLowerCase())"
-            class="dd-create-inline"
-            @click="onCreateNewTag"
-          >
-            + Tạo "{{ search.trim() }}"
-          </button>
-        </div>
-
-        <div class="dd-footer">
-          <button class="dd-settings-link" @click="goToSettings">
-            <span class="settings-icon"><SettingsIcon :size="14" :stroke-width="2" /></span>
-            Cài đặt Tag v2
-          </button>
-        </div>
-      </div>
-    </v-menu>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { ref, computed, onMounted, watch } from 'vue';
+
 import { api } from '@/api/index';
-// Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự/emoji nút).
-import { Tag as TagIcon, X as XIcon, Check as CheckIcon, Settings as SettingsIcon } from 'lucide-vue-next';
+
 import { useToast } from '@/composables/use-toast';
 import { useFriendSocket } from '@/composables/use-friend-socket';
 import { refreshTagTaxonomy } from '@/composables/use-tag-taxonomy';
-import ZaloBrandIcon from '@/components/icons/ZaloBrandIcon.vue';
 
 interface TagV2 {
   id: string;
@@ -154,385 +49,337 @@ interface FriendTagAssignment {
 
 const props = defineProps<{
   friendId: string | null;
-  /** contactId — legacy kept cho backward compat, không dùng trong refactor mới */
   contactId?: string | null;
 }>();
 
 const toast = useToast();
-const router = useRouter();
 
-const friendTags = ref<FriendTagAssignment[]>([]);
+
+// ── UI Source of Truth ────────────────────────────────────────────────────────
+// activeTagSlugs: Set slug của các tag ĐANG ACTIVE cho friend hiện tại.
+// Đây là state duy nhất quyết định màu chip — không bao giờ bị reset giữa 2 toggle.
+const activeTagSlugs = ref<Set<string>>(new Set());
+
+// pendingSlugs: slug đang chờ API → disable chip để tránh double-click
+const pendingSlugs = ref<Set<string>>(new Set());
+
+// Cache assignments để lấy real tag ID khi DELETE (tránh gọi thêm GET)
+const cachedAssignments = ref<FriendTagAssignment[]>([]);
+
+// Dữ liệu tag definitions (chỉ dùng cho displayTags, không ảnh hưởng active state)
 const manualTagDefs = ref<TagV2[]>([]);
-const loading = ref(false);
-const defsLoading = ref(false); // riêng cho fetch dropdown defs (tách khỏi loadFriendTags)
 
-// Load FriendTag junction (active) cho friendId hiện tại.
+// ── Preset Tags (fallback nếu DB trống) ─────────────────────────────────────
+const DEFAULT_PRESET_TAGS: Array<TagV2> = [
+  { id: 'p1',  name: 'Đã lưu thông tin',    slug: 'da-luu-thong-tin',    color: '#16A34A', emoji: '📞', scope: 'friend', source: 'manual_per_nick', priority: 1  },
+  { id: 'p2',  name: 'Cần hỗ trợ gấp',      slug: 'can-ho-tro-gap',      color: '#DC2626', emoji: '⚡', scope: 'friend', source: 'manual_per_nick', priority: 2  },
+  { id: 'p3',  name: 'Đã lên đơn hàng',     slug: 'da-len-don-hang',     color: '#16A34A', emoji: '🛒', scope: 'friend', source: 'manual_per_nick', priority: 3  },
+  { id: 'p4',  name: 'workshop',             slug: 'workshop',            color: '#C026D3', emoji: '👥', scope: 'friend', source: 'manual_per_nick', priority: 4  },
+  { id: 'p5',  name: 'NHÓM KHÁCH HÀNG',     slug: 'nhom-khach-hang',     color: '#DC2626', emoji: '👥', scope: 'friend', source: 'manual_per_nick', priority: 5  },
+  { id: 'p6',  name: 'Nhóm Cộng Đồng',      slug: 'nhom-cong-dong',      color: '#D97706', emoji: '👥', scope: 'friend', source: 'manual_per_nick', priority: 6  },
+  { id: 'p7',  name: 'Admin Test',           slug: 'admin-test',          color: '#1E293B', emoji: '✖', scope: 'friend', source: 'manual_per_nick', priority: 7  },
+  { id: 'p8',  name: 'Bám đuổi thất bại',   slug: 'bam-duoi-that-bai',   color: '#D97706', emoji: null, scope: 'friend', source: 'manual_per_nick', priority: 8  },
+  { id: 'p9',  name: 'Bám đuổi thành công', slug: 'bam-duoi-thanh-cong', color: '#16A34A', emoji: null, scope: 'friend', source: 'manual_per_nick', priority: 9  },
+  { id: 'p10', name: 'Hỏi sp - giá',        slug: 'hoi-sp-gia',          color: '#DC2626', emoji: null, scope: 'friend', source: 'manual_per_nick', priority: 10 },
+  { id: 'p11', name: 'Đã đặt hàng',         slug: 'da-dat-hang',         color: '#EA580C', emoji: '🛒', scope: 'friend', source: 'manual_per_nick', priority: 11 },
+];
+
+// displayTags: LUÔN hiển thị đủ danh sách, dù active state thay đổi.
+// Ưu tiên tags từ DB; nếu DB chưa có thì dùng preset.
+// Merge: preset tags mà có slug trùng DB → dùng DB version (có real ID) nhưng giữ màu/emoji preset để tránh bị chuyển thành màu xám mặc định của DB.
+const displayTags = computed((): TagV2[] => {
+  const presetsMap = new Map(DEFAULT_PRESET_TAGS.map(t => [t.slug, t]));
+  if (manualTagDefs.value.length === 0) return DEFAULT_PRESET_TAGS;
+
+  const mergedDefs = manualTagDefs.value.map(dbTag => {
+    const preset = presetsMap.get(dbTag.slug);
+    if (preset) {
+      // Nếu màu DB là mặc định (gray) hoặc rỗng, dùng màu của preset
+      const usePresetColor = !dbTag.color ||
+        dbTag.color.toLowerCase() === '#94a3b8' ||
+        dbTag.color.toLowerCase() === '#cbd5e1' ||
+        dbTag.color.toLowerCase() === '#64748b' ||
+        dbTag.color.toLowerCase() === '#e2e8f0' ||
+        dbTag.color.toLowerCase() === '#90a4ae';
+      return {
+        ...dbTag,
+        color: usePresetColor ? preset.color : dbTag.color,
+        emoji: dbTag.emoji || preset.emoji
+      };
+    }
+    return dbTag;
+  });
+
+  const dbSlugs = new Set(mergedDefs.map((t) => t.slug));
+  const extras = DEFAULT_PRESET_TAGS.filter((t) => !dbSlugs.has(t.slug));
+  return [...mergedDefs, ...extras].sort((a, b) => (a.priority || 99) - (b.priority || 99));
+});
+
+// Helper parse hex màu an toàn tránh NaN
+function hexToRgb(hexColor: string): { r: number; g: number; b: number } {
+  let hex = (hexColor || '#0068FF').replace('#', '').trim();
+  if (hex.length === 3) {
+    hex = hex.split('').map(char => char + char).join('');
+  }
+  if (hex.length !== 6) {
+    return { r: 0, g: 104, b: 255 }; // Default blue fallback
+  }
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  return isNaN(r) || isNaN(g) || isNaN(b) ? { r: 0, g: 104, b: 255 } : { r, g, b };
+}
+
+// ── Chip Style ────────────────────────────────────────────────────────────────
+// Active   → nền đặc màu tag, chữ trắng
+// Inactive → nền tint nhẹ (10% opacity), viền + chữ cùng màu tag
+function getChipStyle(tag: TagV2, active: boolean) {
+  const color = tag.color || '#0068FF';
+  if (active) {
+    return {
+      '--chip-color': color,
+      background: color,
+      borderColor: color,
+      color: '#ffffff',
+      fontWeight: '700',
+    };
+  }
+  const { r, g, b } = hexToRgb(color);
+  return {
+    '--chip-color': color,
+    background: `rgba(${r}, ${g}, ${b}, 0.10)`,
+    borderColor: color,
+    color: color,
+    fontWeight: '500',
+  };
+}
+
+// ── Load từ server ─────────────────────────────────────────────────────────────
+// Chỉ gọi khi mount / chuyển friend / socket event.
+// KHÔNG gọi trong toggleTag để tránh ghi đè optimistic state.
 async function loadFriendTags() {
   if (!props.friendId) return;
-  loading.value = true;
   try {
     const { data } = await api.get(`/friends/${props.friendId}/tags`);
-    friendTags.value = data.friendTags || [];
+    const assignments: FriendTagAssignment[] = data.friendTags || [];
+    cachedAssignments.value = assignments;
+    // Set thẳng từ server — loadFriendTags chỉ được gọi sau khi finally xóa pending slug
+    activeTagSlugs.value = new Set(
+      assignments.filter((ft) => !ft.removedAt).map((ft) => ft.tag.slug)
+    );
   } catch (err) {
     console.warn('[TagCrmBar] loadFriendTags failed', err);
-  } finally {
-    loading.value = false;
   }
 }
 
-// Load Tag(scope=friend, source=manual_per_nick) cho dropdown picker.
-// 2026-06-17 FIX: lọc source=manual_per_nick NGAY ở server. Trước đây kéo limit tag rồi
-// mới filter ở client → nếu org có ≥200 nhãn zalo_real (priority 1) thì manual_per_nick
-// (priority 2) bị đẩy khỏi response → dropdown rỗng dù tag manual có tồn tại.
+// ── Load tag definitions (không ảnh hưởng active state) ──────────────────────
 let fetchedDefsOnce = false;
 async function loadManualTagDefs() {
   if (fetchedDefsOnce) return;
-  defsLoading.value = true;
   try {
     const { data } = await api.get('/tags', { params: { scope: 'friend', source: 'manual_per_nick', limit: 200 } });
-    manualTagDefs.value = (data.tags || []).filter((t: TagV2) => t.source === 'manual_per_nick');
+    const fetched = (data.tags || []).filter((t: TagV2) => t.source === 'manual_per_nick');
+    if (fetched.length > 0) manualTagDefs.value = fetched;
     fetchedDefsOnce = true;
   } catch (err) {
     console.warn('[TagCrmBar] loadManualTagDefs failed', err);
-  } finally {
-    defsLoading.value = false;
   }
 }
 
+// ── Lifecycle ─────────────────────────────────────────────────────────────────
 onMounted(() => {
   loadFriendTags();
+  loadManualTagDefs();
 });
 
 watch(() => props.friendId, () => {
-  // Xoá tag của nick cũ NGAY trước khi nạp tag mới — tránh hiện chip nick trước đó
-  // trong ~100-300ms chờ API /friends/{id}/tags (hiện trống/skeleton thay vì sai).
-  friendTags.value = [];
+  // Reset khi chuyển sang friend khác
+  activeTagSlugs.value = new Set();
+  pendingSlugs.value = new Set();
   loadFriendTags();
 });
 
-// 2026-06-06 (Anh chốt) — Realtime sync tag Zalo Real: khi BE emit friend:updated{zaloLabels}
-// (sale đổi tag trên app Zalo / từ header CRM / sync) cho ĐÚNG friend đang mở → reload junction
-// để pill Zalo Real ở thanh này khớp header + cột 2. Lọc theo friendId tránh reload thừa.
-// useFriendSocket tự cleanup khi unmount.
 useFriendSocket((p) => {
   if (!props.friendId || p.friendId !== props.friendId) return;
-  if (p.patch && 'zaloLabels' in p.patch) {
-    loadFriendTags();
-  }
+  if (p.patch && 'zaloLabels' in p.patch) loadFriendTags();
 });
 
-// Màu NỀN thống nhất theo nhóm (đồng bộ ScoreBanner để dễ phân biệt ở UI Chat — Anh chốt
-// 2026-06-06). Nền cố định theo nhóm; CHỮ = bản đậm của tag.color (đổi được trong setting).
-//   Auto Detect    → vàng giống Lead score   (#F59E0B)
-//   Auto Engagement→ xanh dương Engagement   (#3B82F6)
-//   Zalo Real      → tự do theo tag.color (đồng bộ Zalo)
-const DETECT_BG = '#F59E0B';
-const ENGAGEMENT_BG = '#3B82F6';
-
-// Group tags theo source — render order: zalo_real → Auto Detect → Auto Engagement → manual_per_nick
-// /office-hours 2026-06-06: gom auto-tag 3→2 nhóm. BỎ auto_score (Tier) khỏi thanh.
-// 2 nhóm SỐNG (tự cập nhật): Auto Detect (trạng thái) + Auto Engagement (độ chăm 28 ngày).
-const zaloRealTags = computed(() => friendTags.value.filter(ft => ft.tag.source === 'zalo_real').map(ft => ft.tag));
-const detectTags = computed(() => friendTags.value.filter(ft => ft.tag.source === 'auto_detect').map(ft => ft.tag));
-const engagementTags = computed(() => friendTags.value.filter(ft => ft.tag.source === 'auto_engagement').map(ft => ft.tag));
-const manualTags = computed(() => friendTags.value.filter(ft => ft.tag.source === 'manual_per_nick').map(ft => ft.tag));
-
-// Dropdown state
-const dropdownOpen = ref(false);
-const search = ref('');
-const searchInput = ref<HTMLInputElement | null>(null);
-
-watch(dropdownOpen, (v) => {
-  if (v) {
-    search.value = '';
-    loadManualTagDefs();
-    nextTick(() => searchInput.value?.focus());
-  }
-});
-
-const filteredDefs = computed(() => {
-  if (!search.value.trim()) return manualTagDefs.value;
-  const q = search.value.toLowerCase().trim();
-  return manualTagDefs.value.filter(d => d.name.toLowerCase().includes(q) || d.slug.includes(q));
-});
-
-function onEnterSearch() {
-  const exact = manualTagDefs.value.find(d => d.name.toLowerCase() === search.value.trim().toLowerCase());
-  if (exact) {
-    onPickTag(exact);
-  } else if (search.value.trim()) {
-    onCreateNewTag();
-  }
-}
-
-// Sau khi gắn/gỡ tag manual → báo timeline KH refresh (BE đã log tag_add_crm/remove
-// với entityType=contact). CustomerTimelineSection nghe event này, lọc theo contactId.
+// ── Notify ────────────────────────────────────────────────────────────────────
 function notifyTimeline() {
   if (props.contactId) {
     window.dispatchEvent(new CustomEvent('timeline-updated', { detail: { contactId: props.contactId } }));
   }
 }
 
-// 2026-06-10 — Sau khi gắn/gỡ tag manual, BE mirror SLUG vào Friend.crmTagsPerNick (dual-write).
-// Cột 2 (ConversationList) đọc field này → bắn event để ChatView patch conv trong list NGAY,
-// không bắt sale F5. Gửi slug manual hiện tại (zalo_real/auto KHÔNG vào crmTagsPerNick).
 function notifyConvListTags() {
   if (!props.friendId) return;
-  const slugs = friendTags.value
-    .filter(ft => ft.tag.source === 'manual_per_nick' && !ft.removedAt)
-    .map(ft => ft.tag.slug);
   window.dispatchEvent(new CustomEvent('friend-crm-tags-changed', {
-    detail: { friendId: props.friendId, slugs },
+    detail: { friendId: props.friendId, slugs: [...activeTagSlugs.value] },
   }));
 }
 
-async function onPickTag(def: TagV2) {
-  if (!props.friendId) return;
-  // Toggle: nếu đã có → remove, chưa có → add
-  const existing = friendTags.value.find(ft => ft.tag.id === def.id && !ft.removedAt);
-  if (existing) {
-    await removeManualTag(def);
-    return;
-  }
+// ── Toggle Handler ─────────────────────────────────────────────────────────────
+// Nguyên tắc:
+//   1. Cập nhật activeTagSlugs NGAY LẬP TỨC (UI không chờ API)
+//   2. API call chạy ngầm — KHÔNG gọi loadFriendTags() sau khi xong
+//      vì optimistic update đã đúng; gọi loadFriendTags sẽ ghi đè pendingSlugs sai
+//   3. Chỉ rollback đúng 1 slug nếu API thất bại
+async function toggleTag(tag: TagV2) {
+  if (!props.friendId || pendingSlugs.value.has(tag.slug)) return;
+
+  const wasActive = activeTagSlugs.value.has(tag.slug);
+
+  // ① Instant UI update (optimistic)
+  const nextSlugs = new Set(activeTagSlugs.value);
+  if (wasActive) nextSlugs.delete(tag.slug);
+  else nextSlugs.add(tag.slug);
+  activeTagSlugs.value = nextSlugs;
+
+  // ② Đánh dấu pending (disable chip trong lúc chờ)
+  pendingSlugs.value = new Set([...pendingSlugs.value, tag.slug]);
+
+  let apiError = false;
   try {
-    await api.post(`/friends/${props.friendId}/tags`, {
-      tagId: def.id,
-      source: 'manual_per_nick',
-    });
-    await loadFriendTags();
+    if (wasActive) {
+      // Lấy real tag ID từ cache assignments (không cần gọi GET thêm)
+      const existing = cachedAssignments.value.find(
+        (ft) => !ft.removedAt &&
+          (ft.tag.slug === tag.slug || ft.tag.name.toLowerCase() === tag.name.toLowerCase())
+      );
+      if (existing?.tag.id) {
+        await api.delete(`/friends/${props.friendId}/tags/${existing.tag.id}`);
+      } else {
+        // Fallback: fetch assignments nếu cache chưa có
+        const { data } = await api.get(`/friends/${props.friendId}/tags`);
+        const fallback = (data.friendTags as FriendTagAssignment[] || []).find(
+          (ft) => !ft.removedAt &&
+            (ft.tag.slug === tag.slug || ft.tag.name.toLowerCase() === tag.name.toLowerCase())
+        );
+        if (fallback?.tag.id) {
+          await api.delete(`/friends/${props.friendId}/tags/${fallback.tag.id}`);
+        }
+      }
+    } else {
+      const isPreset = tag.id.startsWith('p');
+      const { data: postData } = await api.post(`/friends/${props.friendId}/tags`, {
+        tagId: isPreset ? undefined : tag.id,
+        tagName: tag.name,
+        source: 'manual_per_nick',
+        autoCreate: true,
+        color: tag.color,
+        emoji: tag.emoji,
+      });
+      // Cập nhật cache với assignment mới trả về
+      if (postData?.assignment) {
+        cachedAssignments.value = [...cachedAssignments.value, postData.assignment];
+      }
+      if (isPreset) {
+        fetchedDefsOnce = false;
+        loadManualTagDefs();
+        refreshTagTaxonomy();
+      }
+    }
     notifyTimeline();
     notifyConvListTags();
-    dropdownOpen.value = false;
   } catch (err) {
-    const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Gắn tag thất bại';
-    toast.error(msg);
+    apiError = true;
+    // Rollback chỉ slug này — tag khác không bị ảnh hưởng
+    const rollback = new Set(activeTagSlugs.value);
+    if (wasActive) rollback.add(tag.slug);
+    else rollback.delete(tag.slug);
+    activeTagSlugs.value = rollback;
+    toast.error(wasActive ? 'Gỡ tag thất bại' : 'Gắn tag thất bại');
+    console.error('[TagCrmBar] toggleTag error', err);
+  } finally {
+    // Xóa pending slug
+    const done = new Set(pendingSlugs.value);
+    done.delete(tag.slug);
+    pendingSlugs.value = done;
+    // Nếu thành công → sync nhẹ để cập nhật cachedAssignments
+    if (!apiError) {
+      loadFriendTags();
+    }
   }
 }
 
-async function onCreateNewTag() {
-  if (!props.friendId || !search.value.trim()) return;
-  try {
-    await api.post(`/friends/${props.friendId}/tags`, {
-      tagName: search.value.trim(),
-      source: 'manual_per_nick',
-      autoCreate: true,
-    });
-    fetchedDefsOnce = false; // refetch defs để dropdown thấy tag mới
-    await loadManualTagDefs();
-    await loadFriendTags();
-    // Refresh taxonomy slug→name để cột 2 resolve được tag vừa tạo (không hiện slug thô).
-    await refreshTagTaxonomy();
-    notifyTimeline();
-    notifyConvListTags();
-    search.value = '';
-    dropdownOpen.value = false;
-    toast.success('Đã tạo và gắn tag mới');
-  } catch (err) {
-    const msg = (err as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Tạo tag thất bại';
-    toast.error(msg);
-  }
-}
 
-async function removeManualTag(tag: TagV2) {
-  if (!props.friendId) return;
-  try {
-    await api.delete(`/friends/${props.friendId}/tags/${tag.id}`);
-    await loadFriendTags();
-    notifyTimeline();
-    notifyConvListTags();
-  } catch (err) {
-    toast.error('Gỡ tag thất bại');
-  }
-}
-
-function goToSettings() {
-  dropdownOpen.value = false;
-  router.push('/settings/crm/tags-v2');
-}
 </script>
 
 <style scoped>
 .tag-crm-bar {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  padding: 6px 8px;
-  font-size: 12px;
-  min-height: 32px;
-}
-.bar-label { font-size: 14px; flex-shrink: 0; }
-
-.tag-divider {
-  color: #c0c4cc;
-  font-weight: 300;
-  margin: 0 2px;
-  user-select: none;
-}
-
-/* Tag pill — đồng nhất style /settings/crm/tags-v2 (color-mix derive bg/border/text) */
-.t2-tag-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  font-weight: 500;
-  border: 1.4px solid;
-  --tag-color: #546E7A;
-  background: color-mix(in srgb, var(--tag-color) 12%, white);
-  border-color: color-mix(in srgb, var(--tag-color) 75%, white);
-  color: color-mix(in srgb, var(--tag-color) 78%, black);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.t2-tag-pill.is-zalo-real {
-  background: color-mix(in srgb, var(--tag-color) 14%, white);
-  border-color: color-mix(in srgb, var(--tag-color) 80%, white);
-  cursor: help;
-}
-.t2-tag-pill.is-auto {
-  background: color-mix(in srgb, var(--tag-color) 10%, white);
-  border-color: color-mix(in srgb, var(--tag-color) 60%, white);
-  font-weight: 600;
-  cursor: help;
-}
-
-/* Nền THỐNG NHẤT theo nhóm (Anh chốt 2026-06-06): nền + viền lấy từ --bar-bg (màu nhóm),
-   CHỮ vẫn lấy từ --tag-color (màu tag trong setting) nhưng làm ĐẬM để luôn đọc rõ trên nền nhạt. */
-.t2-tag-pill.group-detect,
-.t2-tag-pill.group-engagement {
-  background: color-mix(in srgb, var(--bar-bg) 14%, white);
-  border-color: color-mix(in srgb, var(--bar-bg) 55%, white);
-  color: color-mix(in srgb, var(--tag-color) 82%, black);
-}
-.t2-tag-pill.is-manual {
-  /* Sale gắn được — hiển thị X button */
-}
-.t2-pill-zalo-icon { width: 12px; height: 12px; flex-shrink: 0; }
-.t2-pill-emoji { font-size: 13px; flex-shrink: 0; }
-.t2-pill-text { white-space: nowrap; }
-
-.tag-x {
-  background: none;
-  border: none;
-  color: inherit;
-  cursor: pointer;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 0 0 4px;
-  opacity: 0.6;
-}
-.tag-x:hover { opacity: 1; }
-
-.tag-add-btn {
-  background: white;
-  border: 1px dashed #b0bec5;
-  color: #546E7A;
-  padding: 4px 10px;
-  border-radius: 12px;
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-.tag-add-btn:hover {
-  background: #f5f7fa;
-  border-color: #546E7A;
-}
-
-/* Dropdown picker */
-.tag-dropdown {
-  background: white;
-  border: 1px solid #dddddd;
-  border-radius: 8px;
-  min-width: 280px;
-  max-width: 360px;
-  max-height: 360px;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.12);
-}
-.dd-search {
-  padding: 8px 8px 6px;
-  border-bottom: 1px solid #eef0f3;
-}
-.dd-search input {
-  width: 100%;
-  padding: 6px 10px;
-  border: 1px solid #dddddd;
-  border-radius: 6px;
-  font-size: 13px;
+  padding: 6px 10px 8px;
+  background: #ffffff;
+  border-bottom: 1px solid #e8eef5;
   box-sizing: border-box;
 }
-.dd-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-.dd-option {
+
+.qt-chips-wrapper {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  background: white;
-  border: none;
-  cursor: pointer;
-  font-size: 13px;
-  color: #181d26;
-  text-align: left;
-}
-.dd-option:hover { background: #f5f7fa; }
-.dd-option.active { background: #e8f3ff; }
-.dd-color-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-.dd-name { flex: 1; }
-.dd-check { color: #0068FF; font-weight: 700; }
-.dd-state, .dd-hint {
-  padding: 12px;
-  text-align: center;
-  color: #999;
-  font-size: 12px;
-}
-.dd-hint { font-size: 11px; padding-top: 0; }
-.dd-create-inline {
-  display: block;
-  width: 100%;
-  padding: 8px 12px;
-  background: white;
-  border: none;
-  border-top: 1px dashed #dddddd;
-  cursor: pointer;
-  font-size: 12px;
-  color: #0068FF;
-  font-weight: 500;
-  text-align: left;
-}
-.dd-create-inline:hover { background: #f5f7fa; }
-.dd-footer {
-  border-top: 1px solid #eef0f3;
-  padding: 6px;
-}
-.dd-settings-link {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
+  flex-wrap: wrap;
   gap: 6px;
-  width: 100%;
-  padding: 6px 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 11px;
-  color: #41454d;
+  padding: 2px 0;
 }
-.dd-settings-link:hover { background: #f5f7fa; }
-.settings-icon { font-size: 12px; display: inline-flex; align-items: center; }
-/* Icon Lucide chrome — căn giữa (2026-06-08). */
-.bar-label, .tag-x, .dd-check { display: inline-flex; align-items: center; justify-content: center; }
-.bar-label svg, .tag-x svg, .dd-check svg, .settings-icon svg { display: block; }
+
+.qt-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 11px;
+  border-radius: 9999px;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: background 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.12s ease;
+  user-select: none;
+  border: 1.5px solid var(--chip-color, #0068FF);
+  outline: none;
+}
+
+.qt-chip:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.qt-chip:not(:disabled):active {
+  transform: translateY(0);
+}
+
+/* Chip đang chờ API → mờ đi một chút */
+.qt-chip:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.qt-chip-emoji {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.qt-chip-name {
+  line-height: 1.2;
+}
+
+.qt-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px dashed #94a3b8;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: 2px;
+  transition: all 0.15s ease;
+}
+
+.qt-add-btn:hover {
+  background: #f1f5f9;
+  color: #0068ff;
+  border-color: #0068ff;
+}
 </style>

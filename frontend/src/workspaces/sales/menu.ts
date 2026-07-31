@@ -40,7 +40,7 @@ export const salesMenu: MenuItemConfig[] = [
     key: 'friends',
     title: 'Bạn bè',
     icon: 'mdi-account-multiple-outline',
-    materialIcon: 'chat',
+    materialIcon: 'person_add',
     to: '/friends',
     resource: 'friend',
   },

@@ -42,7 +42,7 @@
         </div>
 
         <div class="ch-info">
-          <!-- Row 1: TÊN KH ưu tiên + Gender icon (Anh chốt 2026-06-03 layout 3 dòng) -->
+          <!-- Row 1: TÊN KH -->
           <div class="ch-row-1">
             <div
               class="ch-name"
@@ -50,170 +50,18 @@
               :title="canClickHeader ? `Xem thông tin KH: ${headerName}` : headerName"
               @click="onHeaderAvatarClick"
             >{{ headerName }}</div>
-            <span class="ch-gender-chip" :class="genderChipClass" :title="genderTitle">
-              <svg v-if="conversation.threadType === 'group'" class="gender-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-              </svg>
-              <svg v-else-if="contactGender === 'female'" class="gender-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M17 9.5C17 6.46 14.54 4 11.5 4S6 6.46 6 9.5c0 2.71 1.96 4.94 4.5 5.41V17H8v2h2.5v2.5h2V19H15v-2h-2.5v-2.09c2.54-.47 4.5-2.7 4.5-5.41zm-9 0C8 7.57 9.57 6 11.5 6S15 7.57 15 9.5S13.43 13 11.5 13S8 11.43 8 9.5z"/>
-              </svg>
-              <svg v-else-if="contactGender === 'male'" class="gender-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M19 4h-6v2h2.59l-4.13 4.13C10.65 9.42 9.36 9 8 9c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6c0-1.36-.42-2.65-1.13-3.74L17 7.41V10h2V4h0zM8 19c-2.21 0-4-1.79-4-4s1.79-4 4-4 4 1.79 4 4-1.79 4-4 4z"/>
-              </svg>
-              <svg v-else class="gender-svg" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 17h-2v-2h2v2zm2.07-7.75l-.9.92C13.45 12.9 13 13.5 13 15h-2v-.5c0-1.1.45-2.1 1.17-2.83l1.24-1.26c.37-.36.59-.86.59-1.41 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 .88-.36 1.68-.93 2.25z"/>
-              </svg>
-              <span class="gender-label">{{ genderLabel }}</span>
-            </span>
-            <!-- Gom 2 dòng 2026-06-06 (Anh chốt): deal-stage lên dòng 1 cạnh gender. -->
-            <ContactDealStageSelector
-              v-if="conversation.contact"
-              :contact-id="conversation.contact.id"
-              :current-status-id="conversation.contact.statusId ?? null"
-              :org-id="_authStore.user?.orgId ?? null"
-              @updated="onDealStageUpdated"
-            />
-            <!-- Tag Zalo Real — dòng 1 PHÍA SAU trạng thái (Anh chốt 2026-06-06). -->
-            <v-menu v-if="conversation.externalThreadId && conversation.zaloAccount" :close-on-content-click="false" location="bottom start">
-              <template #activator="{ props: actProps }">
-                <button v-bind="actProps" class="zlbl-trigger" :title="currentLabel ? `Đang gắn: ${currentLabel.text}` : 'Chưa gắn tag Zalo'">
-                  <!-- Logo Zalo thật (brand đa màu) — ĐỒNG BỘ với TagCrmBar + cột 2 (Anh chốt 2026-06-06).
-                       KHÔNG ép màu theo label; chỉ tên label mới ăn currentLabel.color. -->
-                  <ZaloBrandIcon class="zlbl-icon" :size="14" />
-                  <span v-if="currentLabel" class="zlbl-current-name" :style="`color: ${currentLabel.color}`">
-                    {{ currentLabel.emoji ? currentLabel.emoji + ' ' : '' }}{{ currentLabel.text }}
-                  </span>
-                  <span v-else class="zlbl-empty">Phân loại</span>
-                  <span class="zlbl-caret"><ChevronDownIcon :size="13" :stroke-width="2" /></span>
-                </button>
-              </template>
-              <div class="zlbl-dropdown zalo-native">
-                <div v-if="loadingAllLabels && !allLabels.length" class="zlbl-loading">Đang tải…</div>
-
-                <div v-else-if="!allLabels.length" class="zlbl-empty-state">
-                  Tài khoản chưa có thẻ phân loại nào.<br />
-                  <button class="zlbl-inline-sync" @click="onSyncLabels"><RefreshCwIcon :size="13" :stroke-width="2" /> Đồng bộ từ Zalo</button>
-                </div>
-
-                <div v-else class="zlbl-options">
-                  <button
-                    v-for="lbl in allLabels"
-                    :key="lbl.id"
-                    class="zlbl-option"
-                    :class="{ active: currentLabel?.id === lbl.id }"
-                    @click="onPickLabel(lbl)"
-                  >
-                    <span class="zlbl-flag" :style="`color: ${lbl.color}`"><FlagIcon :size="13" :stroke-width="2" /></span>
-                    <span class="zlbl-name">
-                      <span v-if="lbl.emoji">{{ lbl.emoji }} </span>{{ lbl.text }}
-                    </span>
-                    <span v-if="currentLabel?.id === lbl.id" class="zlbl-check"><CheckIcon :size="13" :stroke-width="2.2" /></span>
-                  </button>
-                </div>
-
-                <div class="zlbl-divider"></div>
-                <button class="zlbl-manage" @click="goToLabelsSettings">
-                  <span class="manage-icon"><SettingsIcon :size="14" :stroke-width="2" /></span>
-                  Quản lý thẻ phân loại
-                </button>
-              </div>
-            </v-menu>
           </div>
 
-          <!-- Row 2: chip meta gom 1 dòng (cùng-chăm + tag Zalo + nick + số tin + online) -->
-          <div class="ch-row-chips">
-            <span
-              v-if="cungChamCount >= 2"
-              class="ch-cung-cham-chip"
-              :title="cungChamTooltip"
-            >🤝 {{ cungChamCount }} sale</span>
-            <!-- Tag Zalo Real ĐÃ CHUYỂN lên dòng 1 (sau trạng thái) — Anh chốt 2026-06-06. -->
-            <span class="ch-sep" v-if="cungChamCount >= 2">|</span>
-            <!-- Gom 2 dòng 2026-06-06: nick + số tin + online dồn chung dòng 2 (cùng ch-row-chips).
-                 nick switcher: click → dropdown TẤT CẢ nick (Cách B) cho sale switch nick chat với KH. -->
-            <v-menu
-              v-if="conversation.zaloAccount && conversation.contact?.id"
-              :close-on-content-click="true"
-              location="bottom start"
-              @update:model-value="onNickMenuToggle"
-            >
-              <template #activator="{ props: nickProps }">
-                <span class="nick-switcher" v-bind="nickProps" title="Chọn nick để chat với KH này">
-                  <NickAvatarLock :privacy-mode="conversation.zaloAccount.privacyMode">
-                    <Avatar
-                      :src="conversation.zaloAccount.avatarUrl"
-                      :name="conversation.zaloAccount.displayName || 'Nick'"
-                      :size="22"
-                      :gradient-seed="conversation.zaloAccount.id"
-                      platform="zalo"
-                    />
-                  </NickAvatarLock>
-                  <span class="nick-name">
-                    {{ conversation.zaloAccount?.displayName || '—' }}
-                  </span>
-                  <span class="nick-caret"><ChevronDownIcon :size="13" :stroke-width="2" /></span>
-                </span>
-              </template>
-              <div class="nick-dd-panel">
-                <div class="nick-dd-header">Chọn nick chat với KH</div>
-                <div v-if="loadingNickCoverage" class="nick-dd-loading">Đang tải...</div>
-                <div v-else-if="nickCoverageList.length === 0" class="nick-dd-empty">
-                  KH chưa được nick CRM nào kết bạn
-                </div>
-                <button
-                  v-for="row in nickCoverageList"
-                  :key="row.zaloAccountId"
-                  class="nick-dd-item"
-                  :class="{ active: row.zaloAccountId === conversation.zaloAccount?.id, switching: switchingToNickId === row.zaloAccountId }"
-                  :disabled="switchingToNickId === row.zaloAccountId"
-                  @click="onPickNick(row)"
-                >
-                  <Avatar
-                    :src="row.avatarUrl"
-                    :name="row.displayName || 'Nick'"
-                    :size="28"
-                    :gradient-seed="row.zaloAccountId"
-                    platform="zalo"
-                  />
-                  <div class="nick-dd-info">
-                    <div class="nick-dd-name">{{ row.displayName || '—' }}</div>
-                    <div class="nick-dd-meta">
-                      <span class="nick-dd-status" :class="`status-${row.friendshipStatus}`">
-                        {{ friendshipStatusLabel(row.friendshipStatus) }}
-                      </span>
-                      <span v-if="row.zaloAccountId === conversation.zaloAccount?.id" class="nick-dd-current">đang dùng</span>
-                    </div>
-                  </div>
-                </button>
-              </div>
-            </v-menu>
-            <!-- Fallback nếu chưa có zaloAccount (legacy data) -->
-            <template v-else>
-              <NickAvatarLock v-if="conversation.zaloAccount" :privacy-mode="conversation.zaloAccount.privacyMode">
-                <Avatar :src="conversation.zaloAccount.avatarUrl" :name="conversation.zaloAccount.displayName || 'Nick'" :size="22" :gradient-seed="conversation.zaloAccount.id" platform="zalo" />
-              </NickAvatarLock>
-              <span class="nick-name">{{ conversation.zaloAccount?.displayName || '—' }}</span>
-            </template>
-            <!-- T11 2026-06-20: nick đã xóa → chip xám "Đã xóa" cạnh tên nick -->
-            <span v-if="isArchivedNick" class="nick-archived-chip" title="Nick này đã bị xóa khỏi CRM — chỉ xem lại lịch sử">Đã xóa</span>
-            <span class="ch-sep">|</span>
-            <span
-              class="msg-counts"
-              :title="`Tin nhắn 1-1 RIÊNG cặp nick × KH này: ${msgInCount} đến / ${msgOutCount} gửi. (Tổng toàn KH ${contactTotalIn}/${contactTotalOut} qua mọi nick chăm)`"
-            >
-              <span class="cnt-in">{{ msgInCount }}</span><ArrowDownLeftIcon class="cnt-arrow" :size="12" :stroke-width="2" />
-              <span class="cnt-out">{{ msgOutCount }}</span><ArrowUpRightIcon class="cnt-arrow" :size="12" :stroke-width="2" />
-            </span>
+          <!-- Row 2: online status (if available) -->
+          <div class="ch-row-chips" v-if="isVirtualConv || (showOnlineIndicator && lastOnlineLabel)">
             <!-- M53 2026-05-30: Virtual KH → chấm đỏ nháy + "KH chưa bật tìm kiếm Zalo công khai" -->
             <template v-if="isVirtualConv">
-              <span class="ch-sep">|</span>
               <span class="last-online is-virtual" :title="virtualTooltip">
                 <span class="online-dot" />
                 {{ virtualStatusLabel }}
               </span>
             </template>
             <template v-else-if="showOnlineIndicator && lastOnlineLabel">
-              <span class="ch-sep">|</span>
               <span class="last-online" :class="{ 'is-online': isOnline }">
                 <span class="online-dot" />
                 {{ lastOnlineLabel }}

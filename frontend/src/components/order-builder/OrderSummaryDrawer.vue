@@ -88,25 +88,6 @@
           @input="$emit('update-description', ($event.target as HTMLTextAreaElement).value)"
         />
       </div>
-
-      <!-- Section: Paid Amount -->
-      <div class="ob-drawer__section ob-drawer__section--bordered">
-        <h3 class="ob-drawer__section-title">
-          <Banknote :size="14" />
-          Thanh toán trước
-        </h3>
-        <div class="ob-drawer__paid-row">
-          <input
-            type="number"
-            :value="paidAmount"
-            class="ob-drawer__paid-input"
-            placeholder="0"
-            min="0"
-            @input="$emit('update-paid', Number(($event.target as HTMLInputElement).value) || 0)"
-          />
-          <span class="ob-drawer__paid-unit">đ</span>
-        </div>
-      </div>
     </div>
 
     <!-- Pricing Footer -->
@@ -123,16 +104,6 @@
         <div class="ob-drawer__pricing-row ob-drawer__pricing-row--total">
           <span>Tổng cộng đơn hàng:</span>
           <span class="ob-drawer__pricing-grand">{{ formatVND(grandTotal) }}</span>
-        </div>
-        <div v-if="paidAmount > 0" class="ob-drawer__pricing-row">
-          <span>Đã thanh toán:</span>
-          <span class="ob-mono ob-text-bold">{{ formatVND(paidAmount) }}</span>
-        </div>
-        <div v-if="paidAmount > 0" class="ob-drawer__pricing-row">
-          <span>Còn nợ:</span>
-          <span class="ob-mono" style="font-weight: 700; color: #ef4444">
-            {{ formatVND(Math.max(0, grandTotal - paidAmount)) }}
-          </span>
         </div>
       </div>
 
@@ -158,7 +129,7 @@
 import { computed } from 'vue';
 import {
   X, FileText, User, ShoppingBag, CheckSquare,
-  Loader2, Banknote,
+  Loader2,
 } from 'lucide-vue-next';
 import type { CustomerInfo, CartItem, POSBranch } from './types';
 import { formatVND, PAYMENT_METHODS } from './types';

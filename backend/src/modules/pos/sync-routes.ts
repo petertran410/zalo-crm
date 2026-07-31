@@ -131,6 +131,99 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // Helper to trigger sync for any entity
+  const triggerEntitySync = async (orgId: string, userId: string, entity: string, reply: FastifyReply) => {
+    const activeJob = await prisma.syncJob.findFirst({
+      where: {
+        orgId,
+        entity,
+        status: { in: ['Pending', 'Running'] }
+      }
+    });
+
+    if (activeJob) {
+      return reply.status(400).send({
+        error: `Tiến trình đồng bộ ${entity} đang được chạy.`,
+        jobId: activeJob.id
+      });
+    }
+
+    const job = await prisma.syncJob.create({
+      data: {
+        orgId,
+        userId,
+        entity,
+        status: 'Pending',
+      }
+    });
+
+    void runBackgroundSync(orgId, job.id).catch((err) => {
+      logger.error(`[sync-routes] Background worker failed to start for job ${job.id}:`, err);
+    });
+
+    return { jobId: job.id, status: 'Pending' };
+  };
+
+  // POST /api/v1/sync/orders — start background order sync (admin only)
+  app.post(
+    '/api/v1/sync/orders',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        return await triggerEntitySync(orgId, userId, 'Order', reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] Start order sync failed:', err);
+        return reply.status(500).send({ error: 'Failed to start order sync' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/invoices — start background invoice sync (admin only)
+  app.post(
+    '/api/v1/sync/invoices',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        return await triggerEntitySync(orgId, userId, 'Invoice', reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] Start invoice sync failed:', err);
+        return reply.status(500).send({ error: 'Failed to start invoice sync' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/inventory — start background inventory sync (admin only)
+  app.post(
+    '/api/v1/sync/inventory',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        return await triggerEntitySync(orgId, userId, 'BranchInventory', reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] Start inventory sync failed:', err);
+        return reply.status(500).send({ error: 'Failed to start inventory sync' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/all — start full POS pipeline sync (admin only)
+  app.post(
+    '/api/v1/sync/all',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        return await triggerEntitySync(orgId, userId, 'All', reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] Start all sync failed:', err);
+        return reply.status(500).send({ error: 'Failed to start full pipeline sync' });
+      }
+    }
+  );
+
   // POST /api/v1/sync/jobs/:id/retry — retry a failed sync job (admin only)
   app.post(
     '/api/v1/sync/jobs/:id/retry',

@@ -63,10 +63,18 @@ export function useSync() {
     }
   };
 
-  const startSync = async (entity: 'Customer' | 'Product') => {
+  const startSync = async (entity: 'Customer' | 'Product' | 'Order' | 'Invoice' | 'BranchInventory' | 'All') => {
     if (!authStore.isAdmin) return;
     try {
-      const path = entity === 'Customer' ? '/sync/customers' : '/sync/products';
+      let path = '/sync/all';
+      switch (entity) {
+        case 'Customer': path = '/sync/customers'; break;
+        case 'Product': path = '/sync/products'; break;
+        case 'Order': path = '/sync/orders'; break;
+        case 'Invoice': path = '/sync/invoices'; break;
+        case 'BranchInventory': path = '/sync/inventory'; break;
+        case 'All': path = '/sync/all'; break;
+      }
       const res = await api.post(path);
       await fetchJobs();
       return res.data;

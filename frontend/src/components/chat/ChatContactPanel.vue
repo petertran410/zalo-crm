@@ -28,8 +28,29 @@
               class="sp-name-input"
               @blur="saveContact"
             />
-            <div class="sp-uid-row" v-if="props.contact?.zaloUid">
-              <span class="sp-uid-badge">UID: {{ props.contact.zaloUid }}</span>
+            <div class="sp-pos-badge-row">
+              <span
+                v-if="posLinkStatus.linked"
+                class="sp-pos-badge sp-pos-badge-linked"
+                :title="posLinkStatus.posCustomerCode ? `Mã KH: ${posLinkStatus.posCustomerCode}` : undefined"
+              >
+                <span class="material-symbols-outlined sp-pos-badge-icon">verified</span>
+                Đã liên kết POS
+              </span>
+              <span
+                v-else-if="posLinkStatus.autoSuggest"
+                class="sp-pos-badge sp-pos-badge-suggest"
+              >
+                <span class="material-symbols-outlined sp-pos-badge-icon">find_replace</span>
+                Trùng SĐT trên POS
+              </span>
+              <span
+                v-else
+                class="sp-pos-badge sp-pos-badge-unlinked"
+              >
+                <span class="material-symbols-outlined sp-pos-badge-icon">link_off</span>
+                Chưa liên kết POS
+              </span>
             </div>
           </div>
         </div>
@@ -62,50 +83,156 @@
           </div>
         </div>
 
-        <!-- Customer Type chip row -->
-        <div class="sp-type-row">
-          <span class="sp-type-label">🏷️ Loại KH:</span>
-          <span
-            class="sp-type-chip"
-            :class="{
-              'sp-chip-vip': customerType === 'VIP',
-              'sp-chip-loyal': customerType === 'Thân thiết',
-              'sp-chip-new': customerType === 'Mới',
-            }"
-          >{{ customerType || 'Chưa phân loại' }}</span>
-          <select v-model="customerType" class="sp-type-ghost-select" title="Đổi loại KH">
-            <option value="Mới">Mới</option>
-            <option value="Thân thiết">Thân thiết</option>
-            <option value="VIP">VIP</option>
-          </select>
-        </div>
+        <!-- ── POS Status Block (Header) ── -->
+        <section v-if="props.contactId" class="sp-pos-overview-block mt-2">
+          <!-- Loading -->
+          <div v-if="loadingStatus" class="sp-pos-loading">
+            <v-progress-circular indeterminate size="14" width="2" color="primary" />
+            <span>Đang kiểm tra POS...</span>
+          </div>
+
+          <!-- Đã liên kết -->
+          <template v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer">
+            <div class="sp-pos-linked-row">
+              <div class="sp-pos-linked-info">
+                <div class="sp-pos-linked-name">{{ posLinkStatus.posCustomer.name }}</div>
+                <div class="sp-pos-linked-meta">
+                  <span class="sp-pos-code-chip">{{ posLinkStatus.posCustomerCode }}</span>
+                  <span v-if="posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber">
+                    · {{ posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber }}
+                  </span>
+                </div>
+                <div v-if="posLinkStatus.posCustomer.address" class="sp-pos-address">
+                  📍 {{ posLinkStatus.posCustomer.address }}
+                </div>
+              </div>
+              <div class="sp-pos-linked-actions">
+                <v-btn
+                  size="x-small"
+                  variant="tonal"
+                  color="primary"
+                  density="comfortable"
+                  class="text-none font-weight-medium"
+                  @click="openEditCustomerForm"
+                >
+                  <span class="material-symbols-outlined mr-1" style="font-size: 13px;">edit</span>
+                  Sửa
+                </v-btn>
+
+                <v-menu location="bottom end">
+                  <template #activator="{ props: menuProps }">
+                    <v-btn
+                      icon
+                      size="x-small"
+                      variant="text"
+                      color="grey-darken-1"
+                      density="comfortable"
+                      v-bind="menuProps"
+                      title="Thao tác khác"
+                      class="ml-1"
+                    >
+                      <span class="material-symbols-outlined" style="font-size: 18px;">more_vert</span>
+                    </v-btn>
+                  </template>
+                  <v-list density="compact" class="py-1 rounded-lg shadow-md" style="min-width: 140px;">
+                    <v-list-item @click="posLinkSearchOpen = true" class="text-caption">
+                      <template #prepend>
+                        <span class="material-symbols-outlined mr-2 text-primary" style="font-size: 16px;">sync_alt</span>
+                      </template>
+                      <v-list-item-title class="font-weight-medium">Đổi liên kết</v-list-item-title>
+                    </v-list-item>
+
+                    <v-divider class="my-1" />
+
+                    <v-list-item @click="performUnlink" :disabled="unlinking" class="text-caption text-error">
+                      <template #prepend>
+                        <span class="material-symbols-outlined mr-2 text-error" style="font-size: 16px;">link_off</span>
+                      </template>
+                      <v-list-item-title class="font-weight-medium">Hủy liên kết</v-list-item-title>
+                    </v-list-item>
+                  </v-list>
+                </v-menu>
+              </div>
+            </div>
+          </template>
+
+          <!-- Auto-suggest: tìm thấy trùng SĐT -->
+          <template v-else-if="posLinkStatus.autoSuggest && posLinkStatus.posCustomer">
+            <div class="sp-pos-suggest-banner">
+              <div class="sp-pos-suggest-text">
+                Tìm thấy trùng SĐT trên POS:
+                <strong>{{ posLinkStatus.posCustomer.name }}</strong>
+                ({{ posLinkStatus.posCustomer.code }})
+              </div>
+              <div class="sp-pos-suggest-actions">
+                <v-btn size="x-small" color="primary" variant="flat" class="text-none" @click="performQuickLink" :loading="linking">
+                  Liên kết ngay
+                </v-btn>
+                <v-btn size="x-small" variant="text" color="primary" class="text-none" @click="posLinkSearchOpen = true">
+                  Tìm khách khác
+                </v-btn>
+                <v-btn size="x-small" variant="text" color="grey-darken-1" class="text-none" @click="openCreateCustomerForm">
+                  Tạo mới
+                </v-btn>
+              </div>
+            </div>
+          </template>
+
+          <!-- Chưa liên kết -->
+          <template v-else>
+            <div class="sp-pos-unlinked">
+              <span class="sp-pos-unlinked-text">Chưa có trên POS</span>
+              <div class="sp-pos-unlinked-actions">
+                <v-btn size="x-small" color="primary" variant="flat" class="text-none" @click="posLinkSearchOpen = true">
+                  🔍 Liên kết KH
+                </v-btn>
+                <v-btn size="x-small" color="grey" variant="outlined" class="text-none" @click="openCreateCustomerForm">
+                  ➕ Tạo mới
+                </v-btn>
+              </div>
+            </div>
+          </template>
+        </section>
       </div>
 
       <!-- ══════════════════════════════════════════
            SP PILL TABS — bo tròn pill-style
            ══════════════════════════════════════════ -->
+      <!-- ══ SP PILL TABS — Material Symbols ══ -->
       <nav class="sp-pill-nav">
         <div class="sp-pill-tabs">
           <button
             class="sp-pill-tab"
             :class="{ active: salesTab === 'overview' }"
             @click="salesTab = 'overview'"
-          >📋 Overview</button>
+          >
+            <span class="material-symbols-outlined sp-tab-icon">dashboard</span>
+            Overview
+          </button>
           <button
             class="sp-pill-tab"
             :class="{ active: salesTab === 'orders' }"
             @click="salesTab = 'orders'"
-          >🛒 Đơn hàng</button>
+          >
+            <span class="material-symbols-outlined sp-tab-icon">receipt_long</span>
+            Đơn hàng
+          </button>
           <button
             class="sp-pill-tab"
             :class="{ active: salesTab === 'appointment' }"
             @click="salesTab = 'appointment'"
-          >📅 Lịch hẹn</button>
+          >
+            <span class="material-symbols-outlined sp-tab-icon">calendar_month</span>
+            Lịch hẹn
+          </button>
           <button
             class="sp-pill-tab"
             :class="{ active: salesTab === 'notes' }"
             @click="salesTab = 'notes'"
-          >📝 Ghi chú</button>
+          >
+            <span class="material-symbols-outlined sp-tab-icon">edit_note</span>
+            Ghi chú
+          </button>
         </div>
       </nav>
 
@@ -117,175 +244,243 @@
         <!-- ─── OVERVIEW TAB ─── -->
         <div v-show="salesTab === 'overview'" class="sp-pane">
 
-          <!-- Customer 360 Glass Card -->
-          <div class="sp-glass-card">
-            <div class="sp-card-header">
-              <span class="sp-card-icon">📊</span>
-              <span class="sp-card-title">Customer 360</span>
-              <span class="sp-card-badge-mvp">MVP</span>
-            </div>
-            <div class="sp-c360-grid">
-              <div class="sp-c360-stat">
-                <span class="sp-c360-label">Công nợ</span>
+          <!-- ── Customer 360: section header ── -->
+          <div class="sp-section-header">
+            <span class="material-symbols-outlined sp-section-icon">monitoring</span>
+            <span class="sp-section-title">Customer 360</span>
+          </div>
+
+          <!-- Customer 360 stats — chỉ hiển khi đã liên kết POS -->
+          <div v-if="posLinkStatus.linked" class="sp-c360-grid">
+
+            <!-- Hàng 1: Công nợ thực tế | Công nợ dự tính -->
+            <div class="sp-c360-stat">
+              <span class="sp-c360-label">Nợ thực tế</span>
+              <div class="sp-c360-debt-row">
+                <span
+                  v-if="(orderSummary?.actualDebt ?? 0) > 0"
+                  class="material-symbols-outlined sp-debt-warn"
+                >warning</span>
                 <span
                   class="sp-c360-val"
-                  :class="posLinkStatus.posCustomer?.debt && posLinkStatus.posCustomer.debt !== '0đ' ? 'sp-val-danger' : 'sp-val-ok'"
-                >{{ posLinkStatus.posCustomer?.debt || '0đ' }}</span>
+                  :class="(orderSummary?.actualDebt ?? 0) > 0 ? 'sp-val-danger' : 'sp-val-ok'"
+                >{{ orderSummary ? fmtVnd(orderSummary.actualDebt) : (posLinkStatus.posCustomer?.debt || '0đ') }}</span>
               </div>
-              <div class="sp-c360-stat">
-                <span class="sp-c360-label">Tổng đơn</span>
-                <span class="sp-c360-val sp-val-primary">{{ posLinkStatus.posCustomer?.totalOrders || '0' }} đơn</span>
-              </div>
-              <div class="sp-c360-stat sp-c360-full">
-                <span class="sp-c360-label">Đơn gần nhất</span>
-                <span class="sp-c360-val">{{ posLinkStatus.posCustomer?.lastOrder || 'Chưa có' }}</span>
-              </div>
-              <div class="sp-c360-stat sp-c360-full">
-                <span class="sp-c360-label">Tương tác cuối</span>
-                <span class="sp-c360-val">{{ cockpit?.lastInboundAt ? relativeTime(cockpit.lastInboundAt) : 'Chưa rõ' }}</span>
-              </div>
+              <span class="sp-c360-sublabel">Đơn đã xác nhận</span>
             </div>
+
+            <div class="sp-c360-stat">
+              <span class="sp-c360-label">Nợ dự tính</span>
+              <span
+                class="sp-c360-val"
+                :class="(orderSummary?.estimatedDebt ?? 0) > 0 ? 'sp-val-warn' : ''"
+              >{{ orderSummary ? fmtVnd(orderSummary.estimatedDebt) : '—' }}</span>
+              <span class="sp-c360-sublabel">Phiếu tạm chưa chốt</span>
+            </div>
+
+            <!-- Hàng 2: Đơn xác nhận | Phiếu tạm -->
+            <div class="sp-c360-stat">
+              <span class="sp-c360-label">Đơn xác nhận</span>
+              <span class="sp-c360-val sp-val-primary">
+                {{ orderSummary ? (orderSummary.confirmedCount + orderSummary.doneCount) : (posLinkStatus.posCustomer?.totalOrders || '0') }} đơn
+              </span>
+            </div>
+
+            <div class="sp-c360-stat">
+              <span class="sp-c360-label">Phiếu tạm</span>
+              <span
+                class="sp-c360-val"
+                :class="(orderSummary?.draftCount ?? 0) > 0 ? 'sp-val-warn' : ''"
+              >{{ orderSummary?.draftCount ?? '—' }} đơn</span>
+            </div>
+
+            <!-- Hàng 3: Đơn gần nhất (full width) -->
+            <div class="sp-c360-stat sp-c360-full">
+              <span class="sp-c360-label">Đơn gần nhất</span>
+              <span class="sp-c360-val">
+                <template v-if="orderSummary?.lastOrderCode">
+                  {{ orderSummary.lastOrderCode }}
+                  <span class="sp-c360-sublabel ml-1">{{ orderSummary.lastOrderAt ? shortDate(orderSummary.lastOrderAt) : '' }}</span>
+                </template>
+                <template v-else>{{ posLinkStatus.posCustomer?.lastOrder || 'Chưa có' }}</template>
+              </span>
+            </div>
+
+            <!-- Hàng 4: Tương tác cuối (full width) -->
+            <div class="sp-c360-stat sp-c360-full">
+              <span class="sp-c360-label">Tương tác cuối</span>
+              <span class="sp-c360-val">{{ cockpit?.lastInboundAt ? relativeTime(cockpit.lastInboundAt) : 'Chưa rõ' }}</span>
+            </div>
+
           </div>
 
-          <!-- Follow-up & Nhắc hẹn Glass Card -->
-          <div class="sp-glass-card">
-            <div class="sp-card-header">
-              <span class="sp-card-icon">🎯</span>
-              <span class="sp-card-title">Follow-up & Nhắc hẹn</span>
-              <span v-if="contactAppointments.length > 0" class="sp-card-badge-count">{{ contactAppointments.length }}</span>
-            </div>
-            <div v-if="contactAppointments.length > 0" class="sp-appt-list">
-              <div
-                v-for="apt in contactAppointments.slice(0, 2)"
-                :key="apt.id"
-                class="sp-appt-item"
-              >
-                <span class="sp-appt-icon">📅</span>
-                <div class="sp-appt-info">
-                  <span class="sp-appt-date">{{ shortDate(apt.appointmentDate) }} {{ apt.appointmentTime || '' }}</span>
-                  <span class="sp-appt-note">{{ apt.notes || 'Không có ghi chú' }}</span>
-                </div>
-              </div>
-            </div>
-            <div v-else class="sp-empty-state">
-              <span class="sp-empty-icon">🗓️</span>
-              <span class="sp-empty-text">Không có lịch hẹn sắp tới</span>
-            </div>
+          <!-- Empty state khi chưa liên kết POS -->
+          <div v-else class="sp-c360-unlinked-state">
+            <span class="material-symbols-outlined sp-c360-unlinked-icon">link_off</span>
+            <div class="sp-c360-unlinked-text">Chưa liên kết POS</div>
+            <div class="sp-c360-unlinked-hint">Liên kết khách hàng POS để xem thống kê đơn hàng</div>
           </div>
 
-          <!-- Customer Intelligence — Coming Soon Card -->
-          <div class="sp-coming-soon-card">
-            <div class="sp-cs-header">
-              <span class="sp-card-icon">🧠</span>
-              <span class="sp-card-title">Customer Intelligence</span>
-              <span class="sp-cs-badge">🔒 Sắp ra mắt</span>
-            </div>
-            <div class="sp-cs-body">
-              <span class="sp-cs-preview">CLV · RFM · Churn · Health Score</span>
-              <span class="sp-cs-desc">Phân tích hành vi mua hàng &amp; dự báo rủi ro khách rời bỏ</span>
-            </div>
+          <!-- ── Customer 360 POS Widgets (Debt & Branch Inventory) ── -->
+          <div class="my-3">
+            <CustomerDebtWidget
+              :contact-id="props.contactId"
+              :customer-name="props.contact?.fullName || headerFullName"
+              :is-pos-linked="posLinkStatus.linked"
+              @insert-debt-reminder="onInsertSuggestionText"
+            />
           </div>
 
-          <!-- Timeline — Coming Soon Card -->
-          <div class="sp-coming-soon-card">
-            <div class="sp-cs-header">
-              <span class="sp-card-icon">⏳</span>
-              <span class="sp-card-title">Timeline</span>
-              <span class="sp-cs-badge">🔒 Sắp ra mắt</span>
-            </div>
-            <div class="sp-cs-body">
-              <span class="sp-cs-preview">Bám đuổi sự kiện khách hàng</span>
-              <span class="sp-cs-desc">Ghi lại toàn bộ hành trình tương tác theo dòng thời gian</span>
-            </div>
+          <div class="my-3">
+            <BranchInventoryWidget @insert-inventory-info="onInsertSuggestionText" />
+          </div>
+
+          <!-- ── CTA chính: Tạo đơn hàng ── -->
+          <button
+            class="sp-cta-primary"
+            :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
+            :class="{ 'sp-cta-disabled': !posLinkStatus.linked || !orderDraftStore.canOpenNew }"
+            :title="!orderDraftStore.canOpenNew ? (!orderDraftStore.drafts.some(d => !d.isMinimized) ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.' : 'Hãy thu nhỏ đơn hiện tại trước') : ''"
+            @click="openOrderForContact"
+          >
+            <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
+            Tạo đơn hàng
+          </button>
+
+
+          <!-- ── Coming Soon: 1 dòng xám nhạt ── -->
+          <div class="sp-future-hint">
+            <span class="material-symbols-outlined sp-future-icon">auto_awesome</span>
+            Customer Intelligence · Timeline — Sắp ra mắt
           </div>
 
         </div><!-- /OVERVIEW TAB -->
 
         <!-- ─── ORDERS TAB ─── -->
         <div v-show="salesTab === 'orders'" class="sp-pane sp-pane-padded">
-          <section class="ip-section orders-section">
-            <div class="orders-header d-flex justify-space-between align-center mb-3">
-              <span class="font-weight-bold text-caption text-grey-darken-3">🛒 POS KiotViet</span>
-              <v-btn
-                size="small"
-                color="primary"
-                variant="flat"
-                class="text-none create-order-btn"
-                style="background-color: #0284c7; color: white;"
-                @click="showCreateOrderDialog = true"
-              >
-                Tạo đơn hàng
-              </v-btn>
+          <CustomerOrdersWidget
+            :contact-id="props.contactId"
+            :is-pos-linked="posLinkStatus.linked"
+            :pos-customer-id="posLinkStatus.posCustomerId"
+            :pos-customer-code="posLinkStatus.posCustomerCode"
+            :customer-name="props.contact?.fullName || headerFullName"
+            :customer-phone="props.contact?.phone"
+            @create-order="openOrderForContact"
+            @open-detail="openOrderDetail"
+          />
+
+          <!-- Header: tiêu đề (không có nút Tạo đơn — đặt ở Overview tab) -->
+          <div class="sp-orders-header">
+            <div class="sp-orders-title">
+              <span class="material-symbols-outlined" style="font-size:16px;color:#64a8d8">receipt_long</span>
+              <span>Đơn hàng</span>
+              <span v-if="posLinkStatus.linked && contactOrders.length > 0" class="sp-orders-count">{{ contactOrders.length }}</span>
             </div>
+          </div>
 
-            <v-card variant="flat" class="border pa-3 rounded-lg bg-grey-lighten-5">
-              <div v-if="loadingStatus" class="d-flex align-center justify-center py-2">
-                <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
-                <span class="text-caption text-grey-darken-1">Đang kiểm tra POS...</span>
-              </div>
-              <div v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer" class="pos-linked-info text-caption">
-                <div class="text-subtitle-2 font-weight-bold slate-dark mb-1">
-                  {{ posLinkStatus.posCustomer.name }}
-                </div>
-                <div>SĐT: {{ posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber || '—' }}</div>
-                <div>Mã khách hàng: {{ posLinkStatus.posCustomerCode }}</div>
-                <div class="mt-2 pt-2 border-top">
-                  <div>Tổng tiền hàng: <strong class="text-primary">{{ posLinkStatus.posCustomer.totalOrders || '0' }} đơn</strong></div>
-                  <div>Nợ hiện tại: <strong class="text-error">{{ posLinkStatus.posCustomer.debt || '0đ' }}</strong></div>
-                  <div>Lần mua cuối: <strong>{{ posLinkStatus.posCustomer.lastOrder || 'Chưa rõ' }}</strong></div>
-                </div>
-              </div>
-              <div v-else class="pos-not-linked-info text-center py-1">
-                <p class="text-caption text-grey-darken-1 mb-2">Chưa liên kết POS.</p>
-                <v-btn size="small" color="primary" variant="flat" class="text-none" style="background-color: #0284c7; color: white;" @click="openCreateCustomerForm">
-                  Tạo khách hàng POS
-                </v-btn>
-              </div>
-            </v-card>
-          </section>
-
-          <!-- Orders list from Read Model -->
-          <section class="ip-section mt-3">
-            <div class="section-subtitle font-weight-bold mb-2 text-caption text-grey-darken-3">Đơn hàng gần đây</div>
-            <div v-if="ordersLoading" class="d-flex align-center justify-center py-3">
+          <!-- Orders list from Read Model — chỉ hiển khi đã liên kết POS -->
+          <section class="ip-section">
+            <div v-if="ordersLoading" class="d-flex align-center justify-center py-4">
               <v-progress-circular indeterminate size="18" width="2" color="primary" class="mr-2" />
               <span class="text-caption text-grey-darken-1">Đang tải đơn hàng...</span>
             </div>
-            <div v-else-if="contactOrders.length > 0" class="orders-list d-flex flex-column gap-2">
-              <div
-                v-for="order in contactOrders"
-                :key="order.id"
-                class="order-item border pa-2 rounded bg-white text-caption"
-              >
-                <div class="omi-head d-flex justify-space-between font-weight-bold">
-                  <span class="omi-code text-primary">{{ order.code }}</span>
-                  <span
-                    class="omi-status"
-                    :class="{
-                      'text-success': order.orderStatus === 'Completed' || order.orderStatus === 'Confirmed',
-                      'text-warning': order.orderStatus === 'Draft',
-                      'text-error': order.orderStatus === 'Cancelled',
-                    }"
-                  >
-                    {{ order.orderStatus === 'Completed' ? 'Hoàn thành'
-                      : order.orderStatus === 'Confirmed' ? 'Đã xác nhận'
-                      : order.orderStatus === 'Cancelled' ? 'Đã hủy'
-                      : order.orderStatus }}
-                  </span>
-                </div>
-                <div class="omi-details text-grey-darken-2 mt-1">
-                  <span v-for="(item, idx) in order.items.slice(0, 2)" :key="idx">
-                    {{ item.productName }} (SL: {{ item.quantity }}){{ idx < Math.min(order.items.length, 2) - 1 ? ', ' : '' }}
-                  </span>
-                  <span v-if="order.items.length > 2" class="text-grey"> +{{ order.items.length - 2 }} sản phẩm</span>
-                </div>
-                <div class="omi-footer d-flex justify-space-between mt-1 pt-1 border-top">
-                  <span class="text-grey">{{ shortDate(order.createdAt) }}</span>
-                  <span class="font-weight-bold font-mono text-primary">{{ new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(order.grandTotal) }}</span>
+
+            <!-- Chưa liên kết POS -->
+            <div v-else-if="!posLinkStatus.linked" class="sp-orders-unlinked">
+              <span class="material-symbols-outlined sp-orders-unlinked-icon">link_off</span>
+              <div class="sp-orders-unlinked-title">Chưa liên kết POS</div>
+              <div class="sp-orders-unlinked-hint">Liên kết khách hàng với POS để xem lịch sử đơn hàng</div>
+              <v-btn size="small" color="primary" variant="tonal" class="text-none mt-2" @click="posLinkSearchOpen = true">
+                <span class="material-symbols-outlined mr-1" style="font-size:14px">link</span>
+                Liên kết ngay
+              </v-btn>
+            </div>
+
+            <!-- Đã có đơn hàng -->
+            <template v-else-if="contactOrders.length > 0">
+              <!-- KHUNG DANH SÁCH THẺ ĐƠN HÀNG -->
+              <div class="sp-orders-cards-container">
+                <div
+                  v-for="order in paginatedOrders"
+                  :key="order.id"
+                  class="sp-order-card"
+                  @click="openOrderDetail(order)"
+                >
+                  <!-- Card Header -->
+                  <div class="sp-order-card__header">
+                    <div class="sp-order-card__code-wrap">
+                      <span class="material-symbols-outlined sp-order-card__code-icon">receipt_long</span>
+                      <span class="sp-order-card__code">{{ order.code }}</span>
+                    </div>
+
+                    <!-- Status Badge -->
+                    <span
+                      class="sp-order-card__status"
+                      :class="getOrderStatusClass(order.orderStatus)"
+                    >
+                      <span class="sp-order-card__status-dot"></span>
+                      <span>{{ getOrderStatusLabel(order.orderStatus) }}</span>
+                    </span>
+                  </div>
+
+                  <!-- Products Summary -->
+                  <div class="sp-order-card__products">
+                    <div
+                      v-for="(item, idx) in order.items.slice(0, 2)"
+                      :key="idx"
+                      class="sp-order-card__item-row"
+                    >
+                      <span class="sp-order-card__item-name" :title="item.productName">{{ item.productName }}</span>
+                      <span class="sp-order-card__item-qty">(SL: {{ item.quantity }})</span>
+                    </div>
+                    <div v-if="order.items.length > 2" class="sp-order-card__more">
+                      +{{ order.items.length - 2 }} sản phẩm khác
+                    </div>
+                  </div>
+
+                  <!-- Footer Row -->
+                  <div class="sp-order-card__footer">
+                    <div class="sp-order-card__date">
+                      <span class="material-symbols-outlined sp-order-card__date-icon">schedule</span>
+                      <span>{{ shortDate(order.createdAt) }}</span>
+                    </div>
+                    <div class="sp-order-card__price">
+                      {{ formatVndFull(order.grandTotal) }}
+                    </div>
+                  </div>
+
+                  <!-- Hover hint -->
+                  <div class="sp-order-card__hover-hint">
+                    <span>Chi tiết</span>
+                    <span class="material-symbols-outlined" style="font-size:12px">arrow_forward</span>
+                  </div>
                 </div>
               </div>
-            </div>
-            <div v-else class="text-caption text-grey-darken-1 text-center py-2">Chưa có đơn hàng nào.</div>
+
+              <!-- THANH PHÂN TRANG CỐ ĐỊNH NẰM NGOÀI BOX ĐƠN HÀNG -->
+              <div class="sp-orders-pagination-bar">
+                <button
+                  class="sp-pg-btn"
+                  :disabled="ordersPage <= 1"
+                  @click="ordersPage--"
+                  title="Trang trước"
+                >
+                  ‹
+                </button>
+                <span class="sp-pg-text">
+                  Trang <strong>{{ ordersPage }}</strong> / {{ totalOrdersPages }}
+                </span>
+                <button
+                  class="sp-pg-btn"
+                  :disabled="ordersPage >= totalOrdersPages"
+                  @click="ordersPage++"
+                  title="Trang sau"
+                >
+                  ›
+                </button>
+              </div>
+            </template>
+            <div v-else class="text-caption text-grey-darken-1 text-center py-4">Chưa có đơn hàng nào.</div>
           </section>
         </div><!-- /ORDERS TAB -->
 
@@ -311,16 +506,7 @@
 
       </div><!-- /sp-tab-content -->
 
-      <!-- Create Order Dialog -->
-      <CreateOrderModal
-        v-model="showCreateOrderDialog"
-        :contact-id="props.contactId"
-        :contact-name="headerFullName"
-        :contact-phone="props.contact?.phone"
-        :pos-customer-id="posLinkStatus.posCustomerId"
-        :pos-customer-code="posLinkStatus.posCustomerCode"
-        @order-created="onOrderCreated"
-      />
+      <!-- Create Order Dialog is now handled globally via useOrderDraftStore + DefaultLayout -->
 
       <!-- Customer Form Dialog (Tạo/Sửa khách hàng POS) — phải có ở đây để hoạt động với Sales workspace -->
       <PosCustomerForm
@@ -330,7 +516,25 @@
         @success="onCustomerFormSuccess"
       />
 
+      <!-- POS Link Search Dialog — tìm kiếm và liên kết KH POS (2-layer search + confirm) -->
+      <PosLinkSearchDialog
+        v-if="props.contactId"
+        v-model="posLinkSearchOpen"
+        :contact-id="props.contactId!"
+        :contact-name="headerFullName"
+        :contact-phone="props.contact?.phone"
+        @linked="onPosLinked"
+        @create-new="openCreateCustomerForm"
+      />
+
+      <!-- Order Detail Modal -->
+      <OrderDetailModal
+        v-model="showOrderDetailDialog"
+        :order="selectedOrderForDetail"
+      />
+
     </template><!-- /Sales & CS panel -->
+
 
     <template v-else>
       <!-- ════════ HEADER: Phase 8.C Score Banner (3 stat cards + avatar below) ════════ -->
@@ -578,16 +782,53 @@
                     📍 {{ posLinkStatus.posCustomer.address }}
                   </div>
                 </div>
-                <v-btn
-                  size="small"
-                  variant="outlined"
-                  color="primary"
-                  density="comfortable"
-                  class="text-none ml-2"
-                  @click="openEditCustomerForm"
-                >
-                  Sửa
-                </v-btn>
+                <div class="d-flex align-center">
+                  <v-btn
+                    size="small"
+                    variant="tonal"
+                    color="primary"
+                    density="comfortable"
+                    class="text-none font-weight-medium ml-2"
+                    @click="openEditCustomerForm"
+                  >
+                    <span class="material-symbols-outlined mr-1" style="font-size: 14px;">edit</span>
+                    Sửa
+                  </v-btn>
+
+                  <v-menu location="bottom end">
+                    <template #activator="{ props: menuProps }">
+                      <v-btn
+                        icon
+                        size="small"
+                        variant="text"
+                        color="grey-darken-1"
+                        density="comfortable"
+                        v-bind="menuProps"
+                        title="Thao tác khác"
+                        class="ml-1"
+                      >
+                        <span class="material-symbols-outlined" style="font-size: 18px;">more_vert</span>
+                      </v-btn>
+                    </template>
+                    <v-list density="compact" class="py-1 rounded-lg shadow-md" style="min-width: 140px;">
+                      <v-list-item @click="posLinkSearchOpen = true" class="text-caption">
+                        <template #prepend>
+                          <span class="material-symbols-outlined mr-2 text-primary" style="font-size: 16px;">sync_alt</span>
+                        </template>
+                        <v-list-item-title class="font-weight-medium">Đổi liên kết</v-list-item-title>
+                      </v-list-item>
+
+                      <v-divider class="my-1" />
+
+                      <v-list-item @click="performUnlink" :disabled="unlinking" class="text-caption text-error">
+                        <template #prepend>
+                          <span class="material-symbols-outlined mr-2 text-error" style="font-size: 16px;">link_off</span>
+                        </template>
+                        <v-list-item-title class="font-weight-medium">Hủy liên kết</v-list-item-title>
+                      </v-list-item>
+                    </v-list>
+                  </v-menu>
+                </div>
               </div>
             </div>
 
@@ -1033,6 +1274,10 @@ import { displayPhone, displayPhoneIntl } from '@/composables/use-phone-format';
 import ChatAppointments from './ChatAppointments.vue';
 import { usePosCommands } from '@/composables/use-pos-commands';
 import PosCustomerForm from '@/components/pos/PosCustomerForm.vue';
+import PosLinkSearchDialog from '@/components/pos/PosLinkSearchDialog.vue';
+import CustomerDebtWidget from '@/components/pos/CustomerDebtWidget.vue';
+import BranchInventoryWidget from '@/components/pos/BranchInventoryWidget.vue';
+import CustomerOrdersWidget from '@/components/pos/CustomerOrdersWidget.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';
@@ -1040,7 +1285,11 @@ import AddFlowModal from './AddFlowModal.vue';
 import MediaTabPanel from './MediaTabPanel.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ContactDealStageSelector from '@/components/chat/ContactDealStageSelector.vue';
-import CreateOrderModal from '../order-builder/VisualOrderModal.vue';
+import OrderDetailModal from './OrderDetailModal.vue';
+import { useOrderDraftStore } from '@/stores/use-order-drafts';
+
+const orderDraftStore = useOrderDraftStore();
+
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
 import { api } from '@/api';
@@ -1112,11 +1361,13 @@ const {
 );
 
 // ════════ KiotViet POS Integration ════════
-const { getLinkStatus, linkContactToPos } = usePosCommands();
+const { getLinkStatus, linkContactToPos, unlinkContact } = usePosCommands();
 // Dùng chung biến toast đã khai báo ở bên dưới
 const loadingStatus = ref(false);
 const linking = ref(false);
+const unlinking = ref(false);
 const customerFormOpen = ref(false);
+const posLinkSearchOpen = ref(false);
 const posLinkStatus = ref<{
   linked: boolean;
   autoSuggest: boolean;
@@ -1134,6 +1385,14 @@ async function checkPosStatus() {
     const res = await getLinkStatus(props.contactId);
     if (res) {
       posLinkStatus.value = res;
+      // Auto-inherit phone from POS into CRM Contact form if empty
+      if (res.linked && res.posCustomer) {
+        const posPhone = res.posCustomer.phone || res.posCustomer.contactNumber;
+        if (posPhone && !form.phone) {
+          form.phone = posPhone;
+          saveContact();
+        }
+      }
     }
   } catch (err) {
     console.error('checkPosStatus failed:', err);
@@ -1183,7 +1442,9 @@ async function performQuickLink() {
     const res = await linkContactToPos(
       props.contactId,
       posLinkStatus.value.posCustomer.id,
-      posLinkStatus.value.posCustomer.code
+      posLinkStatus.value.posCustomer.code,
+      posLinkStatus.value.posCustomer.name,
+      posLinkStatus.value.posCustomer.phone,
     );
     if (res && res.success) {
       toast.success('Liên kết khách hàng thành công!');
@@ -1201,6 +1462,61 @@ function onCustomerFormSuccess() {
   checkPosStatus();
   emit('saved');
 }
+
+/** Callback khi PosLinkSearchDialog liên kết thành công */
+function onPosLinked(data: { posCustomerId: number; posCustomerCode?: string; posCustomerName?: string }) {
+  // Cập nhật local state ngay (không cần gọi lại API)
+  posLinkStatus.value = {
+    linked: true,
+    autoSuggest: false,
+    posCustomerId: data.posCustomerId,
+    posCustomerCode: data.posCustomerCode || undefined,
+    posCustomer: {
+      id: data.posCustomerId,
+      name: data.posCustomerName || '',
+      code: data.posCustomerCode || '',
+    },
+  };
+  checkPosStatus(); // Reload để lấy thông tin đầy đủ
+  emit('saved');
+}
+
+/** Hủy liên kết POS */
+async function performUnlink() {
+  if (!props.contactId) return;
+  if (!confirm('Bạn chắc chắn muốn hủy liên kết khách hàng này khỏi POS không?')) return;
+
+  unlinking.value = true;
+  try {
+    const res = await unlinkContact(props.contactId);
+    if (res && res.success) {
+      toast.success('Hủy liên kết POS thành công');
+      // Reset POS link state
+      posLinkStatus.value = { linked: false, autoSuggest: false };
+      // Xóa sạch dữ liệu đơn hàng + Customer 360 — không còn thuộc KH này nữa
+      contactOrders.value = [];
+      orderSummary.value = null;
+      emit('saved');
+    } else {
+      toast.error('Không thể hủy liên kết, vui lòng thử lại');
+    }
+  } catch (err) {
+    console.error('performUnlink failed:', err);
+    toast.error('Lỗi hủy liên kết');
+  } finally {
+    unlinking.value = false;
+  }
+}
+
+// ════════ Order Detail Modal ════════
+const showOrderDetailDialog = ref(false);
+const selectedOrderForDetail = ref<any>(null);
+
+function openOrderDetail(order: any) {
+  selectedOrderForDetail.value = order;
+  showOrderDetailDialog.value = true;
+}
+
 
 // ════════ Tên gợi nhớ Zalo (per-pair, sync 2-way với Zalo Real) ════════
 // Bound to Friend.aliasInNick — PATCH /friends/:id sẽ:
@@ -1236,7 +1552,20 @@ const activeTab = ref<'profile' | 'crm' | 'activity' | 'score'>('profile');
 
 // Sales & Customer Service Workspace Optimization state:
 const salesTab = ref<'overview' | 'orders' | 'appointment' | 'notes'>('overview');
-const showCreateOrderDialog = ref(false);
+// showCreateOrderDialog is now managed by orderDraftStore
+
+function openOrderForContact() {
+  if (!posLinkStatus.value.linked) return;
+  const avatar = props.contact?.avatarUrl || activeFriend.value?.zaloAvatarUrl || undefined;
+  orderDraftStore.openDraft({
+    contactId: props.contactId || undefined,
+    contactName: headerFullName.value,
+    contactAvatar: avatar,
+    contactPhone: props.contact?.phone || undefined,
+    posCustomerId: posLinkStatus.value.posCustomerId || undefined,
+    posCustomerCode: posLinkStatus.value.posCustomerCode || undefined,
+  });
+}
 const customerType = ref<string | null>('VIP');
 
 // Order list from local Read Model
@@ -1244,19 +1573,73 @@ interface OrderListItem {
   id: string;
   code: string;
   grandTotal: number;
+  debtAmount: number;
   orderStatus: string;
   createdAt: string;
   items: { productName: string; quantity: number }[];
 }
+interface OrderSummary {
+  totalCount: number;
+  draftCount: number;
+  confirmedCount: number;
+  doneCount: number;
+  cancelledCount: number;
+  totalGrandTotal: number;
+  estimatedDebt: number;  // Công nợ dự tính (Phiếu tạm)
+  actualDebt: number;     // Công nợ thực tế (Đã xác nhận)
+  lastOrderAt: string | null;
+  lastOrderCode: string | null;
+}
 const contactOrders = ref<OrderListItem[]>([]);
+const orderSummary = ref<OrderSummary | null>(null);
 const ordersLoading = ref(false);
+
+// Phân trang 4 đơn / trang cho tab Đơn hàng
+const ordersPage = ref(1);
+const ordersPageSize = 4;
+const totalOrdersPages = computed(() => Math.ceil(contactOrders.value.length / ordersPageSize) || 1);
+const paginatedOrders = computed(() => {
+  const start = (ordersPage.value - 1) * ordersPageSize;
+  return contactOrders.value.slice(start, start + ordersPageSize);
+});
+
+// Format tiền VNĐ ngắn gọn: 1.245.200 → "1,24tr" | 85.000 → "85k"
+function fmtVnd(n: number): string {
+  if (!n || n === 0) return '0đ';
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2).replace(/\.?0+$/, '')}tr`;
+  if (n >= 1_000)     return `${Math.round(n / 1_000)}k`;
+  return `${n}đ`;
+}
+
+function getOrderStatusClass(status: string) {
+  if (['Completed', 'Done', 'Hoàn thành'].includes(status)) return 'sp-status--success';
+  if (['Confirmed', 'Đã xác nhận'].includes(status)) return 'sp-status--confirmed';
+  if (['Cancelled', 'Đã hủy'].includes(status)) return 'sp-status--cancelled';
+  return 'sp-status--draft';
+}
+
+function getOrderStatusLabel(status: string) {
+  if (['Completed', 'Done', 'Hoàn thành'].includes(status)) return 'Hoàn thành';
+  if (['Confirmed', 'Đã xác nhận'].includes(status)) return 'Đã xác nhận';
+  if (['Cancelled', 'Đã hủy'].includes(status)) return 'Đã hủy';
+  if (['Draft', 'Pending', 'Phiếu tạm'].includes(status)) return 'Phiếu tạm';
+  return status;
+}
+
+function formatVndFull(amount: number): string {
+  if (!amount) return '0 đ';
+  return new Intl.NumberFormat('vi-VN').format(amount) + ' đ';
+}
 
 async function fetchContactOrders() {
   if (!props.contactId) return;
   ordersLoading.value = true;
   try {
     const { data } = await api.get<any>(`/pos/orders/contact/${props.contactId}`);
-    contactOrders.value = data?.data?.orders || [];
+    const payload = data?.data?.data ?? data?.data ?? data;
+    contactOrders.value = payload?.orders || [];
+    orderSummary.value  = payload?.summary || null;
+    ordersPage.value = 1;
   } catch (err) {
     console.error('fetchContactOrders failed:', err);
   } finally {
@@ -1270,12 +1653,17 @@ function onOrderCreated(_data: any) {
   checkPosStatus();
 }
 
-// Fetch orders when switching to Orders tab
-watch([() => salesTab.value, () => props.contactId], ([tab, id]) => {
-  if (tab === 'orders' && id) {
-    fetchContactOrders();
-  }
-}, { immediate: false });
+// Fetch ngay khi load contact (để Customer 360 có data ngay ở Overview tab)
+// + re-fetch khi chuyển sang tab Orders
+watch(
+  () => props.contactId,
+  (id) => { if (id) fetchContactOrders(); },
+  { immediate: true },
+);
+watch(
+  () => salesTab.value,
+  (tab) => { if (tab === 'orders' && props.contactId) fetchContactOrders(); },
+);
 
 // Cho phép cha (ChatView) mở tab Media từ nút "Chèn từ kho" ở composer cột 3.
 function setMainTab(t: 'profile' | 'media' | 'ai' | 'followup') { mainTab.value = t; }
@@ -1767,6 +2155,12 @@ function onInsertSuggest() {
   // Phát event toàn cục cho ChatComposer nghe (giảm prop drill)
   window.dispatchEvent(new CustomEvent('chat:insert-suggestion', { detail: { text: suggestText.value } }));
   toast.success('Đã chèn vào ô soạn tin');
+}
+
+function onInsertSuggestionText(text: string) {
+  if (!text) return;
+  emit('insert-suggestion', text);
+  window.dispatchEvent(new CustomEvent('chat:insert-suggestion', { detail: { text } }));
 }
 
 // ─── Widget 6: Sales handoff modal ───────────────────────────────────────
@@ -2914,14 +3308,21 @@ async function onRegenerateHandoff() {
 .mtp-link:hover { background: #0050cc; }
 
 /* ════════════════════════════════════════════════════════════
-   SP (Sales Panel) — Glass Card Premium Design System
-   2026-07-22 — Redesign: Nền trắng + card nổi 3D + Pill tabs
+   SP (Sales Panel) — Visual Hierarchy v2
+   2026-07-27 — Redesign: #f0f7ff base, borderless sections,
+   3-size typography (18/14/11px), 20px metrics, pill CTA
    ════════════════════════════════════════════════════════════ */
+
+/* ── Typography scale — 3 sizes only ── */
+.sp-text-header  { font-size: 18px; font-weight: 700; color: #0f172a; line-height: 1.3; }
+.sp-text-body    { font-size: 14px; font-weight: 400; color: #334155; line-height: 1.5; }
+.sp-text-caption { font-size: 11px; font-weight: 500; color: #64748b; }
+.sp-text-metric  { font-size: 20px; font-weight: 800; font-family: 'Inter', 'Roboto', monospace; line-height: 1.2; }
 
 /* ── Profile Header ── */
 .sp-header {
-  background: #FFFFFF;
-  border-bottom: 1px solid #E8EEF5;
+  background: #f0f7ff;
+  border-bottom: 1px solid #dbeafe;
   padding: 14px 14px 10px;
   flex-shrink: 0;
 }
@@ -2941,13 +3342,13 @@ async function onRegenerateHandoff() {
 .sp-name-input {
   width: 100%; font-size: 15px; font-weight: 700; color: #0F172A;
   background: transparent; border: none;
-  border-bottom: 1.5px dashed #CBD5E1; outline: none; padding: 2px 0;
+  border-bottom: 1.5px dashed #93c5fd; outline: none; padding: 2px 0;
 }
 .sp-name-input:focus { border-bottom-color: #0068FF; }
 .sp-uid-row { margin-top: 4px; }
 .sp-uid-badge {
   font-size: 10px; font-family: monospace; color: #94A3B8;
-  background: #F1F5F9; padding: 2px 6px; border-radius: 4px;
+  background: #dbeafe; padding: 2px 6px; border-radius: 4px;
 }
 
 /* Detail grid */
@@ -2961,8 +3362,8 @@ async function onRegenerateHandoff() {
   display: flex;
   align-items: center;
   gap: 5px;
-  background: #F8FAFC;
-  border: 1px solid #E8EEF5;
+  background: rgba(255,255,255,0.75);
+  border: 1px solid #dbeafe;
   border-radius: 8px;
   padding: 5px 8px;
   min-width: 0;
@@ -2976,28 +3377,27 @@ async function onRegenerateHandoff() {
   align-items: center;
 }
 .sp-field-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 500;
-  color: #94A3B8;
+  color: #64a8d8;
   flex-shrink: 0;
   white-space: nowrap;
 }
 .sp-field-input {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #1E293B;
   background: transparent;
   border: none;
   outline: none;
   padding: 0;
-  font-family: monospace;
 }
 .sp-field-select {
   flex: 1;
   min-width: 0;
-  font-size: 11.5px;
+  font-size: 13px;
   font-weight: 600;
   color: #1E293B;
   background: transparent;
@@ -3021,35 +3421,66 @@ async function onRegenerateHandoff() {
 .sp-chip-new   { background: #DCFCE7; color: #15803D; }
 .sp-type-ghost-select { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; }
 
-/* ── Pill Tabs ── */
+/* ── Pill Tabs — Material Symbols ── */
 .sp-pill-nav {
-  background: #F8FAFC; border-bottom: 1px solid #E8EEF5;
-  padding: 8px 10px; flex-shrink: 0;
+  background: #f0f7ff;
+  border-bottom: 1px solid #dbeafe;
+  padding: 8px 10px;
+  flex-shrink: 0;
 }
 .sp-pill-tabs {
-  display: flex; gap: 4px; background: #EEF2F7;
+  display: flex; gap: 3px;
+  background: rgba(0, 104, 255, 0.08);
   border-radius: 10px; padding: 3px;
 }
 .sp-pill-tab {
   flex: 1; background: transparent; border: none; border-radius: 8px;
-  padding: 5px 4px; font-size: 10.5px; font-weight: 600; color: #64748B;
+  padding: 5px 2px; font-size: 10px; font-weight: 600; color: #64748B;
   cursor: pointer; transition: all 0.18s ease; white-space: nowrap; outline: none;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  font-family: inherit;
 }
-.sp-pill-tab:hover { background: rgba(255,255,255,0.7); color: #0F172A; }
+.sp-pill-tab:hover { background: rgba(255,255,255,0.8); color: #0068FF; }
 .sp-pill-tab.active {
   background: #0068FF; color: #FFFFFF;
-  box-shadow: 0 2px 8px rgba(0, 104, 255, 0.28);
+  box-shadow: 0 2px 10px rgba(0, 104, 255, 0.30);
+}
+.sp-tab-icon {
+  font-size: 16px !important;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+  line-height: 1;
+}
+.sp-pill-tab.active .sp-tab-icon {
+  font-variation-settings: 'FILL' 1, 'wght' 500, 'GRAD' 0, 'opsz' 20;
 }
 
-/* ── Tab Content ── */
-.sp-tab-content { flex: 1; overflow-y: auto; background: #F8FAFC; }
-.sp-pane { padding: 10px 10px 16px; display: flex; flex-direction: column; gap: 10px; }
+/* ── Tab Content — Zalo blue-tinted background ── */
+.sp-tab-content { flex: 1; overflow-y: auto; background: #f0f7ff; }
+.sp-pane { padding: 14px 12px 20px; display: flex; flex-direction: column; gap: 16px; }
 .sp-pane-padded { padding: 12px; }
 
-/* ── Glass Card ── */
+/* ── Section Header — replaces card border ── */
+.sp-section-header {
+  display: flex; align-items: center; gap: 6px;
+  padding-bottom: 8px;
+  border-bottom: 1.5px solid #bfdbfe;
+}
+.sp-section-icon {
+  font-size: 16px !important; color: #2563eb;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+.sp-section-title {
+  flex: 1;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.08em; color: #2563eb;
+}
+
+/* Legacy sp-glass-card kept for other tabs; stripped in Overview -->
 .sp-glass-card {
-  background: #FFFFFF; border: 1px solid #E8EEF5; border-radius: 12px;
-  box-shadow: 0 2px 12px rgba(0, 30, 80, 0.06); padding: 12px 14px;
+  background: rgba(255,255,255,0.7);
+  border: 1px solid #dbeafe;
+  border-radius: 12px;
+  padding: 12px 14px;
 }
 .sp-card-header { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .sp-card-icon { font-size: 14px; }
@@ -3064,47 +3495,557 @@ async function onRegenerateHandoff() {
   display: inline-flex; align-items: center; justify-content: center;
 }
 
-/* Customer 360 grid */
-.sp-c360-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+/* ── Customer 360 — borderless stat grid ── */
+.sp-c360-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
 .sp-c360-stat {
-  background: #F8FAFC; border-radius: 8px; padding: 8px 10px;
-  display: flex; flex-direction: column; gap: 2px;
+  background: rgba(255,255,255,0.75);
+  border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-direction: column; gap: 4px;
+  box-shadow: 0 1px 4px rgba(0, 80, 200, 0.06);
 }
 .sp-c360-full { grid-column: 1 / -1; }
-.sp-c360-label { font-size: 10px; color: #94A3B8; font-weight: 500; }
-.sp-c360-val { font-size: 13px; font-weight: 700; color: #1E293B; font-family: monospace; }
-.sp-val-danger { color: #DC2626 !important; }
-.sp-val-ok     { color: #16A34A !important; }
-.sp-val-primary { color: #0068FF !important; }
 
-/* Appointment list */
-.sp-appt-list { display: flex; flex-direction: column; gap: 6px; }
-.sp-appt-item {
-  display: flex; align-items: flex-start; gap: 8px;
-  background: #F0F9FF; border: 1px solid #BAE6FD; border-radius: 8px; padding: 8px 10px;
+/* ── Typography inside stats ── */
+.sp-c360-label { font-size: 11px; color: #64a8d8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+.sp-c360-val   { font-size: 20px; font-weight: 800; color: #0f172a; font-family: 'Inter', 'Roboto', monospace; line-height: 1.2; }
+.sp-c360-debt-row { display: flex; align-items: center; gap: 4px; }
+.sp-debt-warn  { font-size: 18px !important; color: #DC2626; font-variation-settings: 'FILL' 1, 'wght' 600, 'GRAD' 0, 'opsz' 20; }
+.sp-val-danger  { color: #DC2626 !important; }
+.sp-val-ok      { color: #16A34A !important; }
+.sp-val-primary { color: #0068FF !important; }
+/* Vàng/cam — cảnh báo nhẹ cho Phiếu tạm */
+.sp-val-warn    { color: #D97706 !important; }
+/* Chú thích nhỏ bên dưới giá trị stat */
+.sp-c360-sublabel { font-size: 10px; color: #94A3B8; font-weight: 500; margin-top: 1px; }
+
+/* ── CTA Primary Button — Pill Blue ── */
+.sp-cta-primary {
+  display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 11px 20px;
+  background: #0068FF;
+  color: #ffffff;
+  border: none; border-radius: 999px;
+  font-size: 14px; font-weight: 700; font-family: inherit;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 104, 255, 0.32);
+  transition: background 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
+  letter-spacing: 0.01em;
 }
-.sp-appt-icon { font-size: 13px; flex-shrink: 0; }
-.sp-appt-info { display: flex; flex-direction: column; gap: 1px; }
-.sp-appt-date { font-size: 11px; font-weight: 700; color: #0369A1; }
+.sp-cta-primary:hover {
+  background: #0057d6;
+  box-shadow: 0 6px 20px rgba(0, 104, 255, 0.42);
+  transform: translateY(-1px);
+}
+.sp-cta-primary:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0, 104, 255, 0.25); }
+.sp-cta-icon {
+  font-size: 18px !important;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+
+/* ── Appointment list ── */
+.sp-appt-list { display: flex; flex-direction: column; gap: 8px; }
+.sp-appt-item {
+  display: flex; align-items: flex-start; gap: 10px;
+  background: rgba(255,255,255,0.8);
+  border-left: 3px solid #0068FF;
+  border-radius: 0 8px 8px 0;
+  padding: 8px 12px;
+}
+.sp-appt-icon-ms {
+  font-size: 16px !important; color: #0068FF; flex-shrink: 0; margin-top: 1px;
+  font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 20;
+}
+.sp-appt-info { display: flex; flex-direction: column; gap: 2px; }
+.sp-appt-date { font-size: 13px; font-weight: 700; color: #0369A1; }
 .sp-appt-note { font-size: 11px; color: #475569; }
 
 /* Empty state */
-.sp-empty-state { display: flex; align-items: center; gap: 8px; padding: 8px 0; }
-.sp-empty-icon { font-size: 18px; opacity: 0.5; }
-.sp-empty-text { font-size: 12px; color: #94A3B8; }
+.sp-empty-state { display: flex; align-items: center; gap: 8px; padding: 6px 0; }
+.sp-empty-icon-ms {
+  font-size: 18px !important; opacity: 0.4; color: #64748b;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
+}
+.sp-empty-text { font-size: 13px; color: #94A3B8; }
 
-/* ── Coming Soon Card ── */
-.sp-coming-soon-card {
-  background: #F1F5F9; border: 1.5px dashed #CBD5E1;
-  border-radius: 12px; padding: 12px 14px; opacity: 0.85;
+/* ── Coming Soon — 1 dòng xám nhạt ── */
+.sp-future-hint {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #b0c4de;
+  padding: 4px 2px;
+  border-top: 1px dashed #dbeafe;
+  margin-top: 4px;
 }
-.sp-cs-header { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.sp-cs-badge {
-  font-size: 9.5px; font-weight: 700; background: #FED7AA; color: #C2410C;
-  padding: 2px 7px; border-radius: 4px;
+.sp-future-icon {
+  font-size: 13px !important; opacity: 0.6;
+  font-variation-settings: 'FILL' 0, 'wght' 300, 'GRAD' 0, 'opsz' 20;
 }
-.sp-cs-body { display: flex; flex-direction: column; gap: 2px; pointer-events: none; }
-.sp-cs-preview { font-size: 11.5px; font-weight: 600; color: #475569; }
-.sp-cs-desc { font-size: 10.5px; color: #94A3B8; line-height: 1.4; }
+
+/* ══ POS Status Block (Overview Tab) ══ */
+.sp-pos-overview-block {
+  background: rgba(0, 104, 255, 0.03);
+  border: 1px solid rgba(0, 104, 255, 0.10);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+/* Linked state */
+.sp-pos-linked-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.sp-pos-linked-info { flex: 1; min-width: 0; }
+.sp-pos-linked-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sp-pos-linked-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: #64748B;
+  margin-top: 2px;
+}
+.sp-pos-code-chip {
+  background: rgba(0, 104, 255, 0.08);
+  color: #0068FF;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+}
+.sp-pos-address {
+  font-size: 11px;
+  color: #94A3B8;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Loading state */
+.sp-pos-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #94A3B8;
+}
+/* Suggest state */
+.sp-pos-suggest-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sp-pos-suggest-text {
+  font-size: 12px;
+  color: #475569;
+  line-height: 1.4;
+}
+.sp-pos-suggest-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+/* Unlinked state */
+.sp-pos-unlinked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sp-pos-unlinked-text {
+  font-size: 12px;
+  color: #94A3B8;
+}
+.sp-pos-unlinked-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+/* Linked actions row */
+.sp-pos-linked-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+/* ── Customer 360 / Orders: POS not linked empty states ── */
+.sp-c360-unlinked-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 12px;
+  text-align: center;
+  gap: 4px;
+}
+.sp-c360-unlinked-icon {
+  font-size: 28px;
+  color: #CBD5E1;
+  margin-bottom: 4px;
+}
+.sp-c360-unlinked-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94A3B8;
+}
+.sp-c360-unlinked-hint {
+  font-size: 11px;
+  color: #CBD5E1;
+  line-height: 1.4;
+}
+.sp-orders-unlinked {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 28px 16px;
+  text-align: center;
+  gap: 4px;
+}
+.sp-orders-unlinked-icon {
+  font-size: 32px;
+  color: #CBD5E1;
+  margin-bottom: 6px;
+}
+.sp-orders-unlinked-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #94A3B8;
+}
+.sp-orders-unlinked-hint {
+  font-size: 11px;
+  color: #CBD5E1;
+  line-height: 1.4;
+  max-width: 180px;
+}
+/* Disabled CTA button */
+.sp-cta-primary.sp-cta-disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ══ Orders Tab Header ══ */
+.sp-orders-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0 8px;
+  margin-bottom: 4px;
+}
+.sp-orders-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+.sp-orders-count {
+  background: #0068FF;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 1px 6px;
+  min-width: 18px;
+  text-align: center;
+}
+
+/* ══ SP Orders Cards Container (Khung chứa các thẻ đơn hàng) ══ */
+.sp-orders-cards-container {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 340px;
+}
+
+.sp-order-card {
+  position: relative;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 11px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.sp-order-card:hover {
+  border-color: #0068FF;
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.10);
+}
+
+.sp-order-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 5px;
+}
+
+.sp-order-card__code-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sp-order-card__code-icon {
+  font-size: 14px !important;
+  color: #0068FF;
+}
+
+.sp-order-card__code {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0068FF;
+  letter-spacing: -0.01em;
+}
+
+/* Status Badges */
+.sp-order-card__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.sp-order-card__status-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sp-status--draft {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fef3c7;
+}
+.sp-status--draft .sp-order-card__status-dot {
+  background: #f59e0b;
+}
+
+.sp-status--confirmed {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+}
+.sp-status--confirmed .sp-order-card__status-dot {
+  background: #3b82f6;
+}
+
+.sp-status--success {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+.sp-status--success .sp-order-card__status-dot {
+  background: #10b981;
+}
+
+.sp-status--cancelled {
+  background: #fff1f2;
+  color: #e11d48;
+  border: 1px solid #fecdd3;
+}
+.sp-status--cancelled .sp-order-card__status-dot {
+  background: #f43f5e;
+}
+
+/* Products */
+.sp-order-card__products {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 5px;
+  padding-left: 1px;
+}
+
+.sp-order-card__item-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #334155;
+  min-width: 0;
+}
+
+.sp-order-card__item-name {
+  font-weight: 500;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.sp-order-card__item-qty {
+  font-size: 10px;
+  color: #64748b;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.sp-order-card__more {
+  font-size: 10px;
+  color: #0068FF;
+  font-weight: 600;
+  margin-top: 1px;
+}
+
+/* Footer */
+.sp-order-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 5px;
+  border-top: 1px dashed #e2e8f0;
+}
+
+.sp-order-card__date {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.sp-order-card__date-icon {
+  font-size: 12px !important;
+  color: #94a3b8;
+}
+
+.sp-order-card__price {
+  font-size: 12px;
+  font-weight: 800;
+  color: #0068FF;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Hover hint */
+.sp-order-card__hover-hint {
+  display: none;
+  align-items: center;
+  gap: 3px;
+  position: absolute;
+  bottom: 5px;
+  right: 10px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #0068FF;
+  background: #ffffff;
+  padding-left: 4px;
+}
+
+.sp-order-card:hover .sp-order-card__hover-hint {
+  display: flex;
+}
+
+/* ══ SP Orders Pagination Bar (Tách riêng ngoài box đơn hàng, vị trí cố định) ══ */
+.sp-orders-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.sp-pg-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sp-pg-btn:hover:not(:disabled) {
+  border-color: #0068FF;
+  color: #0068FF;
+  background: #eff6ff;
+  transform: translateY(-1px);
+}
+
+.sp-pg-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  background: #f8fafc;
+  border-color: #e2e8f0;
+}
+
+.sp-pg-text {
+  font-size: 11px;
+  color: #64748b;
+  user-select: none;
+}
+
+.sp-pg-text strong {
+  color: #0068FF;
+  font-weight: 700;
+}
+
+/* ══ Header POS Status Badge ══ */
+.sp-pos-badge-row {
+  display: flex;
+  align-items: center;
+  margin-top: 4px;
+}
+.sp-pos-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  line-height: 1.2;
+}
+.sp-pos-badge-icon {
+  font-size: 13px !important;
+}
+.sp-pos-badge-linked {
+  background: #DCFCE7;
+  color: #15803D;
+  border: 1px solid #BBF7D0;
+}
+.sp-pos-badge-suggest {
+  background: #FEF3C7;
+  color: #B45309;
+  border: 1px solid #FDE68A;
+}
+.sp-pos-badge-unlinked {
+  background: #F1F5F9;
+  color: #64748B;
+  border: 1px solid #E2E8F0;
+}
 </style>
+
 

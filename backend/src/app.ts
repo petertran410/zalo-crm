@@ -39,6 +39,7 @@ import { deviceRoutes } from './modules/devices/device-routes.js';
 import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
+import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
 import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
@@ -80,6 +81,11 @@ import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
+import { posWebhookRoutes } from './routes/pos-webhook-routes.js';
+import { posSyncDashboardRoutes } from './routes/pos-sync-dashboard-routes.js';
+import { startPosWebhookRetryJob } from './jobs/pos-webhook-retry.job.js';
+import { startPosInventoryAuditCron } from './jobs/pos-inventory-audit.cron.js';
+import { startPosSummaryReportCron } from './jobs/pos-summary-report.cron.js';
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
 // Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
@@ -90,7 +96,6 @@ import { aiRoutes } from './modules/ai/ai-routes.js';
 import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat/chat-operations-routes.js';
 import { groupRoutes } from './modules/zalo/group-routes.js';
 import { groupScanRoutes } from './modules/zalo/group-scan-routes.js';
-import { startGroupScanWorker, stopGroupScanWorker } from './modules/zalo/group-scan-queue.js';
 import { groupModerationRoutes } from './modules/zalo/group-moderation-routes.js';
 import { friendRoutes } from './modules/zalo/friend-routes.js';
 import { profileRoutes } from './modules/zalo/profile-routes.js';
@@ -320,6 +325,9 @@ async function bootstrap() {
   await app.register(integrationRoutes);
   await app.register(posRoutes);
   await app.register(syncRoutes);
+  await app.register(posWebhookRoutes);
+  await app.register(posSyncDashboardRoutes);
+  await app.register(contactPosRoutes);
   // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
   // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
   await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
@@ -381,8 +389,6 @@ async function bootstrap() {
     startZaloHealthCheck();
     startContactIntelligence();
     startLabelsBackgroundSync(60_000); // realtime-ish 2-way pull every 60s
-    // E1 Quét group (🟢 Community) — BullMQ worker xử lý group-scan job.
-    if (config.nodeEnv !== 'test') startGroupScanWorker();
     startInteractionCron(); // daily silent_30d detection (02:00 VN)
     // Phase 8 — Engagement heatmap classification (02:30 VN daily)
     const { startEngagementCron } = await import('./modules/engagement/engagement-cron.js');
@@ -398,11 +404,9 @@ async function bootstrap() {
     // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).
     const { startGroupInfoSyncCron } = await import('./modules/zalo/group-info-sync-cron.js');
     startGroupInfoSyncCron();
-    // Tệp khách hàng (🟢 Community): enrichment worker + event handlers
+    // Tệp khách hàng (🟢 Community): event handlers
     if (config.nodeEnv !== 'test') {
-      const { startListEnrichmentWorker } = await import('./modules/lists/list-enrichment-service.js');
       const { registerCustomerListEventHandlers } = await import('./modules/lists/list-event-handlers.js');
-      startListEnrichmentWorker();
       registerCustomerListEventHandlers();
     }
     // Contact profile enrichment (3am daily) — kéo gender + ngày sinh KH từ Zalo getUserInfo
@@ -436,6 +440,9 @@ async function bootstrap() {
     if (config.nodeEnv !== 'test') {
       const { startMediaTrashGcCron } = await import('./modules/media/media-trash-gc-cron.js');
       startMediaTrashGcCron();
+      startPosWebhookRetryJob();
+      startPosInventoryAuditCron();
+      startPosSummaryReportCron();
     }
     // Facebook Lead Ads workers (outbox dispatch, pull worker, form ingestion,
     // token refresh) → started by extension bundle (startExtensionJobs).
@@ -462,14 +469,13 @@ async function bootstrap() {
     const shutdown = async (signal: string) => {
       if (shuttingDown) return;
       shuttingDown = true;
-      logger.info(`[shutdown] nhận ${signal} — đóng worker + server...`);
+      logger.info(`[shutdown] nhận ${signal} — đóng server...`);
       const force = setTimeout(() => {
         logger.warn('[shutdown] quá 10s, thoát cưỡng bức');
         process.exit(1);
       }, 10_000);
       force.unref();
       try {
-        await stopGroupScanWorker().catch((e) => logger.warn('[shutdown] stopGroupScanWorker lỗi:', e));
         await app.close().catch((e) => logger.warn('[shutdown] app.close lỗi:', e));
         logger.info('[shutdown] đóng gọn xong.');
       } finally {

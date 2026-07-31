@@ -2,7 +2,17 @@ import { getPosMcpClient } from '../../shared/mcp/mcp-client.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { getIo } from '../../shared/event-buffer.js';
-import { batchUpsertCustomers, batchUpsertProducts } from '../../shared/mcp/pos-sync-service.js';
+import {
+  batchUpsertCustomers,
+  batchUpsertProducts,
+  syncPosCustomersFromMcp,
+  syncPosProductsFromMcp,
+  syncPosOrdersFromMcp,
+  syncPosInvoicesFromMcp,
+  syncPosBranchInventoryFromMcp,
+} from '../../shared/mcp/pos-sync-service.js';
+import { notifyAdminsOfIncidentAsync } from '../system-notifications/system-notify-service.js';
+import { linkPosCustomersToContacts } from '../../workers/pos-customer-linker.js';
 
 function emitSyncUpdate(orgId: string, data: {
   jobId: string;
@@ -222,6 +232,51 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       });
       emitSyncUpdate(orgId, { jobId, entity, processed, total: processed, status: 'Completed' });
       logger.info(`[sync-worker] Job ${jobId} (Product) completed successfully. Total: ${processed}`);
+    } else if (entity === 'Order') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      await syncPosOrdersFromMcp(orgId);
+      await linkPosCustomersToContacts(orgId);
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: { status: 'Completed', endTime: new Date() }
+      });
+      emitSyncUpdate(orgId, { jobId, entity, processed: 100, total: 100, status: 'Completed' });
+    } else if (entity === 'Invoice') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      await syncPosInvoicesFromMcp(orgId);
+      await linkPosCustomersToContacts(orgId);
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: { status: 'Completed', endTime: new Date() }
+      });
+      emitSyncUpdate(orgId, { jobId, entity, processed: 100, total: 100, status: 'Completed' });
+    } else if (entity === 'BranchInventory') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      await syncPosBranchInventoryFromMcp(orgId);
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: { status: 'Completed', endTime: new Date() }
+      });
+      emitSyncUpdate(orgId, { jobId, entity, processed: 100, total: 100, status: 'Completed' });
+    } else if (entity === 'All') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: 5, status: 'Running' });
+      logger.info(`[sync-worker] Starting ALL sync pipeline: Customer -> Product -> BranchInventory -> Order -> Invoice`);
+      await syncPosCustomersFromMcp(orgId);
+      emitSyncUpdate(orgId, { jobId, entity, processed: 1, total: 5, status: 'Running' });
+      await syncPosProductsFromMcp(orgId);
+      emitSyncUpdate(orgId, { jobId, entity, processed: 2, total: 5, status: 'Running' });
+      await syncPosBranchInventoryFromMcp(orgId);
+      emitSyncUpdate(orgId, { jobId, entity, processed: 3, total: 5, status: 'Running' });
+      await syncPosOrdersFromMcp(orgId);
+      emitSyncUpdate(orgId, { jobId, entity, processed: 4, total: 5, status: 'Running' });
+      await syncPosInvoicesFromMcp(orgId);
+      // Link POS customers → contacts một lần duy nhất sau khi toàn bộ data đã sync
+      await linkPosCustomersToContacts(orgId);
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: { status: 'Completed', endTime: new Date() }
+      });
+      emitSyncUpdate(orgId, { jobId, entity, processed: 5, total: 5, status: 'Completed' });
     } else {
       throw new Error(`Unsupported sync entity: ${entity}`);
     }
@@ -235,8 +290,19 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
         status: 'Failed',
         endTime: new Date(),
         lastError: err.message || String(err),
-        errorCount: { increment: 1 }
-      }
+        errorCount: { increment: 1 },
+      },
+    });
+
+    notifyAdminsOfIncidentAsync({
+      orgId,
+      type: 'pos_sync_critical_error',
+      title: '⚠️ CẢNH BÁO: Tiến trình đồng bộ POS gặp sự cố nghiêm trọng',
+      errorMsg: err.message || String(err),
+      logOrJobId: jobId,
+      eventTypeOrEntity: entity,
+      recommendedAction:
+        'Kiểm tra trạng thái cơ sở dữ liệu và kết nối POS MCP. Vào Admin Sync Dashboard để kích hoạt lại tiến trình đồng bộ.',
     });
 
     // Fetch the updated total & processed count to emit failure event correctly
