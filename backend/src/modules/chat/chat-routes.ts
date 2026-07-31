@@ -23,7 +23,9 @@ import { triggerVirtualChatAiReply } from '../ai/ai-virtual-chat-service.js';
 // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual conv
 import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
 // Fix 2026-06-03 — M11 optimistic badge cache (Anh báo "Sale CRM · Staff")
-import { getUserFullName } from './chat-helpers.js';
+import { getUserFullName, buildReplyQuote } from './chat-helpers.js';
+// 2026-07-27 — offline-send queue (nick mất kết nối Zalo → lưu 'pending', flush khi reconnect).
+import { enqueuePendingFlush } from '../zalo/zalo-pending-send-queue.js';
 // 2026-06-07 — Gửi Khối Marketing thẳng vào hội thoại (cột 4 tab Automation).
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { sendNativeVideo } from '../../shared/video-processor.js';
@@ -63,58 +65,6 @@ async function resolveMediaMeta(
     } catch { /* giữ fallback */ }
   }
   return { name, mime, size };
-}
-
-function mapReplyMsgType(contentType: string): string {
-  if (contentType === 'text') return 'webchat';
-  if (contentType === 'image') return 'photo';
-  if (contentType === 'file') return 'file';
-  if (contentType === 'video') return 'video';
-  if (contentType === 'voice') return 'voice';
-  if (contentType === 'sticker') return 'sticker';
-  if (contentType === 'gif') return 'gif';
-  if (contentType === 'link') return 'link';
-  if (contentType === 'location') return 'location';
-  if (contentType === 'contact_card') return 'card';
-  if (contentType === 'bank_transfer') return 'bank';
-  if (contentType === 'call') return 'call';
-  if (contentType === 'qr_code') return 'qr';
-  if (contentType === 'reminder') return 'remind';
-  if (contentType === 'poll') return 'poll';
-  if (contentType === 'note') return 'note';
-  if (contentType === 'forwarded') return 'forward';
-  return contentType;
-}
-
-function buildReplyQuote(message: {
-  zaloMsgId: string | null;
-  senderUid: string | null;
-  content: string | null;
-  contentType: string;
-  sentAt: Date;
-}) {
-  if (!message.zaloMsgId || !message.senderUid) return null;
-  let quoteContent = message.content ?? '';
-  if (['image', 'video', 'file'].includes(message.contentType) && quoteContent.startsWith('{')) {
-    try {
-      const p = JSON.parse(quoteContent);
-      if (message.contentType === 'image') quoteContent = '[Hình ảnh]';
-      else if (message.contentType === 'video') quoteContent = '[Video]';
-      else quoteContent = `[Tệp] ${p.name || ''}`.trim();
-    } catch {
-      quoteContent = `[${message.contentType}]`;
-    }
-  }
-  return {
-    content: quoteContent,
-    msgType: mapReplyMsgType(message.contentType),
-    propertyExt: {},
-    uidFrom: message.senderUid,
-    msgId: message.zaloMsgId,
-    cliMsgId: message.zaloMsgId,
-    ts: String(message.sentAt.getTime()),
-    ttl: 0,
-  };
 }
 
 // Cooldown cho POST /conversations/:id/touch-profile — tránh spam Zalo SDK.
@@ -1767,10 +1717,11 @@ export async function chatRoutes(app: FastifyInstance) {
     // ── END M53 Virtual gate ───────────────────────────────────────────────
 
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
-    if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
 
     // PRIVACY GUARD 2026-05-22: nick privacy='main' → chỉ chính chủ (owner) gửi được
     // qua UI. Bot/automation đi qua zaloPool trực tiếp (không qua route này) → vẫn OK.
+    // Moved TRƯỚC nhánh online/offline (2026-07-27) — guard này phải áp dụng CẢ khi
+    // nick mất kết nối, không chỉ khi gửi thật.
     if (conversation.zaloAccount.privacyMode === 'main') {
       const senderUserId = (user as any).userId ?? user.id;
       if (conversation.zaloAccount.ownerUserId !== senderUserId) {
@@ -1781,6 +1732,121 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
+    // 2026-06-15 IDEMPOTENCY pre-check: nếu echoId đã tồn tại cho conversation này →
+    // tin đã lưu/gửi ở lần trước (app retry vì mất response). KHÔNG tạo lại → trả về
+    // tin cũ (cùng shape) kèm echoId, coi như success. Moved TRƯỚC nhánh online/offline
+    // (2026-07-27) — retry trong lúc nick VẪN offline cũng phải dedup, không riêng gì
+    // retry sau khi gửi Zalo thành công.
+    if (echoId) {
+      const existing = await prisma.message.findUnique({
+        where: { conversationId_clientEchoId: { conversationId: id, clientEchoId: echoId } },
+        include: { repliedBy: { select: { id: true, fullName: true, email: true } } },
+      });
+      if (existing) {
+        return {
+          ...existing,
+          zaloMsgIdNum: existing.zaloMsgIdNum?.toString() ?? null,
+          echoId,
+        };
+      }
+    }
+
+    // Resolve reply quote TRƯỚC nhánh online/offline (2026-07-27) — nhánh offline cũng
+    // cần quote để lưu kèm tin + để flush worker gửi lại đúng như lúc soạn.
+    let quote: ReturnType<typeof buildReplyQuote> | null = null;
+    if (replyMessageId) {
+      const replyMessage = await prisma.message.findFirst({
+        where: { id: replyMessageId, conversationId: id },
+        select: { zaloMsgId: true, senderUid: true, content: true, contentType: true, sentAt: true },
+      });
+      if (!replyMessage) {
+        return reply.status(404).send({ error: 'Reply message not found' });
+      }
+      quote = buildReplyQuote(replyMessage);
+      if (!quote) {
+        return reply.status(400).send({ error: 'Reply message is missing remote ids' });
+      }
+    }
+
+    // ── OFFLINE QUEUE 2026-07-27 ────────────────────────────────────────────────
+    // Nick mất kết nối Zalo (session zca-js drop, KHÔNG phải CRM server down) — trước
+    // đây 400 cứng "not connected", tin nhắn mất luôn (sale phải tự copy lại nội dung
+    // gửi lần sau). Nay LƯU NGAY dạng 'pending' (giống pattern sendFail 2026-06-24: tin
+    // lưu DB, hiện trong khung chat, KHÔNG mất) rồi enqueue flush job. Khi zalo-pool.ts
+    // reconnect (cùng chỗ gọi syncHistoryOnConnect) → flushPendingSends() gửi thật theo
+    // đúng thứ tự sentAt, cập nhật zaloMsgId + emit 'chat:message-status' để FE chuyển
+    // bubble 'pending' → 'sent' tại chỗ (xem zalo-pending-send-queue.ts).
+    if (!instance?.api) {
+      const hasStylesOffline = Array.isArray(styles) && styles.length > 0;
+      try {
+        const message = await prisma.message.create({
+          data: {
+            id: randomUUID(),
+            conversationId: id,
+            zaloMsgId: null,
+            senderType: 'self',
+            senderUid: conversation.zaloAccount.zaloUid || '',
+            senderName: 'Staff',
+            content,
+            contentType: hasStylesOffline ? 'rich' : 'text',
+            quote: quote ?? undefined,
+            sentAt: new Date(),
+            repliedByUserId: user.id,
+            sentVia: 'user',
+            clientEchoId: echoId,
+            metadata: {
+              sender: { kind: 'user_crm', name: await getUserFullName(user.id) },
+              sendStatus: 'pending',
+              // Payload thô để flush worker build lại sendPayload y hệt route gửi-thật
+              // bên dưới (content ở đây CHƯA wrap JSON dù có styles — giữ tách riêng).
+              pendingPayload: { content, styles: styles ?? null, mentions: mentions ?? null, quote: quote ?? null },
+            },
+          },
+          include: { repliedBy: { select: { id: true, fullName: true, email: true } } },
+        });
+
+        await prisma.conversation.update({
+          where: { id },
+          data: { lastMessageAt: new Date(), isReplied: true, unreadCount: 0 },
+        });
+
+        const safeMessage = { ...message, zaloMsgIdNum: null as string | null, echoId };
+        const io = (app as any).io as Server;
+        await emitChatMessage({
+          io,
+          orgId: user.orgId,
+          accountId: conversation.zaloAccountId,
+          conversationId: id,
+          message: safeMessage,
+          privacyMode: conversation.zaloAccount.privacyMode,
+          ownerUserId: conversation.zaloAccount.ownerUserId,
+          ...(echoId ? { extra: { echoId } } : {}),
+        });
+
+        // Safety-net: thử enqueue flush ngay (trường hợp instance vừa kết nối lại đúng
+        // lúc race với check phía trên) — no-op vô hại nếu vẫn chưa connect, worker tự
+        // log + return (xem flushPendingSends).
+        void enqueuePendingFlush(conversation.zaloAccountId).catch((err) =>
+          logger.warn('[chat] enqueuePendingFlush (offline-send) failed:', err),
+        );
+
+        return safeMessage;
+      } catch (createErr) {
+        if (echoId && (createErr as { code?: string })?.code === 'P2002') {
+          const winner = await prisma.message.findUnique({
+            where: { conversationId_clientEchoId: { conversationId: id, clientEchoId: echoId } },
+            include: { repliedBy: { select: { id: true, fullName: true, email: true } } },
+          });
+          if (winner) {
+            return { ...winner, zaloMsgIdNum: winner.zaloMsgIdNum?.toString() ?? null, echoId };
+          }
+        }
+        logger.error('[chat] Offline-queue message save error:', createErr);
+        return reply.status(500).send({ error: 'Không lưu được tin nhắn' });
+      }
+    }
+    // ── END OFFLINE QUEUE ────────────────────────────────────────────────────────
+
     // Rate limit check — prevent account blocking
     const limits = await zaloRateLimiter.checkLimits(conversation.zaloAccountId);
     if (!limits.allowed) {
@@ -1788,41 +1854,9 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     try {
-      // 2026-06-15 IDEMPOTENCY pre-check: nếu echoId đã tồn tại cho conversation này
-      // → tin đã gửi Zalo thành công ở lần trước (app retry vì mất response). KHÔNG
-      // gửi lại → trả về tin cũ (cùng shape) kèm echoId, coi như success.
-      if (echoId) {
-        const existing = await prisma.message.findUnique({
-          where: { conversationId_clientEchoId: { conversationId: id, clientEchoId: echoId } },
-          include: { repliedBy: { select: { id: true, fullName: true, email: true } } },
-        });
-        if (existing) {
-          return {
-            ...existing,
-            zaloMsgIdNum: existing.zaloMsgIdNum?.toString() ?? null,
-            echoId,
-          };
-        }
-      }
-
       const threadId = conversation.externalThreadId || '';
       // zca-js sendMessage(message, threadId, type) — type: 0=User, 1=Group
       const threadType = conversation.threadType === 'group' ? 1 : 0;
-
-      let quote: ReturnType<typeof buildReplyQuote> | null = null;
-      if (replyMessageId) {
-        const replyMessage = await prisma.message.findFirst({
-          where: { id: replyMessageId, conversationId: id },
-          select: { zaloMsgId: true, senderUid: true, content: true, contentType: true, sentAt: true },
-        });
-        if (!replyMessage) {
-          return reply.status(404).send({ error: 'Reply message not found' });
-        }
-        quote = buildReplyQuote(replyMessage);
-        if (!quote) {
-          return reply.status(400).send({ error: 'Reply message is missing remote ids' });
-        }
-      }
 
       zaloRateLimiter.recordSend(conversation.zaloAccountId);
       // 2026-05-21 RTF: nếu có styles từ FE rich-text-editor → pass vào zca-js MessageContent.
