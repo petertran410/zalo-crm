@@ -391,3 +391,60 @@ export async function sendSystemNotificationToUser(input: SendToUserInput) {
     });
   }
 }
+
+export interface IncidentNotificationPayload {
+  orgId: string;
+  type: 'pos_webhook_failed' | 'pos_sync_critical_error';
+  title: string;
+  errorMsg: string;
+  logOrJobId: string;
+  eventTypeOrEntity: string;
+  recommendedAction: string;
+}
+
+export function notifyAdminsOfIncidentAsync(payload: IncidentNotificationPayload): void {
+  setImmediate(async () => {
+    try {
+      const admins = await prisma.user.findMany({
+        where: {
+          orgId: payload.orgId,
+          role: { in: ['admin', 'owner'] },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (admins.length === 0) {
+        logger.warn(`[system-notify-incident] No active admins found for org ${payload.orgId}`);
+        return;
+      }
+
+      const timestamp = new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' });
+      const content =
+        `⚠️ CẢNH BÁO SỰ CỐ ĐỒNG BỘ POS\n` +
+        `----------------------------------------\n` +
+        `• Loại sự cố: ${payload.type === 'pos_webhook_failed' ? 'POS Webhook Retry Failed' : 'Critical Sync Job Failure'}\n` +
+        `• Đối tượng / Event: ${payload.eventTypeOrEntity}\n` +
+        `• Mô tả lỗi: ${payload.errorMsg}\n` +
+        `• Organization ID: ${payload.orgId}\n` +
+        `• Log/Job ID: ${payload.logOrJobId}\n` +
+        `• Thời gian: ${timestamp}\n` +
+        `• Hướng xử lý: ${payload.recommendedAction}`;
+
+      for (const admin of admins) {
+        await sendSystemNotificationToUser({
+          orgId: payload.orgId,
+          targetUserId: admin.id,
+          type: payload.type,
+          title: payload.title,
+          content,
+          priority: 'high',
+          urgency: 2,
+        });
+      }
+    } catch (err: any) {
+      logger.error(`[system-notify-incident] Async dispatch failed for org ${payload.orgId}:`, err);
+    }
+  });
+}
+

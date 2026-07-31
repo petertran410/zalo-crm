@@ -48,12 +48,12 @@ const router = useRouter();
 const isDark = ref(localStorage.getItem('theme') !== 'light');
 
 onMounted(() => {
-  theme.global.name.value = isDark.value ? 'dark' : 'light';
+  theme.change(isDark.value ? 'dark' : 'light');
 });
 
 function toggleTheme() {
   isDark.value = !isDark.value;
-  theme.global.name.value = isDark.value ? 'dark' : 'light';
+  theme.change(isDark.value ? 'dark' : 'light');
   localStorage.setItem('theme', isDark.value ? 'dark' : 'light');
 }
 

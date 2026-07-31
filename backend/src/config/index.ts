@@ -162,6 +162,8 @@ export const config = {
   // Bật khi RLS CHƯA apply cũng an toàn (chỉ set 1 GUC vô hại) nhưng tốn 1 round-trip/query.
   rlsSetConfig: (envValue('RLS_SET_CONFIG') || 'false').toLowerCase() === 'true',
 
+  /* --- POS Realtime Webhook Secret (R3) --- */
+  posWebhookSecret: envValue('POS_WEBHOOK_SECRET') || 'default_pos_webhook_secret_key_change_me_in_prod',
   /* --- Hisweetie POS MCP (CRM → POS gateway) 2026-07 ---
    * Client SDK @dieptra/mcp-client: OAuth client_credentials + Streamable HTTP /mcp.
    * baseUrl = origin only (vd https://sandbox-mcp.hisweetievietnam.com), không kèm /mcp.

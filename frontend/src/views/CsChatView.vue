@@ -141,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
@@ -178,6 +178,14 @@ const {
   outOfScopeCounts, clearOutOfScopeBadge,
   patchContactProfile,
 } = useChat();
+
+// ── Mini Chat Context: provide chat state xuống VisualOrderModal.MiniChatPanel
+provide('miniChat', {
+  conversation: selectedConv,
+  messages,
+  sendMessage,
+  sendingMsg,
+});
 
 const {
   typingUsers, replyingTo, editingMessage,

@@ -9,6 +9,9 @@ const mockPrisma = vi.hoisted(() => ({
   posCustomer: {
     findMany: vi.fn(),
   },
+  posProductImage: {
+    findMany: vi.fn().mockResolvedValue([]),
+  },
 }));
 
 vi.mock('../src/shared/database/prisma-client.js', () => ({

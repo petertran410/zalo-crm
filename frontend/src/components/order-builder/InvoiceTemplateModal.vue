@@ -128,9 +128,10 @@
 
       <!-- Notes / Terms -->
       <div class="ob-invoice__notes">
-        <p class="ob-invoice__notes-title">**Ghi chú:</p>
-        <div v-if="description && description.trim()" class="ob-invoice__custom-note">
-          📌 {{ description }}
+        <div class="ob-invoice__notes-header">
+          <span class="ob-invoice__notes-title">**Ghi chú:&nbsp;</span>
+          <span v-if="description && description.trim()" class="ob-invoice__note-text">{{ description }}</span>
+          <span class="ob-typing-cursor">|</span>
         </div>
         <ul class="ob-invoice__notes-list">
           <li>Thời gian giao hàng dự kiến: 1 - 3 ngày kể từ ngày đặt hàng.</li>
@@ -307,7 +308,10 @@ function openPrintTab() {
           .ob-inv-total-label { text-align: right; font-weight: 700; background: #f8fafc; }
           .ob-inv-total-val { text-align: right; font-weight: 700; font-family: monospace; }
           .ob-invoice__notes { font-size: 10px; color: #475569; margin-top: 14px; page-break-inside: avoid; }
-          .ob-invoice__notes-title { font-weight: 800; margin: 0 0 4px; color: #1e293b; }
+          .ob-invoice__notes-header { margin-bottom: 4px; font-size: 11px; line-height: 1.5; word-break: break-word; }
+          .ob-invoice__notes-title { font-weight: 800; color: #1e293b; }
+          .ob-invoice__note-text { font-weight: 600; color: #1e293b; white-space: pre-wrap; word-break: break-word; }
+          .ob-typing-cursor { display: none !important; }
           .ob-invoice__notes-list { margin: 0; padding-left: 16px; }
           .ob-invoice__signatures { display: flex; justify-content: space-between; margin-top: 32px; text-align: center; font-size: 11px; page-break-inside: avoid; }
           .ob-invoice__sig-col { flex: 1; }
@@ -559,21 +563,34 @@ function openPrintTab() {
   color: #475569;
   line-height: 1.5;
 }
+.ob-invoice__notes-header {
+  margin-bottom: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: #1e293b;
+  width: 100%;
+  word-break: break-word;
+}
 .ob-invoice__notes-title {
   font-weight: 800;
-  margin: 0 0 4px;
   color: #1e293b;
 }
-.ob-invoice__custom-note {
-  font-size: 11px;
+.ob-invoice__note-text {
   font-weight: 700;
   color: #1e293b;
-  background: #f8fafc;
-  border-left: 3px solid #0068FF;
-  padding: 6px 10px;
-  margin-bottom: 6px;
-  border-radius: 0 4px 4px 0;
   white-space: pre-wrap;
+  word-break: break-word;
+}
+.ob-typing-cursor {
+  display: inline-block;
+  font-weight: 800;
+  color: #0068FF;
+  margin-left: 2px;
+  animation: ob-blink 1s infinite;
+}
+@keyframes ob-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 .ob-invoice__notes-list {
   margin: 0;

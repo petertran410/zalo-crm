@@ -138,6 +138,15 @@
 
     <!-- Global toast queue -->
     <ToastContainer />
+
+    <!-- ════ ORDER DRAFT SYSTEM (Global) ════ -->
+    <!-- Taskbar: hiển widget thu nhỏ cho các đơn hàng nhiều khách -->
+    <OrderDraftTaskbar />
+    <!-- Full modal: chỉ render khi có draft đang được mở full -->
+    <OrderBuilderWorkspace
+      v-if="orderDraftStore.openFullDraft"
+      :draft-id="orderDraftStore.openFullDraft.id"
+    />
   </v-app>
 </template>
 
@@ -153,9 +162,17 @@ import GlobalSearch from '@/components/GlobalSearch.vue';
 import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
+import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
+import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
+import { useOrderDraftStore } from '@/stores/use-order-drafts';
 import { fetchPublicBranding } from '@/api/public-branding';
+import { usePosNotification } from '@/composables/use-pos-notification';
 // Open-core: extension top-nav shortcuts (empty in Community edition via @ee stub).
 import { eeTopNavShortcuts } from '@ee/nav';
+
+// Multi-draft order queue store
+const orderDraftStore = useOrderDraftStore();
+usePosNotification();
 // 2026-06-04: gỡ MiniOnboardingIndicator (Anh chốt code lại setup 4 bước sau)
 // LeadFloatingButton moved to ConversationFilterSidebar 2026-06-01
 // 2026-06-08: gỡ import api — banner "BỎ LỠ thông báo" đã tắt (checkInternalContactSetup no-op).
@@ -253,9 +270,11 @@ onMounted(() => {
   // 2026-06-13 (anh chốt): app LUÔN theme sáng 'hsLight', bỏ chọn theme tối. Ép cứng +
   // dọn giá trị 'legacy-dark'/'smax-light' cũ trong localStorage để user nào đang kẹt
   // dark cũng về sáng.
-  theme.global.name.value = 'hsLight';
-  localStorage.setItem('theme', 'hsLight');
+  theme.change('hsLight');
   void checkInternalContactSetup();
+
+  // Khôi phục các đơn nháp từ localStorage
+  orderDraftStore.hydrate();
 
   fetchPublicBranding()
     .then((b) => {

@@ -46,14 +46,63 @@ export function usePosCommands() {
     }
   }
 
-  async function linkContactToPos(contactId: string, posCustomerId: number, posCustomerCode?: string) {
+  async function linkContactToPos(
+    contactId: string,
+    posCustomerId: number,
+    posCustomerCode?: string,
+    posCustomerName?: string,
+    posCustomerPhone?: string,
+  ) {
     loading.value = true;
     error.value = null;
     try {
-      const res = await api.post(`/pos/contacts/${contactId}/link`, { posCustomerId, posCustomerCode });
+      const res = await api.post(`/pos/contacts/${contactId}/link`, {
+        posCustomerId,
+        posCustomerCode,
+        posCustomerName,
+        posCustomerPhone,
+      });
       return res.data;
     } catch (err: any) {
       error.value = err.response?.data?.error || 'Không thể liên kết';
+      return null;
+    } finally {
+      loading.value = false;
+    }
+  }
+
+  /**
+   * 2-layer search: local Read Model trước → MCP POS nếu không có kết quả.
+   * Returns { source: 'local'|'mcp', items: [...] }
+   * searchPhase: 'local' | 'mcp' | null — để UI hiển thị spinner đúng pha.
+   */
+  const searchPhase = ref<'local' | 'mcp' | null>(null);
+
+  async function searchPosCustomers(keyword: string): Promise<{ source: string; items: any[] }> {
+    searchPhase.value = 'local';
+    try {
+      const res = await api.get('/pos/customers/search', { params: { keyword } });
+      searchPhase.value = res.data.source === 'mcp' ? 'mcp' : null;
+      return res.data;
+    } catch (err: any) {
+      console.error('[usePosCommands] searchPosCustomers failed:', err);
+      return { source: 'error', items: [] };
+    } finally {
+      searchPhase.value = null;
+    }
+  }
+
+  /**
+   * Hủy liên kết Contact khỏi POS Customer.
+   */
+  async function unlinkContact(contactId: string) {
+    loading.value = true;
+    error.value = null;
+    try {
+      const res = await api.delete(`/pos/contacts/${contactId}/link`);
+      return res.data;
+    } catch (err: any) {
+      error.value = err.response?.data?.error || 'Không thể hủy liên kết';
       return null;
     } finally {
       loading.value = false;
@@ -64,8 +113,11 @@ export function usePosCommands() {
     loading,
     error,
     success,
+    searchPhase,
     executeCommand,
     getLinkStatus,
     linkContactToPos,
+    searchPosCustomers,
+    unlinkContact,
   };
 }

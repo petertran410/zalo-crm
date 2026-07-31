@@ -45,6 +45,7 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': backendTarget,
+      '/files': backendTarget,
       '/socket.io': {
         target: backendTarget,
         ws: true,

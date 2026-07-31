@@ -191,7 +191,12 @@ model Organization {
   chatArchives            ChatArchive[]
   posCustomers            PosCustomer[]
   posProducts             PosProduct[]
+  posProductImages        PosProductImage[]
   posOrders               PosOrder[]
+  posInvoices             PosInvoice[]
+  posCustomerDebts        PosCustomerDebt[]
+  posBranchInventory      PosBranchInventory[]
+  posWebhookLogs          PosWebhookLog[]
   syncJobs                SyncJob[]
 
   @@map("organizations")
@@ -345,6 +350,7 @@ model User {
   // Phase Lưu Hội Thoại 2026-07-22 — bản lưu hội thoại do người này tạo (chỉ Chủ tài khoản).
   createdChatArchives       ChatArchive[]                @relation("ChatArchiveCreatedBy")
   syncJobs                  SyncJob[]                    @relation("SyncJobUser")
+  createdPosOrders          PosOrder[]                   @relation("UserPosOrders")
 
   @@map("users")
 }
@@ -751,13 +757,10 @@ model Contact {
   // Chạy song song Contact.tags JSON cho dual-write Wave 3-4.
   tagAssignments ContactTag[]
 
-  // ── Hisweetie POS sync 2026-07-15 ────────────────────────────────────────
-  // posCustomerId/posCustomerCode chỉ set khi Contact đã match/tạo từ POS
-  // (hisweetie-sync-cron). NULL = KH thuần Zalo, chưa từng thấy bên POS.
-  // Match key khi backfill: phoneNormalized trước (dedup với KH đã có), fallback
-  // tạo Contact mới nếu không tìm thấy số khớp. Field CRM chỉ được điền khi đang
-  // trống (never overwrite dữ liệu sale đã nhập tay) — xem hisweetie-sync-cron.ts.
-  posSyncedAt       DateTime? @map("pos_synced_at")
+  // Reverse relations for POS expansion
+  posOrders   PosOrder[]        @relation("ContactPosOrders")
+  posInvoices PosInvoice[]      @relation("ContactPosInvoices")
+  posDebts    PosCustomerDebt[] @relation("ContactPosDebts")
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
@@ -4491,6 +4494,24 @@ model PosProduct {
   @@map("pos_products")
 }
 
+// Model lưu trữ hình ảnh sản phẩm POS đã đồng bộ & tải về CRM Server
+model PosProductImage {
+  id           String   @id @default(uuid())
+  posImageId   Int      @map("pos_image_id")   // ID ảnh từ POS MCP
+  posProductId Int      @map("pos_product_id") // posId sản phẩm từ POS MCP
+  originalUrl  String   @map("original_url")   // URL ảnh gốc POS MCP
+  localUrl     String   @map("local_url")      // URL nội bộ CRM (/files/pos-products/1034-6.jpg)
+  orgId        String   @map("org_id")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([posImageId, orgId])
+  @@index([posProductId, orgId])
+  @@map("pos_product_images")
+}
+
 // SyncJob model for background synchronization jobs
 model SyncJob {
   id          String    @id @default(uuid())
@@ -4519,78 +4540,172 @@ model SyncJob {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POS Order Read Model — đồng bộ đơn hàng từ POS qua MCP
-// CRM KHÔNG tạo đơn trực tiếp trong DB, mà gửi qua MCP tới POS, rồi lưu kết
-// quả trả về vào Read Model cục bộ để hiển thị + tra cứu nhanh.
+// Extended POS Models for Customer 360, Debt Tracking, Branch Stock & Invoices
 // ════════════════════════════════════════════════════════════════════════════
 
 model PosOrder {
-  id              String             @id @default(uuid())
-  posOrderId      Int                @unique @map("pos_order_id")
-  code            String             @unique
-  customerId      Int?               @map("customer_id")
-  branchId        Int?               @map("branch_id")
-  soldById        Int?               @map("sold_by_id")
-  orderDate       DateTime           @default(now()) @map("order_date")
-  totalAmount     Float              @default(0) @map("total_amount")
-  discount        Float              @default(0)
-  grandTotal      Float              @default(0) @map("grand_total")
-  paidAmount      Float              @default(0) @map("paid_amount")
-  debtAmount      Float              @default(0) @map("debt_amount")
-  paymentStatus   String             @default("Draft") @map("payment_status")
-  orderStatus     String             @default("Draft") @map("order_status")
+  id              String         @id @default(uuid())
+  orgId           String         @map("org_id")
+  posOrderId      Int            @map("pos_order_id")
+  code            String
+  posCustomerId   Int?           @map("pos_customer_id")
+  posCustomerCode String?        @map("pos_customer_code")
+  customerName    String?        @map("customer_name")
+  customerPhone   String?        @map("customer_phone")
+  branchId        Int?           @map("branch_id")
+  branchName      String?        @map("branch_name")
+  totalAmount     Float          @default(0) @map("total_amount")
+  discountAmount  Float          @default(0) @map("discount_amount")
+  discount        Float          @default(0)
+  finalAmount     Float          @default(0) @map("final_amount")
+  grandTotal      Float          @default(0) @map("grand_total")
+  paidAmount      Float          @default(0) @map("paid_amount")
+  debtAmount      Float          @default(0) @map("debt_amount")
+  status          String         @default("Completed") // Pending, Completed, Cancelled
+  paymentStatus   String         @default("Draft") @map("payment_status")
+  orderStatus     String         @default("Draft") @map("order_status")
   description     String?
-  orgId           String             @map("org_id")
-  // Soft FK: contact CRM đã liên kết (dùng để hiển thị đơn hàng trong sidebar KH)
-  contactId       String?            @map("contact_id")
-  createdByUserId String?            @map("created_by_user_id")
-  createdAt       DateTime           @default(now()) @map("created_at")
-  updatedAt       DateTime           @updatedAt @map("updated_at")
+  orderDate       DateTime       @default(now()) @map("order_date")
+  contactId       String?        @map("contact_id")
+  createdByUserId String?        @map("created_by_user_id")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
 
-  org             Organization       @relation(fields: [orgId], references: [id], onDelete: Cascade)
-  items           PosOrderDetail[]
-  payments        PosOrderPayment[]
+  // Relations
+  org       Organization   @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact?       @relation("ContactPosOrders", fields: [contactId], references: [id], onDelete: SetNull)
+  createdBy User?          @relation("UserPosOrders", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  items     PosOrderItem[]
+  invoices  PosInvoice[]   @relation("OrderPosInvoices")
 
-  @@index([orgId])
+  @@unique([posOrderId, orgId])
+  @@index([orgId, posCustomerId])
+  @@index([orgId, customerPhone])
+  @@index([orgId, contactId])
+  @@index([orgId, status])
   @@index([code])
-  @@index([contactId])
   @@index([createdAt])
   @@map("pos_orders")
 }
 
-model PosOrderDetail {
-  id            String   @id @default(uuid())
-  orderId       String   @map("order_id")
-  productId     Int      @map("product_id")
-  productCode   String   @map("product_code")
-  productName   String   @map("product_name")
-  quantity      Float    @default(0)
-  unitPrice     Float    @default(0) @map("unit_price")
-  discount      Float    @default(0)
-  totalPrice    Float    @default(0) @map("total_price")
-  note          String?
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
+model PosOrderItem {
+  id           String   @id @default(uuid())
+  posOrderId   String   @map("pos_order_id")
+  posProductId Int?     @map("pos_product_id")
+  productCode  String?  @map("product_code")
+  productName  String   @map("product_name")
+  quantity     Float    @default(1)
+  unitPrice    Float    @default(0) @map("unit_price")
+  discount     Float    @default(0)
+  totalPrice   Float    @default(0) @map("total_price")
+  note         String?
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
-  order         PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  order PosOrder @relation(fields: [posOrderId], references: [id], onDelete: Cascade)
 
-  @@index([orderId])
-  @@map("pos_order_details")
+  @@index([posOrderId])
+  @@index([posProductId])
+  @@map("pos_order_items")
 }
 
-model PosOrderPayment {
-  id              String   @id @default(uuid())
-  orderId         String   @map("order_id")
-  posPaymentId    Int?     @map("pos_payment_id")
-  amount          Float
-  paymentDate     DateTime @default(now()) @map("payment_date")
-  paymentMethod   String   @default("cash") @map("payment_method")
-  description     String?
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+model PosInvoice {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  posInvoiceId    Int       @map("pos_invoice_id")
+  invoiceCode     String    @map("invoice_code")
+  posOrderId      Int?      @map("pos_order_id")
+  posOrderUuid    String?   @map("pos_order_uuid")
+  posCustomerId   Int?      @map("pos_customer_id")
+  posCustomerCode String?   @map("pos_customer_code")
+  contactId       String?   @map("contact_id")
+  totalAmount     Float     @default(0) @map("total_amount")
+  paidAmount      Float     @default(0) @map("paid_amount")
+  remainingDebt   Float     @default(0) @map("remaining_debt")
+  status          String    @default("Unpaid") // Unpaid, Partial, Paid, Overdue
+  invoiceDate     DateTime  @map("invoice_date")
+  dueDate         DateTime? @map("due_date")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
 
-  order           PosOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  // Relations
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact Contact?     @relation("ContactPosInvoices", fields: [contactId], references: [id], onDelete: SetNull)
+  order   PosOrder?    @relation("OrderPosInvoices", fields: [posOrderUuid], references: [id], onDelete: SetNull)
 
-  @@index([orderId])
-  @@map("pos_order_payments")
+  @@unique([posInvoiceId, orgId])
+  @@index([orgId, posCustomerId])
+  @@index([orgId, contactId])
+  @@index([orgId, posOrderId])
+  @@index([status])
+  @@map("pos_invoices")
+}
+
+model PosCustomerDebt {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  posCustomerId   Int       @map("pos_customer_id")
+  posCustomerCode String?   @map("pos_customer_code")
+  customerName    String?   @map("customer_name")
+  customerPhone   String?   @map("customer_phone")
+  contactId       String?   @map("contact_id")
+  totalDebt       Float     @default(0) @map("total_debt")
+  currentDebt     Float     @default(0) @map("current_debt")
+  overdueDebt     Float     @default(0) @map("overdue_debt")
+  dueDate         DateTime? @map("due_date")
+  status          String?   @default("Normal") @map("status") // Normal, Warning, Danger
+  timelineJson    Json?     @map("timeline_json")
+  lastSyncedAt    DateTime  @default(now()) @map("last_synced_at")
+
+  // Relations
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact Contact?     @relation("ContactPosDebts", fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([posCustomerId, orgId])
+  @@index([orgId, contactId])
+  @@index([orgId, status])
+  @@map("pos_customer_debts")
+}
+
+model PosBranchInventory {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  posProductId  Int      @map("pos_product_id")
+  productCode   String?  @map("product_code")
+  productName   String?  @map("product_name")
+  branchId      Int      @map("branch_id")
+  branchName    String   @map("branch_name")
+  onHand        Float    @default(0) @map("on_hand")
+  reserved      Float    @default(0) @map("reserved")
+  available     Float    @default(0)
+  minStockLevel Float    @default(0) @map("min_stock_level")
+  status        String?  @default("InStock") @map("status") // InStock, LowStock, OutOfStock
+  lastSyncedAt  DateTime @default(now()) @map("last_synced_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([posProductId, branchId, orgId])
+  @@index([orgId, posProductId])
+  @@index([orgId, branchId])
+  @@map("pos_branch_inventory")
+}
+
+model PosWebhookLog {
+  id          String    @id @default(uuid())
+  orgId       String    @map("org_id")
+  eventType   String    @map("event_type")
+  payload     Json
+  status      String    @default("PENDING")
+  attempts    Int       @default(0)
+  lastError   String?   @map("last_error") @db.Text
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+  processedAt DateTime? @map("processed_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, status])
+  @@index([status, attempts, createdAt])
+  @@index([orgId, eventType])
+  @@map("pos_webhook_logs")
 }

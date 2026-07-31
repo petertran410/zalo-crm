@@ -130,11 +130,13 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
       // 2. Gọi MCP tạo đơn trên POS
       // Lưu ý: MCP tool crm_create_order không nhận field 'status' — mặc định luôn tạo Phiếu tạm (status=1)
       // Để chuyển sang "Đã xác nhận" cần call update riêng sau khi tạo xong
+      const targetPriceBookId = priceBookId ? (isNaN(Number(priceBookId)) ? 1 : Number(priceBookId)) : 1;
       const res = await mcpClient.orders.create({
         customerId: posCustomerId,
         branchId,
+        priceBookId: targetPriceBookId,
         items: orderItems,
-        paidAmount: paidAmount || 0,
+        paidAmount: 0,
         description: description || '',
       }, idempotencyKey);
 
@@ -155,21 +157,17 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
         throw new Error(`POS API trả về orderId không hợp lệ. Response keys: ${Object.keys(orderData).join(', ')}`);
       }
 
-      logger.info(`[CreateOrderHandler] POS order created: ${orderCode} (ID: ${posOrderId}) — Trạng thái duy nhất: Phiếu tạm (status=1)`);
+      logger.info(`[CreateOrderHandler] POS order created: ${orderCode} (ID: ${posOrderId}) — Trạng thái Phiếu tạm (status=1)`);
 
       // 3. Tính toán tổng tiền từ items (Read Model)
-      // POS trả về số tiền dưới dạng string → cần parseFloat
       const totalAmount = items.reduce((sum, item) => {
         const lineTotal = item.quantity * item.unitPrice - (item.discount || 0);
         return sum + lineTotal;
       }, 0);
       const grandTotal = parseFloat(orderData.grandTotal ?? orderData.total ?? 0) || totalAmount;
       const posDiscount = parseFloat(orderData.discount ?? 0) || 0;
-      const paid = paidAmount || 0;
-      const debt = grandTotal - paid;
 
-      // orderStatus từ POS là số nguyên (1=Phiếu tạm, 2=Đã xác nhận, v.v.)
-      // Ưu tiên dùng statusValue (string) hoặc orderStatus (string), fallback mapping từ số
+      // STATUS MAP
       const STATUS_MAP: Record<number, string> = { 1: 'Pending', 2: 'Confirmed', 3: 'Processing', 4: 'Done', 5: 'Cancelled' };
       const rawStatus = orderData.statusValue ?? orderData.orderStatus;
       const posOrderStatus = typeof rawStatus === 'string' && rawStatus
@@ -177,19 +175,20 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
         : (STATUS_MAP[orderData.status as number] ?? 'Pending');
 
       // 4. Lưu Read Model PosOrder + PosOrderDetail
+      // Mọi đơn tạo từ CRM Sales Workspace luôn là Phiếu tạm (Draft / Pending), không cọc, nợ = grandTotal
       const posOrder = await prisma.posOrder.create({
         data: {
           posOrderId,
           code: orderCode ?? `ORD-${posOrderId}`,
-          customerId: posCustomerId,
+          posCustomerId: posCustomerId,
           branchId,
           orderDate: new Date(),
           totalAmount,
           discount: posDiscount,
           grandTotal,
-          paidAmount: paid,
-          debtAmount: debt > 0 ? debt : 0,
-          paymentStatus: paid >= grandTotal ? 'Paid' : (paid > 0 ? 'PartiallyPaid' : 'Draft'),
+          paidAmount: 0,
+          debtAmount: grandTotal,
+          paymentStatus: 'Draft',
           orderStatus: posOrderStatus,
           description: description || null,
           orgId: context.orgId,
@@ -197,7 +196,7 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
           createdByUserId: context.userId,
           items: {
             create: items.map(item => ({
-              productId: item.productId,
+              posProductId: item.productId,
               productCode: item.productCode,
               productName: item.productName,
               quantity: item.quantity,
@@ -213,51 +212,13 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
         },
       });
 
-      // 5. Nếu có thanh toán ngay (đặt cọc) → tạo invoice + record payment qua MCP
-      if (paid > 0) {
-        try {
-          logger.info(`[CreateOrderHandler] Recording payment ${paid} for order ${posOrderId}`);
-
-          // Tạo invoice từ order
-          const invoiceRes = await mcpClient.invoices.createFromOrder(posOrderId, {}, uuidv4() as any);
-          const invoiceData = (invoiceRes as any).data || invoiceRes;
-          const invoiceId = invoiceData.id;
-
-          if (invoiceId) {
-            // Ghi nhận thanh toán
-            await mcpClient.invoices.recordPayment({
-              invoiceId,
-              amount: paid,
-              paymentMethod: paymentMethod || 'cash',
-              paymentDate: new Date().toISOString(),
-              notes: `Đặt cọc khi tạo đơn từ CRM`,
-            }, uuidv4() as any);
-
-            // Lưu payment vào Read Model
-            await prisma.posOrderPayment.create({
-              data: {
-                orderId: posOrder.id,
-                posPaymentId: null,
-                amount: paid,
-                paymentDate: new Date(),
-                paymentMethod: paymentMethod || 'cash',
-                description: `Đặt cọc khi tạo đơn từ CRM`,
-              },
-            });
-          }
-        } catch (payErr: any) {
-          // Payment thất bại nhưng order đã tạo thành công → log warning, KHÔNG throw
-          logger.warn(`[CreateOrderHandler] Payment recording failed (order still created): ${payErr.message}`);
-        }
-      }
-
       return {
         posOrderId,
         orderCode,
         localOrderId: posOrder.id,
         grandTotal,
-        paidAmount: paid,
-        debtAmount: debt > 0 ? debt : 0,
+        paidAmount: 0,
+        debtAmount: grandTotal,
         itemCount: items.length,
       };
     } catch (err: any) {
@@ -290,13 +251,57 @@ export class GetContactOrdersHandler implements CommandHandler<Command<GetContac
       },
       include: {
         items: true,
-        payments: true,
       },
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
 
-    return { orders, total: orders.length };
+    // ── Tính thống kê ngay tại backend — không cần gọi thêm API ──────────────
+    // Phân nhóm trạng thái:
+    //   Phiếu tạm  (Pending/Draft)          → chưa chốt, nợ DỰ TÍNH
+    //   Đang xử lý (Confirmed/Processing)   → đã chốt,   nợ THỰC TẾ
+    //   Hoàn thành (Done)                   → đã xong,   nợ thực tế đã thu
+    //   Đã hủy     (Cancelled)              → loại khỏi thống kê nợ
+    // Lưu ý: KiotViet có thể trả về tên tiếng Việt hoặc tiếng Anh tùy API version
+    const DRAFT_STATUSES     = ['Pending', 'Draft', 'Phiếu tạm'];
+    const CONFIRMED_STATUSES = ['Confirmed', 'Processing', 'Đã xác nhận', 'Đang xử lý'];
+    const DONE_STATUSES      = ['Done', 'Completed', 'Hoàn thành', 'Đã hoàn thành'];
+    const CANCELLED_STATUSES = ['Cancelled', 'Đã hủy', 'Huỷ'];
+
+    const activeOrders    = orders.filter(o => !CANCELLED_STATUSES.includes(o.orderStatus));
+    const draftOrders     = orders.filter(o => DRAFT_STATUSES.includes(o.orderStatus));
+    const confirmedOrders = orders.filter(o => CONFIRMED_STATUSES.includes(o.orderStatus));
+    const doneOrders      = orders.filter(o => DONE_STATUSES.includes(o.orderStatus));
+    const cancelledOrders = orders.filter(o => CANCELLED_STATUSES.includes(o.orderStatus));
+
+    const sumDebt  = (list: typeof orders) => list.reduce((s, o) => s + (o.debtAmount  ?? 0), 0);
+    const sumTotal = (list: typeof orders) => list.reduce((s, o) => s + (o.grandTotal   ?? 0), 0);
+
+    const summary = {
+      // Số lượng theo nhóm
+      totalCount:     activeOrders.length,
+      draftCount:     draftOrders.length,
+      confirmedCount: confirmedOrders.length,
+      doneCount:      doneOrders.length,
+      cancelledCount: cancelledOrders.length,
+
+      // Tổng giá trị đơn hàng (không tính đơn hủy)
+      totalGrandTotal: sumTotal(activeOrders),
+
+      // Công nợ dự tính = tổng debtAmount của đơn PHIẾU TẠM chưa xác nhận
+      // → Sales dùng để biết "KH còn bao nhiêu tiền chưa chốt"
+      estimatedDebt: sumDebt(draftOrders),
+
+      // Công nợ thực tế = tổng debtAmount của đơn ĐÃ XÁC NHẬN (đang chờ thu)
+      // → Số này sẽ được KiotViet ghi nhận là nợ chính thức
+      actualDebt: sumDebt(confirmedOrders),
+
+      // Đơn gần nhất (code + ngày — dùng cho hiển thị nhanh)
+      lastOrderAt:   orders[0]?.createdAt ?? null,
+      lastOrderCode: orders[0]?.code ?? null,
+    };
+
+    return { success: true, data: { orders, total: orders.length, summary } };
   }
 }
 

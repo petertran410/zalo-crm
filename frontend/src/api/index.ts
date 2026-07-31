@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { router } from '@/router/index';
 import { useToast } from '@/composables/use-toast';
+import { useProgress } from '@/composables/use-progress';
 
 const api = axios.create({
   baseURL: '/api/v1',
@@ -32,6 +33,9 @@ api.interceptors.request.use((config) => {
       config.headers['Content-Type'] = 'application/json';
     }
   }
+
+  // Progress bar — track mọi API request
+  useProgress().increment();
 
   return config;
 });
@@ -131,7 +135,10 @@ function isAuthEndpoint(url: string): boolean {
 
 // Response interceptor — global handle 401(refresh)/404/5xx
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    useProgress().decrement();
+    return response;
+  },
   async (error) => {
     const status = error.response?.status;
     const original = error.config ?? {};
@@ -186,6 +193,15 @@ api.interceptors.response.use(
     }
     return Promise.reject(error);
   },
+);
+
+// Decrement on error path (after all handling)
+api.interceptors.response.use(
+  undefined,
+  (error) => {
+    useProgress().decrement();
+    return Promise.reject(error);
+  }
 );
 
 export { api };

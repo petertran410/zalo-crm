@@ -52,6 +52,32 @@ export class PosPaginationService {
     const hasNext = items.length > limit;
     const paginatedItems = hasNext ? items.slice(0, limit) : items;
 
+    // Attach local product images
+    const posProductIds = paginatedItems.map(p => p.posId);
+    const images = await prisma.posProductImage.findMany({
+      where: {
+        orgId,
+        posProductId: { in: posProductIds },
+      },
+      select: { posProductId: true, localUrl: true, originalUrl: true, posImageId: true },
+    });
+
+    const imageMap = new Map<number, { localUrl: string; originalUrl?: string }>();
+    for (const img of images) {
+      if (!imageMap.has(img.posProductId)) {
+        imageMap.set(img.posProductId, { localUrl: img.localUrl, originalUrl: img.originalUrl });
+      }
+    }
+
+    const itemsWithImages = paginatedItems.map(item => {
+      const imgInfo = imageMap.get(item.posId);
+      return {
+        ...item,
+        imageUrl: imgInfo?.localUrl || imgInfo?.originalUrl || undefined,
+        originalImageUrl: imgInfo?.originalUrl || undefined,
+      };
+    });
+
     let nextCursor: string | null = null;
     if (hasNext && paginatedItems.length > 0) {
       const lastItem = paginatedItems[paginatedItems.length - 1];
@@ -62,7 +88,7 @@ export class PosPaginationService {
     }
 
     return {
-      items: paginatedItems,
+      items: itemsWithImages,
       nextCursor,
       hasNext,
     };
