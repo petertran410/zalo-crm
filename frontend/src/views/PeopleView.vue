@@ -556,7 +556,10 @@
         <div class="ppl-modal-sub">Nhập SĐT để tìm khách có sẵn bên POS. Khách mới từ Zalo/Facebook chưa có ở POS thì tạo mới bên dưới.</div>
         <label class="ppl-input-box">
           <span class="ppl-input-l">Số điện thoại</span>
-          <input v-model="addPhone" class="mono" placeholder="09…" @input="onAddPhoneInput" />
+          <input
+            v-model="addPhone" class="mono" placeholder="09…"
+            type="tel" inputmode="tel" autocomplete="tel"
+            @input="onAddPhoneInput" />
         </label>
 
         <div class="ppl-link-res">
@@ -569,19 +572,26 @@
           <button
             v-for="c in linkResults" :key="candidateKey(c)" type="button"
             class="ppl-link-row"
-            :class="{ on: linkPicked && candidateKey(linkPicked) === candidateKey(c), off: c.linked }"
-            :disabled="c.linked || linkSaving"
-            :title="c.linked ? 'Khách này đã có trong tab Khách hàng' : ''"
+            :class="{
+              on: linkPicked && candidateKey(linkPicked) === candidateKey(c),
+              off: c.linked || !c.accessible,
+            }"
+            :disabled="c.linked || !c.accessible || linkSaving"
             @click="linkPicked = c"
           >
             <span class="ppl-link-nm">{{ candidateDisplayName(c) }}</span>
             <span class="ppl-link-meta">
               <span class="ppl-link-ph mono">{{ c.phone || '—' }}</span>
-              <!-- đã có = KH bên POS (xám). chưa mua = contact Zalo/FB, chọn được -->
-              <span v-if="c.linked" class="ppl-link-tag">đã có</span>
+              <!-- Lý do disable phải là CHỮ, không chỉ tooltip: bàn phím và trình
+                   đọc màn hình không thấy title, chỉ gặp nút xám không rõ vì sao. -->
+              <span v-if="!c.accessible" class="ppl-link-tag">sale khác chăm</span>
+              <span v-else-if="c.linked" class="ppl-link-tag">đã có</span>
               <span v-else-if="c.contactId" class="ppl-link-tag">chưa mua</span>
             </span>
           </button>
+          <div v-if="linkSearched && linkTruncated" class="ppl-link-note">
+            Còn khách khác khớp số này chưa hiện — gõ thêm chữ số cho gọn danh sách.
+          </div>
         </div>
 
         <!-- KH mới tinh từ Zalo/Facebook — chưa có ở POS lẫn CRM. Chỉ mở khi
@@ -1181,10 +1191,6 @@ function applyToToday() {
   fetchPage(true);
 }
 
-const activeFieldLabel = computed(
-  () => FIELD_OPTIONS.find((o) => o.value === f.field)?.label ?? '',
-);
-
 const rangeLabel = computed(() => {
   if (!f.from) return 'Mọi ngày';
   return fmtDate(f.from) + (f.to ? ` → ${fmtDate(f.to)}` : ' → chọn ngày kết thúc');
@@ -1383,6 +1389,12 @@ function hydrateDraft(c: Contact) {
 function closeDrawer() {
   drawerOpen.value = false;
   selectedId.value = null;
+  // Bỏ ?focus= khỏi URL sau khi đóng — không thì F5 lại tự mở lại drawer vừa đóng.
+  if (route.query.focus) {
+    const q = { ...route.query };
+    delete q.focus;
+    void router.replace({ path: route.path, query: q });
+  }
 }
 
 // Deep-link ?focus=<contactId> 2026-07-31 — KH cần mở có thể KHÔNG nằm trong
@@ -1681,6 +1693,7 @@ const {
   searching: linkSearching,
   searched: linkSearched,
   error: linkError,
+  truncated: linkTruncated,
   search: runLinkSearch,
   reset: resetLinkSearch,
 } = useContactPhoneSearch();
@@ -1839,6 +1852,15 @@ onMounted(async () => {
     statuses.value = s.data?.statuses || [];
   } catch (err) {
     console.error('[PeopleView] load lookups failed:', err);
+  }
+});
+
+// 2026-07-31: onMounted chỉ chạy 1 lần. Khi đang Ở /contacts mà có nơi push tiếp
+// /contacts?focus=<id khác> (vd nút "Xem hồ sơ KH tổng hợp" ở cột 4 chat), router
+// tái dùng component → drawer im lặng không mở. Watch query để deep-link luôn ăn.
+watch(() => route.query.focus, (focus) => {
+  if (typeof focus === 'string' && focus && focus !== selectedId.value) {
+    void openDrawerById(focus);
   }
 });
 onBeforeUnmount(() => {

@@ -31,11 +31,12 @@
             class="acqd-input acqd-input--phone"
             placeholder="0936 668 266 hoặc 84936668266"
             autocomplete="tel"
+            inputmode="tel"
             :disabled="loading"
             @input="onPhoneInput"
           />
           <div v-if="!searched && !searching" class="acqd-hint">
-            Gõ SĐT để tìm khách bên POS (0xxx / 84xxx / +84xxx)
+            Gõ ít nhất 6 chữ số để tìm khách bên POS (0xxx / 84xxx / +84xxx)
           </div>
           <div v-if="searchError" class="acqd-msg acqd-msg--error">
             🔴 {{ searchError }}
@@ -52,19 +53,26 @@
             v-for="c in results" :key="candidateKey(c)"
             type="button"
             class="acqd-result"
-            :class="{ 'is-picked': picked && candidateKey(picked) === candidateKey(c), 'is-linked': c.linked }"
-            :disabled="c.linked || loading"
-            :title="c.linked ? 'Khách này đã có trong tab Khách hàng' : ''"
+            :class="{
+              'is-picked': picked && candidateKey(picked) === candidateKey(c),
+              'is-linked': c.linked || !c.accessible,
+            }"
+            :disabled="c.linked || !c.accessible || loading"
             @click="picked = c"
           >
             <span class="acqd-result-nm">{{ candidateDisplayName(c) }}</span>
             <span class="acqd-result-meta">
               <span class="acqd-result-ph">{{ c.phone || '—' }}</span>
-              <!-- đã có = KH bên POS (xám). chưa mua = contact Zalo/FB, chọn được -->
-              <span v-if="c.linked" class="acqd-result-tag">đã có</span>
+              <!-- Lý do disable phải là CHỮ, không chỉ tooltip: bàn phím và trình
+                   đọc màn hình không thấy title, chỉ gặp nút xám không rõ vì sao. -->
+              <span v-if="!c.accessible" class="acqd-result-tag">sale khác chăm</span>
+              <span v-else-if="c.linked" class="acqd-result-tag">đã có</span>
               <span v-else-if="c.contactId" class="acqd-result-tag">chưa mua</span>
             </span>
           </button>
+          <div v-if="searched && truncated" class="acqd-hint">
+            Còn khách khác khớp số này chưa hiện — gõ thêm chữ số cho gọn danh sách.
+          </div>
         </div>
 
         <!-- KH mới tinh từ Zalo/Facebook — chưa có ở POS lẫn CRM. Chỉ mở khi không
@@ -158,6 +166,7 @@ const {
   searching,
   searched,
   error: searchError,
+  truncated,
   search: runSearch,
   reset: resetSearch,
 } = useContactPhoneSearch();

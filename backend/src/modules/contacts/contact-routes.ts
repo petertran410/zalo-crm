@@ -884,6 +884,20 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         linkedRows.map((r) => [r.posCustomerId as number, r.id]),
       );
 
+      // 2026-07-31 fix: danh sách trên cố ý dò org-wide (để không tạo trùng), NHƯNG
+      // GET /contacts/:id vẫn chặn theo contact-scope. Nếu không đánh dấu, sale bấm
+      // vào KH ngoài phạm vi của mình sẽ ăn 403 mà không hiểu vì sao. Tính sẵn
+      // `accessible` để FE nói rõ "KH của sale khác" thay vì để bấm rồi lỗi.
+      const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const accessibleIds = cScope.accessibleContactIds === null
+        ? null
+        : new Set(cScope.accessibleContactIds);
+      const canOpen = (contactId: string | null) => {
+        if (!contactId) return true;              // dòng POS thuần — chưa có Contact
+        if (cScope.isOrgAdmin || accessibleIds === null) return true;
+        return accessibleIds.has(contactId);
+      };
+
       const candidates: Array<{
         posCustomerId: number | null;
         contactId: string | null;
@@ -891,6 +905,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         name: string;
         phone: string | null;
         linked: boolean;
+        accessible: boolean;
       }> = [];
       const seenPosId = new Set<number>();
 
@@ -904,6 +919,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           name: p.name,
           phone: p.phone,
           linked: contactId !== null,
+          accessible: canOpen(contactId),
         });
       }
       // Contact khớp SĐT chưa xuất hiện qua dòng POS ở trên → thêm vào.
@@ -919,10 +935,14 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           name: c.crmName || c.fullName || c.phone || '—',
           phone: c.phone,
           linked: c.posCustomerId != null,
+          accessible: canOpen(c.id),
         });
       }
 
-      return { candidates };
+      // truncated: cả 2 nhánh đều take:10 — báo FE để sale biết còn kết quả khác,
+      // tránh kết luận nhầm "KH không tồn tại" rồi tạo trùng.
+      const truncated = posCustomers.length >= 10 || existingContacts.length >= 10;
+      return { candidates, truncated };
     } catch (err) {
       logger.error('[contacts] pos-link-candidates error:', err);
       return reply.status(500).send({ error: 'Failed to search POS customers' });
@@ -933,6 +953,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
   // 2026-07-31: thay quick-create ở modal "Liên kết khách hàng". Tạo Contact từ
   // record POS, dùng đúng bộ field mapping của hisweetie-sync-cron để đêm sau
   // cron match theo posCustomerId chứ không tạo bản ghi thứ hai.
+  //
+  // CỐ Ý KHÔNG gọi runAutomationRules('contact_created') như quick-create (anh
+  // chốt 2026-07-31): KH bên POS là khách CÓ TRƯỚC cả CRM, không phải lead mới.
+  // Bắn trigger sẽ gửi chuỗi chào mừng / auto-assign cho khách đã mua lâu năm.
+  // quick-create mới là đường của KH thật sự mới → nó giữ trigger.
   app.post('/api/v1/contacts/link-pos', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -955,6 +980,15 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         select: { id: true, fullName: true, crmName: true, phone: true },
       });
       if (existing) {
+        // 2026-07-31 fix: gắn luôn ContactAccess.collaborator cho sale bấm sau —
+        // giống nhánh trùng SĐT của quick-create (M55). Thiếu bước này thì FE mở
+        // ngay hồ sơ KH đó và ăn 403 từ assertContactVisible.
+        await attachContactCollaboratorByUser({
+          orgId: user.orgId,
+          contactId: existing.id,
+          userId: user.id,
+          source: 'pos_link_duplicate',
+        });
         return reply.status(200).send({ exists: true, contact: existing });
       }
 

@@ -59,10 +59,15 @@ const routes: RouteRecordRaw[] = [
   },
   {
     // Multi-channel Phase 2 (2026-07-21) — inbox Facebook tối giản (test kết nối).
+    // 2026-07-31: route này TỪNG bị dính chung object với /sales-chat (thiếu dấu
+    // đóng `},` khi merge) → key trùng, key sau đè key trước nên /fb-inbox biến
+    // thành /sales-chat và FacebookInboxView không mở được. Tách lại làm 2 route.
     path: "/fb-inbox",
     name: "FacebookInbox",
     component: () => import("@/views/FacebookInboxView.vue"),
     meta: { requiresAuth: true },
+  },
+  {
     path: "/sales-chat/:convId?",
     name: "SalesChat",
     component: () => import("@/views/SalesChatView.vue"),
