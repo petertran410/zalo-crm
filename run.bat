@@ -121,8 +121,12 @@ echo.
 :: ────────────────────────────────────────────────────────────────────────────
 :: [6/6] Launch (thay cho container `app` + `frontend`)
 :: ────────────────────────────────────────────────────────────────────────────
-echo [6/6] Starting backend and frontend in separate windows...
+:: 2026-08-01: test_feature tach BullMQ worker ra process rieng (src/worker.ts).
+:: startGroupScanWorker + startListEnrichmentWorker khong con chay trong app.ts,
+:: nen phai mo them cua so nay — thieu no thi quet nhom / enrich list im lang.
+echo [6/6] Starting backend, worker and frontend in separate windows...
 start "Hi-CRM Backend (tsx watch)" cmd /k "cd /d "%~dp0backend" && npm run dev"
+start "Hi-CRM Worker (BullMQ)" cmd /k "cd /d "%~dp0backend" && npm run dev:worker"
 start "Hi-CRM Frontend (Vite HMR)" cmd /k "cd /d "%~dp0frontend" && npm run dev"
 
 echo.

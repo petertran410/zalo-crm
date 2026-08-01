@@ -298,12 +298,20 @@
           </span>
 
           <span class="c-chan ppl-chan">
-            <span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(r)) }"></span>
             <span class="ppl-chan-nm" :class="{ faint: !channelOf(r) }">{{ channelOf(r) || 'Không có kênh' }}</span>
             <span v-if="extraNickCount(r) > 0" class="ppl-chan-more">+{{ extraNickCount(r) }}</span>
           </span>
 
           <span class="c-tags ppl-tags">
+            <!-- 2026-08-01 (anh chốt): quan hệ (bạn bè / chờ kết bạn / ghost / người
+                 lạ) trước đây chỉ là chấm màu vô danh ở cột "Kênh phụ trách" — nhìn
+                 màu phải tự đoán, và người mù màu / trình đọc màn hình không thấy gì.
+                 Nay tách hẳn thành thẻ CÓ CHỮ, nằm chung cột Thẻ. -->
+            <span
+              v-if="primaryRelOf(r)"
+              class="ppl-tag ppl-tag-rel"
+              :style="{ '--rel': relColor(primaryRelOf(r)) }"
+            >{{ relLabel(primaryRelOf(r)) }}</span>
             <span v-for="t in (r.tags || []).slice(0, 2)" :key="t" class="ppl-tag">{{ t }}</span>
             <span v-if="(r.tags || []).length > 2" class="ppl-tag-more">+{{ r.tags.length - 2 }}</span>
           </span>
@@ -2185,6 +2193,16 @@ onBeforeUnmount(() => {
   font-size: 11px; font-weight: 700; white-space: nowrap;
 }
 .ppl-tag.editable { display: inline-flex; align-items: center; gap: 6px; padding-right: 8px; }
+/* Thẻ quan hệ — giữ lại tín hiệu màu cũ bằng chấm dẫn đầu, nhưng chữ mới là
+   thông tin chính (màu chỉ còn là phụ trợ, không phải cách duy nhất để hiểu). */
+.ppl-tag-rel {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--pp-line); background: transparent; color: var(--pp-fg);
+}
+.ppl-tag-rel::before {
+  content: ''; width: 7px; height: 7px; border-radius: 2px;
+  background: var(--rel, transparent); flex: none;
+}
 .ppl-tag-x { cursor: pointer; opacity: .55; font-size: 12px; }
 .ppl-tag-x:hover { opacity: 1; }
 .ppl-tag-more {

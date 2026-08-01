@@ -5,8 +5,8 @@
   "main": "dist/app.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/app.ts",
-    "dev:worker": "tsx watch src/worker.ts",
+    "dev": "tsx watch --env-file=.env src/app.ts",
+    "dev:worker": "tsx watch --env-file=.env src/worker.ts",
     "build": "tsc",
     "start": "node dist/app.js",
     "start:worker": "node dist/worker.js",

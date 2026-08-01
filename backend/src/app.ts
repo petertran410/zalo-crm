@@ -38,6 +38,9 @@ import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
 import { deviceRoutes } from './modules/devices/device-routes.js';
 import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
+// 2026-08-01: merge test_feature giữ lại dòng app.register(chatArchiveRoutes)
+// nhưng làm rơi import này → app chết ngay khi boot (ReferenceError). Khôi phục.
+import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
 import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
@@ -46,6 +49,17 @@ import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
 import { appointmentPublicRoutes } from './modules/contacts/appointment-public-routes.js';
 import { notesRoutes } from './modules/contacts/notes-routes.js';
+// 2026-08-01: merge test_feature giữ các dòng app.register(...) nhưng làm rơi
+// nguyên cụm import dưới đây → app chết ngay lúc boot (ReferenceError) và
+// webhook/inbox Facebook mất hẳn. Khôi phục đúng như trước merge (065bf06).
+import { tasksRoutes } from './modules/tasks/task-routes.js';
+import { ticketsRoutes } from './modules/tickets/ticket-routes.js';
+import {
+  facebookWebhookRoutes,
+  facebookChannelRoutes,
+} from './modules/channels/facebook/facebook-routes.js';
+import { hisweetieMcpRoutes } from './modules/integrations/hisweetie-mcp-routes.js';
+import { hisweetieBillingRoutes } from './modules/integrations/hisweetie-billing-routes.js';
 import { startInteractionCron } from './modules/contacts/interaction-cron.js';
 import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
 import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
