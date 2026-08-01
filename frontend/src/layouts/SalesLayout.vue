@@ -276,8 +276,11 @@ onMounted(() => {
   // Lần đầu click vào bất kỳ tab nào sẽ load tức thì thay vì chờ download.
   const saleSidebarPrefetch = [
     () => import('@/views/AppointmentsView.vue'),
-    () => import('@/views/ContactsView.vue'),
-    () => import('@/views/FriendsView.vue'),
+    // 2026-07-31: ContactsView + FriendsView đã gộp thành PeopleView (commit
+    // 3a424b9) và bị xoá. Đây KHÔNG phải rename — git không nối 2 file, nên
+    // merge từ nhánh cũ mang lại 2 dòng import này và làm vite build chết
+    // (UNLOADABLE_DEPENDENCY). Cả 2 tab giờ đều là /contacts → 1 dòng là đủ.
+    () => import('@/views/PeopleView.vue'),
     () => import('@/views/MediaView.vue'),
     // POS module — lazy load theo sub-route
     () => import('@/views/pos/PosCustomersView.vue'),
