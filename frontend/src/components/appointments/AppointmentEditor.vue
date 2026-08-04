@@ -26,26 +26,8 @@
 
         <!-- ─── Body ─── -->
         <div class="editor-body">
-          <!-- 1. Loại nhắc hẹn (LÊN ĐẦU — click 1 loại sẽ auto-fill template tiêu đề) -->
-          <div class="field">
-            <span class="field-label">Loại nhắc hẹn</span>
-            <div class="type-row">
-              <button
-                v-for="t in APPOINTMENT_TYPE_OPTIONS"
-                :key="t.value"
-                type="button"
-                class="type-chip"
-                :class="{ active: form.type === t.value }"
-                :data-t="t.value"
-                @click="selectType(t.value)"
-              >
-                <span class="type-ico"><v-icon size="16">{{ typeMdiIcon(t.value) }}</v-icon></span>
-                {{ t.text }}
-              </button>
-            </div>
-          </div>
-
-          <!-- 2. Tiêu đề — icon prefix động theo loại (📞📩🤝👁), template tự fill -->
+          <!-- 1. Tiêu đề — ô duy nhất để đặt tên lịch hẹn (2026-08-04: bỏ hẳn
+               trường "Loại nhắc hẹn"). -->
           <div class="field">
             <div class="title-input-wrap">
               <span class="ic"><v-icon size="16">{{ titleIcon }}</v-icon></span>
@@ -59,8 +41,49 @@
             </div>
           </div>
 
-          <!-- 1.5. Liên kết KH + Sale phụ trách (2 cols) -->
-          <div class="row-2">
+          <!-- 2. Phân loại lịch hẹn — dropdown preset + nút (+) tự thêm loại mới -->
+          <div class="field">
+            <span class="field-label">Phân loại lịch hẹn</span>
+            <div class="cat-row">
+              <select v-model="form.type" class="plain-select">
+                <option :value="null">— Chưa phân loại —</option>
+                <option v-for="c in categoryOptions" :key="c.value" :value="c.value">{{ c.text }}</option>
+              </select>
+              <button
+                type="button"
+                class="cat-add"
+                title="Thêm phân loại mới"
+                @click="startAddCategory"
+              ><v-icon size="18">mdi-plus</v-icon></button>
+            </div>
+
+            <div v-if="addingCategory" class="cat-new">
+              <input
+                ref="catInputRef"
+                v-model="newCategory"
+                class="cat-new-input"
+                type="text"
+                placeholder="Tên phân loại mới"
+                @keydown.enter.prevent="commitNewCategory"
+                @keydown.esc.stop="cancelAddCategory"
+              />
+              <button type="button" class="cat-new-ok" :disabled="!canAddCategory" @click="commitNewCategory">Thêm</button>
+              <button type="button" class="cat-new-cancel" @click="cancelAddCategory">Huỷ</button>
+            </div>
+
+            <div v-if="customCategories.length" class="cat-custom-list">
+              <span v-for="c in customCategories" :key="c" class="cat-tag">
+                {{ c }}
+                <button type="button" title="Xoá phân loại này" @click="removeCategory(c)">
+                  <v-icon size="11">mdi-close</v-icon>
+                </button>
+              </span>
+            </div>
+          </div>
+
+          <!-- 1.5. Liên kết KH (1 col — bỏ "Sale phụ trách" 2026-08-04: sale chỉ
+               tạo lịch cho chính mình, người tạo = người phụ trách) -->
+          <div class="row-1">
             <!-- KH -->
             <div class="field">
               <span class="field-label">Liên kết khách hàng</span>
@@ -120,16 +143,6 @@
                 + Liên kết khách hàng
               </button>
             </div>
-            <!-- Sale phụ trách -->
-            <div class="field">
-              <span class="field-label">Sale phụ trách</span>
-              <select v-model="form.assignedUserId" class="sale-select">
-                <option :value="null">— Chưa gán —</option>
-                <option v-for="u in users" :key="u.id" :value="u.id">
-                  {{ u.fullName || u.email }}{{ u.id === currentUserId ? ' (tôi)' : '' }}
-                </option>
-              </select>
-            </div>
           </div>
 
           <!-- 2. Ngày + Giờ (2 cols) -->
@@ -152,63 +165,81 @@
             </div>
           </div>
 
-          <!-- 3. Duration — small tag chips, 1 row scroll-x nếu cần -->
+          <!-- 3. Phân công thời gian — dropdown (2026-08-04: đổi từ chip sang select) -->
           <div class="field">
             <div class="duration-header">
-              <span class="field-label">Dự kiến dành thời gian</span>
-              <span class="duration-end"><v-icon size="13">mdi-flag-checkered</v-icon> Dự kiến kết thúc: <b class="end-bold">{{ computedEndLabel }}</b> <em>(Tự tính toán)</em></span>
+              <span class="field-label">Phân công thời gian</span>
+              <span class="duration-end">Kết thúc: <b class="end-bold">{{ computedEndLabel }}</b></span>
             </div>
-            <div class="duration-row">
-              <button
-                v-for="d in DURATIONS"
-                :key="d.value"
-                type="button"
-                class="tag-chip"
-                :class="{ active: form.durationMin === d.value }"
-                @click="form.durationMin = d.value"
-              >{{ d.label }}</button>
+            <div class="dur-row">
+              <select v-model.number="durationChoice" class="plain-select">
+                <option v-for="d in DURATIONS" :key="d.value" :value="d.value">{{ d.label }}</option>
+                <option :value="CUSTOM_DURATION">Khác…</option>
+              </select>
+              <input
+                v-if="durationChoice === CUSTOM_DURATION"
+                v-model.number="customDuration"
+                class="dur-custom"
+                type="number"
+                min="5"
+                max="1440"
+                step="5"
+                aria-label="Số phút"
+              />
+              <span v-if="durationChoice === CUSTOM_DURATION" class="dur-unit">phút</span>
+            </div>
+            <div v-if="crossesMidnight" class="dur-warn">
+              <v-icon size="13">mdi-alert-outline</v-icon>
+              Lịch kéo dài qua nửa đêm, kết thúc lúc {{ computedEndLabel }} ngày hôm sau.
             </div>
           </div>
 
-          <!-- 5. Địa điểm — icon prefix + 6 chips 1 dòng (5 preset + smart auto) -->
+          <!-- 5. Địa điểm — nút bookmark trong ô để lưu, nút ngoài để mở danh sách đã lưu -->
           <div class="field">
-            <div class="location-input-wrap">
-              <span class="ic"><v-icon size="16">mdi-map-marker-outline</v-icon></span>
-              <input
-                v-model="form.location"
-                class="location-input"
-                type="text"
-                placeholder="Nhập địa điểm..."
-              />
+            <div class="location-row">
+              <div class="location-input-wrap">
+                <span class="ic"><v-icon size="16">mdi-map-marker-outline</v-icon></span>
+                <input
+                  v-model="form.location"
+                  class="location-input"
+                  type="text"
+                  placeholder="Nhập địa điểm"
+                />
+                <button
+                  type="button"
+                  class="loc-save"
+                  :disabled="!canSaveLocation"
+                  :title="locationAlreadySaved ? 'Địa điểm đã được lưu' : 'Lưu địa điểm này'"
+                  @click="saveCurrentLocation"
+                >
+                  <v-icon size="16">{{ locationAlreadySaved ? 'mdi-bookmark' : 'mdi-bookmark-outline' }}</v-icon>
+                </button>
+              </div>
+              <button
+                type="button"
+                class="loc-list-btn"
+                :class="{ open: openSavedLocations }"
+                @click="openSavedLocations = !openSavedLocations"
+              >
+                <v-icon size="16">mdi-bookmark-multiple-outline</v-icon>
+                <span v-if="savedLocations.length" class="loc-count">{{ savedLocations.length }}</span>
+              </button>
             </div>
-            <div class="location-tip-row">
-              <button
-                v-for="p in LOCATION_PRESETS"
-                :key="p.value"
-                type="button"
-                class="loc-chip"
-                @click="form.location = p.value"
-              ><v-icon size="14">{{ p.icon }}</v-icon> {{ p.value }}</button>
-              <button
-                type="button"
-                class="loc-chip smart"
-                :class="{ disabled: !smartLocation }"
-                :disabled="!smartLocation"
-                @click="smartLocation && (form.location = smartLocation)"
-                :title="smartLocation ? `Gợi ý: ${smartLocation}` : 'Tự nhận diện từ tiêu đề (chưa có)'"
-              ><v-icon size="14">mdi-robot-outline</v-icon> {{ smartLocation ? smartLocation : 'Auto' }}</button>
+            <div v-if="openSavedLocations" class="saved-loc-panel">
+              <div v-if="!savedLocations.length" class="saved-loc-empty">Chưa lưu địa điểm nào</div>
+              <div v-for="loc in savedLocations" :key="loc" class="saved-loc-item">
+                <button type="button" class="saved-loc-pick" @click="pickSavedLocation(loc)">{{ loc }}</button>
+                <button type="button" class="saved-loc-del" title="Xoá" @click="removeSavedLocation(loc)">
+                  <v-icon size="13">mdi-close</v-icon>
+                </button>
+              </div>
             </div>
           </div>
 
           <!-- 6. Ghi chú -->
           <div class="field">
             <span class="field-label">Ghi chú</span>
-            <textarea
-              v-model="form.notes"
-              class="notes-area"
-              placeholder="Sale ghi note nội bộ về cuộc hẹn..."
-              rows="2"
-            ></textarea>
+            <textarea v-model="form.notes" class="notes-area" rows="2"></textarea>
           </div>
 
           <!-- Error -->
@@ -217,7 +248,6 @@
 
         <!-- ─── Footer ─── -->
         <div class="editor-foot">
-          <span class="tip"><v-icon size="13">mdi-lightbulb-on-outline</v-icon> <kbd>Ctrl</kbd>+<kbd>Enter</kbd> tạo nhanh · <kbd>Esc</kbd> huỷ</span>
           <div class="actions">
             <button type="button" class="at-btn at-btn--secondary" @click="close">Huỷ</button>
             <button
@@ -324,7 +354,6 @@
 import { ref, reactive, computed, watch, nextTick } from 'vue';
 import { api } from '@/api/index';
 import { useAuthStore } from '@/stores/auth';
-import { useUsers } from '@/composables/use-users';
 import {
   APPOINTMENT_TYPE_OPTIONS,
   initials,
@@ -340,17 +369,6 @@ function formatPhoneVN(p?: string | null): string {
   else if (s.startsWith('0084')) s = '0' + s.slice(4);
   else if (s.startsWith('84') && s.length >= 10 && s.length <= 12) s = '0' + s.slice(2);
   return s;
-}
-
-/** Icon MDI theo loại nhắc hẹn (chuẩn HS — KHÔNG emoji, anh chốt 2026-06-16). */
-const TYPE_MDI: Record<string, string> = {
-  call: 'mdi-phone-outline',
-  message: 'mdi-message-text-outline',
-  meeting: 'mdi-account-multiple-outline',
-  follow_up: 'mdi-eye-outline',
-};
-function typeMdiIcon(t: string): string {
-  return TYPE_MDI[t] || 'mdi-bell-outline';
 }
 
 interface ContactLite {
@@ -523,8 +541,8 @@ function pickContact(c: ContactLite) {
   selectedContact.value = c;
   custSuggestOpen.value = false;
   custQuery.value = '';
-  // Rebuild title theo template hiện tại (loại + tên KH mới)
-  form.title = buildTitleFromType(form.type);
+  // Rebuild title theo tên KH mới
+  form.title = buildDefaultTitle();
   nextTick(() => focusTitleAtEnd());
 }
 
@@ -545,27 +563,16 @@ const form = reactive({
   date: '',
   time: '',
   durationMin: 15,
-  type: 'call',
+  type: null as string | null,
   location: '',
   notes: '',
   assignedUserId: null as string | null,
 });
 
-// Computed users list + currentUserId — ROBUST: editor tự lo nguồn để mở từ đâu (chat,
-// contact, /appointments) cũng có đủ Sale. props.users ưu tiên; thiếu thì tự fetch; luôn
-// đảm bảo có "tôi" (owner đang tạo) trong list để default + hiển thị đúng.
+// 2026-08-04: bỏ dropdown "Sale phụ trách" → không cần dựng danh sách user nữa.
+// Prop `users` giữ lại (5 nơi gọi editor vẫn truyền) nhưng không còn được đọc.
 const auth = useAuthStore();
-const { users: fetchedUsers, fetchUsers } = useUsers();
 const currentUserId = computed<string | null>(() => props.currentUserId ?? auth.user?.id ?? null);
-const users = computed<UserLite[]>(() => {
-  const base = (props.users && props.users.length) ? props.users : (fetchedUsers.value as unknown as UserLite[]);
-  const list: UserLite[] = base ? [...base] : [];
-  const meId = currentUserId.value;
-  if (meId && !list.some((u) => u.id === meId)) {
-    list.unshift({ id: meId, fullName: auth.user?.fullName ?? auth.user?.email ?? 'Tôi', email: auth.user?.email ?? '' });
-  }
-  return list;
-});
 
 const saving = ref(false);
 const error = ref('');
@@ -577,23 +584,17 @@ const titlePlaceholder = computed(() =>
 );
 
 /**
- * Title template per type — sale click loại sẽ auto-fill, trailing space để sale gõ tiếp.
- *   call      → "Gọi điện cho {name} "
- *   message   → "Nhắn tin cho {name} "
- *   meeting   → "Hẹn gặp {name} "
- *   follow_up → "Theo dõi {name} "
+ * 2026-08-04: KHÔNG tự sinh tiêu đề nữa.
+ *
+ * Bản cũ điền sẵn "Gọi điện cho {tên KH}" rồi lúc lưu còn nối "📍 {địa điểm}".
+ * Với tên KH thật (vd "Chuỗi Sunday Basic 560 Lê Quang Định, Gò Vấp, HCM") ra
+ * chuỗi ~85 ký tự, bị cắt ở thẻ lịch, cắt ở agenda, kẹp 3 dòng ở popover — mà
+ * tên KH và địa điểm vốn đã hiện riêng ở các chỗ đó.
+ *
+ * Giờ để trống; chỗ nào cần hiển thị thì tự lùi về tên KH (`a.title || customer`).
  */
-const TYPE_TITLE_TEMPLATE: Record<string, string> = {
-  call:      'Gọi điện cho',
-  message:   'Nhắn tin cho',
-  meeting:   'Hẹn gặp',
-  follow_up: 'Theo dõi',
-};
-
-function buildTitleFromType(type: string): string {
-  const prefix = TYPE_TITLE_TEMPLATE[type] || 'Nhắc';
-  const name = selectedContact.value?.fullName?.trim() || '';
-  return name ? `${prefix} ${name} ` : `${prefix} `;
+function buildDefaultTitle(): string {
+  return '';
 }
 
 function focusTitleAtEnd() {
@@ -604,19 +605,15 @@ function focusTitleAtEnd() {
   try { el.setSelectionRange(len, len); } catch { /* IE fallback no-op */ }
 }
 
-function selectType(type: string) {
-  form.type = type;
-  // Overwrite tiêu đề bằng template loại mới — sale gõ tiếp sau dấu cách cuối
-  form.title = buildTitleFromType(type);
-  nextTick(() => focusTitleAtEnd());
-}
+/**
+ * Icon prefix ô tiêu đề — hằng số. Trước đây là computed bám theo loại đang
+ * chọn; bỏ trường loại rồi thì không còn gì để bám, và giữ computed chỉ tạo
+ * thêm việc cho mỗi lần re-render khi gõ tiêu đề.
+ */
+const titleIcon = 'mdi-calendar-check-outline';
 
-/** Icon prefix trong ô tiêu đề thay đổi theo loại đang chọn */
-const titleIcon = computed(() => typeMdiIcon(form.type));
-
-const canSubmit = computed(() =>
-  !!form.title.trim() && !!form.date && !!form.time && !!form.type,
-);
+// Tiêu đề KHÔNG còn bắt buộc (bỏ trống → hiển thị theo tên KH). Chỉ cần ngày+giờ.
+const canSubmit = computed(() => !!form.date && !!form.time);
 
 // ───────── Init / reset state khi mở ─────────
 watch(() => props.modelValue, (open) => {
@@ -627,8 +624,10 @@ watch(() => props.modelValue, (open) => {
   openTimePicker.value = false;
   custSuggestOpen.value = false;
   custQuery.value = '';
-  // Mở từ chat/contact (không truyền users) → tự fetch để dropdown Sale đủ người.
-  if (!props.users?.length && !fetchedUsers.value.length) fetchUsers().catch(() => {});
+  loadSavedLocations();
+  openSavedLocations.value = false;
+  loadCategories();
+  cancelAddCategory();
 
   if (props.appointment) {
     // Edit mode
@@ -637,7 +636,7 @@ watch(() => props.modelValue, (open) => {
     form.date = a.appointmentDate;
     form.time = a.appointmentTime;
     form.durationMin = (a as any).durationMin || 15;
-    form.type = a.type || 'call';
+    form.type = a.type ?? null;
     form.location = (a as any).location || '';
     form.notes = a.notes || '';
     form.assignedUserId = (a as any).assignedUserId ?? (a as any).assignedTo?.id ?? null;
@@ -661,10 +660,10 @@ watch(() => props.modelValue, (open) => {
     form.date = isoDate(base);
     form.time = isoTime(base);
     form.durationMin = 15;
-    form.type = 'call';
+    form.type = null; // tạo mới: mặc định "— Chưa phân loại —"
     form.location = '';
     form.notes = '';
-    form.assignedUserId = currentUserId.value; // default sale = người tạo
+    form.assignedUserId = currentUserId.value; // người tạo = người phụ trách
     // Prefill: nếu parent truyền object có sẵn friends → resolve avatar fallback,
     // không thì giữ nguyên (parent có thể đã set avatarUrl chuẩn).
     selectedContact.value = props.prefillContact
@@ -676,13 +675,14 @@ watch(() => props.modelValue, (open) => {
       enrichContactAvatar(selectedContact.value.id);
     }
     // Tiêu đề default = template theo loại hiện tại (call), kèm tên KH nếu prefill
-    form.title = buildTitleFromType(form.type);
+    form.title = buildDefaultTitle();
     calMonth.value = new Date(base);
 
     // AI prefill (sau khi default đã set) — override field nào AI có giá trị.
     // Đến từ NotesSection sau khi ai-parse cascade (rule-based + Gemini).
     if (props.aiPrefill) {
       const p = props.aiPrefill;
+      // AI parse vẫn có thể suy ra loại — giữ lại ngầm dù không có ô nhập.
       if (p.type) form.type = p.type;
       if (p.date) {
         form.date = p.date;
@@ -694,7 +694,7 @@ watch(() => props.modelValue, (open) => {
       if (p.title && p.title.trim()) {
         form.title = p.title.trim();
       } else {
-        form.title = buildTitleFromType(form.type);
+        form.title = buildDefaultTitle();
       }
       if (p.notes) form.notes = p.notes;
     }
@@ -908,18 +908,38 @@ function randomTime(period: 'morning' | 'noon' | 'afternoon' | 'evening') {
 
 // ───────── Duration ─────────
 // 2026-05-21 chốt: bỏ "3 ngày" — chỉ tới "1 ngày" là đủ cho domain BĐS sale.
+/**
+ * 2026-08-04: rút từ 10 lựa chọn (5p → 1 ngày) còn 4 + "Khác".
+ * Dùng hằng ngày thì 15/30/60/120 phủ gần hết; các mốc dài (8/12 giờ, 1 ngày)
+ * vừa hiếm vừa là thứ đẻ ra lịch tràn qua nửa đêm hiển thị sai.
+ */
 const DURATIONS = [
-  { label: '5p',     value: 5 },
-  { label: '10p',    value: 10 },
-  { label: '15p',    value: 15 },
-  { label: '30p',    value: 30 },
-  { label: '1 giờ',  value: 60 },
-  { label: '2 giờ',  value: 120 },
-  { label: '5 giờ',  value: 300 },
-  { label: '8 giờ',  value: 480 },
-  { label: '12 giờ', value: 720 },
-  { label: '1 ngày', value: 1440 },
+  { label: '15 phút', value: 15 },
+  { label: '30 phút', value: 30 },
+  { label: '1 giờ',   value: 60 },
+  { label: '2 giờ',   value: 120 },
 ];
+const CUSTOM_DURATION = -1;
+
+/**
+ * Select giữ 1 trong 4 mốc, hoặc CUSTOM_DURATION để lộ ô nhập phút.
+ * `form.durationMin` vẫn là nguồn sự thật duy nhất gửi lên BE.
+ */
+const durationChoice = computed<number>({
+  get: () => (DURATIONS.some((d) => d.value === form.durationMin) ? form.durationMin : CUSTOM_DURATION),
+  set: (v) => { if (v !== CUSTOM_DURATION) form.durationMin = v; },
+});
+const customDuration = computed<number>({
+  get: () => form.durationMin,
+  set: (v) => { form.durationMin = Math.min(1440, Math.max(5, Math.round(Number(v) || 5))); },
+});
+
+/** Cảnh báo tràn nửa đêm — nguồn gốc của lỗi hiển thị "38:45". */
+const crossesMidnight = computed(() => {
+  const t = /^(\d{1,2}):(\d{2})/.exec((form.time || '').trim());
+  if (!t) return false;
+  return (+t[1] * 60 + +t[2]) + form.durationMin > 1440;
+});
 
 /**
  * Compute end label support multi-day.
@@ -950,42 +970,128 @@ const computedEndLabel = computed(() => {
   return `${timeOnly} ${dd}/${mm}`;
 });
 
-// ───────── Smart location detection (regex từ title) ─────────
-const SMART_LOCATION_REGEX = [
-  // Tên dự án BĐS phổ biến
-  /(Vinhomes [A-Za-zÀ-ỹ ]+)/i,
-  /(Masteri [A-Za-zÀ-ỹ ]+)/i,
-  /(Sunshine [A-Za-zÀ-ỹ ]+)/i,
-  /(Eco [A-Za-zÀ-ỹ ]+(?:City|Park|Smart))/i,
-  /(Saigon [A-Za-zÀ-ỹ ]+)/i,
-  /(The [A-Za-zÀ-ỹ ]+(?:Origin|Heights|Manor|Garden))/i,
-  /(Glory [A-Za-zÀ-ỹ ]+)/i,
-  // Generic địa danh sau "tại" / "ở"
-  /(?:tại|ở)\s+([A-ZÀ-Ỹ][A-Za-zÀ-ỹ0-9 ,]{3,40}?)(?:\s+(?:vào|lúc|cho|với|—|-)|$)/u,
-];
+/* ── Phân loại lịch hẹn (2026-08-04) ────────────────────────────────────────
+ * Ghi vào chính cột `Appointment.type` (String?, BE không validate enum) nên
+ * bộ lọc "Loại" + báo cáo cũ vẫn đọc được 4 preset gốc.
+ *   - 4 preset gốc  → lưu MÃ chuẩn ('call'/'message'/'meeting'/'follow_up')
+ *   - preset tự thêm → lưu nguyên văn chữ sale gõ
+ * Danh sách tự thêm nằm ở localStorage theo user (giống địa điểm đã lưu) —
+ * CHƯA có bảng BE nên không đồng bộ giữa máy hay giữa các sale trong org.
+ */
+const CATEGORY_MAX = 30;
+const customCategories = ref<string[]>([]);
+const addingCategory = ref(false);
+const newCategory = ref('');
+const catInputRef = ref<HTMLInputElement | null>(null);
 
-const smartLocation = computed<string | null>(() => {
-  const title = form.title.trim();
-  if (!title) return null;
-  for (const r of SMART_LOCATION_REGEX) {
-    const m = title.match(r);
-    if (m && m[1]) {
-      const v = m[1].trim();
-      // Bỏ qua nếu trùng với input location hiện tại
-      if (v.toLowerCase() === form.location.toLowerCase()) return null;
-      return v;
-    }
+const categoryKey = computed(() => `apt:categories:${currentUserId.value ?? 'anon'}`);
+
+function loadCategories() {
+  try {
+    const raw = localStorage.getItem(categoryKey.value);
+    const arr = raw ? JSON.parse(raw) : [];
+    customCategories.value = Array.isArray(arr) ? arr.filter((v) => typeof v === 'string') : [];
+  } catch {
+    customCategories.value = [];
   }
-  return null;
+}
+function persistCategories() {
+  try {
+    localStorage.setItem(categoryKey.value, JSON.stringify(customCategories.value));
+  } catch { /* quota/private mode — không chặn luồng tạo lịch */ }
+}
+
+const categoryOptions = computed<{ value: string; text: string }[]>(() => {
+  const opts = [
+    ...APPOINTMENT_TYPE_OPTIONS.map((o) => ({ value: o.value, text: o.text })),
+    ...customCategories.value.map((c) => ({ value: c, text: c })),
+  ];
+  // Đang sửa lịch mang phân loại của người khác (không có trong localStorage máy
+  // này) → vẫn phải liệt kê, nếu không select rơi về rỗng và lưu đè mất dữ liệu.
+  const cur = form.type;
+  if (cur && !opts.some((o) => o.value === cur)) opts.push({ value: cur, text: cur });
+  return opts;
 });
 
-const LOCATION_PRESETS = [
-  { icon: 'mdi-office-building-outline', value: 'Văn phòng' },
-  { icon: 'mdi-home-outline', value: 'Nhà khách' },
-  { icon: 'mdi-crane', value: 'Dự án' },
-  { icon: 'mdi-home-city-outline', value: 'Nhà mẫu' },
-  { icon: 'mdi-coffee-outline', value: 'Quán cafe' },
-];
+const canAddCategory = computed(() => {
+  const v = newCategory.value.trim();
+  if (!v) return false;
+  const lower = v.toLowerCase();
+  return !categoryOptions.value.some(
+    (o) => o.text.toLowerCase() === lower || o.value.toLowerCase() === lower,
+  );
+});
+
+function startAddCategory() {
+  addingCategory.value = true;
+  newCategory.value = '';
+  nextTick(() => catInputRef.value?.focus());
+}
+function cancelAddCategory() {
+  addingCategory.value = false;
+  newCategory.value = '';
+}
+function commitNewCategory() {
+  if (!canAddCategory.value) return;
+  const v = newCategory.value.trim();
+  customCategories.value = [...customCategories.value, v].slice(0, CATEGORY_MAX);
+  persistCategories();
+  form.type = v; // chọn luôn loại vừa tạo
+  cancelAddCategory();
+}
+function removeCategory(c: string) {
+  customCategories.value = customCategories.value.filter((x) => x !== c);
+  persistCategories();
+  if (form.type === c) form.type = null;
+}
+
+/* ── Địa điểm đã lưu (2026-08-04) ────────────────────────────────────────────
+ * Thay 5 preset cứng + nút "Auto" bằng bookmark do sale tự lưu.
+ * LƯU Ý: chưa có endpoint BE cho danh sách này → lưu localStorage theo user,
+ * nghĩa là KHÔNG đồng bộ giữa máy/trình duyệt. Muốn dùng chung cả org thì cần
+ * thêm bảng + route riêng.
+ */
+const SAVED_LOC_MAX = 20;
+const savedLocations = ref<string[]>([]);
+const openSavedLocations = ref(false);
+
+const savedLocKey = computed(() => `apt:saved-locations:${currentUserId.value ?? 'anon'}`);
+
+function loadSavedLocations() {
+  try {
+    const raw = localStorage.getItem(savedLocKey.value);
+    const arr = raw ? JSON.parse(raw) : [];
+    savedLocations.value = Array.isArray(arr) ? arr.filter((v) => typeof v === 'string') : [];
+  } catch {
+    savedLocations.value = [];
+  }
+}
+function persistSavedLocations() {
+  try {
+    localStorage.setItem(savedLocKey.value, JSON.stringify(savedLocations.value));
+  } catch { /* quota/private mode — bỏ qua, không chặn luồng tạo lịch */ }
+}
+
+const locationAlreadySaved = computed(() => {
+  const v = form.location.trim().toLowerCase();
+  return !!v && savedLocations.value.some((l) => l.toLowerCase() === v);
+});
+const canSaveLocation = computed(() => !!form.location.trim() && !locationAlreadySaved.value);
+
+function saveCurrentLocation() {
+  const v = form.location.trim();
+  if (!v || locationAlreadySaved.value) return;
+  savedLocations.value = [v, ...savedLocations.value].slice(0, SAVED_LOC_MAX);
+  persistSavedLocations();
+}
+function pickSavedLocation(loc: string) {
+  form.location = loc;
+  openSavedLocations.value = false;
+}
+function removeSavedLocation(loc: string) {
+  savedLocations.value = savedLocations.value.filter((l) => l !== loc);
+  persistSavedLocations();
+}
 
 // ───────── Contact color (consistent hash) ─────────
 const PALETTE = ['#aa2d00', '#0a2e0e', '#d9a441', '#fcab79', '#a8d8c4', '#1b61c9'];
@@ -998,23 +1104,22 @@ function contactColor(id: string): string {
 // ───────── Submit / close ─────────
 async function submit() {
   if (!canSubmit.value) {
-    error.value = 'Điền tiêu đề, ngày và giờ trước khi tạo nhắc hẹn';
+    error.value = 'Chọn ngày và giờ trước khi tạo nhắc hẹn';
     return;
   }
   saving.value = true;
   error.value = '';
   try {
-    // Khi save: nếu có location, append "📍 {location}" vào sau tiêu đề.
-    // Idempotent — không double-append nếu sale đã gõ tay vào tiêu đề rồi.
-    const rawTitle = form.title.trim();
-    const locTrim = form.location.trim();
-    const finalTitle = locTrim && !rawTitle.includes('📍')
-      ? `${rawTitle} 📍 ${locTrim}`
-      : rawTitle;
+    // 2026-08-04: BỎ việc nối "📍 {location}" vào tiêu đề khi lưu.
+    // Địa điểm đã là trường riêng và được hiện riêng ở popover/agenda, nên nối
+    // thêm chỉ làm tiêu đề phình ra rồi bị cắt ở mọi chỗ hiển thị.
+    // Tiêu đề để trống được: lịch/agenda tự lùi về tên khách hàng.
     const payload = {
-      title: finalTitle,
+      title: form.title.trim() || null,
       contactId: selectedContact.value?.id ?? null,
-      assignedUserId: form.assignedUserId,
+      // 2026-08-04: bỏ ô chọn sale. Tạo mới → luôn gán cho chính người đang tạo.
+      // Sửa → GIỮ NGUYÊN người phụ trách cũ, không âm thầm cướp lịch của sale khác.
+      assignedUserId: isEdit.value ? form.assignedUserId : currentUserId.value,
       appointmentDate: form.date,
       appointmentTime: form.time,
       durationMin: form.durationMin,
@@ -1117,18 +1222,7 @@ if (typeof window !== 'undefined') {
   background: var(--at-surface-soft);
   border-top: 1px solid var(--at-hairline);
 }
-.editor-foot .tip {
-  font-size: 11.5px; color: var(--at-muted);
-  display: inline-flex; align-items: center; gap: 4px;
-}
-.editor-foot kbd {
-  display: inline-block; padding: 1px 5px;
-  background: var(--at-canvas); border: 1px solid var(--at-hairline);
-  border-radius: var(--at-r-xs);
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 10.5px; margin: 0 1px;
-}
-.editor-foot .actions { display: flex; gap: 6px; }
+.editor-foot .actions { display: flex; gap: 6px; margin-left: auto; }
 
 /* ─── Field common ─── */
 /* FIX 2026-06-09 (Anh báo "bể tè le"): global hs-crm-theme.css định nghĩa `.field` là
@@ -1162,6 +1256,7 @@ if (typeof window !== 'undefined') {
   text-transform: uppercase; letter-spacing: 0.08em;
 }
 .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--at-s-sm); }
+.row-1 { display: grid; grid-template-columns: 1fr; }
 
 /* Title input wrap — icon prefix + placeholder bold inline */
 .title-input-wrap {
@@ -1461,32 +1556,6 @@ if (typeof window !== 'undefined') {
 }
 .duration-end b { color: var(--at-ink); font-weight: 500; }
 .duration-end em { color: var(--at-muted); font-style: italic; font-size: 11px; }
-.duration-row {
-  display: flex; gap: 4px;
-  overflow-x: auto;
-  scrollbar-width: thin;
-  padding-bottom: 2px; /* room cho scrollbar */
-}
-.duration-row::-webkit-scrollbar { height: 4px; }
-.duration-row::-webkit-scrollbar-thumb { background: var(--at-hairline); border-radius: 2px; }
-
-/* Duration tag — border-radius mềm md (10) thay pill, nhìn ít tròn hơn */
-.tag-chip {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 4px 10px;
-  background: var(--at-canvas);
-  border: 1px solid var(--at-hairline);
-  border-radius: var(--at-r-md);
-  font-size: 11.5px; font-weight: 500; color: var(--at-body);
-  cursor: pointer; font-family: inherit;
-  white-space: nowrap; flex-shrink: 0;
-  height: 26px;
-}
-.tag-chip:active { background: var(--at-surface-soft); }
-.tag-chip.active {
-  background: var(--at-ink); color: var(--at-on-primary); border-color: var(--at-ink);
-}
-
 /* End label bôi đậm số giờ + ngày */
 .end-bold {
   color: var(--at-ink);
@@ -1494,35 +1563,104 @@ if (typeof window !== 'undefined') {
   font-variant-numeric: tabular-nums;
 }
 
-/* Type chips — 4 chips 1 dòng grid 4-col, narrower 10% */
-.type-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 5px;
-}
-.type-chip {
-  min-width: 0;
-  padding: 8px 8px; border-radius: var(--at-r-md);
-  border: 1px solid var(--at-hairline);
-  display: flex; align-items: center; gap: 6px;
-  background: var(--at-canvas); cursor: pointer;
-  font-size: 12.5px; font-weight: 500; color: var(--at-body);
-  font-family: inherit;
-  white-space: nowrap; overflow: hidden;
-}
-.type-chip:active { background: var(--at-surface-soft); }
-.type-chip.active {
-  border-color: var(--at-ink); background: var(--at-ink); color: var(--at-on-primary);
-}
-.type-chip .type-ico {
-  width: 24px; height: 24px; border-radius: var(--at-r-sm);
+/* ─── Phân loại lịch hẹn ─── */
+.cat-row { display: flex; align-items: center; gap: 6px; }
+.cat-row .plain-select { flex: 1; min-width: 0; }
+.cat-add {
+  flex-shrink: 0;
+  width: 44px; height: 44px;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; flex-shrink: 0;
+  border: 1px solid var(--at-hairline); border-radius: var(--at-r-sm);
+  background: var(--at-canvas); color: var(--at-body);
+  cursor: pointer; font-family: inherit;
 }
-.type-chip[data-t="call"]      .type-ico { background: #fdf0e3; color: #7a4115; }
-.type-chip[data-t="message"]   .type-ico { background: #e8f4ee; color: #1f4d39; }
-.type-chip[data-t="meeting"]   .type-ico { background: #fbe6dc; color: #7a2000; }
-.type-chip[data-t="follow_up"] .type-ico { background: #fdf3df; color: #7a5818; }
+.cat-add:hover { background: var(--at-surface-soft); color: var(--at-ink); }
+
+.cat-new { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+.cat-new-input {
+  flex: 1; min-width: 0; height: 36px;
+  padding: 0 var(--at-s-md);
+  border: 1px solid var(--at-ink); border-radius: var(--at-r-sm);
+  background: var(--at-canvas);
+  font-family: inherit; font-size: 13.5px; color: var(--at-ink);
+  outline: none;
+}
+.cat-new-ok, .cat-new-cancel {
+  flex-shrink: 0; height: 36px; padding: 0 12px;
+  border-radius: var(--at-r-sm);
+  font-family: inherit; font-size: 12.5px; font-weight: 500;
+  cursor: pointer;
+}
+.cat-new-ok {
+  border: 1px solid var(--at-ink);
+  background: var(--at-ink); color: var(--at-on-primary);
+}
+.cat-new-ok:disabled { opacity: 0.4; cursor: not-allowed; }
+.cat-new-cancel {
+  border: 1px solid var(--at-hairline);
+  background: var(--at-canvas); color: var(--at-body);
+}
+.cat-new-cancel:hover { background: var(--at-surface-soft); }
+
+.cat-custom-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.cat-tag {
+  display: inline-flex; align-items: center; gap: 2px;
+  height: 22px; padding: 0 4px 0 8px;
+  border: 1px solid var(--at-hairline); border-radius: var(--at-r-pill, 999px);
+  background: var(--at-surface-soft);
+  font-size: 11.5px; color: var(--at-body);
+  max-width: 100%;
+}
+.cat-tag > button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px;
+  border: none; border-radius: 50%;
+  background: transparent; color: var(--at-muted);
+  cursor: pointer; flex-shrink: 0;
+}
+.cat-tag > button:hover { background: var(--at-hairline); color: var(--at-ink); }
+
+/* Phân công thời gian — select + ô "Khác…" */
+.dur-row { display: flex; align-items: center; gap: 6px; }
+.dur-row .plain-select { flex: 1; min-width: 0; }
+.dur-custom {
+  flex: 0 0 92px;
+  height: 44px;
+  padding: 0 10px;
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-sm);
+  background: var(--at-canvas);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--at-ink);
+  outline: none;
+}
+.dur-custom:focus { border-color: var(--at-ink); }
+.dur-unit { flex: none; font-size: 13px; color: var(--at-muted); }
+.dur-warn {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: #8a5b08;
+}
+
+/* Dropdown trơn — "Phân loại lịch hẹn" + "Phân công thời gian" */
+.plain-select {
+  width: 100%;
+  height: 44px;
+  padding: 0 var(--at-s-md);
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-sm);
+  background: var(--at-canvas);
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--at-ink);
+  outline: none;
+}
+.plain-select:focus { border-color: var(--at-ink); }
+.plain-select { cursor: pointer; }
 
 /* Location input wrap — icon prefix giống title */
 .location-input-wrap {
@@ -1540,32 +1678,78 @@ if (typeof window !== 'undefined') {
 }
 .location-input::placeholder { color: var(--at-muted); font-weight: 500; }
 
-/* Location chips 6 cols 1 dòng — border-radius nhỏ 10px (md) */
-.location-tip-row {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
-  margin-top: 4px;
-}
-.loc-chip {
-  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
-  padding: 5px 6px;
-  height: 28px;
-  background: var(--at-canvas);
-  border: 1px solid var(--at-hairline);
-  border-radius: var(--at-r-md);
-  font-size: 11px; font-weight: 500; color: var(--at-body);
+/* Địa điểm: ô nhập (có nút bookmark bên trong) + nút mở danh sách đã lưu */
+.location-row { display: flex; align-items: center; gap: 6px; }
+.location-row .location-input-wrap { flex: 1; min-width: 0; }
+
+.loc-save {
+  flex-shrink: 0;
+  width: 28px; height: 28px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--at-r-sm);
+  background: transparent; color: var(--at-muted);
   cursor: pointer; font-family: inherit;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  min-width: 0;
 }
-.loc-chip:active:not(:disabled) { background: var(--at-surface-soft); }
-.loc-chip.smart {
-  background: var(--at-cream); border-color: var(--at-mustard); color: var(--at-ink);
+.loc-save:hover:not(:disabled) { background: var(--at-surface-soft); color: var(--at-ink); }
+.loc-save:disabled { opacity: 0.45; cursor: default; }
+
+.loc-list-btn {
+  flex-shrink: 0;
+  position: relative;
+  width: 44px; height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--at-hairline); border-radius: var(--at-r-sm);
+  background: var(--at-canvas); color: var(--at-body);
+  cursor: pointer; font-family: inherit;
 }
-.loc-chip.disabled {
-  opacity: 0.5; cursor: not-allowed; background: var(--at-surface-soft);
+.loc-list-btn:hover { background: var(--at-surface-soft); }
+.loc-list-btn.open { border-color: var(--at-ink); color: var(--at-ink); }
+.loc-count {
+  position: absolute; top: 4px; right: 4px;
+  min-width: 14px; height: 14px; padding: 0 3px;
+  border-radius: 7px;
+  background: var(--at-ink); color: var(--at-on-primary);
+  font-size: 9px; font-weight: 700;
+  display: grid; place-items: center;
 }
+
+.saved-loc-panel {
+  margin-top: 6px;
+  border: 1px solid var(--at-hairline);
+  border-radius: var(--at-r-sm);
+  background: var(--at-canvas);
+  max-height: 168px;
+  overflow-y: auto;
+}
+.saved-loc-empty {
+  padding: 10px var(--at-s-md);
+  font-size: 12.5px;
+  color: var(--at-muted);
+}
+.saved-loc-item {
+  display: flex; align-items: center;
+  border-bottom: 1px solid var(--at-hairline);
+}
+.saved-loc-item:last-child { border-bottom: none; }
+.saved-loc-pick {
+  flex: 1; min-width: 0;
+  text-align: left;
+  padding: 9px var(--at-s-md);
+  border: none; background: transparent;
+  font-family: inherit; font-size: 13px; color: var(--at-ink);
+  cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.saved-loc-pick:hover { background: var(--at-surface-soft); }
+.saved-loc-del {
+  flex-shrink: 0;
+  width: 30px; height: 30px; margin-right: 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border: none; border-radius: var(--at-r-sm);
+  background: transparent; color: var(--at-muted);
+  cursor: pointer;
+}
+.saved-loc-del:hover { background: var(--at-surface-soft); color: var(--at-ink); }
 
 /* Notes textarea */
 .notes-area {
@@ -1611,7 +1795,6 @@ if (typeof window !== 'undefined') {
   }
   .editor-body { padding: var(--at-s-sm) var(--at-s-md); }
   .editor-foot { padding: var(--at-s-sm) var(--at-s-md); flex-direction: column-reverse; gap: var(--at-s-xs); }
-  .editor-foot .tip { display: none; }
   .editor-foot .actions { width: 100%; }
   .editor-foot .actions .at-btn { flex: 1; }
   .row-2 { grid-template-columns: 1fr 1fr; gap: 8px; }

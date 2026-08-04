@@ -70,86 +70,30 @@ export const APPOINTMENT_TYPE_OPTIONS = [
   { text: 'Theo dõi', value: 'follow_up' },
 ];
 
-export function statusChipColor(status: string): string {
-  switch (status) {
-    case 'scheduled': return 'blue';
-    case 'overdue': return 'orange'; // cam để cảnh báo sale cần action
-    case 'completed': return 'green';
-    case 'cancelled': return 'grey';
-    case 'no_show': return 'red';
-    default: return 'grey';
-  }
-}
+/**
+ * 2026-08-01 (revamp "Rail"): khối helper trùng lặp ở đây đã XOÁ — bản dùng thật
+ * nằm ở `appointment-helpers.ts`. Bản cũ trong file này là bản chưa vá:
+ * `appointmentStart` bỏ qua `appointmentTime` (bug "auto 7h", đã fix ở helpers)
+ * và `typeIcon` chỉ map type legacy nên trả 📌 cho call/message/meeting.
+ * Không nơi nào import chúng — giữ lại chỉ tạo bẫy cho lần sửa sau.
+ * Cùng lượt: bỏ fetchToday/fetchUpcoming/create/update/deleteAppointment +
+ * sourceCounts vì không có call site nào (editor tự gọi api.post/api.put).
+ */
 
-export function statusLabel(status: string): string {
-  return APPOINTMENT_STATUS_OPTIONS.find(o => o.value === status)?.text ?? status;
-}
-
-// Deterministic sale color palette — mỗi sale luôn cùng 1 màu xuyên view
-const SALE_PALETTE = [
-  { bg: '#2f6ee5', soft: '#e8f0fe' }, // blue
-  { bg: '#16a34a', soft: '#dcfce7' }, // green
-  { bg: '#d97706', soft: '#fef3c7' }, // amber
-  { bg: '#7c3aed', soft: '#ede9fe' }, // purple
-  { bg: '#db2777', soft: '#fce7f3' }, // pink
-  { bg: '#0891b2', soft: '#cffafe' }, // cyan
-  { bg: '#dc2626', soft: '#fee2e2' }, // red
-  { bg: '#65a30d', soft: '#ecfccb' }, // lime
-];
-
-export function saleColor(userId: string | null | undefined): { bg: string; soft: string } {
-  if (!userId) return { bg: '#64748b', soft: '#f1f5f9' };
-  let h = 0;
-  for (let i = 0; i < userId.length; i++) h = (h * 31 + userId.charCodeAt(i)) >>> 0;
-  return SALE_PALETTE[h % SALE_PALETTE.length];
-}
-
-export function appointmentOwnerId(a: Appointment): string | null {
-  return a.assignedUserId || a.statusChangedBy?.id || null;
-}
-
-export function appointmentOwnerName(a: Appointment): string {
-  return a.assignedUser?.fullName || a.statusChangedBy?.fullName || a.statusChangedBy?.email || 'Chưa gán';
-}
-
-export function typeIcon(type: string): string {
-  switch (type) {
-    case 'consultation': return '💬';
-    case 'follow_up': return '🔁';
-    case 'new_visit': return '🆕';
-    default: return '📌';
-  }
-}
-
-export function typeLabel(type: string): string {
-  return APPOINTMENT_TYPE_OPTIONS.find(o => o.value === type)?.text ?? type;
-}
-
-export function initials(name: string | null | undefined): string {
-  if (!name) return '?';
-  const parts = name.trim().split(/\s+/);
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[parts.length - 2][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-
-// Build a Date from `appointmentDate` (ISO) — luôn trust field này, KHÔNG dùng appointmentTime string
-export function appointmentStart(a: Appointment): Date {
-  return new Date(a.appointmentDate);
-}
-export function appointmentEnd(a: Appointment): Date {
-  const start = appointmentStart(a);
-  const dur = a.durationMin ?? 30;
-  return new Date(start.getTime() + dur * 60_000);
-}
+/**
+ * Trần số lịch tải 1 lần. Khung xem là 1 tuần nên 500 dư sức cho org bận
+ * (~70 lịch/ngày); vượt ngưỡng thì view hiện cảnh báo cắt bớt thay vì im lặng.
+ */
+export const PAGE_LIMIT = 500;
 
 export function useAppointments() {
   const appointments = ref<Appointment[]>([]);
-  const todayAppointments = ref<Appointment[]>([]);
-  const upcomingAppointments = ref<Appointment[]>([]);
   const total = ref(0);
   const loading = ref(false);
   const saving = ref(false);
-  const deleting = ref(false);
+  // 2026-08-01: trước đây lỗi fetch chỉ console.error → UI đứng im ở trạng thái
+  // rỗng, sale tưởng "tuần này không có lịch". Giữ lại để view render banner lỗi.
+  const error = ref('');
 
   const filters = reactive<AppointmentFilters>({
     from: '',
@@ -158,10 +102,10 @@ export function useAppointments() {
     contactId: '',
     source: 'all',
   });
-  const sourceCounts = ref<Record<string, number>>({});
 
   async function fetchAppointments() {
     loading.value = true;
+    error.value = '';
     try {
       const res = await api.get('/appointments', {
         params: {
@@ -170,88 +114,35 @@ export function useAppointments() {
           status: filters.status || undefined,
           contactId: filters.contactId || undefined,
           source: filters.source === 'all' ? undefined : filters.source,
+          // BẮT BUỘC gửi limit: BE mặc định 50 (appointment-routes.ts). Trước đây
+          // FE không gửi → tuần nào >50 lịch là bị cắt âm thầm, và vì BE sort
+          // appointmentDate DESC nên ngày ĐẦU tuần bị rụng trước. Lịch trông như
+          // trống mà không có dấu hiệu gì.
+          limit: PAGE_LIMIT,
         },
       });
       appointments.value = res.data.appointments ?? res.data;
       total.value = res.data.total ?? appointments.value.length;
-      sourceCounts.value = res.data.counts ?? {};
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to fetch appointments:', err);
+      error.value = err?.response?.data?.message || 'Không tải được lịch hẹn. Thử lại sau.';
     } finally {
       loading.value = false;
-    }
-  }
-
-  async function fetchToday() {
-    try {
-      const res = await api.get('/appointments/today');
-      todayAppointments.value = res.data.appointments ?? res.data;
-    } catch (err) {
-      console.error('Failed to fetch today appointments:', err);
-    }
-  }
-
-  async function fetchUpcoming() {
-    try {
-      const res = await api.get('/appointments/upcoming');
-      upcomingAppointments.value = res.data.appointments ?? res.data;
-    } catch (err) {
-      console.error('Failed to fetch upcoming appointments:', err);
-    }
-  }
-
-  async function createAppointment(payload: Partial<Appointment>): Promise<Appointment | null> {
-    saving.value = true;
-    try {
-      const res = await api.post('/appointments', payload);
-      return res.data;
-    } catch (err) {
-      console.error('Failed to create appointment:', err);
-      return null;
-    } finally {
-      saving.value = false;
-    }
-  }
-
-  async function updateAppointment(id: string, payload: Partial<Appointment>): Promise<boolean> {
-    saving.value = true;
-    try {
-      await api.put(`/appointments/${id}`, payload);
-      const idx = appointments.value.findIndex(a => a.id === id);
-      if (idx !== -1) appointments.value[idx] = { ...appointments.value[idx], ...payload };
-      return true;
-    } catch (err) {
-      console.error('Failed to update appointment:', err);
-      return false;
-    } finally {
-      saving.value = false;
-    }
-  }
-
-  async function deleteAppointment(id: string): Promise<boolean> {
-    deleting.value = true;
-    try {
-      await api.delete(`/appointments/${id}`);
-      appointments.value = appointments.value.filter(a => a.id !== id);
-      return true;
-    } catch (err) {
-      console.error('Failed to delete appointment:', err);
-      return false;
-    } finally {
-      deleting.value = false;
     }
   }
 
   // Đổi status qua PATCH endpoint dedicate → backend tự set statusChangedByUserId/At
   async function changeStatus(id: string, status: 'completed' | 'cancelled' | 'no_show' | 'scheduled' | 'overdue'): Promise<boolean> {
     saving.value = true;
+    error.value = '';
     try {
       const res = await api.patch(`/appointments/${id}/status`, { status });
       const idx = appointments.value.findIndex(a => a.id === id);
       if (idx !== -1) appointments.value[idx] = { ...appointments.value[idx], ...res.data };
       return true;
-    } catch (err) {
+    } catch (err: any) {
       console.error('Failed to change status:', err);
+      error.value = err?.response?.data?.message || 'Không đổi được trạng thái lịch hẹn.';
       return false;
     } finally {
       saving.value = false;
@@ -271,11 +162,9 @@ export function useAppointments() {
   }
 
   return {
-    appointments, todayAppointments, upcomingAppointments,
-    total, sourceCounts, loading, saving, deleting,
+    appointments, total, loading, saving, error,
     filters,
-    fetchAppointments, fetchToday, fetchUpcoming,
-    createAppointment, updateAppointment, deleteAppointment,
+    fetchAppointments,
     markComplete, cancelAppointment, markNoShow, changeStatus,
   };
 }

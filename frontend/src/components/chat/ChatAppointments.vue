@@ -51,7 +51,7 @@
         <span class="apt-status-pill" :class="`s-${effectiveStatus(apt)}`">
           {{ statusLabel(effectiveStatus(apt)) }}
         </span>
-        <button class="apt-edit-btn" title="Sửa nhắc hẹn" @click="openEditor(apt)">
+        <button v-if="canMutate(apt)" class="apt-edit-btn" title="Sửa nhắc hẹn" @click="openEditor(apt)">
           <PencilIcon :size="14" :stroke-width="2" />
         </button>
       </div>
@@ -76,7 +76,7 @@
       <div v-if="apt.notes" class="apt-notes">{{ apt.notes }}</div>
 
       <!-- Row 5: quick action buttons (scheduled/overdue) -->
-      <div v-if="canQuickAction(apt)" class="apt-quick-actions">
+      <div v-if="canQuickAction(apt) && canMutate(apt)" class="apt-quick-actions">
         <button
           class="qa-btn qa-success"
           :disabled="changingId === apt.id && changingTo === 'completed'"
@@ -158,7 +158,19 @@ const editingApt = ref<Appointment | null>(null);
 const changingId = ref<string | null>(null);
 const changingTo = ref<string | null>(null);
 
+/**
+ * Ngoài owner/admin, sale chỉ sửa/đổi trạng thái lịch của chính mình (2026-08-04).
+ * BE chặn thật ở appointment-routes; đây chỉ để không bày nút bấm vào là 403.
+ * Lịch chưa gán ai (auto-tạo từ reminder Zalo) coi như không của riêng ai.
+ */
+function canMutate(apt: Appointment): boolean {
+  if (_authStoreChatApt.isAdmin) return true;
+  const owner = apt.assignedUser?.id ?? null;
+  return !!owner && owner === currentUserId.value;
+}
+
 function openEditor(apt: Appointment | null) {
+  if (apt && !canMutate(apt)) return;
   editingApt.value = apt;
   showEditor.value = true;
 }
@@ -278,6 +290,7 @@ function canQuickAction(apt: Appointment): boolean {
 }
 
 async function quickChangeStatus(apt: Appointment, newStatus: 'completed' | 'cancelled' | 'no_show') {
+  if (!canMutate(apt)) return;
   changingId.value = apt.id;
   changingTo.value = newStatus;
   try {

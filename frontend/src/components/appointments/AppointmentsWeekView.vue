@@ -1,545 +1,648 @@
 <template>
-  <div class="apt-week">
-    <div class="cal-head">
-      <div class="corner" />
-      <div v-for="d in days" :key="d.iso" class="dcol" :class="{ today: d.isToday }">
-        <div class="dow">{{ d.dowLabel }}{{ d.isToday ? ' — Hôm nay' : '' }}</div>
-        <div class="date">{{ d.day }}</div>
-        <div class="count">{{ d.count }} lịch<span v-if="d.pending"> · {{ d.pending }} quá hạn</span></div>
+  <div class="rl-week">
+    <!-- Header ngày — scrollbar-gutter khớp với body để 7 cột không lệch nhau -->
+    <div class="wk-head">
+      <div class="wk-gutter wk-gutter--head">
+        <button
+          type="button"
+          class="hr-toggle"
+          :title="showAllHours ? 'Thu gọn về khung giờ có lịch' : 'Hiện đủ 24 giờ'"
+          @click="showAllHours = !showAllHours"
+        >{{ showAllHours ? '24h' : `${pad2(range.start)}–${pad2(range.end)}` }}</button>
+      </div>
+      <div v-for="d in days" :key="d.iso" class="wk-dhead" :class="{ today: d.isToday }">
+        <div class="dow">{{ d.dow }}</div>
+        <div class="num">{{ d.num }}</div>
+        <div class="cnt">{{ d.count ? d.count + ' lịch hẹn' : '' }}</div>
       </div>
     </div>
 
-    <div ref="bodyEl" class="cal-body">
-      <div class="timecol">
-        <div v-for="h in hourRange" :key="h" class="slot">{{ String(h).padStart(2,'0') }}:00</div>
+    <div ref="bodyEl" class="wk-body">
+      <!-- Cột giờ -->
+      <div class="wk-gutter times" :style="{ height: gridH + 'px' }">
+        <div v-for="h in hours" :key="h" class="hr" :style="{ top: hourTop(h) }">{{ pad2(h) }}:00</div>
       </div>
 
-      <div v-for="d in days" :key="d.iso" class="daycol" :class="{ today: d.isToday }">
-        <div
-          v-for="h in hourRange"
-          :key="h"
-          class="slot"
-          @click="onSlotClick(d.date, h, 0)"
-        >
-          <div class="halfslot" @click.stop="onSlotClick(d.date, h, 30)" />
-        </div>
+      <div class="wk-grid" :style="{ height: gridH + 'px' }">
+        <!-- Kẻ ngang -->
+        <div v-for="h in hours" :key="'l' + h" class="gridline" :style="{ top: hourTop(h) }" />
 
-        <div
-          v-for="ev in d.events"
-          :key="ev.appt.id"
-          class="event"
-          :class="[`tier-${ev.tier}`, `state-${ev.appt.status}`, ev.appt.status === 'overdue' ? 'striped' : '']"
-          :style="{
-            top: ev.top + 'px',
-            height: ev.height + 'px',
-            background: ev.appt.status === 'cancelled' ? '#94a3b8' : typeBgColor(ev.appt.type),
-            left: ev.left,
-            width: ev.width,
-          }"
-          :title="`${ev.contactName} · ${ev.saleName}`"
-          @click.stop="$emit('select-appointment', ev.appt)"
-        >
-          <!-- Dải màu sale bên trái (mọi tier) — element riêng để KHÔNG bị border-rule
-               của overdue/cancelled đè. Giữ nền màu-theo-loại. -->
-          <span v-if="ev.saleId" class="ev-salebar" :style="{ background: ev.saleBar }" />
-          <!-- TIER: COMPACT (< 34px, ≤30p) — 1 dòng: icon + KH + giờ -->
-          <template v-if="ev.tier === 'compact'">
-            <span class="ev-ico">{{ typeIcon(ev.appt.type) }}</span>
-            <span class="ev-name">{{ ev.contactName }}</span>
-            <span class="ev-time-inline">{{ ev.startTime }}</span>
-          </template>
-          <!-- TIER: MEDIUM (34-57px, 45-60p) — 2 dòng -->
-          <template v-else-if="ev.tier === 'medium'">
-            <div class="ev-top">
-              <span class="ev-ico">{{ typeIcon(ev.appt.type) }}</span>
-              <span class="ev-name">{{ ev.contactName }}</span>
-            </div>
-            <div class="ev-bot">{{ ev.timeLabel }}</div>
-          </template>
-          <!-- TIER: FULL (≥ 58px, ≥75p) — 3 dòng + avatar -->
-          <template v-else>
-            <div class="ev-top">
-              <span class="ev-av" :class="{ 'has-img': !!ev.avatarUrl }">
-                <img v-if="ev.avatarUrl" :src="ev.avatarUrl" alt="" @error="onAvatarError" />
-                <template v-else>{{ initials(ev.contactName) }}</template>
+        <div v-for="d in days" :key="d.iso" class="wk-col" :class="{ today: d.isToday }">
+          <!-- Slot bấm-để-tạo: 2 nửa giờ, nằm dưới event (z-index thấp hơn) -->
+          <button
+            v-for="slot in d.slots"
+            :key="slot.key"
+            type="button"
+            class="slot"
+            tabindex="-1"
+            aria-hidden="true"
+            :style="{ top: slot.top }"
+            :title="`Tạo lịch hẹn ${slot.label}`"
+            @click="$emit('create-slot', { date: slot.date })"
+          />
+
+          <div v-if="d.isToday && nowTop !== null" class="nowline" :style="{ top: nowTop + 'px' }">
+            <span class="nowdot" />
+          </div>
+
+          <!-- role=button thay <button>: bên trong còn nút "hoàn thành" -->
+          <div
+            v-for="ev in d.events"
+            :key="ev.appt.id"
+            class="ev"
+            :class="{ 'is-muted': ev.tone.muted, 'is-clipped': ev.clipped }"
+            :style="ev.style"
+            :title="ev.tooltip"
+            role="button"
+            tabindex="0"
+            @click="onPick($event, ev.appt)"
+            @keydown.enter.prevent="onPick($event as any, ev.appt)"
+            @keydown.space.prevent="onPick($event as any, ev.appt)"
+          >
+            <span class="ev-body">
+              <span class="ev-title" :style="{ color: ev.tone.text, textDecoration: ev.tone.strike ? 'line-through' : 'none' }">
+                <span v-if="!ev.twoLine" class="ev-t-inline" :style="{ color: ev.tone.sub }">{{ ev.startLabel }} </span>{{ ev.title }}
               </span>
-              <span class="ev-name">{{ ev.contactName }}</span>
-            </div>
-            <div v-if="ev.title" class="ev-title">{{ typeIcon(ev.appt.type) }} {{ ev.title }}</div>
-            <div class="ev-meta">
-              <span v-if="ev.appt.location" class="ev-loc">📍 {{ ev.appt.location }}</span>
-              <span class="ev-time-bottom">{{ ev.timeLabel }}</span>
-            </div>
-            <!-- Chip sale phụ trách (tier full) — chấm màu sale + tên tắt. -->
-            <div v-if="ev.saleId" class="ev-sale" :title="'Phụ trách: ' + ev.saleName">
-              <span class="ev-sale-dot" :style="{ background: ev.saleBar }" />
-              <span class="ev-sale-name">{{ initials(ev.saleName) }}</span>
-            </div>
-          </template>
-        </div>
+              <span v-if="ev.twoLine" class="ev-meta" :style="{ color: ev.tone.sub }">
+                {{ ev.timeLabel }} · {{ ev.customer }}
+              </span>
+            </span>
 
-        <div v-if="d.isToday && nowOffset !== null" class="nowline" :style="{ top: nowOffset + 'px' }" />
+            <span v-if="ev.conflicted" class="ev-warn" title="Trùng giờ với lịch khác của cùng sale">▲</span>
+
+            <!-- Hoàn thành ngay trên thẻ — chỉ hiện khi hover/focus và thẻ đủ cao -->
+            <button
+              v-if="ev.canDone && ev.twoLine"
+              type="button"
+              class="ev-done"
+              :disabled="busyId === ev.appt.id"
+              :title="busyId === ev.appt.id ? 'Đang lưu…' : 'Đánh dấu hoàn thành'"
+              @click.stop="$emit('mark-complete', ev.appt)"
+            >
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                <path d="M5 12.5l4.5 4.5L19 7.5" />
+              </svg>
+            </button>
+
+            <!-- Lịch dài hơn khung đang xem → cắt ở đáy, báo cho biết còn tiếp -->
+            <span v-if="ev.clipped" class="ev-more" :title="ev.spillLabel">⌄</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, ref } from 'vue';
+/**
+ * AppointmentsWeekView — bản revamp "Rail" (design 1A, 2026-08-01).
+ *
+ * Cập nhật 2026-08-04:
+ *  - Khung giờ TỰ CO theo dữ liệu (mặc định 08–20 khi tuần trống) + nút bật
+ *    "đủ 24 giờ". Trước đây cứng 08–20 nên sáng nào cũng nhìn 2 tiếng chết, mà
+ *    lịch ngoài khung thì không thấy đâu.
+ *  - Thẻ bị KẸP chiều cao trong lưới. Lịch 1440 phút trước đây render cao 1390px
+ *    trong lưới 696px, tràn khỏi cột hơn 1000px và kéo dài vùng cuộn.
+ *  - Giờ hiển thị qua `fmtRange` — quấn qua nửa đêm thay vì in "38:45".
+ *  - Cuộn tới GIỜ HIỆN TẠI nếu đang xem tuần này (trước: tới lịch sớm nhất).
+ *  - Nút ✓ hoàn thành ngay trên thẻ, khỏi phải mở popover.
+ */
+import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue';
 import {
-  typeIcon,
-  typeBgColor,
-  initials,
-  resolveContactAvatar,
   appointmentStart,
-  appointmentEnd,
-  saleColor,
+  appointmentMinutes,
   appointmentOwnerId,
   appointmentOwnerName,
+  saleColor,
+  effectiveStatus,
+  statusTone,
+  fmtClock,
+  fmtRange,
+  fmtDuration,
+  spillDays,
+  type StatusTone,
   type AppointmentEx as Appointment,
 } from '@/composables/appointment-helpers';
-import { orgDayKey, getOrgParts, startOfOrgDay } from '@/composables/use-org-timezone';
+import { orgDayKey, getOrgParts, startOfOrgDay, orgWallClockToUtc } from '@/composables/use-org-timezone';
 
 const props = defineProps<{
   weekStart: Date;
   appointments: Appointment[];
+  /** Dựng từ TOÀN BỘ lịch đã tải (không phải tập đã lọc) — xem AppointmentsView. */
+  conflictMap: Map<string, Appointment[]>;
+  /** Mốc "bây giờ" do view bơm xuống, nhích mỗi phút → quá hạn tự đổi màu. */
+  nowTs: number;
+  canMutate: (a: Appointment) => boolean;
+  busyId: string | null;
 }>();
 
 const emit = defineEmits<{
-  (e: 'select-appointment', a: Appointment): void;
+  (e: 'select-appointment', payload: { appt: Appointment; rect: DOMRect }): void;
   (e: 'create-slot', payload: { date: Date }): void;
+  (e: 'mark-complete', a: Appointment): void;
 }>();
 
-const HOUR_START = 7;
-const HOUR_END = 21;
-const SLOT_PX = 48;
-const hourRange = Array.from({ length: HOUR_END - HOUR_START + 1 }, (_, i) => HOUR_START + i);
+const ROW_H = 58;
 const DOW = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN'];
+const DEFAULT_START = 8;
+const DEFAULT_END = 20;
+const MIN_SPAN = 8; // giờ — dưới mức này lưới trông cụt
 
 const bodyEl = ref<HTMLElement | null>(null);
+const showAllHours = ref(false);
 
-// 2026-05-21 Phase B-1: tất cả tính ngày/giờ chuyển sang org TZ.
-function isoDay(d: Date): string {
-  return orgDayKey(d);
-}
+function pad2(n: number) { return String(n).padStart(2, '0'); }
 
-const days = computed(() => {
-  const todayKey = orgDayKey(new Date());
-  return Array.from({ length: 7 }, (_, i) => {
-    // Cộng i ngày (delta UTC ms) → giữ chính xác bất kể TZ.
-    const date = new Date(props.weekStart.getTime() + i * 86_400_000);
-    const orgMid = startOfOrgDay(date);
-    const dateOrgMid = orgMid || date;
-    const iso = isoDay(dateOrgMid);
-    const dayApts = props.appointments.filter(a => isoDay(appointmentStart(a)) === iso);
-    const parts = getOrgParts(dateOrgMid);
-    return {
-      date: dateOrgMid,
-      iso,
-      dowLabel: DOW[i],
-      day: parts?.day ?? dateOrgMid.getDate(),
-      isToday: iso === todayKey,
-      count: dayApts.length,
-      pending: dayApts.filter(a => a.status === 'overdue').length,
-      events: layoutEvents(dayApts),
-    };
-  });
+/**
+ * Khung giờ hiển thị: ôm sát dữ liệu tuần (đệm 1 tiếng mỗi đầu), tối thiểu
+ * MIN_SPAN tiếng. Tuần trống → giữ 08–20 để lưới không nhảy lung tung.
+ */
+const range = computed(() => {
+  if (showAllHours.value) return { start: 0, end: 24 };
+  let min = 24;
+  let max = 0;
+  let any = false;
+  for (const a of props.appointments) {
+    any = true;
+    const s = appointmentMinutes(a);
+    const e = Math.min(1440, s + (a.durationMin ?? 30));
+    min = Math.min(min, Math.floor(s / 60));
+    max = Math.max(max, Math.ceil(e / 60));
+  }
+  if (!any) return { start: DEFAULT_START, end: DEFAULT_END };
+
+  let start = Math.max(0, min - 1);
+  let end = Math.min(24, Math.max(max + 1, start + 1));
+  if (end - start < MIN_SPAN) {
+    start = Math.max(0, Math.min(start, 24 - MIN_SPAN));
+    end = Math.min(24, start + MIN_SPAN);
+  }
+  return { start, end };
 });
 
-type EventTier = 'compact' | 'medium' | 'full';
-type LaidOut = {
-  appt: Appointment;
-  top: number;
-  height: number;
-  left: string;
-  width: string;
-  tier: EventTier;
-  timeLabel: string;     // "12:00–12:30" (medium/full)
-  startTime: string;     // "12:00" (compact)
-  contactName: string;
-  title: string | null;
-  avatarUrl: string | null;
-  // Sale phụ trách (dải màu trái mọi tier + chip tier full). Anh chốt 2026-06-08:
-  // kết hợp màu-theo-loại (nền) + dấu hiệu sale (dải trái + chip) để nhìn ra cả loại lẫn người.
-  saleId: string | null;
-  saleName: string;
-  saleBar: string;       // màu dải trái = saleColor(saleId).bg
-};
-function layoutEvents(items: Appointment[]): LaidOut[] {
-  const sorted = [...items].sort((a, b) => appointmentStart(a).getTime() - appointmentStart(b).getTime());
-  const clusters: Appointment[][] = [];
-  let current: Appointment[] = [];
-  let currentEnd = 0;
-  for (const a of sorted) {
-    const s = appointmentStart(a).getTime();
-    const e = appointmentEnd(a).getTime();
-    if (current.length === 0 || s < currentEnd) {
-      current.push(a);
-      currentEnd = Math.max(currentEnd, e);
-    } else {
-      clusters.push(current);
-      current = [a];
-      currentEnd = e;
-    }
-  }
-  if (current.length) clusters.push(current);
+const hours = computed(() =>
+  Array.from({ length: range.value.end - range.value.start }, (_, i) => range.value.start + i),
+);
+const gridH = computed(() => (range.value.end - range.value.start) * ROW_H);
 
-  const out: LaidOut[] = [];
-  for (const cluster of clusters) {
-    const columns: Appointment[][] = [];
-    for (const a of cluster) {
+function hourTop(h: number): string {
+  return (h - range.value.start) * ROW_H + 'px';
+}
+
+/* ── Đường "bây giờ" — tick mỗi phút, chỉ khi nằm trong khung đang xem ── */
+const nowMinutes = ref(currentOrgMinutes());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+
+function currentOrgMinutes(): number {
+  const p = getOrgParts(new Date());
+  return p ? p.hour * 60 + p.minute : 0;
+}
+const nowTop = computed<number | null>(() => {
+  const m = nowMinutes.value;
+  if (m < range.value.start * 60 || m > range.value.end * 60) return null;
+  return ((m - range.value.start * 60) / 60) * ROW_H;
+});
+
+/* ── Bố cục sự kiện: gom cụm chồng giờ → chia lane ── */
+type Laid = {
+  appt: Appointment;
+  style: Record<string, string>;
+  tone: StatusTone;
+  twoLine: boolean;
+  clipped: boolean;
+  spillLabel: string;
+  canDone: boolean;
+  title: string;
+  customer: string;
+  startLabel: string;
+  timeLabel: string;
+  tooltip: string;
+  conflicted: boolean;
+};
+
+function layout(items: Appointment[]): Laid[] {
+  const list = items
+    .map((a) => ({ a, s: appointmentMinutes(a), d: a.durationMin ?? 30 }))
+    .sort((x, y) => x.s - y.s || y.d - x.d);
+
+  const lanes = new Map<string, { lane: number; of: number }>();
+  let cluster: typeof list = [];
+  let end = -1;
+  const flush = () => {
+    if (!cluster.length) return;
+    const cols: (typeof list)[] = [];
+    for (const it of cluster) {
       let placed = false;
-      for (const col of columns) {
-        const last = col[col.length - 1];
-        if (appointmentEnd(last).getTime() <= appointmentStart(a).getTime()) {
-          col.push(a);
+      for (let ci = 0; ci < cols.length; ci++) {
+        const last = cols[ci][cols[ci].length - 1];
+        if (last.s + last.d <= it.s) {
+          cols[ci].push(it);
+          lanes.set(it.a.id, { lane: ci, of: 0 });
           placed = true;
           break;
         }
       }
-      if (!placed) columns.push([a]);
-    }
-    const nCols = columns.length;
-    columns.forEach((col, colIdx) => {
-      for (const a of col) {
-        out.push(buildLaidOut(a, colIdx, nCols));
+      if (!placed) {
+        lanes.set(it.a.id, { lane: cols.length, of: 0 });
+        cols.push([it]);
       }
-    });
-  }
-  return out;
-}
-
-function buildLaidOut(a: Appointment, colIdx: number, nCols: number): LaidOut {
-  const start = appointmentStart(a);
-  const end = appointmentEnd(a);
-  // Phase B-1: hour/minute đọc theo org TZ → vertical position chính xác kể cả browser khác TZ.
-  const sp = getOrgParts(start);
-  const ep = getOrgParts(end);
-  const startH = sp ? sp.hour + sp.minute / 60 : start.getHours() + start.getMinutes() / 60;
-  const endH = ep ? ep.hour + ep.minute / 60 : end.getHours() + end.getMinutes() / 60;
-  const top = (startH - HOUR_START) * SLOT_PX;
-  // Min 30px để card 15-phút vẫn render được 1 dòng compact (icon + tên + giờ)
-  const height = Math.max(30, (endH - startH) * SLOT_PX - 2);
-  // Tier: compact ≤30p (<34px), medium 45-60p (34-57px), full ≥75p (≥58px)
-  let tier: EventTier = 'compact';
-  if (height >= 58) tier = 'full';
-  else if (height >= 34) tier = 'medium';
-
-  const widthPct = 100 / nCols;
-  return {
-    appt: a,
-    top,
-    height,
-    left: `calc(${colIdx * widthPct}% + 2px)`,
-    width: `calc(${widthPct}% - 4px)`,
-    tier,
-    timeLabel: `${fmtTime(start)}–${fmtTime(end)}`,
-    startTime: fmtTime(start),
-    contactName: a.contact?.fullName || 'KH chưa rõ',
-    title: (a as any).title || null,
-    avatarUrl: resolveContactAvatar(a.contact),
-    saleId: appointmentOwnerId(a),
-    saleName: appointmentOwnerName(a),
-    saleBar: saleColor(appointmentOwnerId(a)).bg,
+    }
+    for (const it of cluster) lanes.get(it.a.id)!.of = cols.length;
+    cluster = [];
+    end = -1;
   };
+  for (const it of list) {
+    if (cluster.length && it.s >= end) flush();
+    cluster.push(it);
+    end = Math.max(end, it.s + it.d);
+  }
+  flush();
+
+  const gridBottom = gridH.value;
+
+  return list.map(({ a, s, d }) => {
+    const st = effectiveStatus(a, props.nowTs);
+    const tone = statusTone(st, saleColor(appointmentOwnerId(a)).bg);
+    const rec = lanes.get(a.id) ?? { lane: 0, of: 1 };
+    const of = rec.of || 1;
+
+    const rawTop = ((s - range.value.start * 60) / 60) * ROW_H;
+    const top = Math.max(0, rawTop);
+    const rawH = (d / 60) * ROW_H - 2;
+    // KẸP trong lưới: lịch dài (vd 1 ngày) không được tràn khỏi cột.
+    const maxH = Math.max(16, gridBottom - top - 2);
+    const h = Math.min(rawH, maxH);
+    const clipped = rawH > maxH + 0.5;
+
+    const customer = a.contact?.fullName || 'Khách hàng';
+    const timeLabel = fmtRange(s, d, true);
+    const spill = spillDays(s, d);
+    return {
+      appt: a,
+      tone,
+      twoLine: h >= 34,
+      clipped,
+      spillLabel: spill > 0
+        ? `Kéo dài ${fmtDuration(d)}, sang ngày hôm sau`
+        : `Kéo dài ${fmtDuration(d)}, dài hơn khung giờ đang xem`,
+      canDone: (st === 'scheduled' || st === 'overdue') && props.canMutate(a),
+      title: a.title || customer,
+      customer,
+      startLabel: fmtClock(s),
+      timeLabel,
+      tooltip: `${a.title || customer} · ${fmtRange(s, d)} · ${fmtDuration(d)} · ${appointmentOwnerName(a)}`,
+      conflicted: props.conflictMap.has(a.id),
+      style: {
+        top: top + 'px',
+        height: h + 'px',
+        left: `calc(${(rec.lane / of) * 100}% + 2px)`,
+        width: `calc(${100 / of}% - 4px)`,
+        background: tone.bg,
+        boxShadow: `inset 3px 0 0 ${tone.bar}`,
+        zIndex: String(2 + rec.lane),
+      },
+    };
+  });
 }
 
-function onAvatarError(e: Event) {
-  (e.target as HTMLImageElement).style.display = 'none';
+/**
+ * Khung 7 ngày + slot 30'. Tách khỏi `days` vì chỉ phụ thuộc weekStart + range:
+ * để chung thì mỗi lần đổi bộ lọc lại dựng lại toàn bộ object Date.
+ */
+const skeleton = computed(() => {
+  const todayKey = orgDayKey(new Date());
+  const { start, end } = range.value;
+  return Array.from({ length: 7 }, (_, i) => {
+    const raw = new Date(props.weekStart.getTime() + i * 86_400_000);
+    const date = startOfOrgDay(raw) || raw;
+    const iso = orgDayKey(date);
+    const parts = getOrgParts(date);
+
+    const slots: { key: string; top: string; label: string; date: Date }[] = [];
+    for (let h = start; h < end; h++) {
+      for (const mm of [0, 30]) {
+        const hhmm = pad2(h) + ':' + pad2(mm);
+        const at = orgWallClockToUtc(iso, hhmm);
+        if (!at) continue;
+        slots.push({
+          key: iso + hhmm,
+          top: ((h - start) * ROW_H + (mm / 60) * ROW_H) + 'px',
+          label: hhmm,
+          date: at,
+        });
+      }
+    }
+    return {
+      iso,
+      dow: DOW[i],
+      num: pad2(parts?.day ?? date.getDate()),
+      isToday: iso === todayKey,
+      slots,
+    };
+  });
+});
+
+const days = computed(() =>
+  skeleton.value.map((d) => {
+    const dayApts = props.appointments.filter((a) => orgDayKey(appointmentStart(a)) === d.iso);
+    return { ...d, count: dayApts.length, events: layout(dayApts) };
+  }),
+);
+
+function onPick(e: MouseEvent, appt: Appointment) {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  emit('select-appointment', { appt, rect });
 }
 
-function fmtTime(d: Date): string {
-  const p = getOrgParts(d);
-  if (!p) return '';
-  return `${String(p.hour).padStart(2, '0')}:${String(p.minute).padStart(2, '0')}`;
+/**
+ * Cuộn tới GIỜ HIỆN TẠI khi đang xem tuần chứa hôm nay (công cụ dùng hằng ngày
+ * — mở ra là muốn thấy "bây giờ"). Tuần khác thì tới lịch sớm nhất.
+ */
+function scrollToFocus() {
+  const el = bodyEl.value;
+  if (!el) return;
+  const todayKey = orgDayKey(new Date());
+  const inThisWeek = skeleton.value.some((d) => d.iso === todayKey);
+  const mins = props.appointments.map(appointmentMinutes).filter((m) => m > 0);
+  const anchorMin = inThisWeek
+    ? nowMinutes.value
+    : (mins.length ? Math.min(...mins) : range.value.start * 60);
+  const target = ((anchorMin - 60) / 60 - range.value.start) * ROW_H;
+  el.scrollTop = Math.max(0, Math.min(target, el.scrollHeight - el.clientHeight));
 }
 
-const nowTick = ref(Date.now());
-let tickHandle: number | null = null;
 onMounted(() => {
-  tickHandle = window.setInterval(() => { nowTick.value = Date.now(); }, 60_000);
-  // Phase B-1: scroll-to-current-hour theo org TZ.
-  const nowP = getOrgParts(new Date());
-  const nowHour = nowP?.hour ?? new Date().getHours();
-  const hour = Math.max(HOUR_START, Math.min(HOUR_END - 2, nowHour - 1));
-  if (bodyEl.value) bodyEl.value.scrollTop = (hour - HOUR_START) * SLOT_PX;
+  nowTimer = setInterval(() => { nowMinutes.value = currentOrgMinutes(); }, 60_000);
+  requestAnimationFrame(scrollToFocus);
 });
-onBeforeUnmount(() => { if (tickHandle) window.clearInterval(tickHandle); });
+onBeforeUnmount(() => { if (nowTimer) clearInterval(nowTimer); });
 
-const nowOffset = computed(() => {
-  void nowTick.value;
-  const nowP = getOrgParts(new Date());
-  if (!nowP) return null;
-  const h = nowP.hour + nowP.minute / 60;
-  if (h < HOUR_START || h > HOUR_END) return null;
-  return (h - HOUR_START) * SLOT_PX;
+// Đổi tuần / bật 24h → canh lại vùng nhìn.
+watch([() => props.weekStart, showAllHours], () => {
+  requestAnimationFrame(scrollToFocus);
 });
-
-function onSlotClick(date: Date, hour: number, minute: number) {
-  const d = new Date(date);
-  d.setHours(hour, minute, 0, 0);
-  emit('create-slot', { date: d });
-}
 </script>
 
 <style scoped>
-@import '@/assets/airtable.css';
+@import '@/assets/appointments-rail.css';
 
-.apt-week {
-  display: grid; grid-template-rows: auto 1fr;
-  height: 100%;
-  background: var(--at-canvas);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-}
-
-/* Day header row */
-.cal-head {
-  display: grid;
-  grid-template-columns: 60px repeat(7, 1fr);
-  border-bottom: 1px solid var(--at-hairline);
-}
-.cal-head .corner { border-right: 1px solid var(--at-hairline); }
-.cal-head .dcol {
-  padding: var(--at-s-sm) var(--at-s-xs);
-  border-right: 1px solid var(--at-hairline);
-  text-align: center;
-  background: var(--at-canvas);
-}
-.cal-head .dcol .dow {
-  font-size: 10.5px;
-  text-transform: uppercase;
-  color: var(--at-muted);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-}
-.cal-head .dcol .date {
-  font-size: 20px;
-  font-weight: 400;
-  color: var(--at-ink);
-  line-height: 1;
-  margin-top: 2px;
-}
-.cal-head .dcol.today .dow { color: var(--at-coral); }
-.cal-head .dcol.today .date {
-  display: inline-flex;
-  align-items: center; justify-content: center;
-  width: 32px; height: 32px;
-  background: var(--at-ink);
-  color: var(--at-on-primary);
-  border-radius: var(--at-r-pill);
-  font-size: 16px;
-  font-weight: 500;
-}
-.cal-head .dcol .count {
-  font-size: 10px;
-  color: var(--at-muted);
-  margin-top: 2px;
-  font-weight: 500;
+.rl-week {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  background: var(--rl-surface);
 }
 
-/* Body grid */
-.cal-body {
-  position: relative;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: 60px repeat(7, 1fr);
-  background: var(--at-canvas);
-}
+.wk-gutter { width: 56px; flex: 0 0 56px; }
+.wk-gutter--head { display: grid; place-items: center; }
 
-/* Time column */
-.timecol { border-right: 1px solid var(--at-hairline); }
-.timecol .slot {
-  height: 48px;
-  border-bottom: 1px solid var(--at-hairline);
-  font-size: 10.5px;
-  color: var(--at-muted);
-  padding: 2px 6px;
-  text-align: right;
-  font-weight: 500;
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  box-sizing: border-box;
-}
-
-/* Day columns */
-.daycol {
-  border-right: 1px solid var(--at-hairline);
-  position: relative;
-}
-.daycol .slot {
-  height: 48px;
-  border-bottom: 1px solid var(--at-hairline);
-  cursor: pointer;
-  position: relative;
-}
-.daycol .slot:active { background: var(--at-surface-soft); }
-.daycol .slot .halfslot {
-  position: absolute;
-  left: 0; right: 0; bottom: 0;
-  height: 50%;
-  border-top: 1px dashed var(--at-hairline);
-}
-.daycol .slot .halfslot:active { background: rgba(170,45,0,0.04); }
-.daycol.today { background: rgba(170,45,0,0.018); }
-
-/* Event card — saleColor bg (dark) + WHITE text. 3 tier theo height:
-   compact (<34px) 1 dòng · medium (34-57px) 2 dòng · full (≥58px) 3 dòng + avatar */
-.event {
-  position: absolute;
-  border-radius: 6px;
-  overflow: hidden;
-  cursor: pointer;
-  color: #fff;
-  border-left: 3px solid rgba(255,255,255,0.5);
-  box-shadow: 0 1px 3px rgba(24,29,38,0.18);
+.hr-toggle {
+  border: 1px solid var(--rl-hairline);
+  border-radius: var(--rl-r-xs);
+  background: var(--rl-surface);
+  color: var(--rl-muted);
   font-family: inherit;
-  line-height: 1.25;
-}
-.event:hover { box-shadow: 0 2px 6px rgba(24,29,38,0.28); z-index: 5; }
-.event:active { transform: translateY(1px); }
-
-/* Dải màu sale bên trái — đè lên border-left trắng mờ, hiển thị mọi tier + mọi state
-   (overdue/cancelled override border-left-color nhưng KHÔNG đụng element này). */
-.event .ev-salebar {
-  position: absolute;
-  left: 0; top: 0; bottom: 0;
-  width: 3px;
-  border-radius: 6px 0 0 6px;
-  pointer-events: none;
-  z-index: 1;
-}
-/* Chip sale (tier full): chấm màu + tên tắt, góc dưới-phải, nền mờ tối nhẹ. */
-.event.tier-full .ev-sale {
-  display: inline-flex; align-items: center; gap: 3px;
-  margin-top: 3px;
-  font-size: 9.5px; opacity: 0.92;
-}
-.event.tier-full .ev-sale-dot {
-  width: 7px; height: 7px; border-radius: 50%;
-  flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.6);
-}
-.event.tier-full .ev-sale-name {
-  font-weight: 600; letter-spacing: 0.02em;
-}
-
-/* ─── COMPACT (1 dòng: icon + tên + giờ, font 10.5px) ─── */
-.event.tier-compact {
-  display: flex; align-items: center; gap: 5px;
-  padding: 4px 7px;
-  font-size: 10.5px;
-  font-weight: 500;
+  font-size: 9.5px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 4px;
+  cursor: pointer;
   white-space: nowrap;
 }
-.event.tier-compact .ev-ico { font-size: 11px; flex-shrink: 0; }
-.event.tier-compact .ev-name {
-  font-weight: 600;
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis;
-}
-.event.tier-compact .ev-time-inline {
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 10px; opacity: 0.9; flex-shrink: 0;
-}
+.hr-toggle:hover { background: var(--rl-surface-soft); color: var(--rl-ink); }
 
-/* ─── MEDIUM (2 dòng) ─── */
-.event.tier-medium {
-  padding: 4px 7px;
-  font-size: 11px;
-}
-.event.tier-medium .ev-top {
-  display: flex; align-items: center; gap: 5px;
-  margin-bottom: 1px;
-  font-weight: 600;
-}
-.event.tier-medium .ev-ico { font-size: 12px; flex-shrink: 0; }
-.event.tier-medium .ev-name {
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-}
-.event.tier-medium .ev-bot {
-  font-size: 10px; opacity: 0.88;
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-}
-
-/* ─── FULL (3 dòng + avatar) ─── */
-.event.tier-full {
-  padding: 5px 8px;
-  font-size: 11px;
-}
-.event.tier-full .ev-top {
-  display: flex; align-items: center; gap: 6px;
-  margin-bottom: 3px;
-}
-.event.tier-full .ev-av {
-  width: 22px; height: 22px; border-radius: 50%;
-  background: rgba(255,255,255,0.22);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 10px; font-weight: 600;
-  flex-shrink: 0;
+/* ── Header ─────────────────────────────────────────────────────── */
+.wk-head {
+  display: flex;
+  border-bottom: 1px solid var(--rl-hairline);
+  scrollbar-gutter: stable;
   overflow: hidden;
+  flex: none;
 }
-.event.tier-full .ev-av.has-img { background: transparent; }
-.event.tier-full .ev-av img {
-  width: 100%; height: 100%; object-fit: cover; border-radius: 50%;
-  display: block;
+.wk-dhead {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 4px 6px;
+  text-align: center;
+  border-left: 1px solid var(--rl-gridline);
 }
-.event.tier-full .ev-name {
-  font-weight: 600; font-size: 12px;
-  flex: 1; min-width: 0;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.wk-dhead.today { background: var(--rl-today-bg); }
+.wk-dhead .dow {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--rl-dim);
 }
-.event.tier-full .ev-title {
-  font-size: 11px; opacity: 0.95;
-  margin-bottom: 3px;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+.wk-dhead.today .dow { color: var(--rl-accent); }
+.wk-dhead .num {
+  font-family: var(--rl-font-head);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--rl-ink);
+  font-variant-numeric: tabular-nums;
+  margin-top: 1px;
 }
-.event.tier-full .ev-meta {
-  font-size: 10px; opacity: 0.88;
-  display: flex; gap: 8px; flex-wrap: wrap;
-  align-items: baseline;
-}
-.event.tier-full .ev-loc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
-.event.tier-full .ev-time-bottom {
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  margin-left: auto; flex-shrink: 0;
+.wk-dhead.today .num { color: var(--rl-accent); }
+.wk-dhead .cnt {
+  font-size: 10.5px;
+  color: var(--rl-dim);
+  margin-top: 1px;
+  font-variant-numeric: tabular-nums;
+  min-height: 13px;
 }
 
-/* ─── State modifiers ─── */
-.event.striped {
-  background-image: repeating-linear-gradient(45deg,
-    transparent 0, transparent 5px,
-    rgba(255,255,255,0.18) 5px, rgba(255,255,255,0.18) 10px) !important;
-  border-left-color: #fbbf24 !important;
+/* ── Body ───────────────────────────────────────────────────────── */
+.wk-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
+  display: flex;
+  position: relative;
+  align-items: flex-start;
 }
-.event.striped::after {
-  content: '⏰';
-  position: absolute; top: 2px; right: 4px;
-  font-size: 9.5px; opacity: 0.95;
+.wk-gutter.times { position: relative; }
+.hr {
+  position: absolute;
+  right: 7px;
+  transform: translateY(-6px);
+  font-size: 10.5px;
+  color: var(--rl-dim);
+  font-variant-numeric: tabular-nums;
 }
-.event.state-completed { opacity: 0.55; }
-.event.state-completed .ev-name,
-.event.state-completed .ev-title { text-decoration: line-through; }
-.event.state-cancelled {
-  opacity: 0.5;
-  background: #94a3b8 !important;
-  border-left-color: rgba(255,255,255,0.4) !important;
-}
-.event.state-cancelled .ev-name,
-.event.state-cancelled .ev-title { text-decoration: line-through; }
 
-/* Now line — coral instead of red */
-.nowline {
-  position: absolute; left: 0; right: 0;
-  height: 2px;
-  background: var(--at-coral);
-  z-index: 4;
+.wk-grid {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  position: relative;
+}
+.gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--rl-gridline);
+  z-index: 1;
   pointer-events: none;
 }
-.nowline::before {
-  content: "";
+
+.wk-col {
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  border-left: 1px solid var(--rl-gridline);
+  /* Chặn thẻ dài tràn ra ngoài cột (đi kèm việc kẹp chiều cao ở layout()) */
+  overflow: hidden;
+}
+.wk-col.today { background: var(--rl-today-bg); }
+
+.slot {
   position: absolute;
-  left: -5px; top: -5px;
-  width: 12px; height: 12px;
+  left: 0;
+  right: 0;
+  height: calc(var(--rl-row-h) / 2);
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  z-index: 1;
+}
+.slot:hover { background: var(--rl-accent-a06); }
+
+.nowline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 1.5px solid var(--rl-danger);
+  z-index: 6;
+  pointer-events: none;
+}
+.nowdot {
+  position: absolute;
+  left: -3px;
+  top: -3.5px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--at-coral);
+  background: var(--rl-danger);
+}
+
+/* ── Event card ─────────────────────────────────────────────────── */
+.ev {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  text-align: left;
+  padding: 0;
+  border: 1px solid var(--rl-ink-a06);
+  border-radius: var(--rl-r-sm);
+  overflow: hidden;
+  cursor: pointer;
+  font-family: inherit;
+}
+/* Hover = lớp phủ opacity. KHÔNG dùng filter (tạo stacking context + tách layer
+   cho từng thẻ) và cũng không dùng box-shadow — inline style đã chiếm nó cho
+   dải màu trái. */
+.ev::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--rl-ink-a06);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.ev:hover::after { opacity: 1; }
+.ev:focus-visible {
+  outline: 2px solid var(--rl-accent);
+  outline-offset: 1px;
+}
+.ev.is-muted { opacity: 0.85; }
+/* Bị cắt đáy → bo góc dưới phẳng lại cho thấy là "còn tiếp" */
+.ev.is-clipped { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+
+.ev-body {
+  padding: 3px 6px 3px 8px;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ev-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ev-t-inline { font-weight: 400; font-variant-numeric: tabular-nums; }
+.ev-meta {
+  font-size: 10.5px;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.ev-warn {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  font-size: 8px;
+  color: var(--rl-warn);
+  line-height: 1;
+  z-index: 2;
+}
+.ev-more {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--rl-muted);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ✓ hoàn thành — ẩn cho tới khi hover/focus vào thẻ */
+.ev-done {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rl-hairline);
+  border-radius: var(--rl-r-xs);
+  background: var(--rl-surface);
+  color: var(--rl-muted);
+  cursor: pointer;
+  font-family: inherit;
+  opacity: 0;
+  transition: opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+  z-index: 3;
+}
+.ev:hover .ev-done,
+.ev:focus-within .ev-done { opacity: 1; }
+.ev-done:hover:not(:disabled) {
+  background: var(--rl-success);
+  border-color: var(--rl-success);
+  color: #fff;
+}
+.ev-done:focus-visible { opacity: 1; outline: 2px solid var(--rl-accent); outline-offset: 1px; }
+.ev-done:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .ev::after,
+  .ev-done { transition: none; }
 }
 </style>

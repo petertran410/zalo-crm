@@ -17,6 +17,12 @@ interface SyncInput {
   content: string | null;
   contentType: string;
   senderUid: string;
+  /**
+   * Chủ nick Zalo (`ZaloAccount.ownerUserId`) nhận reminder card này → thành người
+   * phụ trách Appointment sinh ra. Trước 2026-08-04 field này bỏ trống nên lịch từ
+   * Zalo không thuộc về ai và không kiểm soát được quyền sửa.
+   */
+  ownerUserId?: string | null;
 }
 
 function extractFromCard(parsed: Record<string, unknown>): {
@@ -95,6 +101,9 @@ export async function syncReminderFromMessage(input: SyncInput): Promise<void> {
         id: randomUUID(),
         orgId: input.orgId,
         contactId: input.contactId,
+        // Chỉ set khi TẠO. Update cố tình không đụng tới: nếu sau đó lịch được
+        // chuyển tay cho sale khác thì reminder Zalo fire lại không cướp về.
+        assignedUserId: input.ownerUserId ?? null,
         appointmentDate: apptDate,
         appointmentTime: apptTime,
         type: reminder.repeat > 0 ? 'recurring' : 'reminder',

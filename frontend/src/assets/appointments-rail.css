@@ -1,0 +1,258 @@
+/**
+ * appointments-rail.css — token set cho bản revamp "Rail" (direction 1A) của màn Lịch hẹn.
+ * Nguồn: Claude Design "CRM frontend full redesign" › Appointments Directions › 1A Rail (2026-08-01).
+ *
+ * Vì sao scope dưới `.rail-scope` chứ không phải `:root`: Vite hoist file `@import` ra khỏi
+ * `<style scoped>`, nên token khai ở `:root` sẽ rò sang mọi màn khác (airtable.css đang giữ
+ * `--at-*` toàn cục). Prefix `--rl-*` + bọc trong `.rail-scope` để 2 hệ token sống song song
+ * cho tới khi phần còn lại của CRM được redesign.
+ */
+
+.rail-scope {
+  /* ── Nền & bề mặt ─────────────────────────────────────────────── */
+  --rl-canvas: #f7f6fa;
+  --rl-surface: #ffffff;
+  --rl-surface-soft: #f7f6fa;
+  --rl-today-bg: #fbfafe;
+
+  /* ── Mực & chữ ────────────────────────────────────────────────── */
+  --rl-ink: #1b1a24;
+  --rl-body: #4a4756;
+  --rl-body-deep: #3a3746;
+  --rl-muted: #736f84;
+  --rl-dim: #9a96a8;
+
+  /* ── Đường kẻ ─────────────────────────────────────────────────── */
+  --rl-hairline: #e4e2ec;
+  --rl-hairline-soft: #f1eff7;
+  --rl-gridline: #efedf5;
+  --rl-border-mid: #d3d0de;
+
+  /* ── Accent (tím) ─────────────────────────────────────────────── */
+  --rl-accent: #5b4be6;
+  --rl-accent-hover: #4a3ad4;
+  --rl-accent-deep: #3d2fb8;
+  --rl-accent-light: #7a6deb;
+  --rl-accent-soft: #eeecfd;
+  --rl-accent-soft-border: #cfc9f8;
+
+  /* ── Trạng thái ───────────────────────────────────────────────── */
+  --rl-danger: #dc3a5b;
+  --rl-danger-bg: #fdeff2;
+  --rl-danger-text: #8e1f36;
+  --rl-danger-sub: #c22b4b;
+
+  --rl-warn: #c2810c;
+  --rl-warn-bg: #fdf6e7;
+  --rl-warn-border: #f0dfb0;
+  --rl-warn-text: #8a5b08;
+  --rl-warn-sub: #a96e0a;
+
+  --rl-success: #0e9f6e;
+  --rl-success-hover: #0b855c;
+
+  /* ── Tone theo trạng thái lịch ────────────────────────────────────────
+   * `statusTone()` (appointment-helpers.ts) trả về đúng các biến này thay vì
+   * hex rời, để đổi token là card/agenda/popover đổi theo. Hầu hết trỏ lại
+   * token nền tảng ở trên; chỉ 2 sắc riêng của "đã huỷ" là giá trị mới.
+   */
+  --rl-tone-overdue-bar: var(--rl-danger);
+  --rl-tone-overdue-bg: var(--rl-danger-bg);
+  --rl-tone-overdue-text: var(--rl-danger-text);
+  --rl-tone-overdue-sub: var(--rl-danger-sub);
+
+  --rl-tone-done-bar: var(--rl-border-mid);
+  --rl-tone-done-bg: var(--rl-surface-soft);
+  --rl-tone-done-text: var(--rl-muted);
+  --rl-tone-done-sub: var(--rl-dim);
+
+  --rl-tone-cancelled-bar: var(--rl-hairline);
+  --rl-tone-cancelled-bg: #fbfafd;
+  --rl-tone-cancelled-text: var(--rl-dim);
+  --rl-tone-cancelled-sub: #bab6c8;
+
+  --rl-tone-noshow-bar: var(--rl-warn);
+  --rl-tone-noshow-bg: var(--rl-warn-bg);
+  --rl-tone-noshow-text: var(--rl-warn-text);
+  --rl-tone-noshow-sub: var(--rl-warn-sub);
+
+  --rl-tone-live-bg: var(--rl-accent-soft);
+  --rl-tone-live-text: var(--rl-ink);
+  --rl-tone-live-sub: var(--rl-body);
+
+  /* Viền hairline mờ trên nền màu + lớp phủ — trước hardcode rgba rải rác */
+  --rl-ink-a06: rgba(27, 26, 36, 0.06);
+  --rl-ink-a12: rgba(27, 26, 36, 0.12);
+  --rl-ink-a14: rgba(27, 26, 36, 0.14);
+  --rl-ink-a18: rgba(27, 26, 36, 0.18);
+  --rl-accent-a06: rgba(91, 75, 230, 0.06);
+  --rl-danger-border: #f6cdd6;
+
+  /* ── Bo góc ───────────────────────────────────────────────────── */
+  --rl-r-xs: 4px;
+  --rl-r-sm: 5px;
+  --rl-r-md: 6px;
+  --rl-r-lg: 7px;
+  --rl-r-xl: 10px;
+  --rl-r-2xl: 12px;
+
+  /* ── Nhịp lưới tuần ───────────────────────────────────────────── */
+  --rl-row-h: 58px;
+
+  /* ── Chữ ──────────────────────────────────────────────────────── */
+  --rl-font-head: 'Montserrat', -apple-system, BlinkMacSystemFont, sans-serif;
+  --rl-font-body: 'Roboto', -apple-system, BlinkMacSystemFont, sans-serif;
+
+  font-family: var(--rl-font-body);
+  color: var(--rl-ink);
+}
+
+/* ── Primitive dùng chung giữa View / WeekView / AgendaView / Popover ── */
+
+.rl-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid var(--rl-hairline);
+  border-radius: var(--rl-r-lg);
+  background: var(--rl-surface);
+  color: var(--rl-ink);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+.rl-btn:hover:not(:disabled) { background: var(--rl-surface-soft); }
+.rl-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.rl-btn--primary {
+  background: var(--rl-accent);
+  border-color: var(--rl-accent);
+  color: #fff;
+}
+.rl-btn--primary:hover:not(:disabled) {
+  background: var(--rl-accent-hover);
+  border-color: var(--rl-accent-hover);
+}
+
+.rl-icon-btn {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--rl-hairline);
+  border-radius: var(--rl-r-md);
+  background: var(--rl-surface);
+  color: var(--rl-body);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background-color 0.12s ease;
+}
+.rl-icon-btn:hover:not(:disabled) { background: var(--rl-surface-soft); }
+.rl-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Nút filter có trạng thái — sáng lên (nền accent nhạt) khi khác mặc định */
+.rl-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--rl-hairline);
+  border-radius: var(--rl-r-md);
+  background: var(--rl-surface);
+  color: var(--rl-body);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, background-color 0.12s ease;
+}
+.rl-filter:hover { border-color: var(--rl-border-mid); }
+.rl-filter__k { color: var(--rl-dim); }
+.rl-filter__v { font-weight: 500; }
+.rl-filter.is-active {
+  background: var(--rl-accent-soft);
+  border-color: var(--rl-accent-soft-border);
+  color: var(--rl-accent-deep);
+}
+.rl-filter.is-active .rl-filter__k { color: var(--rl-accent-light); font-weight: 500; }
+
+.rl-avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  color: #fff;
+  font-weight: 700;
+  flex: none;
+  overflow: hidden;
+}
+.rl-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.rl-chip {
+  display: inline-grid;
+  place-items: center;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: var(--rl-r-xs);
+  background: var(--rl-hairline-soft);
+  color: var(--rl-body);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.rl-chip--accent {
+  background: var(--rl-accent-soft);
+  color: var(--rl-accent-deep);
+  font-weight: 500;
+}
+
+/* Banner cảnh báo trùng giờ */
+.rl-warn-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  padding: 8px 10px;
+  background: var(--rl-warn-bg);
+  border: 1px solid var(--rl-warn-border);
+  border-radius: var(--rl-r-lg);
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--rl-warn-text);
+}
+.rl-warn-box svg { flex: none; margin-top: 1px; }
+.rl-warn-box b { font-weight: 500; }
+
+/* ── Chuyển động: chỉ transform + opacity (không blur/backdrop-filter) ── */
+@keyframes rlRiseIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+.rl-rise { animation: rlRiseIn 0.14s ease-out; }
+
+@keyframes rlPulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.45; }
+}
+.rl-skeleton {
+  background: var(--rl-hairline-soft);
+  border-radius: var(--rl-r-sm);
+  animation: rlPulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rl-rise,
+  .rl-skeleton {
+    animation: none;
+  }
+  .rl-btn,
+  .rl-icon-btn,
+  .rl-filter {
+    transition: none;
+  }
+}

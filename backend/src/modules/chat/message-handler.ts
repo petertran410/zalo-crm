@@ -586,6 +586,9 @@ export async function handleIncomingMessage(
       content: message.content,
       contentType: message.contentType,
       senderUid: msg.senderUid,
+      // Chủ nick Zalo nhận reminder = người phụ trách lịch sinh ra từ nó, để lịch
+      // không rơi vào trạng thái "không của ai" (2026-08-04).
+      ownerUserId: account.ownerUserId,
     });
 
     // Track first outbound contact date — set once when agent sends first message

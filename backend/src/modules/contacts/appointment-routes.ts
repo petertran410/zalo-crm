@@ -32,6 +32,37 @@ const APPOINTMENT_INCLUDE = {
   statusChangedBy: { select: { id: true, fullName: true, email: true } },
 } as const;
 
+/**
+ * Quyền thao tác lịch hẹn (anh chốt 2026-08-04): NGOÀI owner/admin, sale chỉ được
+ * tạo / sửa / xoá lịch hẹn CỦA CHÍNH MÌNH.
+ *
+ * Lịch sinh từ reminder card Zalo giờ đã được gán cho chủ nick nhận reminder
+ * (`reminder-sync.ts` set `assignedUserId = ZaloAccount.ownerUserId`) → chính sale đó
+ * sửa được, cộng owner/admin.
+ *
+ * Còn lại `assignedUserId = null` là dữ liệu cũ chưa quy được về ai: KHÔNG mở cho mọi
+ * người (làm vậy thành lỗ hổng — ai cũng sửa được) mà giới hạn owner/admin.
+ * Xem ghi chú backfill ở cuối file.
+ */
+function isOrgAdmin(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** Được đụng vào lịch đang thuộc `ownerId` không? */
+function canMutateAppointment(user: { id: string; role: string }, ownerId: string | null): boolean {
+  return isOrgAdmin(user.role) || (!!ownerId && ownerId === user.id);
+}
+
+/** Được gán / chuyển lịch sang `targetUserId` không? */
+function canAssignTo(user: { id: string; role: string }, targetUserId: string | null | undefined): boolean {
+  return isOrgAdmin(user.role) || !targetUserId || targetUserId === user.id;
+}
+
+const FORBIDDEN_OTHERS = {
+  error: 'forbidden_not_owner',
+  message: 'Bạn chỉ thao tác được trên lịch hẹn của chính mình.',
+} as const;
+
 export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
@@ -130,8 +161,10 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         if (dateTo) where.appointmentDate.lte = new Date(dateTo);
       }
 
-      const pageNum = parseInt(page);
-      const limitNum = parseInt(limit);
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      // Kẹp trần 2026-08-04: FE lịch tuần cần vài trăm dòng 1 lượt, nhưng vẫn phải
+      // chặn client hỏi limit khổng lồ (payload có include contact + friends).
+      const limitNum = Math.min(1000, Math.max(1, parseInt(limit) || 50));
 
       const [appointments, total, sourceCounts] = await Promise.all([
         prisma.appointment.findMany({
@@ -213,6 +246,11 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
 
       if (!body.contactId || !body.appointmentDate) {
         return reply.status(400).send({ error: 'contactId and appointmentDate are required' });
+      }
+
+      // Sale thường không được tạo lịch hộ người khác.
+      if (!canAssignTo(user, body.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
       }
 
       // Chống trùng (anh chốt 2026-06-16): CHỈ chặn khi cùng KH + cùng NGÀY + cùng GIỜ và lịch
@@ -320,11 +358,16 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.appointment.findFirst({
         where: { id, orgId: user.orgId },
         select: {
-          id: true, status: true, contactId: true,
+          id: true, status: true, contactId: true, assignedUserId: true,
           appointmentDate: true, appointmentTime: true, type: true, notes: true,
         },
       });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      // Chỉ sửa được lịch của mình; và không được chuyển lịch sang sale khác.
+      if (!canMutateAppointment(user, existing.assignedUserId) || !canAssignTo(user, body.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       const statusChanging = body.status !== undefined && body.status !== existing.status;
       const dateChanging = body.appointmentDate && new Date(body.appointmentDate).getTime() !== existing.appointmentDate.getTime();
@@ -451,9 +494,13 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
 
       const existing = await prisma.appointment.findFirst({
         where: { id, orgId: user.orgId },
-        select: { id: true, status: true, contactId: true },
+        select: { id: true, status: true, contactId: true, assignedUserId: true },
       });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      if (!canMutateAppointment(user, existing.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       const updated = await prisma.appointment.update({
         where: { id },
@@ -580,8 +627,15 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       const user = request.user!;
       const { id } = request.params as { id: string };
 
-      const existing = await prisma.appointment.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
+      const existing = await prisma.appointment.findFirst({
+        where: { id, orgId: user.orgId },
+        select: { id: true, assignedUserId: true },
+      });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      if (!canMutateAppointment(user, existing.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       await prisma.appointment.delete({ where: { id } });
       return { success: true };
