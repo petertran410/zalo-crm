@@ -19,6 +19,11 @@
           :class="{ active: isActive(tab) }"
         >
           <v-icon :icon="tab.icon" size="16" class="ic-svg" />{{ tab.label }}
+          <span
+            v-if="tab.path === '/appointments' && todayCount > 0"
+            class="nav-badge"
+            :title="`${todayCount} lịch hẹn còn mở hôm nay`"
+          >{{ todayCount }}</span>
         </RouterLink>
 
 
@@ -163,6 +168,7 @@ import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
+import { useAppointmentBadge } from '@/composables/use-appointment-badge';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
 import { useOrderDraftStore } from '@/stores/use-order-drafts';
 import { fetchPublicBranding } from '@/api/public-branding';
@@ -285,11 +291,16 @@ onMounted(() => {
     .catch(() => {});
 });
 
+// Badge "lịch hẹn hôm nay" trên tab /appointments (2026-08-04).
+const { todayCount } = useAppointmentBadge();
+
 interface NavTab {
   path: string;
   label: string;
   icon: string;
   matchPrefix?: string;
+  /** Tab gom nhiều route (vd Lịch & Việc = /appointments + /tasks) — sáng ở bất kỳ cái nào. */
+  matchAny?: string[];
   // RBAC 2026-06-08 — resource cần để thấy tab. Không có resource = luôn hiện.
   resource?: string;
 }
@@ -305,8 +316,10 @@ const primaryTabs: NavTab[] = [
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
   // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
-  { path: '/appointments',           label: 'Lịch hẹn',    icon: 'mdi-calendar-outline' },
-  { path: '/tasks',                  label: 'Công việc',   icon: 'mdi-checkbox-marked-outline' },
+  // 2026-08-04 — gộp "Lịch hẹn" + "Công việc" thành 1 mặt Schedule (direction 1A).
+  // 2 trang vẫn riêng, nhưng vào từ một chỗ rồi chuyển qua lại bằng tab con
+  // (ScheduleTabs). matchPrefix nhận cả /tasks để tab vẫn sáng khi đang ở đó.
+  { path: '/appointments',           label: 'Công việc',   icon: 'mdi-calendar-check-outline', matchAny: ['/appointments', '/tasks'] },
   { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
   { path: '/pos',                    label: 'Cửa hàng POS', icon: 'mdi-storefront-outline' },
 ];
@@ -354,6 +367,9 @@ const visiblePrimaryTabs = computed(() => {
 // lọc per-item theo grants trực tiếp, không còn subheader nhóm cần gate.
 
 function isActive(tab: NavTab): boolean {
+  if (tab.matchAny) {
+    return tab.matchAny.some((p) => route.path === p || route.path.startsWith(p + '/'));
+  }
   if (tab.matchPrefix === '/$') return route.path === '/';
   if (tab.matchPrefix) {
     return route.path === tab.matchPrefix || route.path.startsWith(tab.matchPrefix + '/');
@@ -457,6 +473,22 @@ function logout() {
 }
 .nav-tab .ic-svg { color: var(--shell-ink-2, #7fa6b8); transition: color .14s; }
 .nav-tab .caret { font-size: 9px; opacity: 0.55; margin-left: -2px; }
+/* Badge "lịch hẹn hôm nay" — chỉ hiện khi > 0 */
+.nav-tab .nav-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  margin-left: 5px;
+  border-radius: 8px;
+  background: #dc3a5b;
+  color: #fff;
+  font-size: 9.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
 .nav-tab:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .nav-tab:hover .ic-svg { color: var(--shell-ink, #cfe2ec); }
 .nav-tab.active {

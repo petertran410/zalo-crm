@@ -29,6 +29,12 @@ export interface PosLinkCandidate {
   linked: boolean;
   /** Contact đang giữ liên kết (chỉ có khi linked=true). */
   contactId: string | null;
+  /**
+   * false = Contact này nằm ngoài phạm vi contact-scope của sale đang đăng nhập.
+   * Danh sách cố ý dò org-wide để không tạo trùng, nhưng mở hồ sơ thì vẫn bị
+   * assertContactVisible chặn → FE phải nói rõ thay vì cho bấm rồi 403.
+   */
+  accessible: boolean;
 }
 
 /** Khoá render ổn định — 1 KH có thể đến từ POS hoặc từ Contact đã có. */
@@ -36,8 +42,13 @@ export function candidateKey(c: PosLinkCandidate): string {
   return c.contactId ? `c:${c.contactId}` : `p:${c.posCustomerId}`;
 }
 
-/** Dưới 3 chữ số thì SĐT nào cũng khớp — chờ gõ đủ rồi mới gọi API. */
-const MIN_DIGITS = 3;
+/**
+ * 2026-07-31: nâng 3 → 6 chữ số. Backend dò bằng `contains` (LIKE '%…%') nên
+ * KHÔNG dùng được index phone; 3 chữ số quét toàn bộ ~25k dòng PosCustomer mỗi
+ * lần gõ và trả về rất nhiều KH không liên quan. 6 chữ số vẫn cho phép tìm theo
+ * đuôi số (thói quen của sale) mà thu hẹp đáng kể.
+ */
+const MIN_DIGITS = 6;
 const DEBOUNCE_MS = 300;
 
 /** Tên hiển thị của 1 KH POS. */
@@ -51,6 +62,8 @@ export function useContactPhoneSearch() {
   /** Đã chạy xong ít nhất 1 lần cho SĐT hiện tại — phân biệt "chưa tìm" vs "tìm rồi mà rỗng". */
   const searched = ref(false);
   const error = ref<string | null>(null);
+  /** Backend cắt ở 10 dòng mỗi nhánh — báo để sale biết còn KH khác chưa hiện. */
+  const truncated = ref(false);
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   // Chống race: gõ nhanh → nhiều request bay song song, chỉ nhận kết quả lần mới nhất.
@@ -63,6 +76,7 @@ export function useContactPhoneSearch() {
     searching.value = false;
     searched.value = false;
     error.value = null;
+    truncated.value = false;
   }
 
   function search(raw: string) {
@@ -74,6 +88,7 @@ export function useContactPhoneSearch() {
       searching.value = false;
       searched.value = false;
       error.value = null;
+      truncated.value = false;
       return;
     }
     const mine = ++seq;
@@ -86,18 +101,23 @@ export function useContactPhoneSearch() {
         });
         if (mine !== seq) return;
         results.value = res.data?.candidates ?? [];
+        truncated.value = res.data?.truncated === true;
         searched.value = true;
       } catch (err) {
         if (mine !== seq) return;
         console.error('[contact-phone-search] tìm KH POS theo SĐT lỗi:', err);
-        error.value = 'Không tìm được khách hàng — thử lại';
+        error.value = 'Không kiểm tra được — thử lại trước khi tạo mới';
         results.value = [];
-        searched.value = true;
+        truncated.value = false;
+        // KHÔNG set searched=true khi lỗi: searched là tín hiệu "đã kiểm tra
+        // xong, chắc chắn không có ai khớp" và nó mở khoá nút Tạo khách mới.
+        // Lỗi mạng nghĩa là CHƯA kiểm tra được → giữ khoá, tránh tạo trùng.
+        searched.value = false;
       } finally {
         if (mine === seq) searching.value = false;
       }
     }, DEBOUNCE_MS);
   }
 
-  return { results, searching, searched, error, search, reset };
+  return { results, searching, searched, error, truncated, search, reset };
 }

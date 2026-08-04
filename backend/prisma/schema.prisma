@@ -594,6 +594,10 @@ model Contact {
   mergedInto       String?   @map("merged_into")
   posCustomerId   Int?      @map("pos_customer_id")
   posCustomerCode String?   @map("pos_customer_code")
+  // 2026-08-01: merge test_feature làm rơi field này khỏi schema (cột
+  // pos_synced_at VẪN có thật trong DB). hisweetie-sync-cron + link-pos đang ghi
+  // vào nó → tsc gãy TS2353. Khai báo lại, KHÔNG cần migration mới.
+  posSyncedAt       DateTime? @map("pos_synced_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 

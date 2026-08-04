@@ -298,12 +298,20 @@
           </span>
 
           <span class="c-chan ppl-chan">
-            <span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(r)) }"></span>
             <span class="ppl-chan-nm" :class="{ faint: !channelOf(r) }">{{ channelOf(r) || 'Không có kênh' }}</span>
             <span v-if="extraNickCount(r) > 0" class="ppl-chan-more">+{{ extraNickCount(r) }}</span>
           </span>
 
           <span class="c-tags ppl-tags">
+            <!-- 2026-08-01 (anh chốt): quan hệ (bạn bè / chờ kết bạn / ghost / người
+                 lạ) trước đây chỉ là chấm màu vô danh ở cột "Kênh phụ trách" — nhìn
+                 màu phải tự đoán, và người mù màu / trình đọc màn hình không thấy gì.
+                 Nay tách hẳn thành thẻ CÓ CHỮ, nằm chung cột Thẻ. -->
+            <span
+              v-if="primaryRelOf(r)"
+              class="ppl-tag ppl-tag-rel"
+              :style="{ '--rel': relColor(primaryRelOf(r)) }"
+            >{{ relLabel(primaryRelOf(r)) }}</span>
             <span v-for="t in (r.tags || []).slice(0, 2)" :key="t" class="ppl-tag">{{ t }}</span>
             <span v-if="(r.tags || []).length > 2" class="ppl-tag-more">+{{ r.tags.length - 2 }}</span>
           </span>
@@ -556,7 +564,10 @@
         <div class="ppl-modal-sub">Nhập SĐT để tìm khách có sẵn bên POS. Khách mới từ Zalo/Facebook chưa có ở POS thì tạo mới bên dưới.</div>
         <label class="ppl-input-box">
           <span class="ppl-input-l">Số điện thoại</span>
-          <input v-model="addPhone" class="mono" placeholder="09…" @input="onAddPhoneInput" />
+          <input
+            v-model="addPhone" class="mono" placeholder="09…"
+            type="tel" inputmode="tel" autocomplete="tel"
+            @input="onAddPhoneInput" />
         </label>
 
         <div class="ppl-link-res">
@@ -569,19 +580,26 @@
           <button
             v-for="c in linkResults" :key="candidateKey(c)" type="button"
             class="ppl-link-row"
-            :class="{ on: linkPicked && candidateKey(linkPicked) === candidateKey(c), off: c.linked }"
-            :disabled="c.linked || linkSaving"
-            :title="c.linked ? 'Khách này đã có trong tab Khách hàng' : ''"
+            :class="{
+              on: linkPicked && candidateKey(linkPicked) === candidateKey(c),
+              off: c.linked || !c.accessible,
+            }"
+            :disabled="c.linked || !c.accessible || linkSaving"
             @click="linkPicked = c"
           >
             <span class="ppl-link-nm">{{ candidateDisplayName(c) }}</span>
             <span class="ppl-link-meta">
               <span class="ppl-link-ph mono">{{ c.phone || '—' }}</span>
-              <!-- đã có = KH bên POS (xám). chưa mua = contact Zalo/FB, chọn được -->
-              <span v-if="c.linked" class="ppl-link-tag">đã có</span>
+              <!-- Lý do disable phải là CHỮ, không chỉ tooltip: bàn phím và trình
+                   đọc màn hình không thấy title, chỉ gặp nút xám không rõ vì sao. -->
+              <span v-if="!c.accessible" class="ppl-link-tag">sale khác chăm</span>
+              <span v-else-if="c.linked" class="ppl-link-tag">đã có</span>
               <span v-else-if="c.contactId" class="ppl-link-tag">chưa mua</span>
             </span>
           </button>
+          <div v-if="linkSearched && linkTruncated" class="ppl-link-note">
+            Còn khách khác khớp số này chưa hiện — gõ thêm chữ số cho gọn danh sách.
+          </div>
         </div>
 
         <!-- KH mới tinh từ Zalo/Facebook — chưa có ở POS lẫn CRM. Chỉ mở khi
@@ -1181,10 +1199,6 @@ function applyToToday() {
   fetchPage(true);
 }
 
-const activeFieldLabel = computed(
-  () => FIELD_OPTIONS.find((o) => o.value === f.field)?.label ?? '',
-);
-
 const rangeLabel = computed(() => {
   if (!f.from) return 'Mọi ngày';
   return fmtDate(f.from) + (f.to ? ` → ${fmtDate(f.to)}` : ' → chọn ngày kết thúc');
@@ -1383,6 +1397,12 @@ function hydrateDraft(c: Contact) {
 function closeDrawer() {
   drawerOpen.value = false;
   selectedId.value = null;
+  // Bỏ ?focus= khỏi URL sau khi đóng — không thì F5 lại tự mở lại drawer vừa đóng.
+  if (route.query.focus) {
+    const q = { ...route.query };
+    delete q.focus;
+    void router.replace({ path: route.path, query: q });
+  }
 }
 
 // Deep-link ?focus=<contactId> 2026-07-31 — KH cần mở có thể KHÔNG nằm trong
@@ -1681,6 +1701,7 @@ const {
   searching: linkSearching,
   searched: linkSearched,
   error: linkError,
+  truncated: linkTruncated,
   search: runLinkSearch,
   reset: resetLinkSearch,
 } = useContactPhoneSearch();
@@ -1839,6 +1860,15 @@ onMounted(async () => {
     statuses.value = s.data?.statuses || [];
   } catch (err) {
     console.error('[PeopleView] load lookups failed:', err);
+  }
+});
+
+// 2026-07-31: onMounted chỉ chạy 1 lần. Khi đang Ở /contacts mà có nơi push tiếp
+// /contacts?focus=<id khác> (vd nút "Xem hồ sơ KH tổng hợp" ở cột 4 chat), router
+// tái dùng component → drawer im lặng không mở. Watch query để deep-link luôn ăn.
+watch(() => route.query.focus, (focus) => {
+  if (typeof focus === 'string' && focus && focus !== selectedId.value) {
+    void openDrawerById(focus);
   }
 });
 onBeforeUnmount(() => {
@@ -2163,6 +2193,16 @@ onBeforeUnmount(() => {
   font-size: 11px; font-weight: 700; white-space: nowrap;
 }
 .ppl-tag.editable { display: inline-flex; align-items: center; gap: 6px; padding-right: 8px; }
+/* Thẻ quan hệ — giữ lại tín hiệu màu cũ bằng chấm dẫn đầu, nhưng chữ mới là
+   thông tin chính (màu chỉ còn là phụ trợ, không phải cách duy nhất để hiểu). */
+.ppl-tag-rel {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid var(--pp-line); background: transparent; color: var(--pp-fg);
+}
+.ppl-tag-rel::before {
+  content: ''; width: 7px; height: 7px; border-radius: 2px;
+  background: var(--rel, transparent); flex: none;
+}
 .ppl-tag-x { cursor: pointer; opacity: .55; font-size: 12px; }
 .ppl-tag-x:hover { opacity: 1; }
 .ppl-tag-more {
