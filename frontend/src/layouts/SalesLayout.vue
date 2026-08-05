@@ -345,6 +345,19 @@ function logout() {
    Zoom cover: topbar, sidenav, SalesChatView, VisualOrderModal, Vuetify menus.
    height/width bù = viewport / 0.85 để layout điền đầy màn hình sau khi scale. */
 .sl-app {
+  /* GHIM 48px = đúng giá trị SalesLayout đang thừa hưởng từ :root hôm nay, nên
+     render KHÔNG đổi. Mục đích là chặn override 48↔44 của DefaultLayout (revamp
+     nav 2026-08-05) rò sang đây — chrome hai shell khác hẳn nhau.
+     ⚠️ Nợ kỹ thuật có sẵn: chrome thật của shell này là topbar 60px + margin 12px
+     + padding body 12px, lại còn zoom .85 — tức 48px vốn đã SAI sẵn với các màn
+     dùng chung (ChatView, PeopleView, AppointmentsView, MediaView). Sửa cho đúng
+     sẽ làm đổi giao diện Sales nên tách thành quyết định riêng, không gộp vào đây. */
+  --smax-topnav-h: 48px;
+  /* GHIM accent teal cũ. Bảng màu nav đổi sang indigo #635BFF ở hs-crm-theme.css
+     (revamp 2026-08-05) nhưng phạm vi chốt là CHỈ DefaultLayout — vỏ Sales giữ
+     nguyên tông xanh Zalo. Widget dùng chung (SyncHeaderWidget) đọc biến này nên
+     ghim ở đây là đủ để Sales không đổi một pixel nào. */
+  --nav-accent: #5bb8e5;
   background: linear-gradient(135deg, #E2E9F3 0%, #EEF3F9 100%) !important;
   display: flex;
   flex-direction: column;

@@ -202,7 +202,9 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.fb-inbox { padding: 12px; height: calc(100vh - 60px); display: flex; flex-direction: column; }
+/* 12px dôi ra = padding của chính khối này (60 = 48 + 12) — giữ nguyên phần dôi,
+   chỉ thay số nav cứng bằng biến (revamp nav 2026-08-05). */
+.fb-inbox { padding: 12px; height: calc(100vh - var(--smax-topnav-h) - 12px); display: flex; flex-direction: column; }
 .fb-title { font-size: 18px; font-weight: 600; margin: 0 0 8px; }
 .fb-err { color: #c0392b; background: #fdecea; padding: 6px 10px; border-radius: 4px; margin: 0 0 8px; }
 .fb-body { flex: 1; display: flex; gap: 12px; min-height: 0; }

@@ -767,7 +767,7 @@ watch(searchQuery, () => {
 .smax-chat-grid {
   display: grid;
   grid-template-columns: 290px 380px 1fr 350px;
-  height: calc(100vh - var(--smax-topnav-h, 52px));
+  height: calc(100vh - var(--smax-topnav-h));
   overflow: hidden;
   background: var(--smax-grey-100);
 }

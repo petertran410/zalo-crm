@@ -715,7 +715,7 @@ void orgDayKey;
 .apt-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--smax-topnav-h, 52px));
+  height: calc(100vh - var(--smax-topnav-h));
   width: 100%;
   background: var(--rl-canvas);
   overflow: hidden;

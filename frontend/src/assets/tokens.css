@@ -56,7 +56,15 @@
   --smax-radius-md: 7px;
   --smax-radius-lg: 9px;
   --smax-radius-xl: 13px;
-  --smax-topnav-h: 48px; /* khớp chiều cao thật .smax-topnav (DefaultLayout) — fix cuộn dư 2px 2026-06-14 */
+  /* Chiều cao phần chrome NẰM NGANG phía trên nội dung. Đây là NGUỒN DUY NHẤT —
+     mọi màn tính `height: calc(100vh - var(--smax-topnav-h))` phải đọc biến này,
+     KHÔNG hardcode 48/52/56/60px (revamp nav 2026-08-05: trước đó 13 file mỗi file
+     đoán một con số khác nhau, sai sẵn khi chạy trong SalesLayout).
+     DefaultLayout ghi đè giá trị theo chế độ nav:
+       - thanh ngang (>=1440px) → 48px
+       - rail dọc  (<1440px)    → 44px (chỉ còn dải tiện ích ở trên)
+     Rail nằm CẠNH nội dung nên không tính vào biến này. */
+  --smax-topnav-h: 48px;
 }
 
 /* ════════ Helper utility classes ════════ */

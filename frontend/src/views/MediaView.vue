@@ -525,7 +525,7 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
   /* Chiều cao CỐ ĐỊNH theo viewport (trừ topnav 48px) — v-main chỉ có min-height nên
      height:100% không phân giải → flex chain hỏng, cột 3 detail không cuộn được, accordion
      mở ra tràn khỏi màn (anh báo 2026-06-16). Cố định height → .p-body cuộn đúng. */
-  display:flex; flex-direction:column; height:calc(100vh - var(--smax-topnav-h, 48px)); min-height:0; overflow:hidden;
+  display:flex; flex-direction:column; height:calc(100vh - var(--smax-topnav-h)); min-height:0; overflow:hidden;
   background:var(--canvas); color:var(--body); font-size:14px;
 }
 .m-top { display:flex; align-items:center; justify-content:space-between; padding:16px 24px 12px; border-bottom:1px solid var(--hairline); }

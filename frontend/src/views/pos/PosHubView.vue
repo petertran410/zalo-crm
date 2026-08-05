@@ -265,7 +265,7 @@ async function triggerSync() {
 
 <style scoped>
 .pos-hub-container {
-  min-height: calc(100vh - 48px);
+  min-height: calc(100vh - var(--smax-topnav-h));
   background-color: #f8fafc;
 }
 
