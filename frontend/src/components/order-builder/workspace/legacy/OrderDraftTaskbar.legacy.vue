@@ -1,13 +1,12 @@
 <template>
   <teleport to="body">
     <transition name="odt-slide">
-      <div v-if="store.sessions.length > 0 && !store.hasActiveFullSession" class="odt-taskbar">
+      <div v-if="store.drafts.length > 0" class="odt-taskbar">
         <!-- Label & counter -->
         <div class="odt-label">
           <ShoppingBag :size="14" class="odt-label__icon" />
-          <span class="odt-label__title">PHIÊN</span>
-          <span class="odt-label__badge">{{ store.sessions.length }} phiên</span>
-          <span v-if="store.totalUnread > 0" class="odt-label__unread">💬 {{ store.totalUnread }}</span>
+          <span class="odt-label__title">HÀNG ĐỢI</span>
+          <span class="odt-label__badge">{{ store.drafts.length }}/3</span>
         </div>
 
         <!-- Avatar Bubble Items (Tối đa 3 đơn nháp) -->
@@ -40,7 +39,16 @@
               </button>
 
               <!-- Center Main Circle: Large Avatar (Image or Initials) -->
-                <span class="odt-bubble__initials">{{ idx + 1 }}</span>
+              <div class="odt-bubble__avatar">
+                <img
+                  v-if="draft.contactAvatar && !avatarErrorMap[draft.id]"
+                  :src="draft.contactAvatar"
+                  class="odt-bubble__img"
+                  alt=""
+                  @error="avatarErrorMap[draft.id] = true"
+                />
+                <span v-else class="odt-bubble__initials">{{ getInitials(draft.contactName) }}</span>
+              </div>
             </div>
 
             <!-- Bottom Label: Name & Total Price under avatar -->
@@ -110,16 +118,16 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { ShoppingBag, Maximize2, Minus, X, ChevronUp, ChevronDown } from 'lucide-vue-next';
-import { useWorkspaceSessionStore, type WorkspaceSession as OrderDraftEntry } from '@/stores/use-workspace-sessions';
+import { useOrderDraftStore, type OrderDraftEntry } from '@/stores/use-order-drafts';
 import { formatVND, getEffectiveProductPrice } from '@/components/order-builder/types';
 
-const store = useWorkspaceSessionStore();
+const store = useOrderDraftStore();
 const overflowOpen = ref(false);
 const avatarErrorMap = reactive<Record<string, boolean>>({});
 
-// Visible = tối đa 5 đầu tiên
-const visibleDrafts = computed(() => store.sessions.slice(0, 5));
-const overflowDrafts = computed(() => store.sessions.slice(5));
+// Visible = tối đa 3 đầu tiên
+const visibleDrafts = computed(() => store.drafts.slice(0, 3));
+const overflowDrafts = computed(() => store.drafts.slice(3));
 
 function getInitials(name: string): string {
   if (!name) return 'KH';

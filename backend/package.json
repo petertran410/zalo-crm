@@ -5,10 +5,10 @@
   "main": "dist/app.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/app.ts",
+    "dev": "prisma migrate deploy && prisma generate && tsx watch src/app.ts",
     "dev:worker": "tsx watch src/worker.ts",
     "build": "tsc",
-    "start": "node dist/app.js",
+    "start": "prisma migrate deploy && node dist/app.js",
     "start:worker": "node dist/worker.js",
     "worker": "node dist/worker.js",
     "db:migrate": "prisma migrate dev",

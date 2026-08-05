@@ -158,8 +158,7 @@ import Avatar from '@/components/ui/Avatar.vue';
 import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
-import { fetchPublicBranding } from '@/api/public-branding';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 import { usePosNotification } from '@/composables/use-pos-notification';
 import '@/assets/sales-theme.css';
 
@@ -239,14 +238,6 @@ function cleanupAfterNav() {
 router.afterEach(() => cleanupAfterNav());
 router.onError(() => cleanupAfterNav());
 
-// ── Brand lockup ──────────────────────────────────────────────────────────────
-const DEFAULT_LOGO = '/brand/hs-monogram.png';
-const brandLogo = ref(DEFAULT_LOGO);
-const brandName = ref('Hi-CRM');
-function onLogoError() {
-  if (brandLogo.value !== DEFAULT_LOGO) brandLogo.value = DEFAULT_LOGO;
-}
-
 onMounted(() => {
   theme.change('hsLight');
 
@@ -262,14 +253,6 @@ onMounted(() => {
       'https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap';
     document.head.appendChild(link);
   }
-
-  fetchPublicBranding()
-    .then((b) => {
-      if (!b) return;
-      brandLogo.value = b.logoUrl || DEFAULT_LOGO;
-      brandName.value = b.name || 'Hi-CRM';
-    })
-    .catch(() => {});
 
   // ── Fix 2: Prefetch tất cả chunk JS của các tab trong Sales sidebar ─────────
   // Chạy trong idle time → không ảnh hưởng render đầu tiên.
@@ -314,10 +297,6 @@ function isActive(tab: MenuItemConfig): boolean {
   return route.path === tab.to || route.path.startsWith(tab.to + '/');
 }
 
-const isSettingsActive = computed(() =>
-  route.path === '/settings' || route.path.startsWith('/settings/'),
-);
-
 // ── Workspace switching ───────────────────────────────────────────────────────
 // Sales workspace bị khóa cứng — không bao giờ được switch.
 // Dùng workspace ID thay vì role string để tránh edge case (deptRole, canViewAll...).
@@ -337,20 +316,13 @@ function logout() {
    ══════════════════════════════════════════════════════════ */
 
 /* Root app container — Cool Slate Canvas (Option 1) */
-/* ⚠️ zoom: 0.85 — Tối ưu cho màn hình 27 inch (chuẩn nội bộ).
-   Nếu sau này dùng trên màn hình nhỏ hơn 24 inch, xóa dòng zoom này.
-   Zoom cover: topbar, sidenav, SalesChatView, VisualOrderModal, Vuetify menus.
-   height/width bù = viewport / 0.85 để layout điền đầy màn hình sau khi scale. */
 .sl-app {
   background: linear-gradient(135deg, #E2E9F3 0%, #EEF3F9 100%) !important;
   display: flex;
   flex-direction: column;
-  /* Bù zoom: logical size lớn hơn viewport → sau scale(0.85) vừa đúng màn hình */
-  height: calc(100vh / 0.85);
-  min-width: calc(100vw / 0.85);
+  height: 100dvh;
+  width: 100vw;
   overflow: hidden;
-  zoom: 0.85;
-  transform-origin: top left;
 }
 
 /* ── TOP BAR ────────────────────────────────────────────── */

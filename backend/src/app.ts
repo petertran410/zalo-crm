@@ -81,6 +81,7 @@ import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
+import { workspaceSessionRoutes } from './modules/pos/workspace-session-routes.js';
 import { posWebhookRoutes } from './routes/pos-webhook-routes.js';
 import { posSyncDashboardRoutes } from './routes/pos-sync-dashboard-routes.js';
 import { startPosWebhookRetryJob } from './jobs/pos-webhook-retry.job.js';
@@ -324,6 +325,7 @@ async function bootstrap() {
   await app.register(savedReportRoutes);
   await app.register(integrationRoutes);
   await app.register(posRoutes);
+  await app.register(workspaceSessionRoutes);
   await app.register(syncRoutes);
   await app.register(posWebhookRoutes);
   await app.register(posSyncDashboardRoutes);

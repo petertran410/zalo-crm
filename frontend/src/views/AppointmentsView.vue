@@ -4,9 +4,14 @@
     <header class="apt-hero">
       <div class="apt-hero-row1">
         <div class="title-block">
-          <button class="icon-btn icon-btn--bordered drawer-toggle" title="Mở bộ lọc" @click="sidebarOpen = !sidebarOpen">☰</button>
+          <button class="icon-btn icon-btn--bordered drawer-toggle" title="Mở bộ lọc" @click="sidebarOpen = !sidebarOpen">
+            <span class="material-symbols-outlined">menu</span>
+          </button>
           <div>
-            <h1 class="apt-hero-title">📅 Lịch hẹn</h1>
+            <h1 class="apt-hero-title">
+              <span class="material-symbols-outlined header-icon">calendar_today</span>
+              Lịch hẹn
+            </h1>
             <div class="apt-hero-sub">
               <b>{{ totalLabel }}</b> · {{ weekLabel }}
             </div>
@@ -14,11 +19,11 @@
         </div>
         <div class="apt-hero-actions">
           <button class="at-btn at-btn--secondary" :title="'Xuất CSV'">
-            <span class="ic">⤓</span>
+            <span class="material-symbols-outlined ic">download</span>
             <span class="btn-label">Xuất CSV</span>
           </button>
           <button class="at-btn at-btn--primary" @click="openQuickCreate(null)">
-            <span class="ic">+</span>
+            <span class="material-symbols-outlined ic">add</span>
             <span class="btn-label">Tạo nhắc hẹn</span>
           </button>
         </div>

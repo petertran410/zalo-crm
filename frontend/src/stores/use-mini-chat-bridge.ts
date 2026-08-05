@@ -82,6 +82,25 @@ export const useMiniChatBridgeStore = defineStore('miniChatBridge', () => {
     messages.value = [];
   }
 
+  // ── Workspace Session Bridge ─────────────────────────────────────
+  // Khi switch workspace session, SalesChatView nhận signal qua
+  // pendingConversationId và re-select conversation đó.
+
+  const pendingConversationId = ref<string | null>(null);
+
+  /**
+   * Yêu cầu SalesChatView chuyển sang conversation khác.
+   * SalesChatView watches `pendingConversationId` và gọi onSelectConv().
+   */
+  function switchConversation(newConversationId: string | undefined | null) {
+    pendingConversationId.value = newConversationId || null;
+  }
+
+  /** SalesChatView gọi sau khi xử lý xong pendingConversationId */
+  function clearPendingConversation() {
+    pendingConversationId.value = null;
+  }
+
   return {
     conversation,
     messages,
@@ -90,5 +109,9 @@ export const useMiniChatBridgeStore = defineStore('miniChatBridge', () => {
     getLiveRefs,
     sendMessage,
     unpublish,
+    // Workspace session bridge
+    pendingConversationId,
+    switchConversation,
+    clearPendingConversation,
   };
 });

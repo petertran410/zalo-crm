@@ -114,7 +114,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { api } from '@/api/index';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 
 export interface PosOrderItem {
   id: string;

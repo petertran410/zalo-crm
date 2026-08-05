@@ -29,21 +29,21 @@
             <v-list density="compact" min-width="300">
               <v-list-subheader>Công cụ dữ liệu</v-list-subheader>
               <v-list-item @click="showDuplicateDialog = true">
-                <template #prepend><span class="tools-emoji">⊜</span></template>
+                <template #prepend><v-icon size="18" color="primary">mdi-content-copy</v-icon></template>
                 <v-list-item-title>Quét khách trùng lặp</v-list-item-title>
                 <template #append><span v-if="duplicateTotal > 0" class="btn-badge">{{ duplicateTotal }}</span></template>
               </v-list-item>
               <v-list-item @click="showCandidateDialog = true">
-                <template #prepend><span class="tools-emoji">💡</span></template>
+                <template #prepend><v-icon size="18" color="amber-darken-1">mdi-lightbulb-outline</v-icon></template>
                 <v-list-item-title>Gợi ý gộp KH Cha</v-list-item-title>
                 <template #append><span v-if="candidateCount > 0" class="btn-badge">{{ candidateCount }}</span></template>
               </v-list-item>
               <v-list-item :disabled="runningDetector" @click="onRunDetector">
-                <template #prepend><span class="tools-emoji">🔄</span></template>
+                <template #prepend><v-icon size="18">mdi-refresh</v-icon></template>
                 <v-list-item-title>{{ runningDetector ? 'Đang quét…' : 'Quét lại ngay' }}</v-list-item-title>
               </v-list-item>
               <v-list-item @click="onExport">
-                <template #prepend><span class="tools-emoji">⬇</span></template>
+                <template #prepend><v-icon size="18">mdi-download</v-icon></template>
                 <v-list-item-title>Xuất danh sách</v-list-item-title>
               </v-list-item>
               <v-divider class="my-1" />

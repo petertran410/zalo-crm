@@ -1,5 +1,5 @@
 <template>
-  <div class="ob-invoice-preview-container" @dblclick="openPrintTab">
+  <div class="ob-invoice-preview-container" @dblclick="printDirectly">
     <!-- Action Toolbar -->
     <div class="ob-invoice-toolbar" @dblclick.stop>
       <div class="ob-invoice-toolbar__left">
@@ -8,7 +8,7 @@
         <span class="ob-invoice-toolbar__hint">(Khổ giấy A4 chuẩn)</span>
       </div>
       <div class="ob-invoice-toolbar__right">
-        <button class="ob-inv-btn ob-inv-btn--print" title="Mở tab in chuẩn A4 để in hoặc Xuất PDF" @click="openPrintTab">
+        <button class="ob-inv-btn ob-inv-btn--print" title="In trực tiếp Hóa Đơn hoặc Xuất PDF" @click="printDirectly">
           <Printer :size="13" />
           <span>In / Xuất PDF</span>
         </button>
@@ -40,6 +40,10 @@
               <tr>
                 <td class="ob-meta-lbl">Ngày:</td>
                 <td class="ob-meta-val">{{ currentDateFormatted }}</td>
+              </tr>
+              <tr v-if="creatorName">
+                <td class="ob-meta-lbl">NV tạo:</td>
+                <td class="ob-meta-val">{{ creatorName }}</td>
               </tr>
             </tbody>
           </table>
@@ -77,10 +81,11 @@
             </tr>
           </thead>
           <tbody>
-            <tr v-for="(item, idx) in cartItems" :key="item.product.id">
+            <tr v-for="(item, idx) in cartItems" :key="idx">
               <td style="text-align: center;">{{ idx + 1 }}</td>
               <td>
                 <div class="ob-inv-item-name">{{ item.product.name }}</div>
+                <div v-if="item.note" class="ob-inv-item-note">📝 Ghi chú: {{ item.note }}</div>
                 <div v-if="item.discount" class="ob-inv-item-discount">CK: -{{ formatVND(item.discount) }}</div>
               </td>
               <td style="text-align: center;">{{ item.product.unit || 'Cái' }}</td>
@@ -177,6 +182,7 @@ const props = defineProps<{
   priceBookId?: string;
   description?: string;
   deliveryAddress?: string;
+  creatorName?: string;
 }>();
 
 defineEmits<{
@@ -196,9 +202,25 @@ const emptyRowsCount = computed(() => {
   return Math.max(0, 6 - count);
 });
 
-function openPrintTab() {
+function printDirectly() {
   const elem = document.getElementById('ob-printable-invoice');
-  if (!elem) return;
+  if (!elem) {
+    window.print();
+    return;
+  }
+
+  let iframe = document.getElementById('ob-print-frame') as HTMLIFrameElement;
+  if (!iframe) {
+    iframe = document.createElement('iframe');
+    iframe.id = 'ob-print-frame';
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+  }
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -318,35 +340,33 @@ function openPrintTab() {
           .ob-invoice__sig-title { font-weight: 700; margin: 0; }
           .ob-invoice__sig-hint { font-size: 9px; color: #94a3b8; font-style: italic; }
           .ob-text-bold { font-weight: 700; }
-          .ob-mono { font-family: monospace; }
+          .ob-mono {
+  font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
           .ob-text-red { color: #ef4444; }
           .ob-text-blue-dark { color: #1e3a8a; }
-          @media print {
-            body { padding: 0; }
-            .ob-invoice-paper { border: none; box-shadow: none; width: 100%; padding: 0; }
-          }
         </style>
       </head>
       <body>
         <div class="ob-invoice-paper">
           ${elem.innerHTML}
         </div>
-        <script>
-          window.onload = function() {
-            setTimeout(function() {
-              window.print();
-            }, 250);
-          };
-        <\/script>
       </body>
     </html>
   `;
 
-  const win = window.open('', '_blank');
-  if (win) {
-    win.document.write(htmlContent);
-    win.document.close();
-  }
+  const doc = iframe.contentWindow?.document || iframe.contentDocument;
+  if (!doc) return;
+  doc.open();
+  doc.write(htmlContent);
+  doc.close();
+
+  setTimeout(() => {
+    iframe.contentWindow?.focus();
+    iframe.contentWindow?.print();
+  }, 250);
 }
 </script>
 
@@ -354,10 +374,9 @@ function openPrintTab() {
 .ob-invoice-preview-container {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   width: 100%;
-  max-width: 820px;
-  margin: 0 auto;
+  box-sizing: border-box;
   user-select: none;
 }
 
@@ -533,14 +552,30 @@ function openPrintTab() {
   font-weight: 600;
   color: #0f172a;
 }
+.ob-inv-item-note {
+  font-size: 10px;
+  font-style: italic;
+  color: #2563eb;
+  margin-top: 1px;
+}
 .ob-inv-item-discount {
   font-size: 9px;
   color: #ef4444;
   font-weight: 700;
 }
-.ob-invoice__empty-row td {
-  height: 24px;
+.ob-invoice__empty-row {
+  display: none;
 }
+
+@media print {
+  .ob-invoice__empty-row {
+    display: table-row;
+  }
+  .ob-invoice__empty-row td {
+    height: 24px;
+  }
+}
+
 
 /* Totals */
 .ob-inv-total-label {
@@ -625,5 +660,9 @@ function openPrintTab() {
 .ob-text-blue { color: #0068FF; }
 .ob-text-blue-dark { color: #1e3a8a; }
 .ob-text-red { color: #ef4444; }
-.ob-mono { font-family: monospace; }
+.ob-mono {
+  font-family: 'Geist Mono', 'SF Mono', 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
 </style>

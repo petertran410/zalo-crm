@@ -5,10 +5,12 @@
       <h1 class="m-title">Kho phương tiện</h1>
       <div class="m-tools">
         <div class="m-search">
-          <span class="i">🔍</span>
+          <span class="material-symbols-outlined i">search</span>
           <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
         </div>
-        <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>
+        <button class="btn-dark" @click="triggerUpload">
+          <span class="material-symbols-outlined btn-ic">upload</span> Tải lên
+        </button>
         <button v-if="!trashMode" class="btn-multi" :class="{ on: multiMode }" :title="multiMode ? 'Tắt chọn nhiều' : 'Chọn nhiều ảnh'" @click="toggleMultiMode">
           <CheckSquareIcon :size="15" :stroke-width="1.9" /> Chọn nhiều
         </button>

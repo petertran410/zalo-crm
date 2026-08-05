@@ -2,7 +2,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { setActivePinia, createPinia } from 'pinia';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 
 // ── Mock toast to capture notifications ─────────────────────────────────────
 const mockToastSuccess = vi.fn();

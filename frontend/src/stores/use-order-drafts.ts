@@ -21,8 +21,16 @@ export interface OrderDraftEntry {
   orderDiscount: number;
   appliedPromoIds: string[];
   description: string;
+  billNote?: string;
+  shippingNote?: string;
   paidAmount: number;
   deliveryAddress: string;
+  packageLength?: number;
+  packageWidth?: number;
+  packageHeight?: number;
+  packageWeight?: number;
+  orderDiscountType?: 'amount' | 'percent';
+  orderDiscountValue?: number;
   // UI state
   activeSection: string;
   completedSections: string[];
@@ -61,8 +69,16 @@ function makeDraft(opts: OpenDraftOptions): OrderDraftEntry {
     orderDiscount: 0,
     appliedPromoIds: [],
     description: '',
+    billNote: '',
+    shippingNote: '',
     paidAmount: 0,
     deliveryAddress: '',
+    packageLength: undefined,
+    packageWidth: undefined,
+    packageHeight: undefined,
+    packageWeight: undefined,
+    orderDiscountType: 'amount',
+    orderDiscountValue: 0,
     activeSection: 'customer',
     completedSections: [],
     isMinimized: false,

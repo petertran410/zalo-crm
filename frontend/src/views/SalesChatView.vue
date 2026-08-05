@@ -1,6 +1,11 @@
 <template>
   <MobileChatView v-if="isMobile" />
-  <div v-else class="smax-chat-grid" :class="{ 'is-sales-workspace': currentRole === 'sales' }">
+  <div
+    v-else
+    class="smax-chat-grid"
+    :class="{ 'is-sales-workspace': currentRole === 'sales' }"
+    :style="gridStyle"
+  >
     <!-- COL 1: Filter Sidebar — ẩn cho Sales (sales dùng dropdown filter ở cột 2) -->
     <ConversationFilterSidebar
       v-if="currentRole !== 'sales'"
@@ -46,7 +51,7 @@
         :loading="loadingConvs"
         :accounts="accountList"
         :selected-account-ids="selectedAccountIds"
-        :active-tab-key="inboxFilters.state.activeTab"
+        :active-tab-key="inboxFilters.state.activeTab ?? undefined"
         :auto-compose-phone="autoComposePhone"
         :following-pairs="followingPairs"
         :filter-collapsed="filterCollapsed"
@@ -73,6 +78,15 @@
         </template>
       </ConversationList>
     </div>
+
+    <!-- Resizer giữa Cột 2 và Cột 3 -->
+    <div
+      v-if="currentRole === 'sales'"
+      class="sl-resizer"
+      :class="{ 'is-active': isResizingConv }"
+      title="Kéo thả điều chỉnh chiều rộng danh sách hội thoại"
+      @mousedown="startResizeConv"
+    />
 
     <!-- COL 3: message thread (giữ nguyên — handles header/messages/input bên trong) -->
     <MessageThread
@@ -106,6 +120,15 @@
       @refresh-thread="selectedConvId && fetchMessages(selectedConvId)"
       @switch-conversation="onSwitchToNickConv"
       @profile-synced="patchContactProfile"
+    />
+
+    <!-- Resizer giữa Cột 3 và Cột 4 -->
+    <div
+      v-if="currentRole === 'sales' && showContactPanel && selectedConv?.contact"
+      class="sl-resizer"
+      :class="{ 'is-active': isResizingInfo }"
+      title="Kéo thả điều chỉnh chiều rộng thông tin 360"
+      @mousedown="startResizeInfo"
     />
 
     <!-- Folder management modal (overlay) -->
@@ -782,6 +805,100 @@ watch(searchQuery, () => {
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => fetchConversations(), 300);
 });
+
+// ── Resizable Layout & LocalStorage Cache ──────────────────────────────────────
+const LAYOUT_CACHE_KEY = 'sales.chat.layout.v1';
+
+function loadCachedLayout(): { convWidth: number; infoWidth: number } {
+  try {
+    const raw = localStorage.getItem(LAYOUT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        convWidth: Math.min(Math.max(Number(parsed.convWidth) || 360, 280), 480),
+        infoWidth: Math.min(Math.max(Number(parsed.infoWidth) || 340, 280), 450),
+      };
+    }
+  } catch { /* parse fallback */ }
+  return { convWidth: 360, infoWidth: 340 };
+}
+
+const cachedLayout = loadCachedLayout();
+const convColWidth = ref<number>(cachedLayout.convWidth);
+const infoColWidth = ref<number>(cachedLayout.infoWidth);
+
+function saveCachedLayout() {
+  try {
+    localStorage.setItem(
+      LAYOUT_CACHE_KEY,
+      JSON.stringify({ convWidth: convColWidth.value, infoWidth: infoColWidth.value })
+    );
+  } catch { /* storage full / blocked */ }
+}
+
+const isResizingConv = ref(false);
+const isResizingInfo = ref(false);
+
+function startResizeConv(e: MouseEvent) {
+  e.preventDefault();
+  isResizingConv.value = true;
+  const startX = e.clientX;
+  const startWidth = convColWidth.value;
+
+  function onMouseMove(moveEvent: MouseEvent) {
+    const deltaX = moveEvent.clientX - startX;
+    const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 480);
+    convColWidth.value = newWidth;
+  }
+
+  function onMouseUp() {
+    isResizingConv.value = false;
+    saveCachedLayout();
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+function startResizeInfo(e: MouseEvent) {
+  e.preventDefault();
+  isResizingInfo.value = true;
+  const startX = e.clientX;
+  const startWidth = infoColWidth.value;
+
+  function onMouseMove(moveEvent: MouseEvent) {
+    const deltaX = startX - moveEvent.clientX;
+    const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 450);
+    infoColWidth.value = newWidth;
+  }
+
+  function onMouseUp() {
+    isResizingInfo.value = false;
+    saveCachedLayout();
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+const gridStyle = computed(() => {
+  if (currentRole.value !== 'sales') return undefined;
+  const hasInfo = showContactPanel.value && selectedConv.value?.contact;
+  if (hasInfo) {
+    return {
+      gridTemplateColumns: `${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
+      gap: '6px',
+    };
+  }
+  return {
+    gridTemplateColumns: `${convColWidth.value}px 6px 1fr`,
+    gap: '6px',
+  };
+});
 </script>
 
 <style scoped>
@@ -985,4 +1102,35 @@ watch(searchQuery, () => {
   .smax-chat-grid > :nth-child(4) { display: none; }
 }
 
+/* ── Resizer handle styling ────────────────────── */
+.sl-resizer {
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  position: relative;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+.sl-resizer::after {
+  content: '';
+  width: 2px;
+  height: 32px;
+  background: rgba(0, 104, 255, 0.2);
+  border-radius: 2px;
+  transition: background 0.15s ease, height 0.15s ease;
+}
+.sl-resizer:hover::after,
+.sl-resizer.is-active::after {
+  background: #0068FF;
+  height: 48px;
+  width: 3px;
+}
+.sl-resizer:hover,
+.sl-resizer.is-active {
+  background: rgba(0, 104, 255, 0.08);
+}
 </style>

@@ -163,7 +163,7 @@ import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 import { fetchPublicBranding } from '@/api/public-branding';
 import { usePosNotification } from '@/composables/use-pos-notification';
 // Open-core: extension top-nav shortcuts (empty in Community edition via @ee stub).

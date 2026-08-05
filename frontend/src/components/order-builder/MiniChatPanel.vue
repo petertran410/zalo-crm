@@ -3,8 +3,11 @@
     <!-- ─── Header ─────────────────────────────────────────── -->
     <div class="mcp-header">
       <div class="mcp-header__left">
+        <div class="mcp-header__avatar">
+          {{ (contactName || '?')[0].toUpperCase() }}
+        </div>
         <div class="mcp-header__info">
-          <div class="mcp-header__name">{{ contactName || 'Khách hàng' }}</div>
+          <span class="mcp-header__name">{{ contactName || 'Khách hàng' }}</span>
         </div>
       </div>
       <!-- Nút làm mới ẩn: fallback mode tự poll mỗi 15s, không cần hiển thị thủ công -->
@@ -83,6 +86,8 @@ import { useMiniChatBridgeStore } from '@/stores/use-mini-chat-bridge';
 const props = defineProps<{
   contactId?: string;
   contactName?: string;
+  contactPhone?: string;
+  posCustomerCode?: string;
 }>();
 
 // ── Bridge Store (thay thế inject/provide — hoạt động vượt qua component tree boundary) ──
@@ -339,7 +344,10 @@ onBeforeUnmount(() => {
 
 .mcp-header__info {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .mcp-header__name {
@@ -347,10 +355,32 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: #fff;
   line-height: 1.2;
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mcp-header__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mcp-header__chip--phone {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.mcp-header__chip--pos {
+  background: rgba(34, 197, 94, 0.25);
+  color: #ffffff;
+  border: 1px solid rgba(134, 239, 172, 0.5);
 }
 
 .mcp-header__sub {

@@ -12,7 +12,10 @@
 
       <main class="main">
         <header class="page-head">
-          <h1>👥 Bạn bè</h1>
+          <h1 class="page-title-with-icon">
+            <span class="material-symbols-outlined header-icon">group</span>
+            Bạn bè
+          </h1>
 
           <span v-if="activeAccount" class="active-nick">
             <span class="av" :class="nickAvatarClass(activeAccount.id)">{{ nickInitials(activeAccount.displayName) }}</span>
@@ -31,13 +34,17 @@
           <input
             v-model="searchInput"
             class="head-search"
-            placeholder="🔍 Tìm KH theo tên / SĐT / nick Zalo..."
+            placeholder="Tìm KH theo tên / SĐT / nick Zalo..."
             @input="debouncedFetch"
           />
-          <button class="btn" title="Xuất CSV (chưa làm)" @click="onExportCsv">⬇ Xuất CSV</button>
+          <button class="btn" title="Xuất CSV" @click="onExportCsv">
+            <span class="material-symbols-outlined btn-icon">download</span> Xuất CSV
+          </button>
           <v-menu :close-on-content-click="false">
             <template #activator="{ props: act }">
-              <button v-bind="act" class="btn" title="Bật/tắt cột tuỳ chọn">⚙ Cột</button>
+              <button v-bind="act" class="btn" title="Bật/tắt cột tuỳ chọn">
+                <span class="material-symbols-outlined btn-icon">tune</span> Cột
+              </button>
             </template>
             <v-list density="compact" min-width="280">
               <v-list-subheader>Cột mặc định (luôn hiện)</v-list-subheader>

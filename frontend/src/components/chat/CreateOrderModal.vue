@@ -278,7 +278,6 @@ const errors = reactive<Record<string, string>>({});
 const paymentMethods = [
   { value: 'cash', label: 'Tiền mặt' },
   { value: 'bank_transfer', label: 'Chuyển khoản' },
-  { value: 'card', label: 'Quẹt thẻ' },
 ];
 
 const orderStatusOptions = [
@@ -365,14 +364,17 @@ function addToCart(product: ProductItem | null) {
   if (!product) return;
 
   // Check duplicate
-  const existing = cartItems.find(c => c.productId === product.posId);
-  if (existing) {
+  const existingIdx = cartItems.findIndex(c => c.productId === product.posId);
+  if (existingIdx !== -1) {
+    const existing = cartItems[existingIdx];
     existing.quantity++;
     existing.totalPrice = existing.quantity * existing.unitPrice - existing.discount;
+    cartItems.splice(existingIdx, 1);
+    cartItems.unshift(existing);
     return;
   }
 
-  cartItems.push({
+  cartItems.unshift({
     productId: product.posId,
     productCode: product.code,
     productName: product.name,
