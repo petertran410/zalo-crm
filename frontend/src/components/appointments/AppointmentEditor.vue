@@ -178,13 +178,14 @@
               </select>
               <input
                 v-if="durationChoice === CUSTOM_DURATION"
-                v-model.number="customDuration"
+                v-model.number="customMinutes"
                 class="dur-custom"
                 type="number"
                 min="5"
                 max="1440"
                 step="5"
                 aria-label="Số phút"
+                @change="commitCustom"
               />
               <span v-if="durationChoice === CUSTOM_DURATION" class="dur-unit">phút</span>
             </div>
@@ -360,26 +361,13 @@ import {
   type AppointmentEx as Appointment,
   type AiPrefill,
 } from '@/composables/appointment-helpers';
-
-/** SĐT chuẩn VN để hiển thị: 84xxx / +84xxx → 0xxx (bỏ khoảng trắng, dấu). */
-function formatPhoneVN(p?: string | null): string {
-  if (!p) return '';
-  let s = String(p).replace(/[\s.()-]/g, '');
-  if (s.startsWith('+84')) s = '0' + s.slice(3);
-  else if (s.startsWith('0084')) s = '0' + s.slice(4);
-  else if (s.startsWith('84') && s.length >= 10 && s.length <= 12) s = '0' + s.slice(2);
-  return s;
-}
-
-interface ContactLite {
-  id: string;
-  fullName: string | null;
-  phone: string | null;
-  zaloUid?: string | null;
-  /** Tên gợi nhớ (Contact.zaloUsername hoặc displayName từ Friend). Search được. */
-  zaloUsername?: string | null;
-  avatarUrl?: string | null;
-}
+import {
+  useContactSearch,
+  toContactLite,
+  formatPhoneVN,
+  contactColor,
+  type ContactLite,
+} from '@/composables/use-contact-search';
 
 interface UserLite {
   id: string;
@@ -448,9 +436,17 @@ const isEdit = computed(() => !!props.appointment);
 // ───────── Contact state ─────────
 const selectedContact = ref<ContactLite | null>(null);
 const custSuggestOpen = ref(false);
-const custQuery = ref('');
-const custSuggestions = ref<ContactLite[]>([]);
-const custSearching = ref(false);
+// 2026-08-04: tìm KH chuyển sang composable dùng chung với AppointmentQuickCreate.
+const {
+  query: custQuery,
+  suggestions: custSuggestions,
+  searching: custSearching,
+  search: onCustSearch,
+  reset: resetCustSearch,
+  enrichAvatar: enrichContactAvatar,
+  loadById: loadContactById,
+  onAvatarError,
+} = useContactSearch(selectedContact);
 
 function openCustSuggest() {
   custSuggestOpen.value = true;
@@ -462,85 +458,13 @@ function openCustSuggest() {
 
 function dismissCustSuggest() {
   custSuggestOpen.value = false;
-  custQuery.value = '';
-  custSuggestions.value = [];
-}
-
-/**
- * Resolve avatar real:
- *   1. Contact.avatarUrl (manual upload, hiếm)
- *   2. Friend.zaloAvatarUrl đầu tiên (per-nick Zalo profile pic, common)
- *   3. null → fallback initials
- */
-function resolveAvatarUrl(c: any): string | null {
-  if (c?.avatarUrl) return c.avatarUrl;
-  const friends = c?.friends || [];
-  for (const f of friends) {
-    if (f?.zaloAvatarUrl) return f.zaloAvatarUrl;
-  }
-  return null;
-}
-
-function toContactLite(c: any): ContactLite {
-  return {
-    id: c.id,
-    fullName: c.fullName ?? null,
-    phone: c.phone ?? null,
-    zaloUid: c.zaloUid ?? null,
-    zaloUsername: c.zaloUsername || c.aggregateZaloUsername || null,
-    avatarUrl: resolveAvatarUrl(c),
-  };
-}
-
-/** Fetch contact detail (includes friends) khi prefillContact / edit-mode chưa có
- *  avatar info đầy đủ. Async — patch selectedContact in-place khi xong (chỉ nếu user
- *  chưa pick contact khác trong thời gian fetch). */
-async function enrichContactAvatar(contactId: string) {
-  try {
-    const res = await api.get(`/contacts/${contactId}`);
-    const enriched = toContactLite(res.data);
-    if (selectedContact.value?.id === contactId && enriched.avatarUrl) {
-      selectedContact.value = { ...selectedContact.value, avatarUrl: enriched.avatarUrl };
-    }
-  } catch (err) {
-    console.warn('[editor] avatar enrich fetch failed', err);
-  }
-}
-
-/** Edit mode khi object lịch thiếu `contact` (chat/list rút gọn) → fetch đầy đủ theo id. */
-async function loadContactById(contactId: string) {
-  try {
-    const res = await api.get(`/contacts/${contactId}`);
-    selectedContact.value = toContactLite(res.data);
-  } catch (err) {
-    console.warn('[editor] load contact for edit failed', err);
-  }
-}
-
-let custSearchHandle: number | null = null;
-function onCustSearch() {
-  if (custSearchHandle) window.clearTimeout(custSearchHandle);
-  const q = custQuery.value.trim();
-  if (!q) { custSuggestions.value = []; return; }
-  custSearching.value = true;
-  custSearchHandle = window.setTimeout(async () => {
-    try {
-      const res = await api.get('/contacts', { params: { search: q, limit: 8 } });
-      const raw = (res.data.contacts ?? res.data ?? []).slice(0, 8);
-      custSuggestions.value = raw.map(toContactLite);
-    } catch (err) {
-      console.error('[editor] contact search failed', err);
-      custSuggestions.value = [];
-    } finally {
-      custSearching.value = false;
-    }
-  }, 220);
+  resetCustSearch();
 }
 
 function pickContact(c: ContactLite) {
   selectedContact.value = c;
   custSuggestOpen.value = false;
-  custQuery.value = '';
+  resetCustSearch();
   // Rebuild title theo tên KH mới
   form.title = buildDefaultTitle();
   nextTick(() => focusTitleAtEnd());
@@ -548,13 +472,6 @@ function pickContact(c: ContactLite) {
 
 function clearContact() {
   selectedContact.value = null;
-}
-
-/** Avatar img load fail → fallback initials (set avatarUrl=null trên copy) */
-function onAvatarError() {
-  if (selectedContact.value && selectedContact.value.avatarUrl) {
-    selectedContact.value = { ...selectedContact.value, avatarUrl: null };
-  }
 }
 
 // ───────── Form state ─────────
@@ -699,6 +616,10 @@ watch(() => props.modelValue, (open) => {
       if (p.notes) form.notes = p.notes;
     }
   }
+
+  // PHẢI chạy sau 2 nhánh trên (form.durationMin mới có giá trị thật): sửa lịch
+  // 45 phút thì select đứng ở "Khác…" kèm số 45, không bật về mốc gần nhất.
+  syncDurationMode();
 
   nextTick(() => titleInputRef.value?.focus());
 });
@@ -924,15 +845,54 @@ const CUSTOM_DURATION = -1;
 /**
  * Select giữ 1 trong 4 mốc, hoặc CUSTOM_DURATION để lộ ô nhập phút.
  * `form.durationMin` vẫn là nguồn sự thật duy nhất gửi lên BE.
+ *
+ * FIX 2026-08-05 (anh báo "chọn Khác không nhập được"): bản đầu suy trạng thái
+ * "đang ở chế độ Khác" TỪ giá trị — chọn Khác thì setter không ghi gì, getter
+ * thấy durationMin vẫn là 1 trong 4 mốc nên trả lại đúng mốc đó, select bật
+ * ngược về và ô nhập không bao giờ hiện. Phải có cờ riêng, không suy từ giá trị.
  */
+const customMode = ref(false);
+const customMinutes = ref(30);
+
 const durationChoice = computed<number>({
-  get: () => (DURATIONS.some((d) => d.value === form.durationMin) ? form.durationMin : CUSTOM_DURATION),
-  set: (v) => { if (v !== CUSTOM_DURATION) form.durationMin = v; },
+  get: () =>
+    customMode.value || !DURATIONS.some((d) => d.value === form.durationMin)
+      ? CUSTOM_DURATION
+      : form.durationMin,
+  set: (v) => {
+    if (v === CUSTOM_DURATION) {
+      customMode.value = true;
+      customMinutes.value = form.durationMin;
+    } else {
+      customMode.value = false;
+      form.durationMin = v;
+    }
+  },
 });
-const customDuration = computed<number>({
-  get: () => form.durationMin,
-  set: (v) => { form.durationMin = Math.min(1440, Math.max(5, Math.round(Number(v) || 5))); },
+
+/**
+ * Gõ tới đâu cập nhật tới đó, nhưng KHÔNG kẹp — kẹp lúc gõ thì "45" thành "5"
+ * ngay ở ký tự đầu. Kẹp để dành cho lúc rời ô (`commitCustom`).
+ *
+ * Dùng watch chứ KHÔNG dùng @input: v-model trên input native là directive, thứ
+ * tự chạy so với listener @input không đảm bảo — handler đọc trúng giá trị cũ
+ * nên số phút gõ vào không vào được form (giờ kết thúc đứng im).
+ */
+watch(customMinutes, (v) => {
+  const n = Math.round(Number(v) || 0);
+  if (n >= 1 && n <= 1440) form.durationMin = n;
 });
+function commitCustom() {
+  const clamped = Math.min(1440, Math.max(5, Math.round(Number(customMinutes.value) || 5)));
+  customMinutes.value = clamped;
+  form.durationMin = clamped;
+}
+
+/** Gọi khi mở modal — sau khi form.durationMin đã được nạp. */
+function syncDurationMode() {
+  customMode.value = !DURATIONS.some((d) => d.value === form.durationMin);
+  customMinutes.value = form.durationMin;
+}
 
 /** Cảnh báo tràn nửa đêm — nguồn gốc của lỗi hiển thị "38:45". */
 const crossesMidnight = computed(() => {
@@ -1091,14 +1051,6 @@ function pickSavedLocation(loc: string) {
 function removeSavedLocation(loc: string) {
   savedLocations.value = savedLocations.value.filter((l) => l !== loc);
   persistSavedLocations();
-}
-
-// ───────── Contact color (consistent hash) ─────────
-const PALETTE = ['#aa2d00', '#0a2e0e', '#d9a441', '#fcab79', '#a8d8c4', '#1b61c9'];
-function contactColor(id: string): string {
-  let h = 0;
-  for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0;
-  return PALETTE[h % PALETTE.length];
 }
 
 // ───────── Submit / close ─────────
