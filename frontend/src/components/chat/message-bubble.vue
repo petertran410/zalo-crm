@@ -649,6 +649,11 @@ const receiptState = computed<'sending' | 'delivered' | 'seen' | 'sent'>(() => {
   if ((m.metadata as { sendStatus?: string } | null | undefined)?.sendStatus === 'failed') return 'sent';
   if (m.seenAt) return 'seen';
   if (m.deliveredAt) return 'delivered';
+  // Multi-channel Phase 2 (2026-07-22) — tin kênh KHÔNG-Zalo (FB) có externalMsgId nghĩa là
+  // Meta đã nhận (Graph trả message_id). FB không bắn delivered/seen như Zalo SDK → nếu để
+  // rơi xuống nhánh tuổi-tin bên dưới sẽ KẸT "Đang gửi" vĩnh viễn dù đã gửi thành công.
+  const externalMsgId = (m as { externalMsgId?: string | null }).externalMsgId;
+  if (!m.zaloMsgId && externalMsgId) return 'sent';
   const ageMs = Date.now() - new Date(m.sentAt).getTime();
   return ageMs > 3000 ? 'sending' : 'sent';
 });

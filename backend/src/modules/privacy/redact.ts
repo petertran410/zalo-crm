@@ -27,10 +27,12 @@ export interface PrivacyContext {
  * - Main-nick conv → only owner + unlocked.
  */
 export function canSeeConversationContent(
-  conv: { zaloAccount: { privacyMode: string; ownerUserId: string } },
+  conv: { zaloAccount?: { privacyMode: string; ownerUserId: string } | null },
   ctx: PrivacyContext,
 ): boolean {
-  if (conv.zaloAccount.privacyMode !== 'main') return true;
+  // Multi-channel Phase 2 (2026-07-21): hội thoại kênh khác (FB) không có nick Zalo → không có
+  // khái niệm "nick riêng tư" → luôn xem được (privacy chỉ áp cho nick Zalo main).
+  if (!conv.zaloAccount || conv.zaloAccount.privacyMode !== 'main') return true;
   const isOwner = conv.zaloAccount.ownerUserId === ctx.viewerUserId;
   return isOwner && ctx.privacyUnlocked;
 }
@@ -46,7 +48,7 @@ export function canSeeConversationContent(
  */
 export function redactMessage(
   msg: any,
-  conv: { zaloAccount: { privacyMode: string; ownerUserId: string } },
+  conv: { zaloAccount?: { privacyMode: string; ownerUserId: string } | null },
   ctx: PrivacyContext,
 ): any {
   if (canSeeConversationContent(conv, ctx)) return msg;
@@ -84,7 +86,7 @@ export function redactConversationRow<T extends {
   lastMessageContent?: string | null;
   unreadCount?: number;
 }>(
-  conv: T & { zaloAccount: { privacyMode: string; ownerUserId: string } },
+  conv: T & { zaloAccount?: { privacyMode: string; ownerUserId: string } | null },
   ctx: PrivacyContext,
 ): T & { redacted?: boolean } {
   if (canSeeConversationContent(conv, ctx)) return conv;

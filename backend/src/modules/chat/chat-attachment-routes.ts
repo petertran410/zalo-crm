@@ -77,6 +77,11 @@ export async function chatAttachmentRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+      // Multi-channel Phase 2 (2026-07-21): route gửi file NÀY chỉ phục vụ hội thoại Zalo
+      // (zaloPool/rate-limit). Hội thoại kênh khác (FB) không có zaloAccount → chặn sớm để narrow type.
+      if (!conversation.zaloAccount || !conversation.zaloAccountId) {
+        return reply.status(400).send({ error: 'Chức năng này chỉ hỗ trợ hội thoại Zalo.', code: 'NOT_ZALO_CHANNEL' });
+      }
 
       // T7b (YC2 2026-06-20): chặn gửi file/ảnh qua nick ĐÃ XÓA (archivedAt).
       if (conversation.zaloAccount.archivedAt) {

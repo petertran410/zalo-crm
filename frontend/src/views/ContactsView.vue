@@ -294,21 +294,25 @@
           <col style="width:26px">   <!-- 1 caret -->
           <col style="width:188px">  <!-- 2 Tên (gộp avatar+tên, KHÔNG colspan) -->
           <col style="width:100px">  <!-- 3 SĐT -->
-          <col style="width:68px">   <!-- 4 Tỉnh/Quận -->
-          <col style="width:54px">   <!-- 5 Nguồn -->
-          <col style="width:72px">   <!-- 6 Trạng thái KH -->
-          <col style="width:42px">   <!-- 7 Score -->
+          <!-- 2026-07-16 (Anh báo header bị cắt "TỈNH/Q…", "TRẠNG …", "SC…") — 7 cột
+               dưới đây hẹp hơn CHÍNH NHÃN của nó nên thead ellipsis. Width mới = bề
+               rộng ĐO THẬT của nhãn (11.5px/600/uppercase/letter-spacing .3px, font
+               Plus Jakarta Sans) + padding 16px + ~2px đệm. Không đoán số. -->
+          <col style="width:88px">   <!-- 4 Tỉnh/Quận  (nhãn cần 86) -->
+          <col style="width:66px">   <!-- 5 Nguồn      (nhãn cần 63) -->
+          <col style="width:108px">  <!-- 6 Trạng thái KH (nhãn cần 106) -->
+          <col style="width:74px">   <!-- 7 Score      (nhãn + ⇅ cần 71) -->
           <col style="width:112px">  <!-- 8 Nick chăm -->
-          <col style="width:92px">   <!-- 9 Sale chính -->
+          <col style="width:146px">  <!-- 9 Sale chính / hỗ trợ (nhãn cần 144) -->
           <col style="width:150px">  <!-- 9b Nick CRM chăm (2026-06-30) -->
           <!-- 2026-06-05 (Anh chốt) — giảm rộng 2 cột nhắn cuối ~30% + preview xuống 2 dòng.
                Trước: flex auto (~chiếm phần lớn không gian còn lại). Nay width cứng 150px
                (giảm ~30% so với ~210px auto @1366) → text wrap 2 dòng tận dụng dòng dưới. -->
           <col style="width:150px">  <!-- 10 KH nhắn cuối -->
           <col style="width:150px">  <!-- 11 Sale nhắn cuối -->
-          <col style="width:54px">   <!-- 12 Tin in/out -->
+          <col style="width:84px">   <!-- 12 Tin in/out (nhãn cần 81) -->
           <col style="width:78px">   <!-- 13 Tags CRM -->
-          <col style="width:60px">   <!-- 14 Có Zalo? -->
+          <col style="width:80px">   <!-- 14 Có Zalo?  (nhãn cần 77) -->
           <col v-if="visibleChildCols.zaloUid" style="width:120px">
           <col v-if="visibleCols.zaloGlobalId" style="width:130px">
           <col v-if="visibleCols.zaloUsername" style="width:130px">
@@ -2213,8 +2217,15 @@ watch(
   width: 100%;
   border-collapse: collapse;
   font-size: 12.5px;
-  /* 15 cột: 13 cố định + Action = 1024px, 2 cột tin nhắn flex tự lấy phần dư.
-     min-width 1280 = 1024 + 2×128 (msg floor) → khít 1366, không H-scroll. */
+  /* min-width = SÀN, không phải trần. table-layout:fixed + <col> width cứng →
+     bề rộng bảng THẬT = max(tổng width các <col>, min-width) rồi .table-wrap
+     (overflow:auto) cuộn ngang. Cột KHÔNG bị co khi min-width < tổng (verify
+     2026-07-16 bằng đo thật trên trình duyệt).
+     Chú thích cũ ("tổng 1024, khít 1366, không H-scroll") ĐÃ SAI TỪ TRƯỚC: cột
+     "Nick CRM chăm" 150px thêm 2026-06-30 đẩy tổng lên 1508 → đã cuộn ngang ở
+     1366 rồi. Nay nới 7 cột cho vừa nhãn header → tổng ~1712 (cuộn ~350px @1366,
+     vừa khít màn 1920). Đây là ĐÁNH ĐỔI CÓ CHỦ Ý: Anh chốt ưu tiên đọc đủ chữ
+     header hơn là tránh cuộn ngang. */
   min-width: 1280px;
   /* table-layout: fixed → cột không recalc khi expand row con (no layout shift) */
   table-layout: fixed;
@@ -2267,6 +2278,14 @@ watch(
      (middle đẩy dòng tên đầu lên cao hơn avatar khi cụm tên >1 dòng → "tên nhảy lên"). */
   vertical-align: top;
 }
+/* 2026-07-16 (Anh báo "chữ chồng chữ") — table-layout:fixed nghĩa là cột rộng CỐ
+   ĐỊNH, nội dung KHÔNG đẩy cột rộng ra. <th> đã có overflow:hidden từ đầu nhưng
+   <td> thì CHƯA → ô nào dài hơn cột sẽ VẼ ĐÈ sang cột bên cạnh thay vì bị cắt
+   (hiện nguyên hình khi KH POS có tên dài + chip Nguồn dài trong cột 54px).
+   Cắt ở mức cell = lưới an toàn: bên trong đã ellipsis sẵn (.cl-nm/.cl-name-sub/
+   .cell-strong), đây chỉ chặn giá trị lạ tràn ra.
+   CHỈ hàng cha — KHÔNG đụng row chứa child-table (bảng con tự cuộn riêng). */
+.smax-table tbody tr.master-row > td { overflow: hidden; }
 /* 2026-06-04: cột avatar (td thứ 2) padding ngang nhỏ + căn giữa → avatar 26px KHÔNG
    tràn sang cột tên (cột chỉ 30px, padding 8px 2 bên chỉ chừa 14px). Áp cho hàng cha. */
 .smax-table tbody tr.master-row > td:nth-child(2) { padding-left: 2px; padding-right: 2px; text-align: center; }
@@ -2992,7 +3011,10 @@ watch(
 .age-inline { font-size: 11px; color: var(--smax-grey-700); margin-left: 4px; font-weight: 500; }
 
 /* SĐT multi-line */
-.phones-cell { display: flex; flex-direction: column; gap: 1px; }
+/* min-width:0 — thiếu nó thì flex item KHÔNG co dưới kích thước nội dung, số dài
+   (hoặc số + nhãn phụ) tràn khỏi cột 100px thay vì ellipsis. */
+.phones-cell { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.phone-cell, .phone-extra { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .phone-cell.phone-main { font-weight: 600; color: var(--smax-text); }
 .phone-extra { font-size: 11px; color: var(--smax-grey-700); font-variant-numeric: tabular-nums; }
 .phone-extra .phone-lbl {

@@ -229,8 +229,13 @@ const messagesCache = new Map<string, Message[]>();
 // Stale-while-revalidate: chuyển tab → paint từ cache NGAY (0ms lag), bg fetch update.
 // Trước fix: mỗi lần chuyển tab user chờ 1-3s HTTP+DB roundtrip → loading spinner.
 // Cache key encode toàn bộ filter params (tab, threadType, accountIds, search, ...).
+//
+// Perf 2026-07 (trustFreshCache): tab switch trong cửa sổ FRESH_MS dùng cache, KHÔNG
+// HTTP — socket vẫn patch live list + sync vào cache (unread/new msg không bị “đóng băng”).
 const conversationsCache = new Map<string, { data: Conversation[]; fetchedAt: number }>();
 const CONV_CACHE_MAX_ENTRIES = 16;  // ~4 tabs × ~4 filter variants
+/** Cache còn “tươi” → trustFreshCache bỏ qua network (tab switch). */
+const CONV_CACHE_FRESH_MS = 12_000;
 
 // Debug hook (DEV only) — expose cache state via window.__zaloCRMConvCache để
 // diagnose cache miss khi tab switch vẫn cảm giác lag. Inspect:
@@ -240,7 +245,7 @@ if (typeof window !== 'undefined') {
   (window as unknown as { __zaloCRMConvCache: typeof conversationsCache }).__zaloCRMConvCache = conversationsCache;
   (window as unknown as { __zaloCRMConvCacheLog: Array<{ t: number; event: string; key: string }> }).__zaloCRMConvCacheLog = [];
 }
-function logCacheEvent(event: 'hit' | 'miss' | 'set', key: string) {
+function logCacheEvent(event: 'hit' | 'miss' | 'set' | 'hit-trust', key: string) {
   if (typeof window === 'undefined') return;
   const log = (window as unknown as { __zaloCRMConvCacheLog: Array<{ t: number; event: string; key: string }> }).__zaloCRMConvCacheLog;
   log.push({ t: Date.now(), event, key });
@@ -385,7 +390,26 @@ export function useChat() {
 
   const extraFilters = ref<Record<string, string>>({});
 
-  async function fetchConversations(opts?: { bypassCache?: boolean }) {
+  /** Ghi live list vào cache key hiện tại (giữ fetchedAt) — unread/socket không mất khi trust tab switch. */
+  function syncLiveConversationsToCache() {
+    try {
+      const params = {
+        limit: 100,
+        search: searchQuery.value,
+        accountId: accountFilter.value || undefined,
+        ...extraFilters.value,
+      };
+      const cacheKey = JSON.stringify(params);
+      const prev = conversationsCache.get(cacheKey);
+      if (!prev) return;
+      conversationsCache.set(cacheKey, {
+        data: conversations.value.slice(),
+        fetchedAt: prev.fetchedAt,
+      });
+    } catch { /* ignore */ }
+  }
+
+  async function fetchConversations(opts?: { bypassCache?: boolean; trustFreshCache?: boolean }) {
     const params = {
       limit: 100,
       search: searchQuery.value,
@@ -394,6 +418,17 @@ export function useChat() {
     };
     const cacheKey = JSON.stringify(params);
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
+
+    // Tab switch: cache còn tươi → paint + return (không HTTP). Socket vẫn cập nhật live.
+    if (
+      opts?.trustFreshCache
+      && cached
+      && (Date.now() - cached.fetchedAt) < CONV_CACHE_FRESH_MS
+    ) {
+      logCacheEvent('hit-trust', cacheKey);
+      conversations.value = mergeConvListPreserveDetail(conversations.value, cached.data, undefined);
+      return;
+    }
 
     // M-tier stale-while-revalidate: cache hit → paint NGAY (no spinner flash khi
     // chuyển tab). Cache miss → spinner (loading state) trong khi chờ HTTP.
@@ -699,7 +734,10 @@ export function useChat() {
       try {
         await api.post(`/conversations/${convId}/mark-read`);
         const conv = conversations.value.find(c => c.id === convId);
-        if (conv) conv.unreadCount = 0;
+        if (conv) {
+          conv.unreadCount = 0;
+          syncLiveConversationsToCache();
+        }
       } catch {
         // Ignore mark-read errors
       }
@@ -910,6 +948,8 @@ export function useChat() {
         } else {
           conversations.value.splice(idx, 1, conv);
         }
+        // Giữ cache tab hiện tại khớp live (unread/preview) khi trustFreshCache skip HTTP.
+        syncLiveConversationsToCache();
       }
       // Debounce sync from server: chỉ fetch sau 3s im lặng → reconcile state
       // (tránh chạy mỗi tin → lag list khi nhận burst).

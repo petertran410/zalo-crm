@@ -76,7 +76,10 @@ export function requireZaloAccess(minPermission: Permission) {
           where: { id: params.id, orgId: user.orgId },
           select: { zaloAccountId: true },
         });
-        if (conv) zaloAccountId = conv.zaloAccountId;
+        // Multi-channel Phase 2 (2026-07-21): conv kênh khác (FB, zaloAccountId=null) KHÔNG gate
+        // theo Zalo access — authMiddleware đã xác thực; access FB gate riêng sẽ thêm sau nếu cần.
+        if (conv && !conv.zaloAccountId) return;
+        if (conv?.zaloAccountId) zaloAccountId = conv.zaloAccountId;
       } catch {
         return reply.status(500).send({ error: 'Internal error checking access' });
       }

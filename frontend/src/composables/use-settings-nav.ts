@@ -117,6 +117,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       // Facebook Lead Ads item → extension bundle (eeSettingsItems.channels).
       // Automation tech-settings nav item → extension bundle (eeSettingsItems.channels).
       { id: 'integrations', label: 'Tích hợp 3rd party', icon: 'mdi-puzzle-outline', route: '/settings/channels/integrations', permission: 'admin', resource: 'settings', aliases: ['tích hợp', 'integration', '3rd party'] },
+      { id: 'hisweetie-pos', label: 'Hisweetie POS (MCP)', icon: 'mdi-storefront-outline', route: '/settings/channels/hisweetie-pos', permission: 'admin', resource: 'settings', aliases: ['hisweetie', 'pos', 'mcp', 'pos data', 'kho pos'] },
     ],
   },
 

@@ -102,6 +102,8 @@ async function forwardMessage(ev: MessagePersistedEvent): Promise<void> {
     const conv = message.conversation;
 
     if (conv.threadType !== 'user') return; // chỉ chat 1-1 (bỏ nhóm Zalo)
+    // Multi-channel Phase 2 (2026-07-21): chỉ forward hội thoại Zalo sang Telegram (FB không cầu).
+    if (!conv.zaloAccount) return;
     const cfg = conv.zaloAccount.telegramBridge;
     if (!cfg?.enabled || !cfg.telegramChatId) return;
 
@@ -109,7 +111,8 @@ async function forwardMessage(ev: MessagePersistedEvent): Promise<void> {
     const customerName =
       conv.contact?.crmName || conv.contact?.fullName || message.senderName || 'Khách';
     const topicId = await getOrCreateTopic(conv.id, chatId, customerName);
-    const label = buildLabel(message, conv, customerName);
+    // zaloAccount đã guard non-null ở trên; narrowing rớt sau await → cast an toàn.
+    const label = buildLabel(message, conv as ForwardConv, customerName);
     await sendToTelegram(chatId, message, label, topicId ?? undefined);
   } catch (err) {
     logger.warn(`[telegram-bridge] forward lỗi msg=${ev.messageId}: ${String(err)}`);

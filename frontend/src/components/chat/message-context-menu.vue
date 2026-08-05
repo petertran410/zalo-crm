@@ -22,6 +22,29 @@
           <span class="ctx-item__label">Trả lời</span>
         </button>
 
+        <!-- Tạo công việc / khiếu nại từ tin (CRM group chat 2026-07-10).
+             Hỗ trợ text + image + video + file. Khiếu nại chỉ tin của KH. -->
+        <button v-if="canCreateWork" class="ctx-item is-primary" role="menuitem" @click="onAction('create-task')">
+          <svg class="ctx-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+          </svg>
+          <span class="ctx-item__label">Tạo công việc</span>
+        </button>
+        <button v-if="canCreateWork && !isSelf" class="ctx-item is-primary" role="menuitem" @click="onAction('create-complaint')">
+          <svg class="ctx-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+          <span class="ctx-item__label">Tạo khiếu nại</span>
+        </button>
+        <!-- Tạo hoá đơn từ tin (goal 4, 2026-07-18) — chỉ khi KH đã link POS (canBilling từ MessageThread) -->
+        <button v-if="canCreateWork && canBilling" class="ctx-item is-primary" role="menuitem" @click="onAction('create-billing')">
+          <svg class="ctx-item__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 2v20l2-1 2 1 2-1 2 1 2-1 2 1 2-1 2 1V2l-2 1-2-1-2 1-2-1-2 1-2-1-2 1-2-1z"/><line x1="8" y1="8" x2="16" y2="8"/><line x1="8" y1="12" x2="16" y2="12"/><line x1="8" y1="16" x2="13" y2="16"/>
+          </svg>
+          <span class="ctx-item__label">Tạo hoá đơn</span>
+        </button>
+        <div v-if="canCreateWork" class="ctx-divider"></div>
+
         <!-- Chỉnh sửa (self + text) -->
         <button
           v-if="isSelf && message?.contentType === 'text'"
@@ -124,6 +147,8 @@ const props = defineProps<{
   isSelf: boolean;
   position: { x: number; y: number };
   modelValue: boolean;
+  /** KH của hội thoại đã link POS → hiện "Tạo hoá đơn" (goal 4, 2026-07-18). */
+  canBilling?: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -137,11 +162,18 @@ const emit = defineEmits<{
   'save-media': [visibility: 'private' | 'public'];
   'favorite-media': [];
   'download-media': [];
+  'create-task': [];
+  'create-complaint': [];
+  'create-billing': [];
 }>();
 
 // Tin có media (ảnh/video/tệp) → hiện "Lưu vào Media". Phase Media Library 2026-06-11.
 const isMediaMessage = computed(() =>
   ['image', 'video', 'file'].includes(props.message?.contentType ?? ''),
+);
+// Work item: text + image + video + file (sticker/voice/… ẩn).
+const canCreateWork = computed(() =>
+  ['text', 'image', 'video', 'file'].includes(props.message?.contentType ?? ''),
 );
 
 // Submenu "Lưu vào Media" (Riêng tư / Công khai) — mở khi hover.
@@ -232,16 +264,19 @@ onBeforeUnmount(() => {
 function close() {
   emit('update:modelValue', false);
 }
-function onAction(name: 'reply' | 'edit' | 'forward' | 'undo' | 'delete' | 'favorite-media' | 'download-media') {
+function onAction(name: 'reply' | 'edit' | 'forward' | 'undo' | 'delete' | 'favorite-media' | 'download-media' | 'create-task' | 'create-complaint' | 'create-billing') {
   // Switch để TS narrow đúng từng emit signature (union không inferr được)
   switch (name) {
-    case 'reply':          emit('reply');          break;
-    case 'edit':           emit('edit');           break;
-    case 'forward':        emit('forward');        break;
-    case 'undo':           emit('undo');           break;
-    case 'delete':         emit('delete');         break;
-    case 'favorite-media': emit('favorite-media'); break;
-    case 'download-media': emit('download-media'); break;
+    case 'reply':            emit('reply');            break;
+    case 'edit':             emit('edit');             break;
+    case 'forward':          emit('forward');          break;
+    case 'undo':             emit('undo');             break;
+    case 'delete':           emit('delete');           break;
+    case 'favorite-media':   emit('favorite-media');   break;
+    case 'download-media':   emit('download-media');   break;
+    case 'create-task':      emit('create-task');      break;
+    case 'create-complaint': emit('create-complaint'); break;
+    case 'create-billing':   emit('create-billing');   break;
   }
   close();
 }

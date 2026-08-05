@@ -70,6 +70,10 @@ export interface Contact {
   archivedAt?: string | null;
   archivedById?: string | null;
 
+  // Hisweetie POS 2026-07-15 — set khi KH đã liên kết POS (dùng gate hoá đơn từ chat).
+  posCustomerId?: number | null;
+  posCustomerCode?: string | null;
+
   // Nick CRM (ZaloAccount) đang chăm KH này — backend trả qua AGGREGATE_INCLUDE.friends[].
   // Mỗi Friend = 1 cặp (KH × nick). 1 nick có thể nhiều Friend row → dedup theo zaloAccountId
   // ở helper linkedNicksOf(). Dùng cho cột "Nick chăm" bảng /contacts (2026-06-30).
@@ -358,6 +362,11 @@ export const SOURCE_OPTIONS = [
   { text: 'TikTok', value: 'TT' },
   { text: 'Giới thiệu', value: 'GT' },
   { text: 'Cá nhân', value: 'CN' },
+  // Hisweetie POS 2026-07-15 — KH do hisweetie-sync-cron đổ về (source='POS').
+  // Không có mục này thì 5.8k KH POS trộn lẫn trong danh sách, sale không lọc ra được.
+  // Nhãn NGẮN "POS": text này dùng CHUNG cho cả dropdown lọc lẫn chip trong bảng,
+  // mà cột Nguồn chỉ rộng 54px — "POS (Hisweetie)" (~96px) tràn đè cột bên cạnh.
+  { text: 'POS', value: 'POS' },
 ];
 
 export const STATUS_OPTIONS = [

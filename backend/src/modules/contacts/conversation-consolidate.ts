@@ -33,6 +33,8 @@ export async function consolidateContactConversations(contactId: string): Promis
   });
   const byNick = new Map<string, typeof convs>();
   for (const c of convs) {
+    // Multi-channel Phase 2 (2026-07-21): gom canonical theo nick Zalo — bỏ conv kênh khác (FB).
+    if (!c.zaloAccountId) continue;
     const arr = byNick.get(c.zaloAccountId) ?? [];
     arr.push(c);
     byNick.set(c.zaloAccountId, arr);

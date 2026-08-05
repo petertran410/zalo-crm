@@ -89,7 +89,13 @@ function reactionDisplay(r: string): string {
 async function getConversation(id: string, orgId: string, reply: FastifyReply) {
   const conv = await prisma.conversation.findFirst({ where: { id, orgId } });
   if (!conv) { reply.status(404).send({ error: 'Conversation not found' }); return null; }
-  return conv;
+  // Multi-channel Phase 2 (2026-07-21): các thao tác ở route này (react/recall/forward…) đi qua
+  // Zalo SDK → chỉ hỗ trợ hội thoại Zalo. Kênh khác (FB) chặn sớm + narrow zaloAccountId non-null.
+  if (!conv.zaloAccountId) {
+    reply.status(400).send({ error: 'Thao tác này chỉ hỗ trợ hội thoại Zalo.', code: 'NOT_ZALO_CHANNEL' });
+    return null;
+  }
+  return { ...conv, zaloAccountId: conv.zaloAccountId };
 }
 
 const FORWARD_MEDIA_TYPES = new Set(['image', 'video', 'voice', 'audio']);
@@ -442,7 +448,15 @@ export async function chatOperationsRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
 
-      const validTargets = targets.filter((t) => Boolean(t.externalThreadId));
+      // Multi-channel Phase 2 (2026-07-21): chỉ chuyển tiếp tới hội thoại Zalo (có zaloAccount +
+      // externalThreadId). Type-guard narrow để loop dưới dùng zaloAccountId/zaloAccount non-null.
+      const validTargets = targets.filter(
+        (t): t is (typeof targets)[number] & {
+          zaloAccountId: string;
+          externalThreadId: string;
+          zaloAccount: NonNullable<(typeof targets)[number]['zaloAccount']>;
+        } => Boolean(t.externalThreadId) && Boolean(t.zaloAccountId) && Boolean(t.zaloAccount),
+      );
       if (validTargets.length === 0) {
         return reply.status(400).send({ error: 'Không có hội thoại đích hợp lệ để chuyển tiếp' });
       }

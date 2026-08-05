@@ -13,6 +13,9 @@ export type ActivityCategory =
   | 'status_care'     // Care status (Contact.statusId / Friend.statusId)
   | 'score'           // Lead score (Contact.leadScore / Friend.leadScore)
   | 'appointment'    // Lịch hẹn: create / update / complete / cancel / reschedule
+  | 'task'            // Công việc (Task V1 2026-07-07): create / update / complete / reopen / delete
+  | 'ticket'          // Ticket (KH complaint/request V1 2026-07-09): create / update / status_change / resolve / delete
+  | 'billing'         // Hoá đơn từ chat (goal 4, 2026-07-18): draft create / dispatch sandbox / dispatch fail
   | 'interaction'     // Tổng hợp interaction (first_inbound, silent_30d...) — KHÔNG log từng msg
   | 'system'          // contact_link_parent, merge, import, migration
   | 'automation'      // Bot actions (auto-tag, auto-score...)
@@ -70,6 +73,26 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   appointment_reschedule: 'appointment',
   appointment_no_show: 'appointment',
 
+  // task (Công việc V1 2026-07-07)
+  task_create: 'task',
+  task_update: 'task',
+  task_complete: 'task',
+  task_reopen: 'task',
+  task_delete: 'task',
+
+  // ticket (Ticket V1 2026-07-09)
+  ticket_create: 'ticket',
+  ticket_update: 'ticket',
+  ticket_status_change: 'ticket',
+  ticket_resolve: 'ticket',
+  ticket_reopen: 'ticket',
+  ticket_delete: 'ticket',
+
+  // billing (Hoá đơn từ chat goal 4, 2026-07-18)
+  billing_draft_create: 'billing',
+  billing_dispatch_sent: 'billing',
+  billing_dispatch_fail: 'billing',
+
   // interaction
   first_inbound: 'interaction',
   first_outbound: 'interaction',
@@ -106,6 +129,12 @@ export const ACTION_CATEGORY: Record<string, ActivityCategory> = {
   lead_pool_manual_return: 'customer_info', // sale chủ động trả pool — narrative event
   lead_pool_bonus_grant: 'system',
   lead_pool_zalo_lookup: 'system',
+
+  // Lưu Hội Thoại 2026-07-22 — chỉ Chủ tài khoản thao tác được. Ghi nhật ký MỌI lần
+  // tạo/đọc/xoá bản lưu: bản lưu chứa nguyên văn tin nhắn khách, phải truy vết được.
+  chat_archive_create: 'system',
+  chat_archive_view: 'system',
+  chat_archive_delete: 'system',
 };
 
 export function categoryOf(action: string): ActivityCategory | null {

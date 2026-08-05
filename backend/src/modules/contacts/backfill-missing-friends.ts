@@ -29,6 +29,8 @@ export async function backfillMissingFriends(): Promise<MissingFriendBackfillRes
   const result: MissingFriendBackfillResult = { conversationsScanned: conversations.length, friendsCreated: 0 };
 
   for (const conv of conversations) {
+    // Multi-channel Phase 2 (2026-07-21): backfill Friend là của Zalo — bỏ conv kênh khác (FB).
+    if (!conv.zaloAccountId) continue;
     const exists = await prisma.friend.findFirst({
       where: { zaloAccountId: conv.zaloAccountId, zaloUidInNick: conv.externalThreadId! },
       select: { id: true },

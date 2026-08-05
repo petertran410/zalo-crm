@@ -11,11 +11,15 @@
     <div ref="scrollContainer" class="conv-scroll">
       <div v-if="loading && conversations.length === 0" class="loading">Đang tải…</div>
 
-      <!-- Phase A perf fix v2 (2026-05-21) — Re-thêm TransitionGroup nhưng với
-           :key="activeTabKey" → tab switch tạo TransitionGroup INSTANCE MỚI,
-           Vue ko so sánh position cũ vs mới (vì khác instance), tab switch instant.
-           Trong cùng tab, key giữ nguyên → reorder (tin mới đến) animate mượt. -->
-      <TransitionGroup :key="activeTabKey || 'default'" name="conv-list" tag="div" class="conv-list-inner">
+      <!-- Perf 2026-07 — BỎ :key=activeTabKey (remount ~100 rows mỗi tab = lag).
+           Giữ 1 TransitionGroup; khi tab đổi → class no-move (tắt FLIP cross-tab).
+           Trong cùng tab: reorder (tin mới) vẫn animate .conv-list-move. -->
+      <TransitionGroup
+        name="conv-list"
+        tag="div"
+        class="conv-list-inner"
+        :class="{ 'conv-list--no-move': suppressMoveTransition }"
+      >
       <div
         v-for="conv in conversations"
         :key="conv.id"
@@ -36,7 +40,7 @@
             :name="displayName(conv)"
             :size="41"
             :is-group="conv.threadType === 'group'"
-            :platform="conv.threadType === 'user' ? 'zalo' : null"
+            :platform="platformOf(conv)"
             :gradient-seed="conv.id"
           />
 
@@ -185,7 +189,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch, onMounted, computed, nextTick } from 'vue';
+import { ref, reactive, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
 import type { Conversation, AiSentiment } from '@/composables/use-chat';
 import { api } from '@/api/index';
 // Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự thô).
@@ -235,6 +239,26 @@ const props = defineProps<{
   /** 2026-07-22 — khi true thì ẩn cl-search-row + cl-label-bar (user đã thu gọn bộ lọc). */
   filterCollapsed?: boolean;
 }>();
+
+// Perf 2026-07 — tắt .conv-list-move khi đổi tab (ChatView dispatch 'conv-tab-switch').
+// Tránh FLIP cross-tab khi không remount TransitionGroup. Re-enable sau 1 frame.
+const suppressMoveTransition = ref(false);
+let suppressMoveTimer: ReturnType<typeof setTimeout> | null = null;
+function onConvTabSwitch() {
+  suppressMoveTransition.value = true;
+  if (suppressMoveTimer) clearTimeout(suppressMoveTimer);
+  // 2 rAF + 80ms: đợi list swap xong rồi bật lại move-transition cho reorder trong tab.
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      suppressMoveTimer = setTimeout(() => {
+        suppressMoveTransition.value = false;
+        suppressMoveTimer = null;
+      }, 80);
+    });
+  });
+}
+// Cũng suppress khi prop activeTabKey đổi (phòng event miss).
+watch(() => props.activeTabKey, () => { onConvTabSwitch(); });
 
 const emit = defineEmits<{
   select: [id: string];
@@ -533,6 +557,12 @@ function displayName(conv: Conversation): string {
   if (isUsableName(friendship?.zaloDisplayName)) return friendship!.zaloDisplayName!;
   return 'Unknown';
 }
+// Multi-channel Phase 2 (2026-07-22): badge kênh trên avatar — FB dùng badge riêng để
+// sale phân biệt hội thoại Messenger với Zalo ngay ở cột danh sách. Nhóm không có badge.
+function platformOf(conv: Conversation): 'zalo' | 'facebook' | null {
+  if (conv.threadType !== 'user') return null;
+  return (conv as Conversation & { channel?: string }).channel === 'facebook' ? 'facebook' : 'zalo';
+}
 function avatarSrcOf(conv: Conversation): string | null {
   if (conv.threadType === 'group') {
     return (conv as Conversation & { groupAvatarUrl?: string }).groupAvatarUrl || null;
@@ -712,7 +742,12 @@ watch(() => props.selectedAccountIds, () => { void fetchAvailableTags(); }, { de
 onMounted(async () => {
   // Load CrmTag defs (color + managedBy) cho TagIcon render — share cache toàn app
   // loadTagTaxonomy: slug→{name,color,emoji} cho tag v2 (crmTagsPerNick/contact.tags lưu slug).
+  window.addEventListener('conv-tab-switch', onConvTabSwitch);
   await Promise.all([fetchCounts(), fetchAvailableTags(), loadTagDefs(), loadTagTaxonomy()]);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('conv-tab-switch', onConvTabSwitch);
+  if (suppressMoveTimer) clearTimeout(suppressMoveTimer);
 });
 
 /* ── Auto-scroll selected row vào viewport ──────────────────────────────────
@@ -1238,6 +1273,8 @@ function onPatternLeave() {
 .conv-list-move { transition: transform 0.15s ease; }
 .conv-list-leave-active { transition: none; }
 .conv-list-enter-active { transition: none; }
+/* Tab switch: tắt FLIP move (tránh ghost-slide cross-tab khi không remount). */
+.conv-list--no-move .conv-list-move { transition: none !important; }
 .loading {
   padding: 20px; text-align: center;
   color: var(--smax-grey-700); font-size: 12px; font-style: italic;

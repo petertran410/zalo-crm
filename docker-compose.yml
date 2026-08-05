@@ -28,8 +28,8 @@ services:
       # MEDIA_AV_ENABLED=1 trong .env SAU khi service clamav 'healthy' (tải DB virus xong ~vài phút).
       - MEDIA_AV_ENABLED=${MEDIA_AV_ENABLED:-0}
       - MEDIA_AV_FAIL_CLOSED=${MEDIA_AV_FAIL_CLOSED:-0}
-      - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
-      - CLAMAV_PORT=${CLAMAV_PORT:-3310}
+      # - CLAMAV_HOST=${CLAMAV_HOST:-clamav}
+      # - CLAMAV_PORT=${CLAMAV_PORT:-3310}
     depends_on:
       db:
         condition: service_healthy
@@ -118,7 +118,7 @@ services:
     container_name: zalo-crm-redis
     restart: unless-stopped
     environment:
-      - TZ=Asia/Ho_Chi_Minh   # log Redis giờ VN (Cách 2); Redis không lưu thời gian nghiệp vụ
+      - TZ=Asia/Ho_Chi_Minh # log Redis giờ VN (Cách 2); Redis không lưu thời gian nghiệp vụ
     # ── Luồng Mục Tiêu M1 (2026-06-01) ──
     # AOF every 1s (Issue #5 5A — crash recovery survive: BullMQ jobs delayed/waiting
     # persist even if container kill -9). Verified POC spike 5/5 PASS 2026-06-01.

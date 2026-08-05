@@ -231,6 +231,11 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
     if (!conv?.contactId) return;
     if (conv.threadType === 'group') return;
     if (!conv.externalThreadId) return;
+    // Multi-channel Phase 2 (2026-07-21): Friend aggregate là khái niệm Zalo (identity theo nick).
+    // Hội thoại FB (zaloAccountId=null) không có Friend → bỏ qua.
+    if (!conv.zaloAccountId) return;
+    // Bind const (narrow string) — narrowing của conv.zaloAccountId rớt trong closure tenantTransaction.
+    const zaloAccountId = conv.zaloAccountId;
 
     const { message } = args;
     const sentAt = message.sentAt;
@@ -255,7 +260,7 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
       const existing = await tx.friend.findUnique({
         where: {
           zaloAccountId_zaloUidInNick: {
-            zaloAccountId: conv.zaloAccountId,
+            zaloAccountId,
             zaloUidInNick: conv.externalThreadId!,
           },
         },
@@ -293,7 +298,7 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
             id: newFriendId,
             orgId: conv.orgId,
             contactId: conv.contactId!,
-            zaloAccountId: conv.zaloAccountId,
+            zaloAccountId,
             zaloUidInNick: conv.externalThreadId!,
             // Snapshot per-identity tên + avatar Zalo của KH (chỉ set khi inbound,
             // vì self message senderName là của chính sale chứ không phải KH).
@@ -324,7 +329,7 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
         emitQueue.push({
           friendId: newFriendId,
           contactId: conv.contactId!,
-          zaloAccountId: conv.zaloAccountId,
+          zaloAccountId,
           orgId: conv.orgId,
           patch: {
             relationshipKind: 'chatting_stranger',
@@ -404,7 +409,7 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
         emitQueue.push({
           friendId: existing.id,
           contactId: conv.contactId!,
-          zaloAccountId: conv.zaloAccountId,
+          zaloAccountId,
           orgId: conv.orgId,
           patch: patchForEmit,
         });
@@ -416,7 +421,7 @@ export async function applyFriendAggregate(args: AggregateMessageInput): Promise
     await ensureContactCollaborator({
       orgId: conv.orgId,
       contactId: conv.contactId,
-      zaloAccountId: conv.zaloAccountId,
+      zaloAccountId,
     });
 
     // Flush deferred socket emits AFTER transaction commit (avoid emitting on rollback)

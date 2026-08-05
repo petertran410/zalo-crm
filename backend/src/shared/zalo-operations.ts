@@ -145,6 +145,15 @@ function isMalformedJsonResponseError(err: any): boolean {
   );
 }
 
+// 2026-07-17 — getFriendOnlines là endpoint zca-js đã deprecated: Zalo có thể trả
+// HTML (SDK ném SyntaxError) hoặc HTTP 404 sạch. Chỉ dùng guard này cho operation đó;
+// 404 từ các endpoint khác vẫn phải được log + báo lỗi bình thường.
+function isUnavailableFriendOnlinesError(err: any): boolean {
+  if (isMalformedJsonResponseError(err)) return true;
+  const status = err?.status ?? err?.statusCode ?? err?.response?.status ?? err?.response?.statusCode;
+  return status === 404 || /\b404\b/.test(String(err?.message || err || ''));
+}
+
 // ── Core execution engine ───────────────────────────────────────────────────
 /**
  * Execute a zca-js operation with all safety layers.
@@ -625,13 +634,13 @@ async function getFriendOnlines(accountId: string) {
         accountId,
         category: 'friend_read',
         operation: 'getFriendOnlines',
-        suppressErrorLog: isMalformedJsonResponseError,
+        suppressErrorLog: isUnavailableFriendOnlinesError,
       },
       (api) => api.getFriendOnlines(),
     );
   } catch (err) {
-    if (isMalformedJsonResponseError(err)) {
-      logger.debug(`[zalo-ops:${accountId}] getFriendOnlines returned malformed SDK response; using empty presence list`);
+    if (isUnavailableFriendOnlinesError(err)) {
+      logger.debug(`[zalo-ops:${accountId}] getFriendOnlines unavailable (deprecated endpoint); using empty presence list`);
       return { onlines: [] };
     }
     throw err;
