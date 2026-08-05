@@ -160,7 +160,9 @@ onMounted(() => {
 .settings-layout {
   display: grid;
   grid-template-columns: 260px 1fr;
-  height: calc(100vh - 56px);
+  /* 8px dôi ra ngoài chiều cao nav là chủ ý sẵn có (56 = 48 + 8) — giữ nguyên phần
+     dôi, chỉ thay số nav cứng bằng biến (revamp nav 2026-08-05). */
+  height: calc(100vh - var(--smax-topnav-h) - 8px);
   background: #FAFAFC;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   font-size: 13.5px;

@@ -1,16 +1,20 @@
 <template>
-  <v-app class="smax-app">
-    <!-- ════════ TOP NAV — Hi-CRM teal-navy shell ════════ -->
-    <!-- Gradient teal-navy + logo + wordmark · 7 tab + Báo cáo + Cài đặt · MDI line icon -->
+  <v-app class="smax-app" :class="navMode === 'rail' ? 'nv-mode-rail' : 'nv-mode-bar'">
+    <!-- ════════ NAV — vỏ 2 chế độ (revamp 2026-08-05) ════════
+         >=1440px  → thanh ngang đầy đủ (tab nằm ngay trong header này)
+         < 1440px  → header thu thành dải tiện ích 44px, tab chuyển xuống rail dọc
+         Ngưỡng 1440 đo thực tế: thanh ngang cũ cần 1523px nên bị cắt mất avatar +
+         Đăng xuất ở mọi cỡ dưới ~1600px, mà body overflow-x:hidden nên KHÔNG cuộn
+         tới được. Bỏ wordmark thu lại 73px là vừa khít 1440. -->
     <header class="smax-topnav">
-      <!-- Brand — logo + tên lấy theo hồ sơ tổ chức (đồng bộ /login, /setup-password) -->
+      <!-- Brand — logo lấy theo hồ sơ tổ chức (đồng bộ /login, /setup-password).
+           Wordmark đã bỏ; tên tổ chức chuyển sang thuộc tính title. -->
       <RouterLink to="/" class="hs-brand" :title="`${brandName} CRM`">
         <span class="hs-bbox"><img :src="brandLogo" :alt="brandName" @error="onLogoError" /></span>
-        <span class="hs-bwm"><span class="hs-b1">{{ brandName }}</span><span class="hs-b2">CRM</span></span>
       </RouterLink>
 
-      <!-- Primary nav tabs -->
-      <nav class="nav-tabs">
+      <!-- Primary nav tabs — chỉ ở chế độ thanh ngang -->
+      <nav v-if="navMode === 'bar'" class="nav-tabs">
         <RouterLink
           v-for="tab in visiblePrimaryTabs"
           :key="tab.path"
@@ -28,61 +32,13 @@
 
 
         <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
-             RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
-             2026-06-09 (anh báo menu bar kẹt không click được, phải F5): đổi
-             open-on-hover → CLICK + v-model điều khiển. Hover race + click item bị
-             chặn quyền làm overlay (z-index 2000) kẹt mở, phủ lên nav nuốt click.
-             router.afterEach đóng hết menu. -->
-        <v-menu v-if="authStore.canAccess('engagement_score')" v-model="reportsMenu" :close-on-content-click="true">
-          <template #activator="{ props: act }">
-            <button class="nav-tab" :class="{ active: isReportsActive }" v-bind="act">
-              <v-icon icon="mdi-chart-box-outline" size="16" class="ic-svg" />Báo cáo<span class="caret">▾</span>
-            </button>
-          </template>
-          <!-- Module Báo cáo 7 màn (2026-06-17) — liệt kê trực tiếp cho dễ vào. -->
-          <v-list density="compact" min-width="236">
-            <v-list-subheader>Báo cáo</v-list-subheader>
-            <v-list-item to="/reports/tong-quan"  title="Tổng quan điều hành"   prepend-icon="mdi-view-dashboard-outline" />
-            <v-list-item to="/reports/nick"        title="Vận hành Nick Zalo"    prepend-icon="mdi-cellphone-link" />
-            <v-list-item to="/reports/sale"        title="Hiệu suất Sale & Team" prepend-icon="mdi-account-tie-outline" />
-            <!-- EE-only: Pipeline (Lead Pool) + Automation report là tính năng Extension.
-                 Ẩn ở Community (route /reports/automation do EE inject → CE không có). -->
-            <v-list-item v-if="isExtension" to="/reports/pipeline"    title="Pipeline & Lead Pool"  prepend-icon="mdi-filter-variant" />
-            <v-list-item v-if="isExtension" to="/reports/automation"  title="Automation & Chăm sóc" prepend-icon="mdi-cog-sync-outline" />
-            <v-list-item to="/reports/engagement"  title="Engagement KH"         prepend-icon="mdi-fire" />
-            <v-list-item to="/reports/audit"       title="Audit & Sức khỏe HT"   prepend-icon="mdi-shield-check-outline" />
-            <v-divider />
-            <v-list-item to="/analytics" title="Phân tích nâng cao" prepend-icon="mdi-chart-line" />
-          </v-list>
-        </v-menu>
-
-        <!-- Cài đặt dropdown -->
-        <v-menu v-model="settingsMenu" :close-on-content-click="true">
-          <template #activator="{ props: act }">
-            <button class="nav-tab" :class="{ active: isSettingsActive }" v-bind="act">
-              <v-icon icon="mdi-cog-outline" size="16" class="ic-svg" />Cài đặt<span class="caret">▾</span>
-            </button>
-          </template>
-          <!-- Dropdown = LỐI TẮT (2026-06-10 CEO-review): 7 mục hay dùng, route mới
-               đồng bộ sidebar (bỏ /settings/team/* legacy + Tag cũ). Lọc theo grants.
-               Đầy đủ menu ở "Xem tất cả cài đặt". -->
-          <v-list density="compact" min-width="248">
-            <v-list-subheader>Lối tắt hay dùng</v-list-subheader>
-            <v-list-item to="/settings/personal/profile" title="Hồ sơ của tôi" prepend-icon="mdi-account-outline" />
-            <v-list-item v-if="authStore.canAccess('user')" to="/settings/rbac/users" title="Nhân viên" prepend-icon="mdi-account-group-outline" />
-            <v-list-item v-if="authStore.canAccess('permission_group')" to="/settings/rbac/permission-groups" title="Phân quyền" prepend-icon="mdi-shield-account-outline" />
-            <v-divider />
-            <v-list-item v-if="authStore.canAccess('zalo_account')" to="/settings/channels/zalo" title="Tài khoản Zalo" prepend-icon="mdi-cellphone-link" />
-            <v-list-item v-if="authStore.canAccess('settings')" to="/settings/crm/tags-v2" title="Nhãn KH" prepend-icon="mdi-tag-multiple-outline" />
-            <v-list-item v-if="authStore.canAccess('settings')" to="/settings/org/system-notifications" title="Thông báo hệ thống" prepend-icon="mdi-bell-cog-outline" />
-            <!-- Open-core: extension top-nav shortcuts (empty in Community edition). -->
-            <template v-for="sc in eeTopNavShortcuts" :key="sc.to">
-              <v-list-item v-if="authStore.canAccess(sc.resource)" :to="sc.to" :title="sc.title" :prepend-icon="sc.icon" />
-            </template>
-            <v-divider />
-            <v-list-item to="/settings" title="Xem tất cả cài đặt" prepend-icon="mdi-cog-outline" />
-          </v-list>
-        </v-menu>
+             RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên). -->
+        <NavReportsMenu
+          v-if="authStore.canAccess('engagement_score')"
+          v-model="reportsMenu"
+          mode="bar"
+        />
+        <NavSettingsMenu v-model="settingsMenu" mode="bar" />
       </nav>
 
       <!-- Flexible spacer pushes everything after it to the right edge. -->
@@ -130,10 +86,45 @@
       <button class="ic-banner-dismiss" @click="dismissInternalContactBanner" title="Ẩn 24h">✕</button>
     </div>
 
-    <!-- ════════ MAIN ════════ -->
-    <v-main class="smax-main">
-      <slot />
-    </v-main>
+    <!-- ════════ THÂN: rail dọc (nếu có) + MAIN ════════ -->
+    <div class="smax-body">
+      <!-- Rail dọc — chỉ dưới 1440px. Cùng nguồn `visiblePrimaryTabs` với thanh
+           ngang, nên thêm/bớt tab chỉ sửa một chỗ. Nhãn rút gọn qua tab.short vì
+           ô rộng 62px không chứa nổi "Kênh Kết Nối" / "Cửa hàng POS". -->
+      <nav v-if="navMode === 'rail'" class="nav-rail" aria-label="Điều hướng chính">
+        <div class="rail-items">
+          <RouterLink
+            v-for="tab in visiblePrimaryTabs"
+            :key="tab.path"
+            :to="tab.path"
+            class="rail-item"
+            :class="{ 'rail-item--active': isActive(tab) }"
+            :title="tab.label"
+          >
+            <v-icon :icon="tab.icon" size="21" class="ic-svg" />
+            <span class="rail-label">{{ tab.short ?? tab.label }}</span>
+            <span
+              v-if="tab.path === '/appointments' && todayCount > 0"
+              class="nav-badge"
+              :title="`${todayCount} lịch hẹn còn mở hôm nay`"
+            >{{ todayCount }}</span>
+          </RouterLink>
+        </div>
+
+        <div class="rail-foot">
+          <NavReportsMenu
+            v-if="authStore.canAccess('engagement_score')"
+            v-model="reportsMenu"
+            mode="rail"
+          />
+          <NavSettingsMenu v-model="settingsMenu" mode="rail" />
+        </div>
+      </nav>
+
+      <v-main class="smax-main">
+        <slot />
+      </v-main>
+    </div>
 
     <!-- 2026-06-04: Anh chốt gỡ MiniOnboardingIndicator — badge 4/4 hiện đè
          mọi UI gây rối mắt sau khi sale hoàn tất. Sẽ code lại setup 4 bước. -->
@@ -156,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
 import { useTheme } from 'vuetify';
 import { useRoute, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
@@ -173,8 +164,9 @@ import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBui
 import { useOrderDraftStore } from '@/stores/use-order-drafts';
 import { fetchPublicBranding } from '@/api/public-branding';
 import { usePosNotification } from '@/composables/use-pos-notification';
-// Open-core: extension top-nav shortcuts (empty in Community edition via @ee stub).
-import { eeTopNavShortcuts } from '@ee/nav';
+import NavReportsMenu from '@/components/nav/NavReportsMenu.vue';
+import NavSettingsMenu from '@/components/nav/NavSettingsMenu.vue';
+import '@/assets/nav-shell.css';
 
 // Multi-draft order queue store
 const orderDraftStore = useOrderDraftStore();
@@ -279,6 +271,11 @@ onMounted(() => {
   theme.change('hsLight');
   void checkInternalContactSetup();
 
+  syncNavMode();
+  navObserver = new ResizeObserver(syncNavMode);
+  navObserver.observe(document.documentElement);
+  window.addEventListener('resize', syncNavMode);
+
   // Khôi phục các đơn nháp từ localStorage
   orderDraftStore.hydrate();
 
@@ -294,10 +291,35 @@ onMounted(() => {
 // Badge "lịch hẹn hôm nay" trên tab /appointments (2026-08-04).
 const { todayCount } = useAppointmentBadge();
 
+// ── Chế độ nav (revamp 2026-08-05) ──────────────────────────────────────────
+// >=1440px thanh ngang, dưới ngưỡng chuyển rail dọc. Dùng ResizeObserver trên
+// <html> chứ KHÔNG dùng window 'resize': ở chế độ nửa màn / snap và khi devtools
+// đổi kích thước khung nhìn, sự kiện resize có lúc không bắn, còn hộp của phần tử
+// gốc thì luôn đổi nên observer bắt được mọi trường hợp.
+const NAV_RAIL_MAX = 1440;
+const navMode = ref<'bar' | 'rail'>(
+  typeof window !== 'undefined' && window.innerWidth < NAV_RAIL_MAX ? 'rail' : 'bar',
+);
+let navObserver: ResizeObserver | null = null;
+function syncNavMode() {
+  navMode.value = window.innerWidth < NAV_RAIL_MAX ? 'rail' : 'bar';
+}
+// Gắn HAI nguồn kích hoạt cho cùng một hàm (idempotent nên gọi trùng vô hại):
+// ResizeObserver là nguồn chính (bắt cả zoom, cắm/rút màn, dock devtools — những
+// ca 'resize' hay bỏ sót), còn window 'resize' là lưới an toàn. Chấp nhận thừa vì
+// nếu cả hai cùng câm thì nav kẹt một chế độ cho tới lần tải lại — hỏng nặng hơn
+// nhiều so với chi phí 3 dòng. (Ghi chú: trong trình duyệt điều khiển qua CDP,
+// việc ép đổi kích thước khung nhìn KHÔNG bắn cả resize lẫn ResizeObserver lẫn
+// matchMedia change — đo 2026-08-05 — nên đường chuyển chế độ không tự kiểm được
+// bằng công cụ, chỉ kiểm được bằng cách tải lại ở từng bề rộng.)
+
+
 interface NavTab {
   path: string;
   label: string;
   icon: string;
+  /** Nhãn rút gọn cho rail dọc — ô chỉ rộng 62px. Không có thì dùng label. */
+  short?: string;
   matchPrefix?: string;
   /** Tab gom nhiều route (vd Lịch & Việc = /appointments + /tasks) — sáng ở bất kỳ cái nào. */
   matchAny?: string[];
@@ -311,7 +333,7 @@ interface NavTab {
 // Icons MDI line stroke-2 (mdi-*-outline) thay emoji để nhất quán + đổi màu theo theme.
 const primaryTabs: NavTab[] = [
   { path: '/',                       label: 'Dashboard',   icon: 'mdi-view-dashboard-outline', matchPrefix: '/$' },
-  { path: '/channels',               label: 'Kênh Kết Nối', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
+  { path: '/channels',               label: 'Kênh Kết Nối', short: 'Kênh', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
   { path: '/chat',                   label: 'Tin nhắn',    icon: 'mdi-message-text-outline', resource: 'conversation' },
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
   // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
@@ -321,7 +343,7 @@ const primaryTabs: NavTab[] = [
   // (ScheduleTabs). matchPrefix nhận cả /tasks để tab vẫn sáng khi đang ở đó.
   { path: '/appointments',           label: 'Công việc',   icon: 'mdi-calendar-check-outline', matchAny: ['/appointments', '/tasks'] },
   { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
-  { path: '/pos',                    label: 'Cửa hàng POS', icon: 'mdi-storefront-outline' },
+  { path: '/pos',                    label: 'Cửa hàng POS', short: 'POS', icon: 'mdi-storefront-outline' },
 ];
 
 // RBAC 2026-06-09 — tab Marketing là module gồm nhiều chức năng. Hiện nếu user có
@@ -376,13 +398,8 @@ function isActive(tab: NavTab): boolean {
   }
   return route.path === tab.path || route.path.startsWith(tab.path + '/');
 }
-const isSettingsActive = computed(() =>
-  route.path === '/settings' || route.path.startsWith('/settings/'),
-);
-// Báo cáo dropdown active khi ở /analytics hoặc /reports
-const isReportsActive = computed(
-  () => route.path.startsWith('/analytics') || route.path.startsWith('/reports'),
-);
+// isSettingsActive / isReportsActive đã chuyển vào NavSettingsMenu / NavReportsMenu
+// (2026-08-05) — mỗi dropdown tự tính trạng thái sáng của nó.
 
 // Workspace selector đã ẩn ở Variant A 2026-05-28 (single-tenant chưa cần switch).
 // Sau này multi-tenant → revert back template + uncomment block dưới.
@@ -394,6 +411,12 @@ function logout() {
   authStore.logout();
   router.push('/login');
 }
+
+onBeforeUnmount(() => {
+  navObserver?.disconnect();
+  navObserver = null;
+  window.removeEventListener('resize', syncNavMode);
+});
 </script>
 
 <style scoped>
@@ -424,183 +447,22 @@ function logout() {
 }
 .ic-banner-dismiss:hover { color: #78350F; }
 
-/* Hi-CRM shell — teal-navy gradient nav */
-.smax-topnav {
-  background: linear-gradient(180deg, var(--nav-grad-a, #0e445a) 0%, var(--nav-grad-b, #06222f) 100%);
-  color: rgba(255, 255, 255, 0.85);
-  height: 48px;
-  display: flex; align-items: center;
-  padding: 0 14px; gap: 4px;
-  flex-shrink: 0;
-  position: sticky; top: 0; z-index: 100;
-  box-shadow: 0 1px 0 rgba(255,255,255,.06), 0 2px 8px rgba(0,0,0,.18);
-}
+/* ⚠️ Style vỏ nav (.smax-topnav / .nav-tabs / .nav-tab / .hs-brand / .nav-rail /
+   .icon-btn / .user-avatar / .topnav-search) đã chuyển sang assets/nav-shell.css
+   dạng TOÀN CỤC (revamp nav 2026-08-05). Lý do: hai dropdown Báo cáo / Cài đặt giờ
+   nằm trong component con, mà CSS scoped ở đây không với tới activator bên trong
+   con. Sửa giao diện nav thì sửa ở nav-shell.css, đừng thêm lại vào đây.
 
-/* Brand lockup — logo + wordmark "<brand> / CRM" */
-.hs-brand {
-  display: flex; align-items: center; gap: 10px;
-  margin-right: 14px; flex: none; text-decoration: none;
-}
-.hs-bbox {
-  width: 34px; height: 34px; border-radius: 9px;
-  display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #1786be 0%, #0b5880 100%);
-  box-shadow: inset 0 1px 1px rgba(255,255,255,.18), 0 1px 2px rgba(0,0,0,.25);
-  flex: none;
-}
-.hs-bbox img { width: 24px; height: auto; display: block; filter: drop-shadow(0 1px 1px rgba(0,0,0,.3)); }
-.hs-bwm { display: flex; flex-direction: column; line-height: 1.08; white-space: nowrap; }
-.hs-b1 { font-size: 13.5px; font-weight: 800; color: #fff; letter-spacing: .01em; }
-.hs-b2 { font-size: 9.5px; font-weight: 700; letter-spacing: .26em; color: var(--nav-accent, #5bb8e5); text-transform: uppercase; }
-
-.nav-tabs {
-  display: flex; align-items: center; gap: 2px;
-  flex-wrap: nowrap;
-  flex-shrink: 0;
-}
-.nav-tab {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 0 12px; border-radius: var(--r-sm, 8px);
-  cursor: pointer;
-  color: var(--shell-ink, #cfe2ec);
-  font-size: 13px; font-weight: 600;
-  background: transparent; border: none;
-  white-space: nowrap;
-  text-decoration: none;
-  height: 36px;
-  line-height: 1.2;
-  position: relative;
-}
-.nav-tab .ic-svg { color: var(--shell-ink-2, #7fa6b8); transition: color .14s; }
-.nav-tab .caret { font-size: 9px; opacity: 0.55; margin-left: -2px; }
-/* Badge "lịch hẹn hôm nay" — chỉ hiện khi > 0 */
-.nav-tab .nav-badge {
-  display: inline-grid;
-  place-items: center;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  margin-left: 5px;
-  border-radius: 8px;
-  background: #dc3a5b;
-  color: #fff;
-  font-size: 9.5px;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-.nav-tab:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.nav-tab:hover .ic-svg { color: var(--shell-ink, #cfe2ec); }
-.nav-tab.active {
-  background: rgba(91, 184, 229, 0.16);
-  color: #fff;
-  font-weight: 700;
-  box-shadow: inset 0 -2px 0 var(--nav-accent, #5bb8e5);
-}
-.nav-tab.active .ic-svg { color: var(--nav-accent, #5bb8e5); }
-
-/* HD compact — chỉ kick in khi viewport < 1280 (rất hiếm với HD-first target) */
-@media (max-width: 1280px) {
-  .nav-tab { padding: 7px 9px; font-size: 12px; gap: 5px; }
-}
-@media (max-width: 1100px) {
-  .nav-tab { padding: 6px 7px; gap: 4px; }
-}
-
-.topnav-spacer { flex: 1; min-width: 0; }
-
-.contact-marquee {
-  flex: 0 0 320px;
-  margin-right: 12px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  overflow: hidden;
-  background: linear-gradient(90deg, rgba(0,242,255,0.12), rgba(0,119,182,0.12));
-  border: 1px solid rgba(0,242,255,0.30);
-  border-radius: 6px;
-  text-decoration: none;
-  color: #00F2FF;
-  font-size: 12.5px;
-  font-weight: 500;
-  cursor: pointer;
-  position: relative;
-}
-.contact-marquee:hover {
-  background: linear-gradient(90deg, rgba(0,242,255,0.20), rgba(0,119,182,0.20));
-  border-color: rgba(0,242,255,0.50);
-}
-.marquee-track {
-  display: inline-block;
-  white-space: nowrap;
-  animation: marquee-scroll 32s linear infinite;
-  will-change: transform;
-}
-.contact-marquee:hover .marquee-track {
-  animation-play-state: paused;
-}
-@keyframes marquee-scroll {
-  0%   { transform: translateX(0); }
-  100% { transform: translateX(-50%); }
-}
-@media (max-width: 1280px) {
-  .contact-marquee { display: none; }
-}
-
-.topnav-search {
-  max-width: 240px;
-  flex-shrink: 1;
-}
-@media (max-width: 1500px) {
-  .topnav-search { max-width: 200px; }
-}
-@media (max-width: 1280px) {
-  .topnav-search { max-width: 160px; }
-}
-@media (max-width: 1100px) {
-  .topnav-search { display: none; }
-}
-.topnav-search :deep(.v-field) {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: white;
-  border-radius: 7px !important;
-}
-.topnav-search :deep(input) { color: white !important; }
-.topnav-search :deep(input::placeholder) { color: rgba(255, 255, 255, 0.5) !important; }
-
-.icon-btn,
-:deep(.icon-btn-wrap) > * {
-  width: 32px; height: 32px;
-  border-radius: 7px;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  color: rgba(255, 255, 255, 0.85);
-  position: relative;
-  font-size: 16px;
-  text-decoration: none;
-  background: transparent; border: none;
-  margin-left: 2px;
-}
-.icon-btn:hover,
-:deep(.icon-btn-wrap) > *:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: white;
-}
-
-.user-avatar {
-  width: 32px; height: 32px;
-  border-radius: 50%;
-  /* Module Cá nhân 2026-06-13 — bọc <Avatar/> (ảnh thật hoặc chữ cái gradient).
-     Bỏ background vàng cũ, để Avatar tự render; button chỉ là khung bấm mở menu. */
-  background: none; padding: 0;
-  border: none; cursor: pointer;
-  margin-left: 6px;
-  display: flex; align-items: center; justify-content: center;
-}
-.user-avatar :deep(.smax-av) { box-shadow: 0 0 0 2px rgba(255,255,255,.25); }
+   Đã xoá luôn .contact-marquee + .marquee-track: CSS chết, template không còn phần
+   tử nào mang class đó (kiểm 2026-08-05). */
 
 .smax-main {
   background: var(--smax-grey-100);
+  /* Ở chế độ rail, main là ô co giãn NẰM CẠNH rail trong .smax-body.
+     min-width:0 để nội dung rộng (bảng, lưới tuần) co lại được thay vì đẩy rail
+     ra ngoài màn. */
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .smax-main :deep(.v-main__wrap) { min-height: calc(100vh - var(--smax-topnav-h)); }
 

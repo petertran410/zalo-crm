@@ -253,11 +253,22 @@
       @open-contact="onOpenContact"
     />
 
+    <!-- Tạo nhanh tại ô giờ — 3 trường, "Thêm chi tiết" mới mở editor đầy đủ -->
+    <AppointmentQuickCreate
+      v-model="quickOpen"
+      :anchor="quickAnchor"
+      :slot="quickSlot"
+      :current-user-id="currentUserId"
+      @created="onEditorSaved"
+      @escalate="onEscalate"
+    />
+
     <AppointmentEditor
       v-model="editorOpen"
       :appointment="editAppointment"
       :default-date="createDate"
-      :prefill-contact="null"
+      :prefill-contact="editorPrefillContact"
+      :ai-prefill="editorPrefill"
       :users="users"
       :current-user-id="currentUserId"
       @created="onEditorSaved"
@@ -301,7 +312,9 @@ import AppointmentsWeekView from '@/components/appointments/AppointmentsWeekView
 import AppointmentsAgendaView from '@/components/appointments/AppointmentsAgendaView.vue';
 import AppointmentDetailPopover from '@/components/appointments/AppointmentDetailPopover.vue';
 import AppointmentEditor from '@/components/appointments/AppointmentEditor.vue';
+import AppointmentQuickCreate from '@/components/appointments/AppointmentQuickCreate.vue';
 import ScheduleTabs from '@/components/schedule/ScheduleTabs.vue';
+import type { ContactLite } from '@/composables/use-contact-search';
 
 const router = useRouter();
 const authStore = useAuthStore();
@@ -602,18 +615,60 @@ function onOpenContact(a: Appointment) {
 const editorOpen = ref(false);
 const editAppointment = ref<Appointment | null>(null);
 const createDate = ref<Date | null>(null);
+const editorPrefillContact = ref<ContactLite | null>(null);
+/** Mang chữ đã gõ ở form tạo nhanh sang editor đầy đủ (dùng kênh aiPrefill sẵn có). */
+const editorPrefill = ref<{ title?: string | null; date?: string | null; time?: string | null } | null>(null);
 
+/* ── Tạo nhanh ─────────────────────────────────────────────────────── */
+const quickOpen = ref(false);
+const quickAnchor = ref<DOMRect | null>(null);
+const quickSlot = ref<Date | null>(null);
+
+/** Bấm ô trống trong lưới → popover 3 trường ngay tại chỗ. */
+function onCreateSlot(p: { date: Date; rect?: DOMRect }) {
+  quickSlot.value = p.date;
+  quickAnchor.value = p.rect ?? null;
+  quickOpen.value = true;
+}
+/** Nút "Tạo lịch hẹn" ở header — không có ô neo, popover tự canh giữa. */
 function openCreate(date: Date | null) {
+  quickSlot.value = date ?? nextSlot();
+  quickAnchor.value = null;
+  quickOpen.value = true;
+}
+/** Mốc 30' kế tiếp, để nút tạo ở header luôn có giờ hợp lý sẵn. */
+function nextSlot(): Date {
+  const d = new Date();
+  d.setSeconds(0, 0);
+  d.setMinutes(d.getMinutes() > 30 ? 60 : 30);
+  return d;
+}
+
+function openFullEditor(date: Date | null, contact: ContactLite | null, prefill: typeof editorPrefill.value) {
   editAppointment.value = null;
   createDate.value = date;
+  editorPrefillContact.value = contact;
+  editorPrefill.value = prefill;
   editorOpen.value = true;
 }
-function onCreateSlot(p: { date: Date }) { openCreate(p.date); }
+
+/** "Thêm chi tiết" — chuyển sang editor đầy đủ, giữ nguyên thứ đã gõ. */
+function onEscalate(p: { slot: Date | null; contact: ContactLite | null; title: string; durationMin: number; time: string }) {
+  const d = p.slot ? getOrgParts(p.slot) : null;
+  openFullEditor(p.slot, p.contact, {
+    title: p.title || null,
+    date: d ? `${d.year}-${String(d.month).padStart(2, '0')}-${String(d.day).padStart(2, '0')}` : null,
+    time: p.time || null,
+  });
+}
+
 function onReschedule(a: Appointment) {
   if (!canMutate(a)) return;
   closeDetail();
   editAppointment.value = a;
   createDate.value = null;
+  editorPrefillContact.value = null;
+  editorPrefill.value = null;
   editorOpen.value = true;
 }
 async function onEditorSaved() { await reload(); }
@@ -660,7 +715,7 @@ void orgDayKey;
 .apt-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - var(--smax-topnav-h, 52px));
+  height: calc(100vh - var(--smax-topnav-h));
   width: 100%;
   background: var(--rl-canvas);
   overflow: hidden;

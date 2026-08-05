@@ -48,8 +48,10 @@
   --shell:        #0c3b4f;
   --shell-2:      #114a61;
   --shell-line:   rgba(255,255,255,.10);
-  --shell-ink:    #cfe2ec;
-  --shell-ink-2:  #7fa6b8;
+  /* Chữ/icon trên nền vỏ nav tối — đổi theo bảng màu slate+indigo 2026-08-05
+     (trước: #cfe2ec / #7fa6b8 hợp tông teal). */
+  --shell-ink:    #E8E8F0;
+  --shell-ink-2:  #8B8B9E;
 
   /* Semantic */
   --success:      #12b76a;   --success-soft: #e7f7ef;
@@ -87,10 +89,21 @@
   --font: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --mono: "Roboto Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  /* Hi-CRM teal-navy nav gradient */
-  --nav-grad-a: #0e445a;
-  --nav-grad-b: #06222f;
-  --nav-accent: #5bb8e5;
+  /* ── Bảng màu vỏ nav — slate tối + tím indigo (revamp nav 2026-08-05) ──────
+     CHỈ đổi màu phần VỎ ĐIỀU HƯỚNG. Nội dung trang vẫn theme sáng như cũ, và hai
+     hệ token riêng của trang (--at-* ở airtable.css, --rl-* ở appointments-rail.css)
+     KHÔNG bị đụng tới.
+     Trước: teal-navy #0e445a → #06222f, accent xanh #5bb8e5. */
+  --nav-bg:         #1B1B26;
+  --nav-bg-2:       #232331;   /* nền hover của mục trên rail */
+  --nav-accent:     #635BFF;
+  --nav-accent-dim: #4F46E5;
+  --nav-badge:      #E5484D;
+  --nav-line:       rgba(255, 255, 255, .07);
+  /* Giữ 2 biến gradient cũ cho khối .nav legacy phía dưới file này; trỏ về màu
+     phẳng mới để không còn vệt teal lẫn vào. */
+  --nav-grad-a: #1B1B26;
+  --nav-grad-b: #1B1B26;
 
   /* Layout */
   --nav-h: 48px;
@@ -276,11 +289,14 @@ input, select, textarea { font-family: inherit; }
 /* ===== App shell ===== */
   html, body { height: 100%; }
   #app { display: flex; flex-direction: column; height: 100vh; }
-  /* min-width:1100 chỉ cho desktop/tablet (≥768px). Dưới 768px (điện thoại) BỎ ép
-     1100px — nếu không, trang /login (AuthLayout) + bản mobile bị căng theo 1100px
-     rồi card căn-giữa văng sang phải, mất hút ngoài màn hình thật (F12 không lộ).
-     768 = MOBILE_BREAKPOINT của use-mobile.ts. (fix lệch login mobile 2026-06-23) */
-  @media (min-width: 768px) { #app { min-width: 1100px; } }
+  /* GỠ min-width:1100px (revamp nav 2026-08-05).
+     Trước đây ép sàn 1100px cho ≥768px vì nav ngang không co lại được. Hệ quả: dưới
+     1100px toàn app bị cắt cứng (body overflow-x:hidden) — nút Zalo, chuông, avatar,
+     Đăng xuất nằm ngoài màn và KHÔNG cuộn tới được. Ở 960px đo được 387px bị cắt.
+     Giờ nav <1440px chuyển sang rail dọc nên không cần sàn này nữa; bỏ đi để nội
+     dung reflow đúng theo bề rộng thật.
+     Ràng buộc cũ vẫn giữ nguyên hiệu lực: dưới 768px trước nay VỐN đã không có
+     min-width (fix lệch /login mobile 2026-06-23), nên việc gỡ không đụng tới ca đó. */
 
   /* Top nav */
   .nav {

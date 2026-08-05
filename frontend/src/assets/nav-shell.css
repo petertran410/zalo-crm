@@ -1,0 +1,254 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   nav-shell.css — vỏ điều hướng của DefaultLayout (revamp nav 2026-08-05)
+   ────────────────────────────────────────────────────────────────────────────
+   HAI CHẾ ĐỘ, một nguồn dữ liệu tab duy nhất (`visiblePrimaryTabs`):
+     .nv-mode-bar   (>= 1440px) — thanh ngang 48px, giống bố cục cũ
+     .nv-mode-rail  (<  1440px) — dải tiện ích 44px + rail dọc 78px cạnh nội dung
+
+   ⚠️ ĐỂ Ở FILE TOÀN CỤC, KHÔNG PHẢI <style scoped>, là CÓ CHỦ Ý.
+   Hai menu Báo cáo / Cài đặt nằm trong component con (NavReportsMenu.vue,
+   NavSettingsMenu.vue) vì activator của v-menu phải dựng trong chính component
+   đó. CSS scoped của DefaultLayout không với tới nút bên trong con, nên toàn bộ
+   style nav phải là global. Cùng cách làm với sales-theme.css của SalesLayout.
+
+   ⚠️⚠️ HỆ QUẢ CỦA VIỆC BỎ SCOPED — MỌI SELECTOR PHẢI NEO VÀO VÙNG CHỨA.
+   Trước đây `.icon-btn` / `.user-avatar` / `.nav-tab` an toàn vì scoped chỉ ăn
+   trong DefaultLayout. Khi chuyển sang global thì KHÔNG còn an toàn: `.icon-btn`
+   đang được ListDetailView, AccountsTable, CrmTagManagement, MessageThread dùng,
+   `.user-avatar` được reaction-detail-popup dùng — đều nằm trong .smax-app nên sẽ
+   dính style nav nếu viết selector trần.
+   ⇒ QUY TẮC: mọi rule ở file này BẮT BUỘC bắt đầu bằng `.smax-topnav` hoặc
+   `.nav-rail` (hoặc `.smax-app` cho biến/bố cục). Đừng bao giờ thêm selector trần.
+
+   ⚠️ CHỈ DefaultLayout dùng file này. SalesLayout có vỏ riêng (.sl-app, glass
+   trắng, xanh Zalo, zoom .85) — đừng trộn hai hệ.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Chiều cao chrome NGANG theo từng chế độ ───────────────────────────────
+   Rail nằm CẠNH nội dung nên không tính vào biến này; ở chế độ rail phần nằm
+   trên nội dung chỉ còn dải tiện ích 44px. Mọi màn đọc biến này để tính
+   `height: calc(100vh - var(--smax-topnav-h))` — xem tokens.css. */
+.smax-app.nv-mode-bar  { --smax-topnav-h: 48px; }
+.smax-app.nv-mode-rail { --smax-topnav-h: 44px; }
+
+/* ════════ THANH NGANG / DẢI TIỆN ÍCH ════════ */
+.smax-app .smax-topnav {
+  background: var(--nav-bg, #1B1B26);
+  color: var(--shell-ink, #E8E8F0);
+  height: var(--smax-topnav-h);
+  display: flex;
+  align-items: center;
+  /* 10px chứ không phải 12px: ở đúng 1440px thanh ngang đo được dư 2px làm avatar
+     tràn ra 1441px. 4px lấy lại từ đây là đủ khít, còn ô tìm kiếm (min-width:0
+     bên dưới) lo phần co giãn ở các cỡ lỡ cỡ. */
+  padding: 0 10px;
+  gap: 4px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: inset 0 -1px 0 var(--nav-line, rgba(255, 255, 255, .07)),
+              0 2px 8px rgba(0, 0, 0, .16);
+}
+
+/* ── Brand ────────────────────────────────────────────────────────────────
+   Chỉ còn ô logo, BỎ wordmark "<brand> / CRM". 73px tiết kiệm được chính là
+   phần giúp thanh ngang vừa 1440px — trước revamp thanh này cần 1523px nên bị
+   cắt mất avatar + nút Đăng xuất ở mọi cỡ dưới ~1600px. */
+.smax-topnav .hs-brand {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-right: 10px;
+  text-decoration: none;
+}
+.smax-topnav .hs-bbox {
+  width: 30px; height: 30px;
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, var(--nav-accent, #635BFF) 0%, var(--nav-accent-dim, #4F46E5) 100%);
+  box-shadow: 0 2px 8px rgba(99, 91, 255, .40);
+  flex: none;
+}
+.smax-topnav .hs-bbox img { width: 20px; height: auto; display: block; }
+.nv-mode-rail .smax-topnav .hs-bbox { width: 26px; height: 26px; border-radius: 7px; }
+.nv-mode-rail .smax-topnav .hs-bbox img { width: 17px; }
+
+/* ── Tab ngang ────────────────────────────────────────────────────────────── */
+.smax-topnav .nav-tabs {
+  display: flex; align-items: center; gap: 2px;
+  flex-wrap: nowrap; flex-shrink: 0;
+}
+.smax-topnav .nav-tab {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 34px; padding: 0 11px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--shell-ink-2, #8B8B9E);
+  font-size: 12.5px; font-weight: 600;
+  background: transparent; border: none;
+  white-space: nowrap; text-decoration: none;
+  line-height: 1.2; position: relative;
+  font-family: inherit;
+}
+.smax-topnav .nav-tab .ic-svg { color: inherit; transition: color .14s; }
+.smax-topnav .nav-tab .caret { font-size: 9px; opacity: .5; margin-left: -2px; }
+.smax-topnav .nav-tab:hover { background: rgba(255, 255, 255, .06); color: var(--shell-ink, #E8E8F0); }
+/* Trạng thái active = viên thuốc đặc màu accent (trước là gạch chân 2px — khó
+   thấy ở liếc mắt, nhất là khi nhiều tab). */
+.smax-topnav .nav-tab.active {
+  background: var(--nav-accent, #635BFF);
+  color: #fff;
+  font-weight: 700;
+  box-shadow: 0 2px 10px rgba(99, 91, 255, .42);
+}
+.smax-topnav .nav-tab.active .ic-svg { color: #fff; }
+
+/* ── Badge "lịch hẹn hôm nay" — chỉ hiện khi > 0 ─────────────────────────── */
+.smax-topnav .nav-badge,
+.nav-rail .nav-badge {
+  display: inline-grid; place-items: center;
+  min-width: 16px; height: 16px;
+  padding: 0 4px; margin-left: 3px;
+  border-radius: 8px;
+  background: var(--nav-badge, #E5484D);
+  color: #fff;
+  font-size: 9.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.smax-topnav .nav-tab.active .nav-badge { background: rgba(255, 255, 255, .28); }
+
+.smax-topnav .topnav-spacer { flex: 1; min-width: 0; }
+
+/* ── Ô tìm kiếm ───────────────────────────────────────────────────────────── */
+/* min-width:0 là bắt buộc — không có nó, ô input giữ chiều rộng nội tại và
+   flex-shrink không có tác dụng, nên thanh nav tràn thay vì co lại. */
+.smax-topnav .topnav-search { max-width: 200px; flex-shrink: 1; min-width: 0; }
+.nv-mode-rail .smax-topnav .topnav-search { max-width: 176px; }
+@media (max-width: 900px) { .smax-topnav .topnav-search { display: none; } }
+.smax-topnav .topnav-search .v-field {
+  background: rgba(255, 255, 255, .07) !important;
+  color: #fff;
+  border-radius: 7px !important;
+}
+.smax-topnav .topnav-search input { color: #fff !important; }
+.smax-topnav .topnav-search input::placeholder { color: var(--shell-ink-2, #8B8B9E) !important; }
+
+/* ── Nút biểu tượng bên phải ──────────────────────────────────────────────
+   ⚠️ NEO VÀO .smax-topnav. `.icon-btn` là tên rất chung, đang dùng ở
+   ListDetailView / AccountsTable / CrmTagManagement / MessageThread; `.user-avatar`
+   dùng ở reaction-detail-popup. Viết trần là hỏng cả 5 chỗ đó. */
+.smax-topnav .icon-btn,
+.smax-topnav .icon-btn-wrap > * {
+  width: 32px; height: 32px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--shell-ink-2, #8B8B9E);
+  position: relative;
+  font-size: 16px;
+  text-decoration: none;
+  background: transparent; border: none;
+  margin-left: 2px;
+  flex: none;
+}
+.smax-topnav .icon-btn:hover,
+.smax-topnav .icon-btn-wrap > *:hover {
+  background: rgba(255, 255, 255, .07);
+  color: var(--shell-ink, #E8E8F0);
+}
+
+.smax-topnav .user-avatar {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: none; padding: 0;
+  border: none; cursor: pointer;
+  margin-left: 6px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.smax-topnav .user-avatar .smax-av { box-shadow: 0 0 0 2px rgba(255, 255, 255, .18); }
+
+/* ════════ THÂN: RAIL + NỘI DUNG ════════ */
+.smax-app .smax-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ── Rail dọc ─────────────────────────────────────────────────────────────
+   78px cố định, KHÔNG mở rộng khi hover. Nhãn hiện thường trực dưới icon nên
+   không cần trạng thái expanded + backdrop như SalesLayout — bớt hẳn một lớp
+   tương tác và không có gì che nội dung. */
+.smax-app .nav-rail {
+  width: 78px;
+  flex: none;
+  background: var(--nav-bg, #1B1B26);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: inset -1px 0 0 var(--nav-line, rgba(255, 255, 255, .07));
+  z-index: 90;
+  /* Menu 10 mục ≈ 560px. Màn cao 768px vẫn đủ, nhưng không dư — cho phép cuộn để
+     khi menu dài thêm thì không bị cụt mục cuối. Ẩn thanh cuộn cho gọn. */
+  scrollbar-width: none;
+}
+.smax-app .nav-rail::-webkit-scrollbar { width: 0; }
+
+.nav-rail .rail-items {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  width: 100%; flex: 1 0 auto;
+}
+.nav-rail .rail-foot {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  width: 100%; flex: none;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--nav-line, rgba(255, 255, 255, .07));
+}
+
+.nav-rail .rail-item {
+  width: 62px;
+  padding: 7px 2px 6px;
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  color: var(--shell-ink-2, #8B8B9E);
+  background: transparent; border: none;
+  cursor: pointer; text-decoration: none;
+  position: relative; flex: none;
+  font-family: inherit;
+}
+.nav-rail .rail-item .ic-svg { color: inherit; }
+.nav-rail .rail-label {
+  font-size: 9.5px; font-weight: 600;
+  line-height: 1.15; text-align: center;
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-rail .rail-item:hover { background: var(--nav-bg-2, #232331); color: var(--shell-ink, #E8E8F0); }
+.nav-rail .rail-item--active {
+  background: var(--nav-accent, #635BFF);
+  color: #fff;
+  box-shadow: 0 3px 12px rgba(99, 91, 255, .42);
+}
+.nav-rail .rail-item--active .ic-svg { color: #fff; }
+.nav-rail .rail-item .caret { display: none; }
+
+/* Badge trên rail — neo góc icon, viền trùng nền để tách khỏi nhãn phía dưới. */
+.nav-rail .rail-item .nav-badge {
+  position: absolute;
+  top: 3px; right: 9px;
+  margin-left: 0;
+  border: 2px solid var(--nav-bg, #1B1B26);
+}
+.nav-rail .rail-item--active .nav-badge {
+  background: #fff;
+  color: var(--nav-accent, #635BFF);
+  border-color: var(--nav-accent, #635BFF);
+}

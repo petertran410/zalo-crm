@@ -321,7 +321,10 @@ function translateStatus(status: string) {
 
 .pct {
   font-weight: 700;
-  color: var(--nav-accent, #5bb8e5);
+  /* Fallback đồng bộ bảng màu nav mới (revamp 2026-08-05). Widget này mount ở cả
+     DefaultLayout lẫn SalesLayout; SalesLayout tự ghim --nav-accent màu cũ nên
+     vỏ Sales không đổi. */
+  color: var(--nav-accent, #635BFF);
 }
 
 .sync-center-card {

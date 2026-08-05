@@ -1908,7 +1908,7 @@ onBeforeUnmount(() => {
 }
 
 .people {
-  height: calc(100vh - var(--smax-topnav-h, 52px));
+  height: calc(100vh - var(--smax-topnav-h));
   display: flex; flex-direction: column;
   position: relative; overflow: hidden;
   background: var(--pp-bg); color: var(--pp-fg);

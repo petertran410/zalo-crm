@@ -38,7 +38,7 @@
             aria-hidden="true"
             :style="{ top: slot.top }"
             :title="`Tạo lịch hẹn ${slot.label}`"
-            @click="$emit('create-slot', { date: slot.date })"
+            @click="onSlot($event, slot.date)"
           />
 
           <div v-if="d.isToday && nowTop !== null" class="nowline" :style="{ top: nowTop + 'px' }">
@@ -138,7 +138,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'select-appointment', payload: { appt: Appointment; rect: DOMRect }): void;
-  (e: 'create-slot', payload: { date: Date }): void;
+  (e: 'create-slot', payload: { date: Date; rect: DOMRect }): void;
   (e: 'mark-complete', a: Appointment): void;
 }>();
 
@@ -352,6 +352,12 @@ const days = computed(() =>
 function onPick(e: MouseEvent, appt: Appointment) {
   const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
   emit('select-appointment', { appt, rect });
+}
+
+/** Kèm rect của ô để form tạo nhanh neo đúng chỗ vừa bấm. */
+function onSlot(e: MouseEvent, date: Date) {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  emit('create-slot', { date, rect });
 }
 
 /**

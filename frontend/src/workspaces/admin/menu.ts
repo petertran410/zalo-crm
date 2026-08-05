@@ -4,9 +4,17 @@
  * Hiển thị ĐẦY ĐỦ tất cả tính năng của hệ thống.
  * Dành cho Owner, Admin — toàn quyền quản lý.
  *
- * Menu giữ nguyên thứ tự và cấu trúc như DefaultLayout.vue hiện tại:
- *   Dashboard · Kênh Kết Nối · Tin nhắn · Bạn bè · Khách hàng
- *   · Lịch hẹn · Kho ảnh · Cửa hàng POS · (Marketing — EE/CE)
+ * ⚠️ FILE NÀY HIỆN KHÔNG ĐƯỢC DÙNG ĐỂ RENDER NAV (xác minh 2026-08-05).
+ * Chỉ `SalesLayout.vue` đọc `activeConfig.menu`; `DefaultLayout.vue` — layout của
+ * admin và 6 workspace khác (manager/marketing/finance/director/warehouse/
+ * call-center) — dựng nav từ mảng `primaryTabs` HARDCODE bên trong chính nó.
+ * Vì vậy nội dung dưới đây đã trôi khỏi nav thật (thiếu Marketing, còn ghi
+ * "Lịch hẹn" thay vì "Công việc", thiếu gộp /appointments + /tasks).
+ *
+ * KHÔNG chuyển DefaultLayout sang đọc file này nếu chưa điền menu cho cả 6
+ * workspace kia: hôm nay tất cả đều dùng chung 10 tab của primaryTabs, chuyển
+ * sang menu riêng sẽ khiến manager tụt còn 5 tab và marketing/finance/director/
+ * warehouse/call-center còn 3 tab, mất hẳn Dashboard + Tin nhắn.
  *
  * Dropdown: Báo cáo (7 màn + Phân tích nâng cao) · Cài đặt (lối tắt).
  */

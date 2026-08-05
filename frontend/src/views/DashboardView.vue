@@ -653,7 +653,7 @@ function onOutsideClick(e: MouseEvent) {
   margin: 0 auto;
   /* App khoá cuộn cấp trang (main.css overflow:hidden) → dashboard PHẢI tự cuộn,
      không thì nội dung tràn không kéo xuống được (anh báo 2026-06-17). */
-  height: calc(100vh - var(--smax-topnav-h, 48px));
+  height: calc(100vh - var(--smax-topnav-h));
   overflow-y: auto;
   padding-bottom: 32px;
   /* Score line màu theo 3 hệ điểm */
