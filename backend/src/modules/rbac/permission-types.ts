@@ -30,6 +30,12 @@ export const RESOURCES = [
   'friend',             // Bạn bè (Zalo)       → /friends
   'conversation',       // Tin nhắn / Hội thoại→ /chat
   'customer_list',      // Tệp khách hàng      → /marketing/lists
+  // 2026-08-06 — Lịch hẹn TỪNG không có resource RBAC nào: quyền xem chỉ suy từ
+  // owner/admin + contact-scope, nên "cho anh A xem lịch của người khác" không
+  // diễn tả được. Thêm resource để cấp lẻ qua customGrants.
+  //   access   = vào màn Lịch hẹn
+  //   view_all = xem lịch của NGƯỜI KHÁC (bỏ giới hạn chỉ-lịch-của-mình)
+  'appointment',        // Lịch hẹn            → /appointments
   // ── Marketing / Tự động hoá (menu Marketing) ──
   'trigger',            // Mục tiêu / Trigger  → /marketing/triggers
   'sequence',           // Sequence            → /marketing/sequences
@@ -66,6 +72,9 @@ export const RESOURCE_ACTIONS: Record<Resource, readonly Action[]> = {
   settings: ['access', 'create', 'edit'],
   // Phiên chăm sóc — access=xem phiên mình, view_all=xem cả org (scope theo dept tree).
   care_session: ['access', 'view_all'],
+  // Lịch hẹn — CRUD vẫn theo chủ sở hữu (canMutateAppointment), RBAC chỉ quyết
+  // định XEM: access = vào màn, view_all = thấy lịch người khác.
+  appointment: ['access', 'view_all'],
   // Kho phương tiện — access=xem/dùng kho, create=tải lên/lưu, edit=sửa quyền/tag/watermark,
   // delete=archive, view_all=xem cả org bỏ qua scope owner (admin/marketing).
   media: ['access', 'create', 'edit', 'delete', 'view_all'],
@@ -87,6 +96,25 @@ export type GrantsJson = {
  */
 export function hasGrant(grants: GrantsJson, resource: Resource, action: Action): boolean {
   return grants?.[resource]?.[action] === true;
+}
+
+/**
+ * Đọc grant 3 TRẠNG THÁI (2026-08-06) — dùng cho customGrants của từng user:
+ *   true      = CHO PHÉP tường minh
+ *   false     = TỪ CHỐI tường minh (đè lên quyền của nhóm)
+ *   undefined = không có ý kiến → kế thừa nhóm quyền
+ *
+ * hasGrant() ở trên chỉ 2 trạng thái (true / không-true) nên KHÔNG diễn tả được
+ * "gỡ 1 quyền của riêng 1 người". Giữ hasGrant cho grants của NHÓM (nhóm không
+ * cần deny — không tick là không có), dùng resolveGrant cho customGrants.
+ */
+export function resolveGrant(
+  grants: GrantsJson | null | undefined,
+  resource: Resource,
+  action: Action,
+): boolean | undefined {
+  const v = grants?.[resource]?.[action];
+  return typeof v === 'boolean' ? v : undefined;
 }
 
 /**
@@ -132,13 +160,46 @@ function viewAll(resource: Resource): GrantsJson[Resource] {
 }
 
 /**
+ * ════════════════════════════════════════════════════════════════════════════
+ * PHẠM VI VAI TRÒ — chốt 2026-08-06
+ * ════════════════════════════════════════════════════════════════════════════
+ * Kế hoạch chỉ dùng 4 vai trò: Admin · CEO (chủ tổ chức) · Sale · Chăm sóc khách hàng.
+ *
+ * 4 nhóm còn lại (Trưởng phòng, Sale Senior, Marketing, Hành chính - Nhân sự)
+ * NGỪNG DÙNG chứ KHÔNG XOÁ — có thể cần lại. Cách làm:
+ *   - Giữ nguyên định nghĩa grants bên dưới (không mất công định nghĩa lại).
+ *   - KHÔNG seed vào org mới nữa (seedDefaultPermissionGroups bỏ qua).
+ *   - Org cũ đã có thì GIỮ NGUYÊN, chạy y như trước — không đụng dữ liệu, không
+ *     ai mất quyền. Hiện tại cả 4 nhóm này đều có 0 user.
+ *   - UI gắn nhãn "Ngừng dùng" và ẩn mặc định.
+ *
+ * BẬT LẠI: xoá tên khỏi DEPRECATED_GROUP_NAMES là xong, không cần migration.
+ *
+ * CỐ Ý không dùng archivedAt để "ẩn": archive làm userHasGrant coi như nhóm
+ * không còn quyền → ai đang ở trong nhóm sẽ mất sạch quyền; archivePermissionGroup
+ * cũng chặn thẳng nhóm hệ thống.
+ */
+export const DEPRECATED_GROUP_NAMES: readonly string[] = [
+  'Trưởng phòng',
+  'Sale Senior',
+  'Marketing',
+  'Hành chính - Nhân sự',
+];
+
+export function isDeprecatedGroup(name: string): boolean {
+  return DEPRECATED_GROUP_NAMES.includes(name);
+}
+
+/**
  * Default groups. Migration D13 sẽ tạo các group này với is_system=true.
  * Admin → full mọi resource × mọi action.
  * Marketing → anh chốt A: contact.view_all=true (Zalo test loop 2026-05-21 13:25).
  * Workspace 2026-07-22: kèm workspaceId để frontend resolver đọc chính xác.
+ * 2026-08-06: thêm cờ `deprecated` — xem khối PHẠM VI VAI TRÒ ở trên.
  */
 export const DEFAULT_PERMISSION_GROUPS: Array<{
   name: string;
+  deprecated?: boolean;
   isSystem: boolean;
   workspaceId: string;
   grants: GrantsJson;
@@ -177,6 +238,7 @@ export const DEFAULT_PERMISSION_GROUPS: Array<{
   },
   {
     name: 'Trưởng phòng',
+    deprecated: true, // 2026-08-06 — ngoài 4 vai trò dùng tiếp; giữ để bật lại
     isSystem: true,
     workspaceId: 'manager',
     grants: {
@@ -200,6 +262,7 @@ export const DEFAULT_PERMISSION_GROUPS: Array<{
   },
   {
     name: 'Sale Senior',
+    deprecated: true, // 2026-08-06 — gộp về Sale; giữ định nghĩa để bật lại
     isSystem: true,
     workspaceId: 'sales',
     grants: {
@@ -240,7 +303,37 @@ export const DEFAULT_PERMISSION_GROUPS: Array<{
     } as GrantsJson,
   },
   {
+    // 2026-08-06 — 1 trong 4 vai trò dùng tiếp, TRƯỚC GIỜ CHƯA CÓ NHÓM QUYỀN.
+    // Workspace 'customer-care' đã dựng sẵn (menu Tin nhắn CS / Khách hàng / Lịch hẹn)
+    // nhưng không nhóm nào trỏ tới → chỉ vào được bằng cách đoán tên nhóm chứa "CS"
+    // trong resolver. Có nhóm này rồi thì workspaceId quyết định thẳng, hết đoán.
+    //
+    // Grants khởi điểm = Y HỆT Sale + care_session (màn "Phiên chăm sóc" vốn chỉ
+    // Admin có, mà CS mới đúng là người dùng nó). CỐ Ý không sáng tác thêm — anh
+    // chốt lại bộ quyền CS sau, cùng đợt sửa hardcode các vai trò.
+    name: 'Chăm sóc khách hàng',
+    isSystem: true,
+    workspaceId: 'customer-care',
+    grants: {
+      conversation: { access: true, edit: true },
+      contact: { access: true, create: true, edit: true },
+      friend: { access: true, create: true, edit: true },
+      customer_list: { access: true },
+      broadcast: { access: true },
+      sequence: { access: true },
+      trigger: { access: true },
+      block: { access: true },
+      zalo_account: { access: true, create: true, delete: true },
+      engagement_score: { access: true },
+      media: { access: true, create: true, edit: true },
+      // Riêng CS: phiên chăm sóc + lịch hẹn (xem màn, chưa mở "xem của người khác")
+      care_session: { access: true },
+      appointment: { access: true },
+    } as GrantsJson,
+  },
+  {
     name: 'Marketing',
+    deprecated: true, // 2026-08-06 — ngoài 4 vai trò dùng tiếp; giữ để bật lại
     isSystem: true,
     workspaceId: 'marketing',
     grants: {
@@ -259,6 +352,7 @@ export const DEFAULT_PERMISSION_GROUPS: Array<{
   },
   {
     name: 'Hành chính - Nhân sự',
+    deprecated: true, // 2026-08-06 — ngoài 4 vai trò dùng tiếp; giữ để bật lại
     isSystem: true,
     workspaceId: 'admin',
     grants: {

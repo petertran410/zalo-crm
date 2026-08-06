@@ -29,8 +29,9 @@ async function gateReportAccess(request: FastifyRequest, reply: FastifyReply): P
   if (user.role === 'owner' || user.role === 'admin') return true;
   const cScope = await getContactScope(user.id, user.orgId, user.role);
   if (cScope.isOrgAdmin) return true;
-  // Leader/deputy: visibleUserIds.size > 1 (có người dưới dept)
-  if (cScope.visibleUserIds.size > 1) return true;
+  // Leader/deputy: đọc chức vụ từ deptRole. FIX 2026-08-05 — trước dùng
+  // visibleUserIds.size > 1 nên trưởng phòng của phòng rỗng bị 403.
+  if (cScope.isDeptManager) return true;
   reply.status(403).send({
     error: 'Sale member không có quyền xem báo cáo team. Liên hệ trưởng phòng.',
     code: 'reports_member_forbidden',

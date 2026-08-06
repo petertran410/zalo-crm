@@ -24,6 +24,31 @@ export type WorkspaceId =
   | 'warehouse'
   | 'call-center';
 
+/**
+ * Workspace NGỪNG DÙNG — chốt 2026-08-06 (song song với DEPRECATED_GROUP_NAMES
+ * ở constants/permission-meta.ts).
+ *
+ * Kế hoạch chỉ còn 4 vai trò → chỉ cần 3 workspace: 'admin' (Admin + CEO),
+ * 'sales' (Sale), 'customer-care' (CSKH).
+ *
+ * 5 cái dưới đây đều là STUB menu rỗng, chưa ai dùng thật. Giữ nguyên code +
+ * registry để bật lại dễ; chỉ ẩn khỏi Workspace Switcher cho gọn.
+ *
+ * GIỮ LẠI 'manager' (KHÔNG ngừng dùng) dù nhóm "Trưởng phòng" đã ngừng: resolver
+ * vẫn route deptRole = leader/deputy về workspace này, mà phòng ban thì còn dùng.
+ */
+export const DEPRECATED_WORKSPACE_IDS: readonly WorkspaceId[] = [
+  'marketing',
+  'finance',
+  'director',
+  'warehouse',
+  'call-center',
+];
+
+export function isDeprecatedWorkspace(id: WorkspaceId | string): boolean {
+  return (DEPRECATED_WORKSPACE_IDS as readonly string[]).includes(id);
+}
+
 // ── Menu Config ──────────────────────────────────────────────────────────────
 /** Cấu hình 1 mục menu (sidebar / topnav). Thiết kế dạng declarative config
  *  để sau này chỉ cần thêm/bớt JSON, không sửa Layout. */

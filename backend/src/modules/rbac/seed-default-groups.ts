@@ -13,22 +13,42 @@ export interface SeedResult {
   created: number;
   existing: number;
   updated: number;
+  /** Nhóm ngừng dùng nên KHÔNG tạo mới (org cũ đã có thì vẫn giữ). */
+  skippedDeprecated: number;
   groups: Array<{ id: string; name: string; isSystem: boolean }>;
 }
 
-export async function seedDefaultPermissionGroups(orgId: string): Promise<SeedResult> {
-  const result: SeedResult = { created: 0, existing: 0, updated: 0, groups: [] };
+/**
+ * 2026-08-06 — nhận `client` để chạy ĐƯỢC BÊN TRONG transaction của setup()
+ * (tạo org → seed nhóm → tạo owner phải nguyên tử). Mặc định dùng prisma global
+ * nên mọi call-site cũ không phải sửa.
+ */
+export type PermGroupClient = Pick<typeof prisma, 'permissionGroup'>;
+
+export async function seedDefaultPermissionGroups(
+  orgId: string,
+  db: PermGroupClient = prisma,
+): Promise<SeedResult> {
+  const result: SeedResult = { created: 0, existing: 0, updated: 0, skippedDeprecated: 0, groups: [] };
 
   for (const tmpl of DEFAULT_PERMISSION_GROUPS) {
     // Idempotent: check by (orgId, name, isSystem)
-    const existing = await prisma.permissionGroup.findFirst({
+    const existing = await db.permissionGroup.findFirst({
       where: { orgId, name: tmpl.name, isSystem: true },
       select: { id: true, name: true, isSystem: true, workspaceId: true },
     });
+
+    // 2026-08-06 — nhóm NGỪNG DÙNG: không tạo mới nữa (org mới chỉ có 4 vai trò),
+    // nhưng org cũ đã có thì vẫn đi tiếp bên dưới để backfill workspaceId + báo cáo.
+    // Không xoá, không archive — xem khối PHẠM VI VAI TRÒ trong permission-types.ts.
+    if (tmpl.deprecated && !existing) {
+      result.skippedDeprecated++;
+      continue;
+    }
     if (existing) {
       // Backfill workspaceId nếu group đã tồn tại nhưng chưa có workspaceId (migration)
       if (tmpl.workspaceId && existing.workspaceId !== tmpl.workspaceId) {
-        await prisma.permissionGroup.update({
+        await db.permissionGroup.update({
           where: { id: existing.id },
           data: { workspaceId: tmpl.workspaceId },
         });
@@ -40,7 +60,7 @@ export async function seedDefaultPermissionGroups(orgId: string): Promise<SeedRe
       continue;
     }
 
-    const created = await prisma.permissionGroup.create({
+    const created = await db.permissionGroup.create({
       data: {
         id: randomUUID(),
         orgId,

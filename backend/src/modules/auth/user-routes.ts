@@ -83,7 +83,12 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Không có quyền' });
     }
 
-    const { email, phone: rawPhone, fullName, password, role = 'member', teamId } = request.body as any;
+    const {
+      email, phone: rawPhone, fullName, password, role = 'member', teamId,
+      // 2026-08-06 — nhận nhóm quyền ngay lúc tạo. Bỏ trống → gán nhóm mặc định
+      // theo legacy role bên dưới.
+      permissionGroupId,
+    } = request.body as any;
     if (!fullName || !password) {
       return reply.status(400).send({ error: 'Họ tên và mật khẩu là bắt buộc' });
     }
@@ -112,6 +117,35 @@ export async function userRoutes(app: FastifyInstance) {
       return reply.status(403).send({ error: 'Chỉ owner có thể tạo admin' });
     }
 
+    // ── Nhóm quyền cho user mới (2026-08-06) ─────────────────────────────────
+    // Trước đây KHÔNG set permissionGroupId → user role='member' rơi hết mọi nhánh
+    // của userHasGrant → không có quyền gì, đăng nhập xong vào màn nào cũng bị
+    // router guard đá về. Admin phải nhớ gán nhóm ở bước 2 mới dùng được.
+    // Giờ: nhận từ payload, không có thì lấy nhóm mặc định theo legacy role.
+    const DEFAULT_GROUP_BY_ROLE: Record<string, string> = {
+      owner: 'Admin',
+      admin: 'CEO',
+      member: 'Sale',
+    };
+    let resolvedGroupId: string | null = null;
+    if (permissionGroupId) {
+      const grp = await prisma.permissionGroup.findFirst({
+        where: { id: permissionGroupId, orgId: currentUser.orgId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!grp) return reply.status(400).send({ error: 'Nhóm quyền không tồn tại' });
+      resolvedGroupId = grp.id;
+    } else {
+      const fallbackName = DEFAULT_GROUP_BY_ROLE[role];
+      if (fallbackName) {
+        const grp = await prisma.permissionGroup.findFirst({
+          where: { orgId: currentUser.orgId, name: fallbackName, isSystem: true, archivedAt: null },
+          select: { id: true },
+        });
+        resolvedGroupId = grp?.id ?? null;
+      }
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const user = await prisma.user.create({
       data: {
@@ -122,6 +156,7 @@ export async function userRoutes(app: FastifyInstance) {
         fullName,
         passwordHash,
         role,
+        permissionGroupId: resolvedGroupId,
         teamId: teamId || null,
         // Phase Onboarding v1 2026-05-24 — user mới luôn null → force đổi password lần đầu.
         passwordChangedAt: null,
@@ -184,6 +219,26 @@ export async function userRoutes(app: FastifyInstance) {
           });
         }
         updateData.phone = normalizedPhone;
+      }
+    }
+
+    // 2026-08-06 — `role` nằm trong CLAIM của JWT (auth-middleware set request.authCtx
+    // từ claim, không đọc DB), nên hạ quyền một người mà không làm gì thêm thì họ vẫn
+    // giữ quyền cũ tới hết đời token: access token 15', token legacy tới 7 NGÀY.
+    // Bump jwtTokenVersion → dùng lại đúng đường thu hồi có sẵn (middleware so 'tv',
+    // /auth/refresh chặn) như khi reset password. Chỉ bump khi role/isActive ĐỔI THẬT
+    // để không đá văng session vì sửa mỗi tên.
+    const willChangeAuthz =
+      (updateData.role !== undefined || updateData.isActive !== undefined);
+    if (willChangeAuthz) {
+      const before = await prisma.user.findFirst({
+        where: { id, orgId: currentUser.orgId },
+        select: { role: true, isActive: true },
+      });
+      const roleChanged = updateData.role !== undefined && updateData.role !== before?.role;
+      const activeChanged = updateData.isActive !== undefined && updateData.isActive !== before?.isActive;
+      if (roleChanged || activeChanged) {
+        updateData.jwtTokenVersion = { increment: 1 };
       }
     }
 

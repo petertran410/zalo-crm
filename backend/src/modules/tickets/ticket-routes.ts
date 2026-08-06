@@ -112,7 +112,9 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         const isOrgAdmin = user.role === 'owner' || user.role === 'admin';
         if (!isOrgAdmin) {
           const scope = await getContactScope(user.id, user.orgId, user.role);
-          if (scope.visibleUserIds.size <= 1) {
+          // FIX 2026-08-05: check chức vụ (deptRole), KHÔNG suy từ size của set —
+          // trưởng phòng của phòng chưa có nhân viên vẫn phải vào được.
+          if (!scope.isDeptManager) {
             return reply.status(403).send({ error: 'Chỉ quản lý mới xem được tất cả ticket' });
           }
           where.assigneeUserId = { in: Array.from(scope.visibleUserIds) };

@@ -62,7 +62,11 @@ export interface RbacUser {
   fullName: string;
   role: string;
   permissionGroupId: string | null;
-  permissionGroup: { id: string; name: string; isSystem: boolean } | null;
+  // `grants` đã có sẵn trong response (user-assignment-routes select) nhưng trước
+  // giờ không khai báo ở type — màn "Quyền theo người" cần để tính quyền kế thừa.
+  permissionGroup: { id: string; name: string; isSystem: boolean; grants?: Record<string, Record<string, boolean>> } | null;
+  /** Override lẻ theo từng người: true = cấp thêm, false = TỪ CHỐI (đè nhóm), thiếu key = kế thừa. */
+  customGrants?: Record<string, Record<string, boolean>> | null;
   departmentMember: {
     departmentId: string;
     deptRole: 'leader' | 'deputy' | 'member';
@@ -184,6 +188,17 @@ export const useRbacStore = defineStore('rbac', {
     async setUserPermissionGroup(userId: string, permissionGroupId: string | null) {
       await api.patch(`/rbac/users/${userId}/permission-group`, { permissionGroupId });
       await this.loadUsers();
+    },
+    /**
+     * Ghi override lẻ cho 1 user (màn "Quyền theo người").
+     * Gửi NGUYÊN map customGrants — backend sanitize + chặn leo thang rồi mới lưu.
+     * Cập nhật tại chỗ thay vì loadUsers() để bảng không nhảy sau mỗi lần tick.
+     */
+    async setUserOverrides(userId: string, customGrants: Record<string, Record<string, boolean>>) {
+      const { data } = await api.patch(`/rbac/users/${userId}/overrides`, { customGrants });
+      const u = this.users.find((x) => x.id === userId);
+      if (u) u.customGrants = data.customGrants ?? {};
+      return data.customGrants;
     },
     async seedDefaultGroups() {
       const { data } = await api.post('/admin/rbac/seed-default-groups');
