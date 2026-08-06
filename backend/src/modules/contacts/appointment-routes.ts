@@ -9,6 +9,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { getContactScope, assertContactVisible } from './contact-scope.js';
+import { userHasGrant } from '../rbac/permission-group-service.js';
 
 type QueryParams = Record<string, string>;
 
@@ -58,6 +59,24 @@ function canAssignTo(user: { id: string; role: string }, targetUserId: string | 
   return isOrgAdmin(user.role) || !targetUserId || targetUserId === user.id;
 }
 
+/**
+ * 2026-08-06 — "Xem lịch hẹn của người khác".
+ *
+ * Mặc định lịch hẹn bị bó theo KH mà user thấy được (contact-scope). Grant
+ * `appointment.view_all` NỚI ra: bỏ luôn bó đó → thấy lịch toàn org.
+ *
+ * Cố ý chỉ NỚI, không siết: nếu đổi mặc định thành "chỉ lịch của chính mình"
+ * thì mọi sale đang dùng sẽ mất hẳn lịch của KH mình phụ trách nhưng do người
+ * khác đặt. Admin tick ô cho từng người là cộng thêm, bỏ tick là quay về như cũ.
+ */
+async function canSeeAllAppointments(
+  user: { id: string; role: string },
+  isOrgAdminScope: boolean,
+): Promise<boolean> {
+  if (isOrgAdminScope || isOrgAdmin(user.role)) return true;
+  return userHasGrant(user.id, 'appointment', 'view_all').catch(() => false);
+}
+
 const FORBIDDEN_OTHERS = {
   error: 'forbidden_not_owner',
   message: 'Bạn chỉ thao tác được trên lịch hẹn của chính mình.',
@@ -76,8 +95,9 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
 
       // Phase Contact Scope Hybrid 2026-05-27: filter theo KH visible
       const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const seeAllToday = await canSeeAllAppointments(user, cScope.isOrgAdmin);
       const whereToday: any = { orgId: user.orgId, appointmentDate: { gte: start, lte: end } };
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      if (!seeAllToday && cScope.accessibleContactIds !== null) {
         whereToday.contactId = { in: cScope.accessibleContactIds };
       }
       const appointments = await prisma.appointment.findMany({
@@ -108,7 +128,8 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         appointmentDate: { gte: now, lte: in7Days },
         status: 'scheduled',
       };
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      const seeAllUpcoming = await canSeeAllAppointments(user, cScope.isOrgAdmin);
+      if (!seeAllUpcoming && cScope.accessibleContactIds !== null) {
         whereUpcoming.contactId = { in: cScope.accessibleContactIds };
       }
       const appointments = await prisma.appointment.findMany({
@@ -145,7 +166,8 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       if (source && source !== 'all') where.source = source;
       // Phase Contact Scope Hybrid 2026-05-27
       const cScope = await getContactScope(user.id, user.orgId, user.role);
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      const seeAllList = await canSeeAllAppointments(user, cScope.isOrgAdmin);
+      if (!seeAllList && cScope.accessibleContactIds !== null) {
         // Intersect với contactId filter nếu đã có
         if (where.contactId) {
           if (!cScope.accessibleContactIds.includes(where.contactId)) {

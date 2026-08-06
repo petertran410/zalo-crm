@@ -2,8 +2,9 @@
   <div class="dept-page">
     <header class="page-hero">
       <div class="hero-left">
+        <!-- Bỏ hero-sub 2026-08-06 (gọn giao diện): chỉ là kể lại tiêu đề, mọi
+             thao tác đã có cột/nút riêng trên bảng. -->
         <h1 class="hero-title">Nhân viên</h1>
-        <p class="hero-sub">Quản lý người dùng tổ chức · Phân phòng ban · Gán nhóm quyền · Vô hiệu hóa khi nghỉ việc</p>
       </div>
       <div class="hero-right" v-if="canCreateUser">
         <!-- 2026-06-07 anh chốt: DUY NHẤT 1 kênh tạo user qua Zalo (bỏ "Tạo nhanh"). -->

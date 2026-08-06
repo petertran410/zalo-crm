@@ -52,14 +52,25 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * RBAC enforce 2026-06-08 — kiểm user hiện tại có quyền (resource, action) không.
-   * owner + admin = toàn quyền (anh chốt). Còn lại đọc grants nhóm quyền, default-deny.
    * Dùng cho router guard, lọc menu, ẩn nút thao tác.
+   *
+   * 2026-08-06 — PHẢI khớp ĐÚNG thứ tự của userHasGrant() ở backend, nếu lệch thì
+   * UI hiện nút mà API trả 403 (hoặc ngược lại, ẩn mất thứ user có quyền):
+   *   1. owner              → luôn true, không deny được
+   *   2. grants[r][a]===false → false (deny tường minh từ customGrants, BE đã merge
+   *                            xuống `grants` trong getProfile)
+   *   3. grants[r][a]===true  → true
+   *   4. admin              → true (fallback legacy, đứng SAU deny)
+   *   5. mặc định           → false
    */
   function canAccess(resource: string, action = 'access'): boolean {
     const u = user.value;
     if (!u) return false;
-    if (u.role === 'owner' || u.role === 'admin') return true;
-    return u.grants?.[resource]?.[action] === true;
+    if (u.role === 'owner') return true;
+    const g = u.grants?.[resource]?.[action];
+    if (typeof g === 'boolean') return g;
+    if (u.role === 'admin') return true;
+    return false;
   }
 
   async function checkSetup() {

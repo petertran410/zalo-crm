@@ -697,7 +697,7 @@
 | **PersonalAccountPage** | Tài khoản cá nhân |
 | **PersonalPasswordPage** | Đổi mật khẩu |
 | **PersonalProfilePage** | Hồ sơ cá nhân |
-| **RolesPage** | Quản lý vai trò |
+| ~~RolesPage~~ | _Đã xoá 2026-08-06 — scaffold chưa từng gắn route, mô tả sai mô hình 3 vai trò owner/admin/member thời trước RBAC. Thay bằng Phân quyền + So sánh nhóm quyền + Quyền theo người. Lấy lại: `git show 6271a29:frontend/src/views/settings/RolesPage.vue`_ |
 | **SdkLimitsSettingsPage** | Giới hạn SDK Zalo |
 | **SystemNotificationsPage** | Cài đặt thông báo hệ thống (71KB!) |
 | **TagTaxonomyV2Page** | Quản lý hệ thống nhãn v2 |

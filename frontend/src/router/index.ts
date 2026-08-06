@@ -281,6 +281,23 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/rbac/NetworkPermissionView.vue"),
         meta: { resource: "permission_group" },
       },
+      // So sánh grants của mọi nhóm cạnh nhau (read-only). Màn Phân quyền chỉ
+      // xem được 1 nhóm mỗi lần nên không đối chiếu được giữa các nhóm.
+      {
+        path: "rbac/compare",
+        name: "Settings.RbacCompare",
+        component: () => import("@/views/rbac/PermissionComparePage.vue"),
+        meta: { resource: "permission_group" },
+      },
+      // Lưới người × chức năng — admin tick/bỏ tick quyền lẻ cho từng nhân viên.
+      // Cần user.edit (chính là quyền mà PATCH /rbac/users/:id/overrides đòi) để
+      // menu và route khớp nhau, tránh vào được màn rồi mọi thao tác đều 403.
+      {
+        path: "rbac/user-permissions",
+        name: "Settings.RbacUserPermissions",
+        component: () => import("@/views/rbac/UserPermissionGridPage.vue"),
+        meta: { resource: "user", action: "edit" },
+      },
       // Phase Riêng Tư: trang /settings/privacy GỠ 2026-06-06 (trùng với tab Privacy
       // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 

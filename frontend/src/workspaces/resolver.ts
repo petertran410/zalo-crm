@@ -17,7 +17,7 @@
 
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import type { WorkspaceId, WorkspaceConfig } from './types';
+import { isDeprecatedWorkspace, type WorkspaceId, type WorkspaceConfig } from './types';
 import { workspaceRegistry } from './registry';
 
 export const useWorkspaceStore = defineStore('workspace', () => {
@@ -33,9 +33,15 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return workspaceRegistry[activeWorkspaceId.value] ?? workspaceRegistry.admin!;
   });
 
-  /** Danh sách tất cả workspace có config (dùng cho Workspace Switcher). */
+  /**
+   * Danh sách workspace hiện trong Workspace Switcher.
+   * 2026-08-06: lọc bỏ workspace ngừng dùng (5 stub menu rỗng) — chọn vào chỉ ra
+   * màn trống. Config vẫn còn trong registry để bật lại.
+   */
   const allWorkspaces = computed<WorkspaceConfig[]>(() => {
-    return Object.values(workspaceRegistry).filter((v): v is WorkspaceConfig => !!v);
+    return Object.values(workspaceRegistry)
+      .filter((v): v is WorkspaceConfig => !!v)
+      .filter((w) => !isDeprecatedWorkspace(w.id));
   });
 
   // ── Actions ────────────────────────────────────────────────────────────
@@ -136,19 +142,14 @@ function detectWorkspaceId(user: {
     return 'manager';
   }
 
-  // Legacy fallback: đoán từ tên nhóm (backward compat cho nhóm custom chưa gán workspaceId)
+  // Legacy fallback: đoán từ tên nhóm (backward compat cho nhóm custom chưa gán workspaceId).
+  // 2026-08-06 — BỎ các nhánh đoán ra workspace ngừng dùng (marketing / director /
+  // warehouse): 3 cái đó là stub menu RỖNG, đoán trúng cũng chỉ ra màn trắng, mà
+  // 'ceo' còn khớp nhầm cả nhóm CEO (nhóm này thuộc workspace 'admin').
+  // Giữ nhánh CS vì customer-care là workspace thật, có menu đầy đủ.
   const pgName = (user.permissionGroupName || '').toLowerCase();
   if (pgName.includes('cs') || pgName.includes('chăm sóc') || pgName.includes('cham soc') || pgName.includes('support')) {
     return 'customer-care';
-  }
-  if (pgName.includes('marketing')) {
-    return 'marketing';
-  }
-  if (pgName.includes('giám đốc') || pgName.includes('giam doc') || pgName.includes('ceo') || pgName.includes('director')) {
-    return 'director';
-  }
-  if (pgName.includes('kho') || pgName.includes('warehouse') || pgName.includes('logistics')) {
-    return 'warehouse';
   }
 
   // Default: Sales workspace (giao diện gọn nhẹ nhất)

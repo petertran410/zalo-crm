@@ -2,11 +2,10 @@
   <div class="dept-page">
     <header class="page-hero">
       <div class="hero-left">
+        <!-- Bỏ hero-sub 2026-08-06 (gọn giao diện): bố cục 2 cột đã tự nói "chọn
+             nhóm trái → tích quyền phải", còn kích thước ma trận hiện ngay trên
+             bảng. Nút sao chép quyền vẫn nằm trong panel bên phải. -->
         <h1 class="hero-title">Phân quyền</h1>
-        <p class="hero-sub">
-          Ma trận {{ resources.length }} chức năng × {{ actions.length }} hành động ·
-          Chọn nhóm bên trái → tích chọn quyền bên phải · Có thể sao chép quyền giữa các nhóm
-        </p>
       </div>
       <div class="hero-actions">
         <button class="btn-ghost" :disabled="seeding" @click="seedDefaults">
@@ -75,7 +74,10 @@
                 <span v-if="g._depth > 0" class="pg-indent-arrow">└</span>{{ g.name }}
               </div>
               <div class="pg-group-meta">
-                <span v-if="g.isSystem" class="at-chip chip-system chip-xs">🛡 Hệ thống</span>
+                <!-- 2026-08-06: nhãn "ngừng dùng" cho 4 nhóm ngoài phạm vi (Trưởng phòng,
+                     Sale Senior, Marketing, HC-NS). Vẫn sửa được, chỉ là không dùng nữa. -->
+                <span v-if="isDeprecatedGroup(g.name)" class="at-chip chip-xs pg-chip-deprecated">⏸ Ngừng dùng</span>
+                <span v-else-if="g.isSystem" class="at-chip chip-system chip-xs">🛡 Hệ thống</span>
                 <span v-else class="at-chip chip-custom chip-xs">✎ Tùy chỉnh</span>
                 <span class="pg-count">👥 {{ memberCountsLive[g.id] ?? 0 }}</span>
                 <span class="pg-grants-mini" :style="{ color: grantsColor(grantsPct(g)) }">
@@ -237,7 +239,7 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRbacStore, type PermissionGroupNode, type RbacUser } from '@/stores/rbac';
 import { api } from '@/api/index';
-import { resourceLabel, resourceIcon, actionLabel } from '@/constants/permission-meta';
+import { resourceLabel, resourceIcon, actionLabel, isDeprecatedGroup } from '@/constants/permission-meta';
 
 const store = useRbacStore();
 const allUsers = ref<RbacUser[]>([]);
@@ -594,6 +596,8 @@ async function seedDefaults() {
   border: 1px solid transparent;
 }
 .pg-group-item:hover { background: #fdfdfd; border-color: #e0e2e6; }
+/* 2026-08-06 — nhóm ngừng dùng: chip xám, không nổi như chip Hệ thống/Tùy chỉnh */
+.pg-chip-deprecated { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
 .pg-group-item.active {
   background: white;
   border-color: #181d26;

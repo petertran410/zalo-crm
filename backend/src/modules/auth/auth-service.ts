@@ -10,6 +10,8 @@
 import bcrypt from 'bcryptjs';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { getOwnerScope } from '../rbac/owner-scope.js';
+import { seedDefaultPermissionGroups } from '../rbac/seed-default-groups.js';
+import { RESOURCES } from '../rbac/permission-types.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { runSystemQuery } from '../../shared/tenant/tenant-context.js';
@@ -78,6 +80,18 @@ export async function setup(
   const result = await runSystemQuery(() =>
     tenantTransaction(async (tx) => {
       const org = await tx.organization.create({ data: { name: orgName } });
+
+      // 2026-08-06 — SEED 7 nhóm quyền hệ thống NGAY trong transaction tạo org.
+      // Trước đây org mới ra đời với 0 nhóm quyền: endpoint seed thủ công lại đòi
+      // grant `permission_group.create`, mà grant đó nằm trong nhóm Admin chưa tồn
+      // tại → chỉ lọt được nhờ fallback legacy role='owner'. Bỏ cột role như kế
+      // hoạch là tạo org thành ngõ cụt. Seed ở đây cắt hẳn vòng lặp đó.
+      await seedDefaultPermissionGroups(org.id, tx);
+      const adminGroup = await tx.permissionGroup.findFirst({
+        where: { orgId: org.id, name: 'Admin', isSystem: true },
+        select: { id: true },
+      });
+
       const user = await tx.user.create({
         data: {
           orgId: org.id,
@@ -86,6 +100,8 @@ export async function setup(
           passwordHash,
           fullName,
           role: 'owner',
+          // Gán luôn nhóm Admin để owner không phụ thuộc riêng vào fallback legacy.
+          permissionGroupId: adminGroup?.id ?? null,
         },
       });
       return { org, user };
@@ -212,20 +228,36 @@ export async function getProfile(userId: string) {
   const roleGrants = (pg?.grants ?? {}) as Record<string, Record<string, boolean>>;
   const customGrants = (user.customGrants ?? {}) as Record<string, Record<string, boolean>>;
 
-  // Merge custom overrides into roleGrants (clone first to avoid mutating DB cache)
-  const mergedGrants = JSON.parse(JSON.stringify(roleGrants));
-  for (const resource of Object.keys(customGrants)) {
-    if (!mergedGrants[resource]) {
-      mergedGrants[resource] = {};
+  // Merge custom overrides vào quyền nhóm. 2026-08-06 — trong `mergedGrants`
+  // trả về FE, mỗi ô có đúng 3 nghĩa (khớp userHasGrant):
+  //   true      = được phép
+  //   false     = BỊ TỪ CHỐI tường minh (chỉ customGrants tạo ra được)
+  //   thiếu key = kế thừa → admin legacy vẫn qua
+  //
+  // Vì vậy KHÔNG clone thẳng roleGrants: matrix editor ghi cả `false` xuống grants
+  // của nhóm khi admin bỏ tick (PermissionGroupEditPanel.toggleGrant), mà `false`
+  // của NHÓM chỉ nghĩa là "nhóm không cấp" — backend cho admin đi tiếp ở fallback.
+  // Bê nguyên xuống thì FE đọc thành deny và khoá nhầm admin. Lọc lấy true trước.
+  const mergedGrants: Record<string, Record<string, boolean>> = {};
+  for (const resource of Object.keys(roleGrants)) {
+    for (const action of Object.keys(roleGrants[resource] ?? {})) {
+      if (roleGrants[resource][action] === true) {
+        (mergedGrants[resource] ??= {})[action] = true;
+      }
     }
-    for (const action of Object.keys(customGrants[resource])) {
-      if (customGrants[resource][action] === true) {
-        mergedGrants[resource][action] = true;
+  }
+  for (const resource of Object.keys(customGrants)) {
+    for (const action of Object.keys(customGrants[resource] ?? {})) {
+      const v = customGrants[resource][action];
+      if (typeof v === 'boolean') {
+        (mergedGrants[resource] ??= {})[action] = v;
       }
     }
   }
 
   // owner + admin = toàn quyền (anh chốt 2026-06-08) — khớp fallback trong userHasGrant.
+  // owner KHÔNG deny được; admin thì có (deny đứng trước fallback admin) → chỉ owner
+  // mới thực sự "full access" vô điều kiện.
   const isFullAccess = user.role === 'owner' || user.role === 'admin';
 
   // Dashboard v4 — deptRole + canViewAll cho role-tab. canViewAll gồm cả grant
@@ -235,6 +267,22 @@ export async function getProfile(userId: string) {
   const deptRole = user.departmentMember?.deptRole ?? null;
   const departmentId = user.departmentMember?.departmentId ?? null;
   const ownerScope = await getOwnerScope({ userId: user.id, orgId: user.orgId, legacyRole: user.role });
+
+  // 2026-08-06 — `canViewAll` ở trên là MỘT cờ toàn cục, mà view_all vốn là quyền
+  // THEO TỪNG resource → không thể đúng. getOwnerScope gọi ở đây không truyền
+  // `resource` nên nhánh check grant bị bỏ qua hoàn toàn (owner-scope.ts: `if (resource)`),
+  // trong khi các endpoint list ĐỀU truyền → hai bên trả lời khác nhau cho cùng
+  // một người. Ví dụ: Marketing có broadcast.view_all → /profile nói false, còn
+  // GET /blocks nói true và trả về toàn org ⇒ UI đếm một đằng, list một nẻo.
+  //
+  // Sửa: trả thêm map theo resource, tính thẳng từ mergedGrants (0 query thêm).
+  // GIỮ NGUYÊN `canViewAll` cũ để không đổi hành vi isManager của FE — cờ đó giờ
+  // chỉ nên hiểu là "xem được toàn org", còn hỏi theo màn thì đọc map này.
+  const viewAllByResource: Record<string, boolean> = {};
+  for (const r of RESOURCES) {
+    viewAllByResource[r] =
+      user.role === 'owner' || user.role === 'admin' || mergedGrants[r]?.view_all === true;
+  }
 
   // Bỏ departmentMember thô khỏi payload (đã rút ra deptRole/departmentId).
   const { departmentMember: _dm, ...rest } = user;
@@ -247,5 +295,6 @@ export async function getProfile(userId: string) {
     deptRole,
     departmentId,
     canViewAll: ownerScope.canViewAll,
+    viewAllByResource,
   };
 }
