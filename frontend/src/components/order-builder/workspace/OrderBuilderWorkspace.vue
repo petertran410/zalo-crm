@@ -17,6 +17,18 @@
                   <span v-if="draft?.contactName" class="ob-modal__customer-badge">
                     {{ draft.contactName }}
                   </span>
+                  <!-- Unread message notification badge -->
+                  <transition name="ob-fade">
+                    <span
+                      v-if="currentSessionUnread > 0"
+                      class="ob-modal__unread-badge"
+                      title="Tin nhắn mới"
+                      @click="scrollMiniChatToBottom"
+                    >
+                      <MessageSquare :size="11" />
+                      {{ currentSessionUnread }}
+                    </span>
+                  </transition>
                 </div>
               </div>
               <div class="ob-modal__header-right">
@@ -505,29 +517,7 @@
               </div>
             </transition>
 
-            <!-- ═══ Session Switching Skeleton Overlay ═══ -->
-            <transition name="ob-fade">
-              <div v-if="sessionStore.isSwitching" class="ob-skeleton-overlay">
-                <div class="ob-skeleton-content">
-                  <div class="ob-skeleton-bar ob-skeleton-bar--title" />
-                  <div class="ob-skeleton-bar ob-skeleton-bar--subtitle" />
-                  <div class="ob-skeleton-bar ob-skeleton-bar--row" />
-                  <div class="ob-skeleton-bar ob-skeleton-bar--row" />
-                  <div class="ob-skeleton-bar ob-skeleton-bar--row ob-skeleton-bar--short" />
-                </div>
-              </div>
-            </transition>
-
           </div><!-- /ob-modal-frame -->
-
-          <!-- ═══ SESSION DOCK (between order builder and MiniChat) ═══ -->
-          <SessionDock
-            :sessions="sessionStore.sessions"
-            :active-session-id="sessionStore.activeSessionId"
-            :is-switching="sessionStore.isSwitching"
-            @switch="handleSwitchSession"
-            @discard="handleDiscardSession"
-          />
 
           <!-- ═══ RESIZER SPLITTER (Invisible Hover Indicator) ═══ -->
           <div
@@ -550,6 +540,17 @@
             />
           </div>
 
+          <!-- ═══ CHAT HEADS DOCK (mép phải, bên phải MiniChat) ═══ -->
+          <SessionDock
+            :sessions="sessionStore.sessions"
+            :active-session-id="sessionStore.activeSessionId"
+            :is-switching="sessionStore.isSwitching"
+            :inbound-contacts="inboundContacts"
+            @switch="handleSwitchSession"
+            @discard="handleDiscardSession"
+            @open-inbound="handleOpenInbound"
+          />
+
         </div><!-- /ob-modal-wrapper -->
       </div>
     </transition>
@@ -557,7 +558,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
+import { ref, computed, watch, watchEffect, onMounted } from 'vue';
 import {
   ShoppingBag, ShoppingCart, AlertTriangle, Minus, X, RotateCcw,
   Search, Loader2, Tag, User, Truck, MapPin, Home, Box, MessageSquare,
@@ -594,6 +595,164 @@ const draftStore = sessionStore; // backward compat alias
 const miniChatBridge = useMiniChatBridgeStore();
 
 const creatorName = computed(() => authStore.user?.fullName || 'Nhân viên POS');
+
+// ─── Inbound Contacts (Group 2 Chat Heads) ───────────────────────
+// Khách hàng nhắn tin tới nhưng chưa có phiên tạo đơn
+// Persist to localStorage để không mất khi modal đóng/mở lại
+import type { InboundContact } from './SessionDock.vue';
+
+const INBOUND_STORAGE_KEY = 'workspace_inbound_contacts_v1';
+const MAX_INBOUND = 10;
+
+// Load từ localStorage
+function loadInboundContacts(): InboundContact[] {
+  try {
+    const raw = localStorage.getItem(INBOUND_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as InboundContact[];
+  } catch { /* ignore */ }
+  return [];
+}
+
+function saveInboundContacts(list: InboundContact[]) {
+  try {
+    localStorage.setItem(INBOUND_STORAGE_KEY, JSON.stringify(list));
+  } catch { /* ignore */ }
+}
+
+const inboundContacts = ref<InboundContact[]>(loadInboundContacts());
+
+// Auto-persist khi thay đổi
+watch(inboundContacts, (val) => saveInboundContacts(val), { deep: true });
+
+function onInboundMessage(event: Event) {
+  const detail = (event as CustomEvent).detail as {
+    conversationId: string;
+    contactId?: string;
+    contactName?: string;
+    contactAvatar?: string;
+    message: { content?: string; sentAt?: string };
+  };
+  if (!detail?.conversationId) return;
+
+  // Bỏ qua nếu conversation đang hiện trong MiniChat (user đang xem)
+  const currentConvId = miniChatBridge.conversation?.id;
+  if (detail.conversationId === currentConvId) return;
+
+  // Bỏ qua nếu đã có session cho khách này (thuộc Nhóm 1)
+  const hasSession = sessionStore.sessions.some(
+    s => s.conversationId === detail.conversationId || s.contactId === detail.contactId,
+  );
+  if (hasSession) return; // Nhóm 1 xử lý qua store listener
+
+  const preview = detail.message?.content
+    ? (detail.message.content.length > 50
+      ? detail.message.content.slice(0, 50) + '…'
+      : detail.message.content)
+    : 'Tin nhắn mới';
+
+  // Tìm existing inbound contact
+  const existing = inboundContacts.value.find(c => c.conversationId === detail.conversationId);
+  if (existing) {
+    // Cập nhật message mới nhất + tăng unread
+    existing.lastMessage = preview;
+    existing.unreadCount = (existing.unreadCount || 0) + 1;
+    // Đẩy lên đầu
+    inboundContacts.value = [
+      existing,
+      ...inboundContacts.value.filter(c => c.conversationId !== detail.conversationId),
+    ];
+  } else {
+    // Thêm mới
+    const contact: InboundContact = {
+      conversationId: detail.conversationId,
+      contactId: detail.contactId,
+      contactName: detail.contactName || 'Khách hàng',
+      contactAvatar: detail.contactAvatar,
+      lastMessage: preview,
+      unreadCount: 1,
+    };
+    inboundContacts.value = [contact, ...inboundContacts.value].slice(0, MAX_INBOUND);
+  }
+}
+
+async function handleOpenInbound(contact: InboundContact) {
+  // Check giới hạn phiên
+  if (sessionStore.sessions.length >= 5) {
+    toastMessage.value = 'Đã đạt tối đa 5 phiên. Vui lòng đóng 1 phiên trước.';
+    setTimeout(() => { toastMessage.value = ''; }, 3000);
+    return;
+  }
+
+  // Tạo phiên mới (hoặc trả về session cũ nếu KH đã có) → add vào Nhóm 1
+  const newSessionId = sessionStore.openDraft({
+    contactId: contact.contactId,
+    contactName: contact.contactName,
+    contactAvatar: contact.contactAvatar,
+    contactPhone: contact.contactPhone,
+    conversationId: contact.conversationId,
+  });
+
+  // Xóa khỏi Nhóm 2 (đã được add vào Nhóm 1)
+  inboundContacts.value = inboundContacts.value.filter(
+    c => c.conversationId !== contact.conversationId,
+  );
+
+  // Switch sang phiên vừa tạo/mở để Sales làm việc ngay
+  if (newSessionId) {
+    await handleSwitchSession(newSessionId);
+  }
+}
+
+// Register event listener
+let _notifListenerAdded = false;
+onMounted(() => {
+  if (!_notifListenerAdded && typeof window !== 'undefined') {
+    window.addEventListener('workspace:inbound-message', onInboundMessage);
+    _notifListenerAdded = true;
+  }
+});
+
+// Auto-link conversationId và đồng bộ thông tin contact (sĐT, mã POS) từ MiniChat vào session hiện tại
+// Khi SalesChatView publish conversation → bridge.conversation cập nhật
+// → tự động backfill phone, posCustomerCode, conversationId nếu session còn thiếu
+watchEffect(() => {
+  const conv = miniChatBridge.conversation;
+  const session = sessionStore.activeSession;
+  if (conv && session) {
+    const convContactId = conv.contact?.id;
+    const isMatch = (convContactId && session.contactId === convContactId) || (conv.id && session.conversationId === conv.id);
+    if (isMatch) {
+      const patch: Partial<WorkspaceSession> = {};
+      if (!session.conversationId && conv.id) patch.conversationId = conv.id;
+      if (!session.contactPhone && conv.contact?.phone) patch.contactPhone = conv.contact.phone;
+      if (!session.posCustomerCode && (conv.contact as any)?.posCustomerCode) {
+        patch.posCustomerCode = (conv.contact as any).posCustomerCode;
+      }
+      if (!session.posCustomerId && (conv.contact as any)?.posCustomerId) {
+        patch.posCustomerId = (conv.contact as any).posCustomerId;
+      }
+      if (Object.keys(patch).length > 0) {
+        sessionStore.updateSession(session.id, patch);
+      }
+    }
+  }
+});
+
+// ─── Unread badge cho session hiện tại ───────────────────────────
+const currentSessionUnread = computed(() => {
+  const session = sessionStore.activeSession;
+  return session?.unreadCount ?? 0;
+});
+
+function scrollMiniChatToBottom() {
+  // Clear unread khi user click badge
+  if (sessionStore.activeSession) {
+    sessionStore.clearUnread(sessionStore.activeSession.id);
+  }
+  // Scroll mini chat panel to bottom
+  const chatEl = document.querySelector('.mini-chat-messages, .mc-messages');
+  if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+}
 
 // ─── Resizable Splitter (Order Builder <-> Mini Chat) ──────────────
 const defaultChatWidth = 340;
@@ -634,11 +793,18 @@ function resetChatPanelWidth() {
   localStorage.setItem('ob_mini_chat_width', String(defaultChatWidth));
 }
 
-// Draft hiện tại (reactive reference to store entry)
-const draft = computed(() => draftStore.drafts.find(d => d.id === props.draftId) ?? null);
+// Draft hiện tại — theo activeSessionId (thay đổi khi switch session)
+// Fallback sang props.draftId nếu chưa có activeSessionId (lần đầu mở)
+const draft = computed(() => {
+  const targetId = sessionStore.activeSessionId || props.draftId;
+  return draftStore.drafts.find(d => d.id === targetId) ?? null;
+});
 
-// Modal visible khi draft tồn tại và không minimize
-const isModalVisible = computed(() => !!draft.value && !draft.value.isMinimized);
+// Modal visible khi BẤT KỲ session nào đang active (không minimize)
+const isModalVisible = computed(() => {
+  // Hiện modal nếu có ít nhất 1 session đang mở (không minimize)
+  return sessionStore.sessions.some(s => !s.isMinimized);
+});
 
 // ─── Backend data ─────────────────────────────────────────────────
 const branches = ref<POSBranch[]>([]);
@@ -1045,7 +1211,7 @@ async function handleSwitchSession(targetSessionId: string) {
 
   // Save current scroll position
   const scrollEl = document.querySelector('.ob-pos-body');
-  const saveScrollPositions = scrollEl
+  const saveScrollPositions: Record<string, number> = scrollEl
     ? { 'pos-body': scrollEl.scrollTop }
     : {};
 
@@ -1058,6 +1224,9 @@ async function handleSwitchSession(targetSessionId: string) {
   const targetSession = sessionStore.sessions.find(s => s.id === targetSessionId);
   if (targetSession?.conversationId) {
     miniChatBridge.switchConversation(targetSession.conversationId);
+  } else if (targetSession?.contactId) {
+    // Session chưa có conversationId — yêu cầu bridge tìm theo contactId
+    miniChatBridge.switchByContact(targetSession.contactId);
   }
 
   // Restore scroll position after DOM update
@@ -1068,7 +1237,7 @@ async function handleSwitchSession(targetSessionId: string) {
   }
 }
 
-function handleDiscardSession(sessionId: string, contactName: string) {
+function handleDiscardSession(sessionId: string, _contactName: string) {
   showClearConfirm.value = true;
   // Store session id for confirm dialog
   (showClearConfirm as any)._discardTarget = sessionId;
@@ -1125,8 +1294,8 @@ async function fetchBranches() {
    RESIZER SPLITTER (Invisible Hover Indicator)
    ════════════════════════════════════ */
 .ob-split-resizer {
-  width: 8px;
-  margin: 0 -2px;
+  width: 6px;
+  margin: 0 -5px;
   height: 100%;
   cursor: col-resize;
   display: flex;
@@ -1182,6 +1351,20 @@ async function fetchBranches() {
   background: #eff6ff; color: #1d4ed8;
   border: 1px solid #bfdbfe;
   border-radius: 20px; padding: 2px 10px;
+}
+.ob-modal__unread-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700;
+  background: #ef4444; color: #fff;
+  border-radius: 20px; padding: 2px 10px;
+  cursor: pointer;
+  animation: ob-unread-pulse 2s ease-in-out infinite;
+  transition: background 0.15s ease;
+}
+.ob-modal__unread-badge:hover { background: #dc2626; }
+@keyframes ob-unread-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
 }
 .ob-modal__header-right { display: flex; align-items: center; gap: 6px; }
 .ob-win-controls { display: flex; align-items: center; gap: 4px; }
@@ -1711,6 +1894,86 @@ async function fetchBranches() {
 .ob-confirm-btn--cancel:hover { background: #e2e8f0; color: #1e293b; }
 .ob-confirm-btn--danger { background: #ef4444; color: #fff; }
 .ob-confirm-btn--danger:hover { background: #dc2626; }
+
+/* ════════════════════════════════════
+   INBOUND MESSAGE NOTIFICATIONS
+   ════════════════════════════════════ */
+.ob-notif-stack {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+.ob-notif-item {
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+  cursor: pointer;
+  min-width: 240px;
+  max-width: 360px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.ob-notif-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+.ob-notif-avatar {
+  width: 32px; height: 32px; min-width: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+}
+.ob-notif-body {
+  flex: 1;
+  min-width: 0;
+}
+.ob-notif-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ob-notif-text {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.ob-notif-close {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #94a3b8;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+.ob-notif-close:hover { background: rgba(239, 68, 68, 0.5); color: #fff; }
+
+/* Transition-group animations */
+.ob-notif-enter-active { transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-notif-leave-active { transition: all 0.25s ease-in; }
+.ob-notif-enter-from { opacity: 0; transform: translateX(-40px) scale(0.9); }
+.ob-notif-leave-to { opacity: 0; transform: translateX(-30px) scale(0.95); }
+.ob-notif-move { transition: transform 0.3s ease; }
 
 /* ════════════════════════════════════
    TOAST

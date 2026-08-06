@@ -65,11 +65,24 @@ function createPrismaClient() {
     adapter,
     // Tắt log SQL mặc định — bật khi cần debug bằng PRISMA_LOG_QUERIES=true trong .env
     // (trước đây bật tự động theo NODE_ENV=development gây ngập terminal + chậm)
+    // error/warn dùng emit:'event' để lọc P2002 (unique constraint khi backfill tin nhắn)
+    // tránh ngập terminal với noise "Unique constraint failed on conversation_id+zalo_msg_id"
     log: [
       ...(process.env.PRISMA_LOG_QUERIES === 'true' ? [{ emit: 'stdout' as const, level: 'query' as const }] : []),
-      'error',
-      'warn',
+      { emit: 'event' as const, level: 'error' as const },
+      { emit: 'event' as const, level: 'warn' as const },
     ],
+  });
+
+  // Lọc P2002 (unique constraint violation) — thường xảy ra khi backfill tin nhắn Zalo
+  // đã tồn tại trong DB. Code đã xử lý gracefully ở message-handler; log này chỉ là noise.
+  // Mọi error khác vẫn được in bình thường.
+  base.$on('error', (e) => {
+    if ((e.message ?? '').includes('Unique constraint')) return; // P2002 — handled by caller
+    console.error('prisma:error', e.message, e.target);
+  });
+  base.$on('warn', (e) => {
+    console.warn('prisma:warn', e.message, e.target);
   });
 
   return base.$extends({

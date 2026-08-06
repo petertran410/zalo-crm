@@ -1565,6 +1565,7 @@ function openOrderForContact() {
     contactPhone: props.contact?.phone || undefined,
     posCustomerId: posLinkStatus.value.posCustomerId || undefined,
     posCustomerCode: posLinkStatus.value.posCustomerCode || undefined,
+    conversationId: props.conversationId || undefined,
   });
 }
 const customerType = ref<string | null>('VIP');

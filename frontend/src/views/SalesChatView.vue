@@ -792,6 +792,38 @@ onUnmounted(() => {
   }
 });
 
+// ═══ Workspace Session Bridge ═══
+// Khi OrderBuilderWorkspace switch session → bridge.switchConversation(newConvId)
+// hoặc bridge.switchByContact(contactId)
+// → SalesChatView chọn conversation mới → MiniChatPanel tự render đúng KH mới
+
+// Watch 1: Switch by conversationId (trực tiếp)
+watch(
+  () => miniChatBridge.pendingConversationId,
+  async (newConvId) => {
+    if (!newConvId) return;
+    await selectConversation(newConvId);
+    miniChatBridge.publish(selectedConv, messages, sendingMsg, sendMessage);
+    miniChatBridge.clearPendingConversation();
+  },
+);
+
+// Watch 2: Switch by contactId (fallback khi session chưa có conversationId)
+watch(
+  () => miniChatBridge.pendingContactId,
+  async (contactId) => {
+    if (!contactId) return;
+    // Tìm conversation của contact trong danh sách đã load
+    const matchConv = conversations.value.find(
+      (c: any) => c.contact?.id === contactId,
+    );
+    if (matchConv?.id) {
+      await selectConversation(matchConv.id);
+      miniChatBridge.publish(selectedConv, messages, sendingMsg, sendMessage);
+    }
+    miniChatBridge.clearPendingConversation();
+  },
+);
 
 // Đổi trạng thái ở cột 4 (panel) → cập nhật selectedConv.contact.statusId → cột 3 sync (cùng tab).
 function onPanelStatusChanged(statusId: string | null) {

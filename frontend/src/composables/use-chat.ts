@@ -893,6 +893,28 @@ export function useChat() {
         }
       }
 
+      // ── Workspace Session: bắn event TRƯỚC các guard return ──────────────
+      // Phải dispatch TRƯỚC bumpBadge/updateColumn2 guard, vì những guard đó
+      // `return` sớm → event ở sau sẽ KHÔNG BAO GIỜ bắn cho tin nhắn từ nick khác.
+      if (data.message.senderType !== 'self' && typeof window !== 'undefined') {
+        const wsConv = conversations.value.find(c => c.id === data.conversationId);
+        window.dispatchEvent(new CustomEvent('workspace:inbound-message', {
+          detail: {
+            conversationId: data.conversationId,
+            contactId: wsConv?.contact?.id,
+            contactName: wsConv?.contact?.fullName || wsConv?.groupName,
+            message: {
+              id: data.message.id,
+              content: data.message.content ?? '',
+              contentType: data.message.contentType,
+              senderType: 'customer' as const,
+              senderName: wsConv?.contact?.fullName || '',
+              sentAt: data.message.sentAt,
+            },
+          },
+        }));
+      }
+
       // (b) OUT-OF-SCOPE (và không phải thread đang mở) → CHỈ đếm badge "N tin nick khác",
       // KHÔNG cho vào cột 2. Đây là chỗ "không load tin nick khác vào UI".
       if (cls.bumpBadge && data.accountId) {

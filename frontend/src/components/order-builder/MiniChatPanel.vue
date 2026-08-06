@@ -232,6 +232,13 @@ async function scrollToBottom(smooth = false) {
   await nextTick();
   if (messagesEl.value) {
     messagesEl.value.scrollTo({ top: messagesEl.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    if (!smooth) {
+      setTimeout(() => {
+        if (messagesEl.value) {
+          messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+        }
+      }, 100);
+    }
   }
 }
 
@@ -270,11 +277,36 @@ const initials = computed(() => {
   return name.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 });
 
-// ── Lifecycle ─────────────────────────────────────────────────────────
-// Live mode: watch messages, scroll xuống khi có tin mới
+// ── Lifecycle & Watchers ──────────────────────────────────────────────
+const isSwitchingContact = ref(false);
+
+// 1. Khi chuyển section / contactId khác → scroll xuống đáy LẬP TỨC (instant, không animation)
 watch(
-  () => isLiveMode.value && liveMessagesRef ? liveMessagesRef.value.length : 0,
-  () => { if (isLiveMode.value) void scrollToBottom(true); }
+  () => props.contactId,
+  async (newId, oldId) => {
+    if (newId !== oldId) {
+      isSwitchingContact.value = true;
+      await nextTick();
+      await scrollToBottom(false);
+      setTimeout(() => {
+        isSwitchingContact.value = false;
+      }, 300);
+    }
+  },
+  { immediate: true }
+);
+
+// 2. Khi danh sách tin nhắn thay đổi:
+// - Nếu vừa chuyển section (isSwitchingContact = true) -> scroll tức thì (instant)
+// - Nếu đang xem cùng hội thoại và có tin nhắn mới tăng lên -> scroll mượt (smooth)
+watch(
+  () => displayMessages.value.length,
+  async (newLen, oldLen) => {
+    if (newLen > 0) {
+      const shouldSmooth = !isSwitchingContact.value && oldLen > 0 && newLen > oldLen;
+      await scrollToBottom(shouldSmooth);
+    }
+  }
 );
 
 onMounted(async () => {
@@ -287,7 +319,7 @@ onMounted(async () => {
     }
   } else if (isLiveMode.value) {
     // Live: scroll xuống ngay khi mở modal
-    await scrollToBottom();
+    await scrollToBottom(false);
   }
 });
 

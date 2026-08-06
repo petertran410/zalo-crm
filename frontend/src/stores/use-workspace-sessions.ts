@@ -303,6 +303,9 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
             ...s,
             isMinimized: false,
             contactAvatar: opts.contactAvatar || s.contactAvatar,
+            contactPhone: opts.contactPhone || s.contactPhone,
+            posCustomerId: opts.posCustomerId || s.posCustomerId,
+            posCustomerCode: opts.posCustomerCode || s.posCustomerCode,
             conversationId: opts.conversationId || s.conversationId,
           };
         }
@@ -314,11 +317,12 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
       return existing.id;
     }
 
-    // Phải thu nhỏ cái đang full trước khi tạo mới
-    const hasOpenFull = sessions.value.some(s => !s.isMinimized);
-    if (hasOpenFull) return null;
-
     if (sessions.value.length >= MAX_SESSIONS) return null;
+
+    // Thu nhỏ tất cả các session đang mở trước khi tạo mới
+    sessions.value = sessions.value.map(s => 
+      !s.isMinimized ? { ...s, isMinimized: true } : s
+    );
 
     const session = makeSession(opts);
     sessions.value = [...sessions.value, session];  // immutable → trigger reactivity
@@ -348,6 +352,8 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
       return s;
     });
     activeSessionId.value = id;
+    // Clear unread badge khi user xem session
+    clearUnread(id);
     persist();
   }
 
@@ -396,9 +402,6 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
       });
     }
 
-    // Show skeleton
-    isSwitching.value = true;
-
     // Collapse current, expand target
     sessions.value = sessions.value.map(s => {
       if (s.id === targetId) return { ...s, isMinimized: false };
@@ -406,10 +409,6 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
       return s;
     });
     activeSessionId.value = targetId;
-
-    // Wait for skeleton animation
-    await new Promise(resolve => setTimeout(resolve, 300));
-    isSwitching.value = false;
 
     persist();
   }
@@ -434,6 +433,8 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
   // ── Persistence & Migration ─────────────────────────────────────────────────
 
   function hydrate() {
+    // Start listening for inbound messages as soon as store is active
+    startListeningInboundMessages();
     try {
       // 1. Try load new key
       let raw = localStorage.getItem(STORAGE_KEY);
@@ -464,6 +465,68 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
     } catch {
       localStorage.removeItem(STORAGE_KEY);
       localStorage.removeItem(OLD_STORAGE_KEY);
+    }
+  }
+
+  // ── Realtime: workspace:inbound-message listener ────────────────────────────
+  // Khi chat:message → use-chat.ts bắn `workspace:inbound-message` kèm
+  // { conversationId, contactId, contactName, message }
+  // → store tìm session tương ứng, +1 unread (nếu ko phải session đang xem),
+  //   push cached message.
+
+  let _listeningInbound = false;
+
+  function startListeningInboundMessages() {
+    if (_listeningInbound || typeof window === 'undefined') return;
+    _listeningInbound = true;
+
+    window.addEventListener('workspace:inbound-message', ((event: CustomEvent) => {
+      const detail = event.detail as {
+        conversationId: string;
+        contactId?: string;
+        contactName?: string;
+        message: CachedMessage;
+      };
+      if (!detail) return;
+
+      // Tìm session matching: ưu tiên conversationId, fallback contactId
+      let session = sessions.value.find(s => s.conversationId === detail.conversationId);
+      if (!session && detail.contactId) {
+        session = sessions.value.find(s => s.contactId === detail.contactId);
+      }
+      if (!session) return;
+
+      // Nếu session đang active (đang xem) → không tăng unread (user đang nhìn)
+      // Chỉ tăng unread cho sessions ở background
+      const isCurrentlyViewing = session.id === activeSessionId.value && !session.isMinimized;
+
+      // Update last message preview
+      const lastMsg = detail.message?.content
+        ? (detail.message.content.length > 50
+          ? detail.message.content.slice(0, 50) + '…'
+          : detail.message.content)
+        : undefined;
+
+      // Push cached message (max 20)
+      const newCached = [...(session.cachedMessages || []), detail.message].slice(-MAX_CACHED_MESSAGES);
+
+      updateSession(session.id, {
+        lastMessage: lastMsg || session.lastMessage,
+        unreadCount: isCurrentlyViewing ? session.unreadCount : (session.unreadCount || 0) + 1,
+        cachedMessages: newCached,
+        // Link conversation nếu chưa có
+        conversationId: session.conversationId || detail.conversationId,
+      });
+    }) as EventListener);
+  }
+
+  /**
+   * Reset unread khi user xem session (expand / switch to).
+   */
+  function clearUnread(sessionId: string) {
+    const session = sessions.value.find(s => s.id === sessionId);
+    if (session && session.unreadCount > 0) {
+      updateSession(sessionId, { unreadCount: 0 });
     }
   }
 
@@ -546,6 +609,8 @@ export const useWorkspaceSessionStore = defineStore('workspaceSessions', () => {
     // Persistence
     persist,
     hydrate,
+    startListeningInboundMessages,
+    clearUnread,
   };
 });
 

@@ -84,21 +84,32 @@ export const useMiniChatBridgeStore = defineStore('miniChatBridge', () => {
 
   // ── Workspace Session Bridge ─────────────────────────────────────
   // Khi switch workspace session, SalesChatView nhận signal qua
-  // pendingConversationId và re-select conversation đó.
+  // pendingConversationId hoặc pendingContactId và re-select conversation đó.
 
   const pendingConversationId = ref<string | null>(null);
+  const pendingContactId = ref<string | null>(null);
 
   /**
-   * Yêu cầu SalesChatView chuyển sang conversation khác.
-   * SalesChatView watches `pendingConversationId` và gọi onSelectConv().
+   * Yêu cầu SalesChatView chuyển sang conversation khác (bằng conversationId).
+   * SalesChatView watches `pendingConversationId` và gọi selectConversation().
    */
   function switchConversation(newConversationId: string | undefined | null) {
+    pendingContactId.value = null; // clear contact fallback
     pendingConversationId.value = newConversationId || null;
   }
 
-  /** SalesChatView gọi sau khi xử lý xong pendingConversationId */
+  /**
+   * Khi session chưa có conversationId → yêu cầu SalesChatView tìm conv theo contactId.
+   */
+  function switchByContact(contactId: string) {
+    pendingConversationId.value = null;
+    pendingContactId.value = contactId;
+  }
+
+  /** SalesChatView gọi sau khi xử lý xong pending signals */
   function clearPendingConversation() {
     pendingConversationId.value = null;
+    pendingContactId.value = null;
   }
 
   return {
@@ -111,7 +122,9 @@ export const useMiniChatBridgeStore = defineStore('miniChatBridge', () => {
     unpublish,
     // Workspace session bridge
     pendingConversationId,
+    pendingContactId,
     switchConversation,
+    switchByContact,
     clearPendingConversation,
   };
 });

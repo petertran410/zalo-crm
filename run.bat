@@ -100,22 +100,22 @@ echo ✓ Frontend is ready!
 echo.
 
 :: 5. Open browser
-@REM set COCCOC_PATH=
-@REM if exist "%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe"
-@REM ) else if exist "%ProgramFiles%\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%ProgramFiles%\CocCoc\Browser\Application\browser.exe"
-@REM ) else if exist "%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe" (
-@REM     set "COCCOC_PATH=%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe"
-@REM )
+set COCCOC_PATH=
+if exist "%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe" (
+    set "COCCOC_PATH=%USERPROFILE%\AppData\Local\CocCoc\Browser\Application\browser.exe"
+) else if exist "%ProgramFiles%\CocCoc\Browser\Application\browser.exe" (
+    set "COCCOC_PATH=%ProgramFiles%\CocCoc\Browser\Application\browser.exe"
+) else if exist "%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe" (
+    set "COCCOC_PATH=%ProgramFiles(x86)%\CocCoc\Browser\Application\browser.exe"
+)
 
-@REM if defined COCCOC_PATH (
-@REM     echo Opening in Coc Coc browser...
-@REM     start "" "%COCCOC_PATH%" "http://localhost:5173/setup"
-@REM ) else (
-@REM     echo Opening in default browser...
-@REM     start "" "http://localhost:5173/setup"
-@REM )
+if defined COCCOC_PATH (
+    echo Opening in Coc Coc browser...
+    start "" "%COCCOC_PATH%" "http://localhost:5173"
+) else (
+    echo Opening in default browser...
+    start "" "http://localhost:5173"
+)
 
 echo.
 echo =======================================================
