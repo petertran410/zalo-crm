@@ -121,6 +121,10 @@ export interface MediaFolder {
   kind: string;
   visibility: 'private' | 'public';
   ownerUserId: string | null;
+  /** Thư mục cha — null = thư mục gốc. BE trả danh sách PHẲNG, FE tự dựng cây (2026-08-07). */
+  parentId?: string | null;
+  /** Đường dẫn thư mục thật trên đĩa máy chủ, vd "viet_nam/bao_gia". */
+  diskSlug?: string | null;
 }
 
 /** Sửa quyền/tên/tag/thư mục của 1 asset. confirmShare=true: xác nhận chia sẻ ảnh nick Riêng tư (D11). */
@@ -248,11 +252,12 @@ export async function listMediaTags(
   return data.tags as Array<{ tag: string; count: number }>;
 }
 
-/** Tạo thư mục. */
+/** Tạo thư mục. parentId != null → thư mục con (tối đa 10 cấp, BE chặn). */
 export async function createMediaFolder(
   name: string,
   visibility: 'private' | 'public' = 'private',
-): Promise<{ folder: { id: string; name: string } }> {
-  const { data } = await api.post('/media/folders', { name, visibility });
+  parentId: string | null = null,
+): Promise<{ folder: { id: string; name: string; parentId: string | null; diskSlug: string | null } }> {
+  const { data } = await api.post('/media/folders', { name, visibility, parentId });
   return data;
 }

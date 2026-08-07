@@ -33,7 +33,7 @@
         <div v-if="loading" class="mpd-empty">Đang tải…</div>
         <div v-else-if="items.length === 0" class="mpd-empty">
           <template v-if="hasFilter">Không có {{ kindLabel }} nào khớp bộ lọc. Thử bỏ bớt điều kiện.</template>
-          <template v-else>Chưa có {{ kindLabel }} công khai trong kho. Vào trang <b>Kho phương tiện</b> tải lên (đặt Công khai) trước.</template>
+          <template v-else>Chưa có {{ kindLabel }} công khai trong kho. Vào trang <b>Kho lưu trữ</b> tải lên (đặt Công khai) trước.</template>
         </div>
         <div v-else class="mpd-grid">
           <button

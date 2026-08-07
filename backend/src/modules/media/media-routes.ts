@@ -25,6 +25,7 @@ import { buildMediaScopeWhere, isOrgOwner, activeShareWhere } from './media-acce
 import {
   createFolderOnDisk, mirrorAssetIntoFolder, unmirrorAssetFromFolder,
   renameFolderOnDisk, deleteFolderOnDisk,
+  collectDescendantIds, folderDepth, MAX_FOLDER_DEPTH,
 } from './media-folder-service.js';
 import { randomBytes } from 'node:crypto';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
@@ -316,15 +317,19 @@ export async function mediaRoutes(app: FastifyInstance) {
   );
 
   // ── POST /api/v1/media/upload — tải ảnh/file lên kho (multipart) ───────────
-  // Kho Lưu Trữ 2026-07-22 (anh chốt): BỎ requireGrant('media','create') — mọi người đăng
-  // nhập đều tải lên được, không cần quyền. Bù lại tệp vào thẳng phạm vi RIÊNG TƯ
-  // (storageScope='private_upload'): chỉ người tải lên + Chủ tài khoản + người được chia sẻ
-  // liên kết mới thấy; media.view_all KHÔNG bypass. Cùng khuôn "auth-only" như tasks/tickets.
+  // 2026-08-07 (anh chốt): ĐẢO lại quyết định "auth-only" của 2026-07-22 — tải lên GIỜ ĐÒI
+  // quyền media.create, do admin cấp qua nhóm quyền. Chủ tài khoản (role='owner') và admin
+  // vẫn đi qua hết vì userHasGrant tự bypass ở 2 vai này.
   //
-  // Tương thích ngược: truyền field `storageScope=catalog` để tải lên KHO CHUNG như trước —
-  // đường này VẪN đòi quyền media.create (kiểm trong thân hàm, xem bên dưới).
+  // ⚠️ Người đang KHÔNG có media.create sẽ mất quyền tải lên ngay khi bản này lên —
+  //    admin phải cấp lại trong Phân quyền. (Trước đây mọi tài khoản đăng nhập đều tải được.)
+  //
+  // Phạm vi lưu KHÔNG đổi: mặc định vẫn 'private_upload' (chỉ người tải lên + Chủ tài khoản
+  // + người được chia sẻ mới thấy; media.view_all KHÔNG bypass). Truyền field
+  // `storageScope=catalog` để tải lên KHO CHUNG như cũ — giờ cùng đòi đúng grant này.
   app.post(
     '/api/v1/media/upload',
+    { preHandler: requireGrant('media', 'create') },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = request.user!;
       const userId = (user as any).userId ?? user.id;
@@ -365,11 +370,8 @@ export async function mediaRoutes(app: FastifyInstance) {
           pending.push({ buffer: buf, mimeType: part.mimetype, kind, filename: part.filename });
         }
 
-        // Tải lên KHO CHUNG vẫn là hành vi đặc quyền → giữ nguyên yêu cầu media.create.
-        // Chỉ nhánh 'private_upload' (mặc định, tab Kho) mới mở cho mọi người.
-        if (storageScope === 'catalog' && !(await userHasGrant(userId, 'media', 'create'))) {
-          return reply.status(403).send({ error: 'Không có quyền tải lên kho chung' });
-        }
+        // (2026-08-07) Bỏ kiểm media.create riêng cho nhánh 'catalog': preHandler ở trên đã
+        // đòi đúng grant đó cho MỌI nhánh, kiểm lại ở đây là thừa.
 
         // Register SAU khi đã đọc hết parts → visibility/folderId/tagIds chắc chắn đầy đủ.
         const created: any[] = [];
@@ -660,6 +662,12 @@ export async function mediaRoutes(app: FastifyInstance) {
         });
       }
 
+      // Thư mục THẬT trên đĩa (2026-08-07): trước đây CHỈ lúc tải lên mới đặt liên kết, nên
+      // tệp chuyển thư mục sau đó không bao giờ hiện trong thư mục đĩa. Gỡ liên kết cũ PHẢI
+      // chạy TRƯỚC khi ghi folderId mới (unmirror đọc thư mục hiện tại từ DB để biết gỡ ở đâu).
+      const movingFolder = body.folderId !== undefined && body.folderId !== asset.folderId;
+      if (movingFolder) await unmirrorAssetFromFolder(user.orgId, id);
+
       const updated = await prisma.mediaAsset.update({
         where: { id },
         data: {
@@ -669,6 +677,9 @@ export async function mediaRoutes(app: FastifyInstance) {
           ...(body.folderId !== undefined ? { folderId: body.folderId } : {}),
         },
       });
+
+      // Đặt liên kết vào thư mục mới. Fire-and-forget: hỏng đĩa không được làm hỏng lần sửa.
+      if (movingFolder && body.folderId) void mirrorAssetIntoFolder(user.orgId, id, body.folderId);
 
       // AUDIT privacy (S8): chuyển sang Công khai → ghi log (đặc biệt ảnh từ nick Riêng tư).
       if (body.visibility === 'public') {
@@ -711,10 +722,19 @@ export async function mediaRoutes(app: FastifyInstance) {
 
       // Gán folder: 1 update chung cho tất cả (cùng giá trị).
       if (body.folderId !== undefined) {
+        // Thư mục THẬT trên đĩa (2026-08-07) — như PATCH /:id: gỡ liên kết cũ TRƯỚC khi ghi
+        // folderId mới, đặt liên kết mới SAU. Tuần tự theo từng tệp cho an toàn (tối đa 200).
+        for (const a of scoped) await unmirrorAssetFromFolder(user.orgId, a.id);
+
         await prisma.mediaAsset.updateMany({
           where: { id: { in: scoped.map((a) => a.id) } },
           data: { folderId: body.folderId },
         });
+
+        if (body.folderId) {
+          const target = body.folderId;
+          for (const a of scoped) void mirrorAssetIntoFolder(user.orgId, a.id, target);
+        }
       }
       // Gán thêm tag: hợp nhất tag mới vào tag cũ per-asset (không ghi đè tag đang có).
       // normalizeTags: lowercase + dedup (gộp tag/dự án, không phân biệt hoa/thường — 2026-06-15).
@@ -851,6 +871,9 @@ export async function mediaRoutes(app: FastifyInstance) {
       });
       if (!asset) return reply.status(404).send({ error: 'Không tìm thấy media trong thùng rác' });
       await prisma.mediaAsset.update({ where: { id }, data: { archivedAt: null, trashedById: null } });
+      // Bỏ vào thùng rác đã GỠ tên khỏi thư mục đĩa → khôi phục phải đặt lại, nếu không tệp
+      // về kho nhưng thư mục đĩa vẫn trống (2026-08-07).
+      if (asset.folderId) void mirrorAssetIntoFolder(user.orgId, id, asset.folderId);
       logger.info(`[media][audit] restore asset=${id} user=${userId}`);
       return { ok: true };
     },
@@ -1019,24 +1042,44 @@ export async function mediaRoutes(app: FastifyInstance) {
             : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] }),
         },
         orderBy: { name: 'asc' },
-        // diskSlug: tên thư mục THẬT trên đĩa — FE hiện để anh biết mở đường dẫn nào.
-        select: { id: true, name: true, kind: true, visibility: true, ownerUserId: true, diskSlug: true },
+        // diskSlug: đường dẫn thư mục THẬT trên đĩa — FE hiện để anh biết mở chỗ nào.
+        // parentId: FE tự dựng cây từ danh sách phẳng này (2026-08-07).
+        select: {
+          id: true, name: true, kind: true, visibility: true,
+          ownerUserId: true, diskSlug: true, parentId: true,
+        },
       });
       return { folders };
     },
   );
 
   // ── POST /api/v1/media/folders — tạo thư mục ──────────────────────────────
-  // Kho Lưu Trữ 2026-07-22 (anh chốt): BỎ requireGrant — ai tải tệp lên được thì tạo được
-  // thư mục để xếp tệp. Đồng thời tạo LUÔN thư mục THẬT trên đĩa với tên đã bỏ dấu
-  // ("việt nam" → "viet_nam") để mở ổ đĩa trên máy chủ là thấy đúng cây thư mục.
+  // Nguyên tắc giữ nguyên: ai tải tệp lên được thì tạo được thư mục để xếp tệp — nên route
+  // này đi CÙNG grant với upload (2026-08-07: cả hai là media.create).
+  // Tạo LUÔN thư mục THẬT trên đĩa với tên đã bỏ dấu ("việt nam" → "viet_nam") để mở ổ đĩa
+  // trên máy chủ là thấy đúng cây thư mục.
   app.post(
     '/api/v1/media/folders',
+    { preHandler: requireGrant('media', 'create') },
     async (request: FastifyRequest, reply: FastifyReply) => {
       const user = request.user!;
       const userId = (user as any).userId ?? user.id;
-      const body = request.body as { name: string; visibility?: 'private' | 'public' };
+      const body = request.body as { name: string; visibility?: 'private' | 'public'; parentId?: string | null };
       if (!body?.name?.trim()) return reply.status(400).send({ error: 'Tên thư mục bắt buộc' });
+
+      // Thư mục cha (2026-08-07) — phải cùng org và là thư mục thật, không phải bộ sưu tập.
+      const parentId = body.parentId?.trim() || null;
+      if (parentId) {
+        const parent = await prisma.mediaAlbum.findFirst({
+          where: { id: parentId, orgId: user.orgId, kind: 'folder' },
+          select: { id: true },
+        });
+        if (!parent) return reply.status(404).send({ error: 'Không tìm thấy thư mục cha' });
+        if ((await folderDepth(user.orgId, parentId)) >= MAX_FOLDER_DEPTH) {
+          return reply.status(400).send({ error: `Thư mục lồng quá sâu (tối đa ${MAX_FOLDER_DEPTH} cấp)` });
+        }
+      }
+
       const folder = await prisma.mediaAlbum.create({
         data: {
           orgId: user.orgId,
@@ -1045,12 +1088,13 @@ export async function mediaRoutes(app: FastifyInstance) {
           visibility: body.visibility ?? 'private',
           ownerUserId: userId,
           createdById: userId,
+          parentId,
         },
       });
       // ĐỢI mkdir (không fire-and-forget): FE hiện tên thư mục đĩa ngay sau khi tạo, và
       // mkdir chỉ tốn vài ms. Lỗi đĩa KHÔNG làm hỏng việc tạo thư mục trong kho (hàm tự nuốt).
-      const diskSlug = await createFolderOnDisk(folder.id, folder.name);
-      return { folder: { id: folder.id, name: folder.name, diskSlug } };
+      const diskSlug = await createFolderOnDisk(folder.id, folder.name, parentId);
+      return { folder: { id: folder.id, name: folder.name, diskSlug, parentId } };
     },
   );
 
@@ -1085,6 +1129,10 @@ export async function mediaRoutes(app: FastifyInstance) {
   // ── DELETE /api/v1/media/folders/:id — xoá thư mục (kéo theo thư mục đĩa) ──
   // Tệp bên trong KHÔNG mất: MediaAsset.folderId SetNull (schema), byte kho phẳng giữ nguyên.
   // Chỉ các LIÊN KẾT trong thư mục đĩa bị gỡ (force=true).
+  //
+  // 2026-08-07 (cây lồng nhau): xoá thư mục cha là xoá CẢ cây con. FK parent_id ON DELETE
+  // CASCADE tự dọn hàng con trong DB, nhưng tệp trong các thư mục con thì PHẢI tự trả về
+  // "không thư mục" trước — nếu không chúng giữ folderLinkName trỏ vào thư mục đã biến mất.
   app.delete(
     '/api/v1/media/folders/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1097,12 +1145,15 @@ export async function mediaRoutes(app: FastifyInstance) {
       });
       if (!folder) return reply.status(404).send({ error: 'Không tìm thấy thư mục' });
 
+      // Cả cây: chính nó + con cháu. rm -r ở thư mục gốc của cây đã dọn hết đĩa một lượt.
+      const treeIds = [folder.id, ...(await collectDescendantIds(user.orgId, folder.id))];
       await deleteFolderOnDisk(user.orgId, folder.id, true);
       await prisma.mediaAsset.updateMany({
-        where: { orgId: user.orgId, folderId: folder.id },
+        where: { orgId: user.orgId, folderId: { in: treeIds } },
         data: { folderId: null, folderLinkName: null },
       });
-      await prisma.mediaAlbum.delete({ where: { id: folder.id } });
+      await prisma.mediaAlbum.delete({ where: { id: folder.id } }); // cascade xoá thư mục con
+      logger.info(`[media][audit] delete_folder tree=${treeIds.length} root=${folder.id} user=${userId}`);
       return { ok: true };
     },
   );

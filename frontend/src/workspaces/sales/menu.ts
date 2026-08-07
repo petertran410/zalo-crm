@@ -46,7 +46,7 @@ export const salesMenu: MenuItemConfig[] = [
   },
   {
     key: 'media',
-    title: 'Kho ảnh',
+    title: 'Kho lưu trữ',
     icon: 'mdi-image-multiple-outline',
     materialIcon: 'auto_awesome',
     to: '/media',

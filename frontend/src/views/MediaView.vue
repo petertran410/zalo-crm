@@ -2,13 +2,18 @@
   <div class="media-page">
     <!-- Top bar -->
     <header class="m-top">
-      <h1 class="m-title">Kho phương tiện</h1>
+      <h1 class="m-title">Kho lưu trữ</h1>
       <div class="m-tools">
         <div class="m-search">
           <span class="i">🔍</span>
           <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
         </div>
         <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>
+        <!-- Tải cả THƯ MỤC (2026-08-07): webkitdirectory cho chọn 1 thư mục, trình duyệt trả
+             mọi tệp bên trong kèm đường dẫn tương đối → dựng lại đúng cây thư mục trong kho. -->
+        <button class="btn-folder" :disabled="folderUploading" title="Tải lên cả một thư mục (giữ nguyên thư mục con)" @click="triggerFolderUpload">
+          <FolderUpIcon :size="15" :stroke-width="1.9" /> Tải thư mục
+        </button>
         <button v-if="!trashMode" class="btn-multi" :class="{ on: multiMode }" :title="multiMode ? 'Tắt chọn nhiều' : 'Chọn nhiều ảnh'" @click="toggleMultiMode">
           <CheckSquareIcon :size="15" :stroke-width="1.9" /> Chọn nhiều
         </button>
@@ -16,6 +21,16 @@
           <Trash2Icon :size="15" :stroke-width="1.9" /> Thùng rác
         </button>
         <input ref="fileInput" type="file" multiple accept="image/*,video/*,.pdf,.xlsx,.docx,.zip" hidden @change="onFilesPicked" />
+        <!-- webkitdirectory: thuộc tính không chuẩn nhưng Chrome/Edge/Firefox/Safari đều hiểu.
+             Vue cần :webkitdirectory="true" vì đây không phải attribute HTML hợp lệ. -->
+        <input
+          ref="folderInput"
+          type="file"
+          multiple
+          :webkitdirectory="true"
+          hidden
+          @change="onFolderPicked"
+        />
       </div>
     </header>
 
@@ -98,14 +113,32 @@
     </div>
 
     <div v-if="!trashMode" class="m-work">
-      <!-- Folder tree -->
+      <!-- Folder tree — cây lồng nhau (2026-08-07). BE trả danh sách phẳng + parentId,
+           `folderTree` dựng cây, `visibleFolderRows` làm phẳng lại theo nhánh đang mở. -->
       <aside class="m-tree">
         <div class="tree-ttl">Thư mục
-          <button class="addf" title="Tạo thư mục" @click="onCreateFolder">＋</button>
+          <button class="addf" title="Tạo thư mục gốc" @click="onCreateFolder(null)">＋</button>
         </div>
         <div class="f" :class="{ on: !activeFolder }" @click="setFolder(null)"><FolderIcon :size="13" :stroke-width="1.9" /> Tất cả</div>
-        <div v-for="f in folders" :key="f.id" class="f" :class="{ on: activeFolder === f.id }" @click="setFolder(f.id)">
-          <FolderIcon :size="13" :stroke-width="1.9" /> {{ f.name }} <LockIcon v-if="f.visibility === 'private'" class="lk" :size="11" :stroke-width="2" />
+        <div
+          v-for="row in visibleFolderRows"
+          :key="row.folder.id"
+          class="f"
+          :class="{ on: activeFolder === row.folder.id }"
+          :style="{ paddingLeft: `${8 + row.depth * 13}px` }"
+          @click="setFolder(row.folder.id)"
+        >
+          <!-- Mũi tên chỉ hiện ở thư mục CÓ con; bấm mũi tên chỉ mở/gập, không đổi thư mục đang xem. -->
+          <button
+            v-if="row.hasChildren"
+            class="tw"
+            :title="expanded.has(row.folder.id) ? 'Thu gọn' : 'Mở rộng'"
+            @click.stop="toggleExpand(row.folder.id)"
+          >{{ expanded.has(row.folder.id) ? '▾' : '▸' }}</button>
+          <span v-else class="tw tw-empty"></span>
+          <FolderIcon :size="13" :stroke-width="1.9" /> {{ row.folder.name }}
+          <LockIcon v-if="row.folder.visibility === 'private'" class="lk" :size="11" :stroke-width="2" />
+          <button class="addsub" title="Tạo thư mục con" @click.stop="onCreateFolder(row.folder.id)">＋</button>
         </div>
       </aside>
 
@@ -130,9 +163,9 @@
 
         <div v-else-if="items.length === 0" class="m-empty">
           <div class="empty-ic"><ImageIcon :size="44" :stroke-width="1.4" /></div>
-          <div class="empty-ttl">Kho ảnh của bạn đang trống</div>
+          <div class="empty-ttl">Kho lưu trữ của bạn đang trống</div>
           <div class="empty-sub">Tải ảnh hay dùng (bảng giá, mặt bằng, brochure) để gửi khách 1 chạm.</div>
-          <button class="btn-dark" @click="triggerUpload">+ Tải ảnh đầu tiên</button>
+          <button class="btn-dark" @click="triggerUpload">+ Tải tệp đầu tiên</button>
           <div class="empty-hint"><LightbulbIcon :size="13" :stroke-width="1.9" /> Hoặc chuột phải ảnh trong chat → <b>Lưu vào Media</b></div>
         </div>
 
@@ -213,7 +246,7 @@ import {
   Trash2 as Trash2Icon, RotateCcw as RotateCcwIcon, X as XIcon, CheckSquare as CheckSquareIcon,
   Globe as GlobeIcon, Lock as LockIcon, Smartphone as NickIcon, Upload as UploadIcon,
   Image as ImageIcon, FileText as FileIcon, Video as VideoIcon, Folder as FolderIcon,
-  Lightbulb as LightbulbIcon,
+  Lightbulb as LightbulbIcon, FolderUp as FolderUpIcon,
 } from 'lucide-vue-next';
 
 // Icon placeholder theo loại media (thay emoji 🎬📄🖼 — Lucide, thống nhất 2026-06-15).
@@ -250,6 +283,9 @@ const activeFolder = ref<string | null>(null);
 const activeTags = ref<string[]>([]);
 const selected = ref<MediaAssetItem | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const folderInput = ref<HTMLInputElement | null>(null);
+/** Đang dựng cây + tải cả thư mục — khoá nút để không bấm chồng lên nhau. */
+const folderUploading = ref(false);
 
 // LEVER 2 (lọc sâu — anh chốt 2026-06-12).
 const showLever2 = ref(false);
@@ -268,6 +304,44 @@ const total = ref(0);
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
 const activeFolderName = computed(() => folders.value.find((f) => f.id === activeFolder.value)?.name ?? '');
+
+// ── Cây thư mục lồng nhau (2026-08-07) ──────────────────────────────────────
+// BE trả DANH SÁCH PHẲNG + parentId. Dựng cây ở FE để 1 request là đủ (số thư mục nhỏ),
+// và để lọc theo quyền vẫn nằm gọn một chỗ ở BE.
+const expanded = ref<Set<string>>(new Set());
+function toggleExpand(id: string) {
+  const next = new Set(expanded.value);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  expanded.value = next;
+}
+
+/** parentId → danh sách con, sắp theo tên. Thư mục có cha đã bị lọc mất (quyền) coi như gốc. */
+const childrenByParent = computed(() => {
+  const ids = new Set(folders.value.map((f) => f.id));
+  const map = new Map<string | null, MediaFolder[]>();
+  for (const f of folders.value) {
+    const key = f.parentId && ids.has(f.parentId) ? f.parentId : null;
+    const arr = map.get(key) ?? [];
+    arr.push(f);
+    map.set(key, arr);
+  }
+  for (const arr of map.values()) arr.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  return map;
+});
+
+/** Cây làm phẳng thành các dòng để v-for — chỉ gồm nhánh đang mở. */
+const visibleFolderRows = computed(() => {
+  const rows: Array<{ folder: MediaFolder; depth: number; hasChildren: boolean }> = [];
+  const walk = (parentId: string | null, depth: number) => {
+    for (const f of childrenByParent.value.get(parentId) ?? []) {
+      const hasChildren = (childrenByParent.value.get(f.id)?.length ?? 0) > 0;
+      rows.push({ folder: f, depth, hasChildren });
+      if (hasChildren && expanded.value.has(f.id)) walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return rows;
+});
 
 function sizeRange(): { sizeMin?: number; sizeMax?: number } {
   const MB = 1024 * 1024;
@@ -437,16 +511,101 @@ async function onFilesPicked(e: Event) {
   }
 }
 
-async function onCreateFolder() {
-  const name = window.prompt('Tên thư mục mới:');
+async function onCreateFolder(parentId: string | null = null) {
+  const parentName = parentId ? folders.value.find((f) => f.id === parentId)?.name : null;
+  const name = window.prompt(parentName ? `Tên thư mục con trong "${parentName}":` : 'Tên thư mục mới:');
   if (!name?.trim()) return;
   try {
-    await createMediaFolder(name.trim(), 'private');
+    await createMediaFolder(name.trim(), 'private', parentId);
     toast.success('Đã tạo thư mục');
+    if (parentId) expanded.value = new Set(expanded.value).add(parentId); // mở cha để thấy con vừa tạo
     loadFolders();
   } catch (e: any) {
     toast.warning(e?.response?.data?.error || 'Không tạo được thư mục');
   }
+}
+
+// ── Tải lên CẢ THƯ MỤC (2026-08-07) ─────────────────────────────────────────
+// input[webkitdirectory] trả về danh sách tệp phẳng, mỗi tệp mang webkitRelativePath dạng
+// "bao_gia/2026/q4.pdf". Ta dựng lại đúng cây đó bằng các thư mục kho (tạo lần lượt từ gốc
+// xuống, nhớ id trong `made` để không tạo trùng), rồi tải từng nhóm tệp vào thư mục của nó.
+// Thư mục gốc được chọn nằm DƯỚI thư mục đang mở, nên tải vào "Tất cả" thì nó thành gốc.
+function triggerFolderUpload() { folderInput.value?.click(); }
+
+async function onFolderPicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (!files.length) return;
+
+  // Gom tệp theo đường dẫn thư mục chứa nó ("" = ngay trong thư mục gốc được chọn).
+  const byDir = new Map<string, File[]>();
+  for (const f of files) {
+    const rel = (f as any).webkitRelativePath as string | undefined;
+    const dir = rel ? rel.split('/').slice(0, -1).join('/') : '';
+    const arr = byDir.get(dir) ?? [];
+    arr.push(f);
+    byDir.set(dir, arr);
+  }
+
+  folderUploading.value = true;
+  try {
+    // Tạo thư mục trước, theo thứ tự nông → sâu để cha luôn có trước con.
+    const made = new Map<string, string>(); // đường dẫn tương đối → id thư mục kho
+    const allDirs = [...new Set([...byDir.keys()].flatMap(dirAndAncestors))]
+      .filter(Boolean)
+      .sort((a, b) => a.split('/').length - b.split('/').length);
+
+    for (const dir of allDirs) {
+      const segs = dir.split('/');
+      const parentPath = segs.slice(0, -1).join('/');
+      const parentId = parentPath ? made.get(parentPath) ?? null : activeFolder.value;
+      const leaf = segs[segs.length - 1];
+
+      // Tải lại CÙNG một thư mục lần thứ hai thì DÙNG LẠI thư mục cũ, không tạo bản trùng:
+      // BE không khoá trùng tên, mà trên đĩa hai thư mục cùng tên lại slug ra cùng một chỗ
+      // → hai thư mục trong kho dùng chung một thư mục đĩa, nhìn rất khó hiểu.
+      const existing = folders.value.find(
+        (f) => f.name === leaf && (f.parentId ?? null) === parentId,
+      );
+      if (existing) { made.set(dir, existing.id); continue; }
+
+      const res = await createMediaFolder(leaf, 'private', parentId);
+      made.set(dir, res.folder.id);
+    }
+
+    // Tải tệp vào đúng thư mục của nó. Lỗi 1 nhóm không chặn các nhóm còn lại.
+    let ok = 0;
+    let failed = 0;
+    for (const [dir, group] of byDir) {
+      const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
+      try {
+        const res = await uploadMedia(group, { visibility: 'private', folderId: folderId ?? undefined });
+        ok += res.assets.length;
+      } catch {
+        failed += group.length;
+      }
+    }
+    toast.success(
+      failed > 0
+        ? `Đã tải ${ok} tệp vào ${allDirs.length} thư mục (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
+        : `Đã tải ${ok} tệp vào ${allDirs.length} thư mục`,
+    );
+    if (activeFolder.value) expanded.value = new Set(expanded.value).add(activeFolder.value);
+    loadFolders();
+    reload();
+  } catch (err: any) {
+    toast.warning(err?.response?.data?.error || 'Tải thư mục thất bại');
+  } finally {
+    folderUploading.value = false;
+  }
+}
+
+/** "a/b/c" → ["a", "a/b", "a/b/c"] — để tạo đủ cả thư mục trung gian không chứa tệp nào. */
+function dirAndAncestors(dir: string): string[] {
+  if (!dir) return [];
+  const segs = dir.split('/');
+  return segs.map((_, i) => segs.slice(0, i + 1).join('/'));
 }
 
 function onAssetUpdated(patch: Partial<MediaAssetItem>) {
@@ -534,6 +693,10 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .m-search { display:flex; align-items:center; gap:7px; border:1px solid var(--hairline); border-radius:var(--r-sm); padding:6px 12px; width:240px; }
 .m-search input { border:none; outline:none; font-size:13px; width:100%; background:transparent; color:var(--body); }
 .btn-dark { background:var(--ink); color:#fff; border:none; border-radius:var(--r-md); padding:8px 16px; font-size:13.5px; font-weight:500; cursor:pointer; }
+/* Tải cả thư mục — thứ yếu so với "+ Tải lên" nên để dạng viền, cùng khuôn .btn-trash/.btn-multi. */
+.btn-folder { display:inline-flex; align-items:center; gap:6px; background:#fff; color:var(--muted); border:1px solid var(--hairline); border-radius:var(--r-md); padding:7px 13px; font-size:13px; font-weight:500; cursor:pointer; }
+.btn-folder:hover:not(:disabled) { border-color:#1786be; color:#1786be; }
+.btn-folder:disabled { opacity:.5; cursor:default; }
 .m-tabs { display:flex; gap:2px; padding:0 24px; border-bottom:1px solid var(--hairline); }
 .tab { padding:11px 16px; font-size:14px; color:var(--muted); border:none; background:none; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
 .tab.on { color:var(--ink); font-weight:500; border-bottom-color:var(--ink); }
@@ -559,6 +722,15 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .f { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--r-sm); font-size:13px; color:var(--body); cursor:pointer; }
 .f.on { background:var(--soft); color:var(--ink); font-weight:500; }
 .f .lk { margin-left:auto; font-size:11px; }
+/* ── Cây thư mục lồng nhau (2026-08-07) ── */
+/* Mũi tên mở/gập. .tw-empty giữ đúng chỗ trống để nhãn các cấp thẳng hàng. */
+.tw { width:13px; flex-shrink:0; border:none; background:none; padding:0; cursor:pointer; color:var(--muted); font-size:10px; line-height:1; text-align:left; }
+.tw-empty { cursor:default; }
+/* Nút "+" tạo thư mục con — chỉ hiện khi rê chuột lên dòng, tránh rối cây. */
+.addsub { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 2px; opacity:0; }
+.f:hover .addsub { opacity:1; }
+.addsub:hover { color:var(--ink); }
+.f .lk + .addsub { margin-left:4px; }
 .m-grid-wrap { flex:1; padding:16px 24px; overflow:auto; min-width:0; }
 .m-pager { display:flex; align-items:center; justify-content:center; gap:14px; padding:16px 0 4px; }
 .pg-btn { border:1px solid var(--hairline); background:var(--canvas); border-radius:var(--r-sm,6px); padding:6px 14px; font-size:13px; cursor:pointer; color:var(--ink); }

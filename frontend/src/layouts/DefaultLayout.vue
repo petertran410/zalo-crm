@@ -32,9 +32,10 @@
 
 
         <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
-             RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên). -->
+             RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
+             ĐANG TẮT — xem SHOW_REPORTS_NAV. -->
         <NavReportsMenu
-          v-if="authStore.canAccess('engagement_score')"
+          v-if="SHOW_REPORTS_NAV && authStore.canAccess('engagement_score')"
           v-model="reportsMenu"
           mode="bar"
         />
@@ -112,8 +113,9 @@
         </div>
 
         <div class="rail-foot">
+          <!-- ĐANG TẮT — xem SHOW_REPORTS_NAV. -->
           <NavReportsMenu
-            v-if="authStore.canAccess('engagement_score')"
+            v-if="SHOW_REPORTS_NAV && authStore.canAccess('engagement_score')"
             v-model="reportsMenu"
             mode="rail"
           />
@@ -314,6 +316,13 @@ function syncNavMode() {
 // bằng công cụ, chỉ kiểm được bằng cách tải lại ở từng bề rộng.)
 
 
+// 2026-08-07 (anh chốt): ẨN HẲN hai tab "Báo cáo" + "Marketing" khỏi nav — chưa
+// có kế hoạch dùng hai module này. Chỉ tắt LỐI VÀO: component NavReportsMenu,
+// route /reports/*, /analytics, /marketing/* đều giữ nguyên (vẫn vào được bằng
+// gõ thẳng URL). Bật lại chỉ cần đổi cờ tương ứng về true.
+const SHOW_REPORTS_NAV = false;
+const SHOW_MARKETING_NAV = false;
+
 interface NavTab {
   path: string;
   label: string;
@@ -342,7 +351,9 @@ const primaryTabs: NavTab[] = [
   // 2 trang vẫn riêng, nhưng vào từ một chỗ rồi chuyển qua lại bằng tab con
   // (ScheduleTabs). matchPrefix nhận cả /tasks để tab vẫn sáng khi đang ở đó.
   { path: '/appointments',           label: 'Công việc',   icon: 'mdi-calendar-check-outline', matchAny: ['/appointments', '/tasks'] },
-  { path: '/media',                  label: 'Kho ảnh',     icon: 'mdi-image-multiple-outline', resource: 'media' },
+  // 2026-08-07: đổi tên "Kho ảnh" → "Kho lưu trữ" (tab giờ chứa cả tài liệu, không chỉ ảnh).
+  // Route /media GIỮ NGUYÊN để deep-link và bookmark cũ không gãy.
+  { path: '/media',                  label: 'Kho lưu trữ', short: 'Kho', icon: 'mdi-folder-multiple-outline', resource: 'media' },
   { path: '/pos',                    label: 'Cửa hàng POS', short: 'POS', icon: 'mdi-storefront-outline' },
 ];
 
@@ -368,6 +379,10 @@ const visiblePrimaryTabs = computed(() => {
   //  - EE: menu Marketing đầy đủ (triggers/sequences/…); hiện khi có quyền ≥1 chức năng.
   //  - Community: menu Marketing RIÊNG, chỉ Quét nhóm + Tệp khách hàng (route /marketing
   //    chỉ đăng ký khi !isExtension — xem router). KHÔNG dùng marketingEntry (resource EE).
+  // ĐANG TẮT — xem SHOW_MARKETING_NAV.
+  if (!SHOW_MARKETING_NAV) {
+    return tabs;
+  }
   if (isExtension && marketingEntry.value) {
     tabs.push({
       path: marketingEntry.value,

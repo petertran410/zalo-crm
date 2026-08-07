@@ -58,7 +58,7 @@ export const adminMenu: MenuItemConfig[] = [
   },
   {
     key: 'media',
-    title: 'Kho ảnh',
+    title: 'Kho lưu trữ',
     icon: 'mdi-image-multiple-outline',
     to: '/media',
     resource: 'media',

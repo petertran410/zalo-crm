@@ -685,7 +685,7 @@ const ROUTE_TITLES: Record<string, string> = {
   SalesChat: "Hội thoại (Sales)",
   CsChat: "Hội thoại (CS)",
   Contacts: "Khách hàng",
-  Media: "Kho phương tiện",
+  Media: "Kho lưu trữ",
   Profile: "Hồ sơ cá nhân",
   Appointments: "Lịch hẹn",
   Tasks: "Công việc",

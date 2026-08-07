@@ -21,14 +21,39 @@ import {
 } from '../../shared/storage/folder-mirror.js';
 import { logger } from '../../shared/utils/logger.js';
 
+/** Sâu tối đa của cây thư mục — chặn người dùng dựng cây vô hạn + chặn vòng lặp cha-con. */
+export const MAX_FOLDER_DEPTH = 10;
+
+/**
+ * Slug đĩa của thư mục CHA (null nếu là thư mục gốc / chưa mirror). Cha chưa có slug —
+ * thư mục tạo trước khi có tính năng mirror — thì tạo bù, để cây con không bị treo ở gốc.
+ */
+async function parentSlugOf(parentId: string | null | undefined): Promise<string | null> {
+  if (!parentId) return null;
+  const parent = await prisma.mediaAlbum.findUnique({
+    where: { id: parentId },
+    select: { id: true, name: true, diskSlug: true, parentId: true },
+  });
+  if (!parent) return null;
+  if (parent.diskSlug) return parent.diskSlug;
+  return createFolderOnDisk(parent.id, parent.name, parent.parentId);
+}
+
 /**
  * Tạo thư mục đĩa cho 1 MediaAlbum và ghi lại slug đã dùng vào DB.
  * Gọi ngay sau khi tạo thư mục trong kho.
+ *
+ * 2026-08-07: thư mục lồng nhau — slug là đường dẫn tương đối ("viet_nam/bao_gia"), dựng
+ * bằng cách nối slug của cha. Cha tạo trước con nên chuỗi này luôn phân giải được.
  */
-export async function createFolderOnDisk(folderId: string, name: string): Promise<string | null> {
+export async function createFolderOnDisk(
+  folderId: string,
+  name: string,
+  parentId?: string | null,
+): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
   try {
-    const slug = await ensureFolderDir(folderId, name);
+    const slug = await ensureFolderDir(folderId, name, await parentSlugOf(parentId));
     if (!slug) return null;
     await prisma.mediaAlbum.update({ where: { id: folderId }, data: { diskSlug: slug } });
     logger.info(`[media-folder] đã tạo thư mục đĩa "${slug}" cho thư mục kho "${name}"`);
@@ -59,12 +84,15 @@ export async function mirrorAssetIntoFolder(
           blobs: { where: { variantType: 'original' }, select: { minioKey: true, publicUrl: true }, take: 1 },
         },
       }),
-      prisma.mediaAlbum.findFirst({ where: { id: folderId, orgId }, select: { id: true, name: true, diskSlug: true } }),
+      prisma.mediaAlbum.findFirst({
+        where: { id: folderId, orgId },
+        select: { id: true, name: true, diskSlug: true, parentId: true },
+      }),
     ]);
     if (!asset || !folder) return;
 
     // Thư mục tạo trước khi có tính năng này → chưa có slug, tạo bù bây giờ.
-    const slug = folder.diskSlug ?? (await createFolderOnDisk(folder.id, folder.name));
+    const slug = folder.diskSlug ?? (await createFolderOnDisk(folder.id, folder.name, folder.parentId));
     if (!slug) return;
 
     const blob = asset.blobs[0];
@@ -100,21 +128,80 @@ export async function unmirrorAssetFromFolder(orgId: string, assetId: string): P
   }
 }
 
-/** Đổi tên thư mục kho → đổi tên thư mục đĩa + cập nhật slug trong DB. */
+/**
+ * Đổi tên thư mục kho → đổi tên thư mục đĩa + cập nhật slug trong DB.
+ *
+ * 2026-08-07 (cây lồng nhau): rename trên đĩa kéo theo CẢ cây con (một lệnh rename thư mục),
+ * nhưng diskSlug của các thư mục con trong DB là chuỗi đường dẫn nên đã trỏ sai — phải
+ * viết lại tiền tố cho toàn bộ con cháu. Không làm bước này thì lần tải tệp kế tiếp vào
+ * thư mục con sẽ mkdir lại cây cũ ở chỗ cũ.
+ */
 export async function renameFolderOnDisk(orgId: string, folderId: string, newName: string): Promise<void> {
   if (!isFolderMirrorEnabled()) return;
   try {
     const folder = await prisma.mediaAlbum.findFirst({
-      where: { id: folderId, orgId }, select: { id: true, diskSlug: true },
+      where: { id: folderId, orgId }, select: { id: true, diskSlug: true, parentId: true },
     });
     if (!folder) return;
-    const slug = await renameFolderDir(folder.id, folder.diskSlug, newName);
-    if (slug && slug !== folder.diskSlug) {
-      await prisma.mediaAlbum.update({ where: { id: folder.id }, data: { diskSlug: slug } });
+    const oldSlug = folder.diskSlug;
+    const slug = await renameFolderDir(folder.id, oldSlug, newName, await parentSlugOf(folder.parentId));
+    if (!slug || slug === oldSlug) return;
+
+    await prisma.mediaAlbum.update({ where: { id: folder.id }, data: { diskSlug: slug } });
+
+    // Viết lại tiền tố đường dẫn cho con cháu ("cu/con" → "moi/con").
+    if (oldSlug) {
+      const descendants = await collectDescendantIds(orgId, folder.id);
+      if (descendants.length) {
+        const rows = await prisma.mediaAlbum.findMany({
+          where: { id: { in: descendants }, diskSlug: { startsWith: `${oldSlug}/` } },
+          select: { id: true, diskSlug: true },
+        });
+        for (const r of rows) {
+          await prisma.mediaAlbum.update({
+            where: { id: r.id },
+            data: { diskSlug: `${slug}${r.diskSlug!.slice(oldSlug.length)}` },
+          });
+        }
+      }
     }
   } catch (err) {
     logger.warn(`[media-folder] đổi tên thư mục đĩa lỗi (${folderId}):`, (err as Error)?.message ?? err);
   }
+}
+
+/**
+ * Mọi id thư mục con cháu của `rootId` (KHÔNG gồm chính nó), duyệt theo tầng.
+ * Giới hạn MAX_FOLDER_DEPTH tầng — vừa khớp giới hạn lúc tạo, vừa là lưới an toàn nếu
+ * dữ liệu cũ lỡ có vòng lặp cha-con.
+ */
+export async function collectDescendantIds(orgId: string, rootId: string): Promise<string[]> {
+  const out: string[] = [];
+  let frontier = [rootId];
+  for (let depth = 0; depth < MAX_FOLDER_DEPTH && frontier.length; depth++) {
+    const kids = await prisma.mediaAlbum.findMany({
+      where: { orgId, parentId: { in: frontier } },
+      select: { id: true },
+    });
+    frontier = kids.map((k) => k.id).filter((id) => !out.includes(id) && id !== rootId);
+    out.push(...frontier);
+  }
+  return out;
+}
+
+/** Số tầng từ gốc tới thư mục này (gốc = 0). Trả MAX_FOLDER_DEPTH nếu vượt giới hạn. */
+export async function folderDepth(orgId: string, folderId: string | null): Promise<number> {
+  let depth = 0;
+  let cur = folderId;
+  while (cur && depth < MAX_FOLDER_DEPTH) {
+    const row = await prisma.mediaAlbum.findFirst({
+      where: { id: cur, orgId }, select: { parentId: true },
+    });
+    if (!row) break;
+    cur = row.parentId;
+    depth++;
+  }
+  return depth;
 }
 
 /**

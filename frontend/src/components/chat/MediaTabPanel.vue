@@ -124,7 +124,7 @@
       <div class="mtp-body">
         <div v-if="loading" class="mtp-empty">Đang tải…</div>
         <div v-else-if="items.length === 0" class="mtp-empty">
-          Không có {{ kindLabel }} nào khớp. Tải lên ở trang <b>Kho ảnh</b> hoặc chuột phải tin nhắn → Lưu vào Media.
+          Không có {{ kindLabel }} nào khớp. Tải lên ở trang <b>Kho lưu trữ</b> hoặc chuột phải tin nhắn → Lưu vào Media.
         </div>
 
         <!-- TỆP: list theo dòng (sale đọc rõ tên) -->

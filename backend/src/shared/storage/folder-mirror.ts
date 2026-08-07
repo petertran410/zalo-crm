@@ -32,12 +32,22 @@ export function isFolderMirrorEnabled(): boolean {
   return config.storageDriver === 'local';
 }
 
-/** Chặn cứng slug thoát khỏi FOLDERS_ROOT (slug đã chỉ còn [a-z0-9_], đây là lớp thứ 2). */
+/**
+ * Chặn cứng slug thoát khỏi FOLDERS_ROOT (slug đã chỉ còn [a-z0-9_], đây là lớp thứ 2).
+ *
+ * 2026-08-07 (thư mục lồng nhau): slug giờ là ĐƯỜNG DẪN TƯƠNG ĐỐI nhiều cấp nối bằng '/',
+ * vd "viet_nam/bao_gia". Mỗi đoạn vẫn chỉ [a-z0-9_] nên '..' không lọt qua được regex.
+ */
 function folderPath(slug: string): string | null {
-  if (!slug || !/^[a-z0-9_]+$/.test(slug)) return null;
+  if (!slug || !/^[a-z0-9_]+(\/[a-z0-9_]+)*$/.test(slug)) return null;
   const p = resolve(FOLDERS_ROOT, slug);
   if (!p.startsWith(FOLDERS_ROOT + sep)) return null;
   return p;
+}
+
+/** Nối slug cha + tên đoạn con thành đường dẫn tương đối. Cha rỗng = thư mục gốc. */
+export function joinFolderSlug(parentSlug: string | null | undefined, segment: string): string {
+  return parentSlug ? `${parentSlug}/${segment}` : segment;
 }
 
 /** Đường dẫn tuyệt đối của object trong kho phẳng ('media/{hash}.ext'). */
@@ -52,9 +62,13 @@ function objectPath(key: string): string | null {
  * Tạo thư mục thật trên đĩa cho 1 thư mục kho. Idempotent (mkdir recursive).
  * Trả slug đã dùng (để caller lưu vào DB) hoặc null nếu skip/lỗi.
  */
-export async function ensureFolderDir(folderId: string, name: string): Promise<string | null> {
+export async function ensureFolderDir(
+  folderId: string,
+  name: string,
+  parentSlug?: string | null,
+): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
-  const slug = safeFolderSlug(name, folderId);
+  const slug = joinFolderSlug(parentSlug, safeFolderSlug(name, folderId));
   const dir = folderPath(slug);
   if (!dir) {
     logger.warn(`[folder-mirror] slug không hợp lệ, bỏ qua mkdir: folderId=${folderId} name="${name}"`);
@@ -178,10 +192,12 @@ export async function renameFolderDir(
   folderId: string,
   oldSlug: string | null,
   newName: string,
+  parentSlug?: string | null,
 ): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
-  const newSlug = safeFolderSlug(newName, folderId);
-  if (!oldSlug || oldSlug === newSlug) return ensureFolderDir(folderId, newName);
+  // Đổi tên CHỈ đổi đoạn cuối — thư mục cha giữ nguyên chỗ cũ.
+  const newSlug = joinFolderSlug(parentSlug, safeFolderSlug(newName, folderId));
+  if (!oldSlug || oldSlug === newSlug) return ensureFolderDir(folderId, newName, parentSlug);
 
   const from = folderPath(oldSlug);
   const to = folderPath(newSlug);
@@ -194,6 +210,9 @@ export async function renameFolderDir(
       logger.warn(`[folder-mirror] slug đích đã tồn tại, giữ nguyên thư mục cũ: ${oldSlug} → ${newSlug}`);
       return oldSlug;
     }
+    // Thư mục cha phải tồn tại thì rename mới chạy (cây lồng nhau 2026-08-07).
+    const parentDir = to.slice(0, to.lastIndexOf(sep));
+    if (parentDir.startsWith(FOLDERS_ROOT)) await mkdir(parentDir, { recursive: true });
     await rename(from, to);
     return newSlug;
   } catch (err: any) {
