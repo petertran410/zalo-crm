@@ -65,3 +65,4 @@ backend/uploads/
 
 # Artifact của phiên AI khác
 claude_todo/
+run.bat

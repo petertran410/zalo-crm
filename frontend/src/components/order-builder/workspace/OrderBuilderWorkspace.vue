@@ -4,49 +4,38 @@
     <transition name="ob-modal">
       <div v-if="isModalVisible" class="ob-modal-overlay" @click.self="handleRedButtonClick">
         <div class="ob-modal-wrapper">
-          <!-- ═══ OUTSIDE STEPPER RAIL (Tách biệt riêng bên ngoài) ═══ -->
-          <div class="ob-outer-left-rail">
-            <template v-for="(section, idx) in accordionSections" :key="section.id">
-              <div
-                class="ob-rail-step"
-                :class="{
-                  'ob-rail-step--active': section.id === activeSection,
-                  'ob-rail-step--done': completedSections.includes(section.id) && section.id !== activeSection,
-                  'ob-rail-step--locked': lockedSections.includes(section.id),
-                }"
-                :title="section.title"
-                @click="handleOpenSection(section.id)"
-              >
-                <Check v-if="completedSections.includes(section.id) && section.id !== activeSection" :size="13" :stroke-width="3" />
-                <Lock v-else-if="lockedSections.includes(section.id)" :size="11" :stroke-width="2.5" />
-                <span v-else>{{ idx + 1 }}</span>
-              </div>
 
-              <div
-                v-if="idx < accordionSections.length - 1"
-                class="ob-rail-step-arrow"
-                :class="{ 'ob-rail-step-arrow--done': completedSections.includes(section.id) }"
-              >
-                <ArrowDown :size="12" :stroke-width="2.5" />
-              </div>
-            </template>
-          </div>
-
+          <!-- ═══ ob-modal-frame: Layout POS 2 Cột ═══ -->
           <div class="ob-modal-frame">
+
             <!-- ═══ Window Header ═══ -->
             <div class="ob-modal__header">
               <div class="ob-modal__header-left">
                 <div class="ob-modal__title-group">
                   <ShoppingBag :size="18" class="ob-text-blue" />
                   <h1 class="ob-modal__title">Tạo đơn hàng</h1>
+                  <span v-if="draft?.contactName" class="ob-modal__customer-badge">
+                    {{ draft.contactName }}
+                  </span>
+                  <!-- Unread message notification badge -->
+                  <transition name="ob-fade">
+                    <span
+                      v-if="currentSessionUnread > 0"
+                      class="ob-modal__unread-badge"
+                      title="Tin nhắn mới"
+                      @click="scrollMiniChatToBottom"
+                    >
+                      <MessageSquare :size="11" />
+                      {{ currentSessionUnread }}
+                    </span>
+                  </transition>
                 </div>
               </div>
-
               <div class="ob-modal__header-right">
+                <button class="ob-win-btn ob-win-btn--reset" title="Đặt lại đơn hàng" @click="handleReset">
+                  <RotateCcw :size="14" />
+                </button>
                 <div class="ob-win-controls">
-                  <button class="ob-win-btn ob-win-btn--reset" title="Đặt lại dữ liệu" @click="handleReset">
-                    <RotateCcw :size="14" />
-                  </button>
                   <button class="ob-win-btn ob-win-btn--minimize" title="Thu nhỏ" @click="handleMinimize">
                     <Minus :size="15" />
                   </button>
@@ -57,119 +46,530 @@
               </div>
             </div>
 
-            <!-- ═══ Main Workspace: Sections + Checkout Overlay ═══ -->
-            <div class="ob-modal__workspace">
-              <div class="ob-sections-scroll">
-                <SectionAccordion
-                  :sections="accordionSections"
-                  :active-section="activeSection"
-                  :completed-sections="completedSections"
-                  :locked-sections="lockedSections"
-                  @open-section="handleOpenSection"
-                  @next-section="handleNextSection"
-                >
-                  <!-- Section 1: Khách hàng -->
-                  <template #customer>
-                    <Section1Customer :customer="customerInfo" />
+            <!-- ═══ POS Header Row: Search + Bảng giá ═══ -->
+            <div class="ob-pos-header">
+              <!-- Search sản phẩm -->
+              <div class="ob-search-zone">
+                <Search :size="16" class="ob-search-icon" />
+                <input
+                  v-model="searchQuery"
+                  type="text"
+                  placeholder="Tìm sản phẩm (tên, mã SP)..."
+                  class="ob-search-input"
+                  @input="onSearchInput"
+                  @focus="isSearchOpen = true"
+                  @blur="onSearchBlur"
+                />
+                <button v-if="searchQuery" class="ob-search-clear" @mousedown.prevent="clearSearch">
+                  <X :size="13" />
+                </button>
+                <!-- Dropdown kết quả -->
+                <div v-if="isSearchOpen && searchQuery.trim()" class="ob-search-dropdown">
+                  <div v-if="productsLoading" class="ob-search-state">
+                    <Loader2 :size="15" class="ob-spin" /> Đang tìm...
+                  </div>
+                  <div v-else-if="searchResults.length === 0" class="ob-search-state">
+                    Không tìm thấy "{{ searchQuery }}"
+                  </div>
+                  <template v-else>
+                    <div
+                      v-for="prod in searchResults"
+                      :key="prod.id"
+                      class="ob-search-item"
+                      @mousedown.prevent="quickAddProduct(prod)"
+                    >
+                      <div class="ob-search-item__info">
+                        <span class="ob-search-item__name">{{ prod.name }}</span>
+                        <span class="ob-search-item__code">{{ prod.code }}</span>
+                      </div>
+                      <span class="ob-search-item__price">
+                        {{ formatVND(getEffectiveProductPrice(prod.basePrice, draft?.priceBookId || 'standard')) }}
+                      </span>
+                      <span class="ob-search-item__action">+ Thêm</span>
+                    </div>
                   </template>
-
-                  <!-- Section 2: Sản phẩm & Khuyến mãi -->
-                  <template #products>
-                    <Section2Products
-                      :selected-product-ids="selectedProductIds"
-                      :cart-items="cartItems"
-                      :total-before-discount="totalAmount"
-                      :order-discount="orderDiscountAmount"
-                      :grand-total="grandTotal"
-                      :selected-price-book-id="draft?.priceBookId"
-                      :applied-promo-ids="draft?.appliedPromoIds ?? []"
-                      @add-product="handleAddProduct"
-                      @update-quantity="handleUpdateQuantity"
-                      @remove-product="handleRemoveProduct"
-                      @update-product-discount="handleUpdateProductDiscount"
-                      @update-order-discount="handleUpdateOrderDiscount"
-                      @select-price-book="handleSelectPriceBook"
-                      @apply-promotion="handleApplyPromotion"
-                      @remove-promotion="handleRemovePromotion"
-                    />
-                  </template>
-
-                  <!-- Section 3: Vận chuyển & Thanh toán -->
-                  <template #logistics>
-                    <Section3Logistics
-                      :branches="branches"
-                      :selected-branch-id="draft?.branchId ?? null"
-                      :selected-payment-method="draft?.paymentMethod ?? 'cash'"
-                      :selected-order-status="draft?.orderStatus ?? 1"
-                      :delivery-address="draft?.deliveryAddress ?? ''"
-                      @select-branch="handleSelectBranch"
-                      @select-payment="handleSelectPayment"
-                      @select-order-status="handleSelectOrderStatus"
-                      @update-delivery-address="handleUpdateDeliveryAddress"
-                    />
-                  </template>
-
-                  <!-- Section 4: Review -->
-                  <template #review>
-                    <Section4Review
-                      :customer="customerInfo"
-                      :cart-items="cartItems"
-                      :branch="selectedBranch"
-                      :selected-payment-method="draft?.paymentMethod ?? 'cash'"
-                      :delivery-address="draft?.deliveryAddress ?? ''"
-                      :total-before-discount="totalAmount"
-                      :order-discount="orderDiscountAmount"
-                      :grand-total="grandTotal"
-                      @open-details="isDrawerOpen = true"
-                    />
-                  </template>
-                </SectionAccordion>
+                </div>
               </div>
 
-              <!-- ═══ Top Layer: Invoice Template + Order Summary Drawer ═══ -->
-              <transition name="ob-fade">
-                <div v-if="isDrawerOpen" class="ob-modal__checkout-overlay" @click.self="isDrawerOpen = false">
-                  <div class="ob-modal__checkout-content">
-                    <div class="ob-modal__checkout-template-wrap">
-                      <InvoiceTemplateModal
-                        :customer="customerInfo"
-                        :cart-items="cartItems"
-                        :branch="selectedBranch"
-                        :ticket-number="draft?.id ?? 'Phiếu #1'"
-                        :total-before-discount="totalAmount"
-                        :order-discount="orderDiscountAmount"
-                        :paid-amount="draft?.paidAmount || 0"
-                        :grand-total="grandTotal"
-                        :price-book-id="draft?.priceBookId"
-                        :description="draft?.description ?? ''"
-                        :delivery-address="draft?.deliveryAddress ?? ''"
-                        @update-description="draftStore.updateDraft(props.draftId, { description: $event })"
-                      />
+              <!-- Bảng giá -->
+              <div class="ob-pricebook">
+                <Tag :size="13" class="ob-pricebook__icon" />
+                <span class="ob-pricebook__label">Bảng giá:</span>
+                <select
+                  :value="draft?.priceBookId || 'standard'"
+                  class="ob-pricebook__select"
+                  @change="handleSelectPriceBook(($event.target as HTMLSelectElement).value)"
+                >
+                  <option v-for="pb in PRICE_BOOKS" :key="pb.id" :value="pb.id">
+                    {{ pb.name }}{{ pb.discountPercent ? ` (-${pb.discountPercent}%)` : '' }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Tổng nhanh -->
+              <div class="ob-quick-summary">
+                <ShoppingCart :size="14" class="ob-text-blue" />
+                <span class="ob-quick-summary__count">{{ totalCartCount }} SP</span>
+                <span class="ob-quick-summary__sep">·</span>
+                <span class="ob-quick-summary__total">{{ formatVND(grandTotal) }}</span>
+              </div>
+
+              <!-- Toggle View: Cart vs Invoice Preview -->
+              <button
+                type="button"
+                class="ob-toggle-view-btn"
+                :class="{ 'ob-toggle-view-btn--active': activeLeftView === 'invoice_preview' }"
+                :title="activeLeftView === 'invoice_preview' ? 'Chuyển sang xem Giỏ hàng' : 'Xem trước Hóa đơn A4 chuẩn'"
+                @click="activeLeftView = activeLeftView === 'cart' ? 'invoice_preview' : 'cart'"
+              >
+                <Eye v-if="activeLeftView === 'cart'" :size="13" />
+                <ShoppingCart v-else :size="13" />
+                <span>{{ activeLeftView === 'cart' ? 'Xem hóa đơn' : 'Xem giỏ hàng' }}</span>
+              </button>
+            </div>
+
+            <!-- ═══ POS Body: 2 Cột (60/40) ═══ -->
+            <div class="ob-pos-body">
+
+              <!-- ════════════════════════════════════
+                   CỘT TRÁI (60%): DANH SÁCH SẢN PHẨM HOẶC XEM TRƯỚC HÓA ĐƠN
+                   ════════════════════════════════════ -->
+              <div class="ob-pos-left">
+                <!-- Chế độ Xem trước Hóa đơn A4 (nhúng InvoiceTemplateModal từ legacy) -->
+                <div v-if="activeLeftView === 'invoice_preview'" class="ob-invoice-preview-embedded">
+                  <InvoiceTemplateModal
+                    :customer="customerInfo"
+                    :cart-items="cartItems"
+                    :branch="selectedBranch"
+                    :ticket-number="'Phiếu tạm'"
+                    :total-before-discount="totalAmount"
+                    :order-discount="orderDiscountAmount"
+                    :paid-amount="0"
+                    :grand-total="grandTotal"
+                    :price-book-id="draft?.priceBookId || 'standard'"
+                    :description="draft?.billNote || draft?.description || ''"
+                    :shipping-note="draft?.shippingNote || ''"
+                    :delivery-address="draft?.deliveryAddress || ''"
+                    :creator-name="creatorName"
+                    @update-quantity="handleUpdateQuantity"
+                    @update-discount="handleUpdateProductDiscount"
+                    @update-description="handleUpdateBillNote"
+                    @update-shipping-note="handleUpdateShippingNote"
+                    @update-order-discount="handleUpdateOrderDiscount"
+                    @update-item-note="handleUpdateCartItemNoteById"
+                  />
+                </div>
+
+                <!-- Chế độ Xem danh sách giỏ hàng (mặc định) -->
+                <div v-else class="ob-cart-list">
+                  <!-- Rỗng -->
+                  <div v-if="cartItems.length === 0" class="ob-cart-empty">
+                    <ShoppingCart :size="36" class="ob-cart-empty__icon" />
+                    <p class="ob-cart-empty__title">Chưa có sản phẩm trong đơn</p>
+                    <p class="ob-cart-empty__sub">Tìm kiếm và thêm sản phẩm ở thanh tìm kiếm phía trên</p>
+                  </div>
+
+                  <!-- Mỗi dòng sản phẩm -->
+                  <TransitionGroup name="ob-cart-list-anim" tag="div" class="ob-cart-list-inner">
+                    <div
+                      v-for="(item, idx) in cartItems"
+                      :key="`${item.product.id}-${item.isGift ? 'gift' : 'normal'}`"
+                      class="ob-cart-item"
+                      :class="{
+                        'ob-cart-item--newly-added': newlyAddedProductId === item.product.id,
+                        'ob-cart-item--gift': item.isGift,
+                        'ob-cart-item--damaged': item.conditionType === 'damaged',
+                        'ob-cart-item--near-expiry': item.conditionType === 'near_expiry',
+                        'ob-cart-item--out-of-stock': item.isOutOfStock,
+                      }"
+                    >
+                    <!-- Out of stock overlay: Horizontal wire line + Lock Icon in exact center -->
+                    <div v-if="item.isOutOfStock" class="ob-out-of-stock-lock-overlay">
+                      <div class="ob-lock-wire-line"></div>
+                      <div class="ob-lock-icon-badge" title="Hết hàng tại kho này">
+                        <Lock :size="16" class="ob-lock-svg-icon" />
+                      </div>
                     </div>
-                    <div class="ob-modal__checkout-drawer-wrap">
-                      <OrderSummaryDrawer
-                        :customer="customerInfo"
-                        :cart-items="cartItems"
-                        :branch="selectedBranch"
-                        :selected-payment-method="draft?.paymentMethod ?? 'cash'"
-                        :total-before-discount="totalAmount"
-                        :order-discount="orderDiscountAmount"
-                        :grand-total="grandTotal"
-                        :description="draft?.description ?? ''"
-                        :paid-amount="draft?.paidAmount ?? 0"
-                        :delivery-address="draft?.deliveryAddress ?? ''"
-                        :submitting="submitting"
-                        @close="isDrawerOpen = false"
-                        @clear-order="handleClearOrder"
-                        @submit-order="handleSubmitOrder"
-                        @update-description="draftStore.updateDraft(props.draftId, { description: $event })"
-                        @update-paid="draftStore.updateDraft(props.draftId, { paidAmount: $event })"
+
+                    <!-- Row trên: Tên SP + Kho chi nhánh Pill Badge + Actions -->
+                    <div class="ob-cart-item__top">
+                      <div class="ob-cart-item__name-wrap">
+                        <!-- Badge condition -->
+                        <span v-if="item.conditionType === 'damaged'" class="ob-badge ob-badge--red">Bục rách</span>
+                        <span v-else-if="item.conditionType === 'near_expiry'" class="ob-badge ob-badge--amber">Cận date</span>
+                        <!-- Badge quà tặng -->
+                        <span v-if="item.isGift" class="ob-badge ob-badge--pink">🎁 Quà KM</span>
+                        <span class="ob-cart-item__code">{{ item.product.code }}</span>
+                        <span class="ob-cart-item__name">{{ item.product.name }}</span>
+                        <!-- Ghi chú dòng -->
+                        <span v-if="item.note" class="ob-cart-item__note">📝 {{ item.note }}</span>
+                      </div>
+
+                      <!-- Top Right Warehouse Pill Badge (UI/UX Pro Max) -->
+                      <div
+                        class="ob-item-warehouse-pill"
+                        :class="{ 'ob-item-warehouse-pill--out': item.isOutOfStock }"
+                        @click.stop
+                      >
+                        <div class="ob-warehouse-select-wrap">
+                          <Home :size="11" class="ob-warehouse-icon" />
+                          <select
+                            class="ob-item-warehouse-select"
+                            :value="item.warehouseId || draft?.branchId || (branches[0]?.id || 1)"
+                            @change="handleItemWarehouseChange(idx, Number(($event.target as HTMLInputElement).value))"
+                          >
+                            <option v-for="b in branches" :key="b.id" :value="b.id">
+                              {{ b.name }}
+                            </option>
+                          </select>
+                        </div>
+                        <span class="ob-warehouse-divider">|</span>
+                        <span
+                          class="ob-item-stock-badge"
+                          :class="getItemStockBadgeClass(item)"
+                          :title="getItemStockBadgeTitle(item)"
+                        >
+                          {{ getItemStockBadgeLabel(item) }}
+                        </span>
+                      </div>
+                      <!-- Action buttons -->
+                      <div class="ob-cart-item__actions">
+                        <button
+                          v-if="!item.isGift"
+                          class="ob-item-btn ob-item-btn--discount"
+                          title="Giảm giá dòng"
+                          @click="openLineDiscount(idx)"
+                        >
+                          <Percent :size="12" /> Giảm
+                        </button>
+                        <button
+                          class="ob-item-btn ob-item-btn--detail"
+                          title="Lịch sử mua & tồn kho"
+                          @click.stop="openProductDetailPopover($event, item)"
+                        >
+                          <MoreHorizontal :size="13" />
+                        </button>
+                        <button
+                          class="ob-item-btn ob-item-btn--remove"
+                          title="Xóa dòng"
+                          @click="handleRemoveProduct(idx)"
+                        >
+                          <Trash2 :size="12" />
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Row dưới: Qty + Đơn giá + Thành tiền -->
+                    <div class="ob-cart-item__bottom">
+                      <!-- Qty controls (ngang) -->
+                      <div class="ob-qty-ctrl">
+                        <button
+                          class="ob-qty-btn"
+                          :disabled="item.quantity <= 1"
+                          v-bind="getHoldProps((stepMult) => changeItemQty(idx, -1 * stepMult))"
+                        >
+                          <Minus :size="12" />
+                        </button>
+                        <input
+                          type="number"
+                          class="ob-qty-input"
+                          :value="item.quantity"
+                          min="1"
+                          @change="setItemQty(idx, Number(($event.target as HTMLInputElement).value))"
+                        />
+                        <button
+                          class="ob-qty-btn"
+                          v-bind="getHoldProps((stepMult) => changeItemQty(idx, 1 * stepMult))"
+                        >
+                          <Plus :size="12" />
+                        </button>
+                      </div>
+
+                      <!-- Inline Product Note Input -->
+                      <div class="ob-cart-item__note-inline">
+                        <input
+                          type="text"
+                          class="ob-item-note-input"
+                          :value="item.note || ''"
+                          placeholder="Ghi chú SP..."
+                          @change="handleUpdateCartItemNote(idx, ($event.target as HTMLInputElement).value)"
+                        />
+                      </div>
+
+                      <!-- Group Đơn giá & Thành tiền -->
+                      <div class="ob-cart-item__price-group">
+                        <!-- Đơn giá -->
+                        <div class="ob-cart-item__price-col">
+                          <span class="ob-cart-item__price-label">Đơn giá</span>
+                          <span class="ob-cart-item__price-val">
+                            {{ formatVND(getEffectiveProductPrice(item.product.basePrice, draft?.priceBookId || 'standard')) }}
+                          </span>
+                        </div>
+
+                        <!-- Thành tiền -->
+                        <div class="ob-cart-item__total-col">
+                          <span class="ob-cart-item__price-label">Thành tiền</span>
+                          <span class="ob-cart-item__total-val">
+                            {{ formatVND(getLineTotal(item)) }}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Line discount editor panel -->
+                    <div v-if="lineDiscountOpenIdx === idx" class="ob-line-discount-editor">
+                      <span class="ob-line-discount-editor__label">Giảm giá dòng:</span>
+                      <input
+                        v-model.number="lineDiscountValue"
+                        type="number"
+                        min="0"
+                        class="ob-line-discount-editor__input"
+                        placeholder="0"
+                        @keyup.enter="applyLineDiscount(idx)"
+                      />
+                      <div class="ob-line-discount-editor__toggle">
+                        <button
+                          :class="['ob-unit-btn', lineDiscountType === 'amount' ? 'ob-unit-btn--active' : '']"
+                          @click="lineDiscountType = 'amount'"
+                        >₫</button>
+                        <button
+                          :class="['ob-unit-btn', lineDiscountType === 'percent' ? 'ob-unit-btn--active' : '']"
+                          @click="lineDiscountType = 'percent'"
+                        >%</button>
+                      </div>
+                      <button class="ob-line-discount-editor__apply" @click="applyLineDiscount(idx)">Áp dụng</button>
+                      <button class="ob-line-discount-editor__cancel" @click="lineDiscountOpenIdx = -1">Hủy</button>
+                    </div>
+                  </div>
+                </TransitionGroup>
+              </div>
+
+                <!-- Ghi chú đơn hàng + KM cộng dồn (LUÔN HIỂN THỊ Ở ĐÁY CỘT TRÁI) -->
+                <div class="ob-left-footer">
+                  <!-- Nút KM (nếu có promo đã áp dụng) -->
+                  <div v-if="(draft?.appliedPromoIds?.length || 0) > 0" class="ob-promo-applied-bar">
+                    <Gift :size="14" class="ob-promo-applied-bar__icon" />
+                    <span>{{ draft?.appliedPromoIds?.length }} khuyến mãi đang áp dụng</span>
+                    <button class="ob-promo-applied-bar__clear" @click="clearAllPromos">Hủy tất cả</button>
+                  </div>
+
+                  <!-- Ghi chú đơn hàng -->
+                  <div class="ob-note-area">
+                    <label class="ob-note-area__label">
+                      <FileText :size="13" />
+                      Ghi chú đơn hàng
+                    </label>
+                    <textarea
+                      class="ob-note-area__input"
+                      rows="3"
+                      maxlength="500"
+                      placeholder="Nhập ghi chú cho đơn hàng..."
+                      :value="draft?.billNote || draft?.description || ''"
+                      @input="handleUpdateBillNote(($event.target as HTMLTextAreaElement).value)"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- ════════════════════════════════════
+                   CỘT PHẢI (40%): THÔNG TIN + THANH TOÁN
+                   ════════════════════════════════════ -->
+              <div class="ob-pos-right">
+
+                <!-- ─── Card: Thông tin khách hàng ─── -->
+                <div class="ob-right-card ob-customer-card">
+                  <div class="ob-card-header">
+                    <User :size="14" class="ob-text-blue" />
+                    <span>KHÁCH HÀNG</span>
+                  </div>
+                  <div class="ob-customer-info">
+                    <div class="ob-customer-avatar">
+                      <span>{{ (customerInfo.name || '?')[0].toUpperCase() }}</span>
+                    </div>
+                    <div class="ob-customer-details">
+                      <div class="ob-customer-name">{{ customerInfo.name }}</div>
+                      <div v-if="customerInfo.phone" class="ob-customer-meta">📞 {{ customerInfo.phone }}</div>
+                      <div v-if="customerInfo.posCustomerCode" class="ob-customer-meta">🏷️ {{ customerInfo.posCustomerCode }}</div>
+                    </div>
+                  </div>
+
+                  <!-- TODO: customerDebt — sẽ thêm sau khi có API /pos/customers/{id}/debt -->
+
+                  <!-- Người lên đơn + Ngày giờ -->
+                  <div class="ob-creator-row">
+                    <UserCheck :size="12" class="ob-text-muted" />
+                    <span class="ob-creator-name">{{ creatorName }}</span>
+                    <span class="ob-creator-time">{{ currentDateTime }}</span>
+                  </div>
+                </div>
+
+                <!-- ─── Card: Chi nhánh & Giao hàng ─── -->
+                <div class="ob-right-card ob-logistics-card">
+                  <div class="ob-card-header">
+                    <Truck :size="14" class="ob-text-blue" />
+                    <span>GIAO HÀNG & CHI NHÁNH</span>
+                  </div>
+
+                  <!-- Chi nhánh -->
+                  <div class="ob-logistics-field">
+                    <label class="ob-logistics-label">
+                      <MapPin :size="12" /> Chi nhánh
+                    </label>
+                    <select
+                      class="ob-logistics-select"
+                      :value="draft?.branchId || ''"
+                      @change="handleSelectBranch(Number(($event.target as HTMLSelectElement).value))"
+                    >
+                      <option value="" disabled>-- Chọn chi nhánh --</option>
+                      <option v-for="b in branches" :key="b.id" :value="b.id">{{ b.name }}</option>
+                    </select>
+                  </div>
+
+                  <!-- Địa chỉ giao hàng -->
+                  <div class="ob-logistics-field">
+                    <label class="ob-logistics-label">
+                      <Home :size="12" /> Địa chỉ giao hàng
+                    </label>
+                    <input
+                      type="text"
+                      class="ob-logistics-input"
+                      :value="draft?.deliveryAddress || ''"
+                      placeholder="Nhập địa chỉ giao hàng..."
+                      @input="handleUpdateDeliveryAddress(($event.target as HTMLInputElement).value)"
+                    />
+                  </div>
+
+                  <!-- Kích thước & Trọng lượng -->
+                  <div class="ob-logistics-field">
+                    <label class="ob-logistics-label">
+                      <Box :size="12" /> Kích thước & Trọng lượng
+                    </label>
+                    <div class="ob-package-grid">
+                      <input
+                        type="number"
+                        class="ob-package-input"
+                        placeholder="Dài (cm)"
+                        :value="draft?.packageLength || ''"
+                        @input="updatePackage('length', $event)"
+                      />
+                      <input
+                        type="number"
+                        class="ob-package-input"
+                        placeholder="Rộng (cm)"
+                        :value="draft?.packageWidth || ''"
+                        @input="updatePackage('width', $event)"
+                      />
+                      <input
+                        type="number"
+                        class="ob-package-input"
+                        placeholder="Cao (cm)"
+                        :value="draft?.packageHeight || ''"
+                        @input="updatePackage('height', $event)"
+                      />
+                      <input
+                        type="number"
+                        class="ob-package-input"
+                        placeholder="TL (gram)"
+                        :value="draft?.packageWeight || ''"
+                        @input="updatePackage('weight', $event)"
                       />
                     </div>
                   </div>
+
+                  <!-- Ghi chú bưu tá -->
+                  <div class="ob-logistics-field">
+                    <label class="ob-logistics-label">
+                      <MessageSquare :size="12" /> Ghi chú bưu tá
+                    </label>
+                    <textarea
+                      class="ob-logistics-textarea"
+                      rows="2"
+                      placeholder="Ghi chú cho bưu tá / shipper..."
+                      :value="draft?.shippingNote || ''"
+                      @input="handleUpdateShippingNote(($event.target as HTMLTextAreaElement).value)"
+                    />
+                  </div>
                 </div>
-              </transition>
-            </div>
+
+                <!-- ─── Card: Thanh toán ─── -->
+                <div class="ob-right-card ob-payment-card">
+                  <div class="ob-card-header">
+                    <CreditCard :size="14" class="ob-text-blue" />
+                    <span>THANH TOÁN</span>
+                  </div>
+
+                  <!-- Tổng tiền hàng -->
+                  <div class="ob-payment-row">
+                    <span class="ob-payment-row__label">Tổng tiền hàng</span>
+                    <span class="ob-payment-row__val">{{ formatVND(totalAmount) }}</span>
+                  </div>
+
+                  <!-- Giảm giá tổng đơn -->
+                  <div class="ob-payment-row ob-payment-row--discount">
+                    <span class="ob-payment-row__label">Giảm giá</span>
+                    <div class="ob-discount-inline">
+                      <input
+                        type="number"
+                        class="ob-discount-inline__input"
+                        min="0"
+                        placeholder="0"
+                        :value="draft?.orderDiscountValue || 0"
+                        @input="handleUpdateOrderDiscount(Number(($event.target as HTMLInputElement).value))"
+                      />
+                      <div class="ob-discount-type-toggle">
+                        <button
+                          :class="['ob-unit-btn', (draft?.orderDiscountType || 'amount') === 'amount' ? 'ob-unit-btn--active' : '']"
+                          @click="handleUpdateOrderDiscountType('amount')"
+                        >₫</button>
+                        <button
+                          :class="['ob-unit-btn', draft?.orderDiscountType === 'percent' ? 'ob-unit-btn--active' : '']"
+                          @click="handleUpdateOrderDiscountType('percent')"
+                        >%</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Divider -->
+                  <div class="ob-payment-divider" />
+
+                  <!-- Khách cần trả -->
+                  <div class="ob-payment-row ob-payment-row--total">
+                    <span class="ob-payment-row__label">Khách cần trả</span>
+                    <span class="ob-payment-row__total">{{ formatVND(grandTotal) }}</span>
+                  </div>
+
+                  <!-- Phương thức thanh toán -->
+                  <div class="ob-payment-method">
+                    <span class="ob-payment-method__label">Thanh toán</span>
+                    <div class="ob-payment-method__toggle">
+                      <button
+                        v-for="m in PAYMENT_METHODS"
+                        :key="m.value"
+                        :class="['ob-pay-btn', (draft?.paymentMethod || 'cash') === m.value ? 'ob-pay-btn--active' : '']"
+                        @click="handleSelectPayment(m.value)"
+                      >
+                        {{ m.icon }} {{ m.label }}
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Nút tạo đơn hàng -->
+                  <button
+                    class="ob-submit-btn"
+                    :disabled="submitting || cartItems.filter(c => !c.isGift).length === 0 || !draft?.branchId"
+                    @click="handleSubmitOrder"
+                  >
+                    <CheckCircle2 v-if="!submitting" :size="16" :stroke-width="2.2" />
+                    <Loader2 v-else :size="16" class="ob-spin" />
+                    <span>{{ submitting ? 'Đang tạo đơn...' : 'TẠO ĐƠN HÀNG' }}</span>
+                  </button>
+
+                  <p v-if="!draft?.branchId" class="ob-submit-hint">Vui lòng chọn chi nhánh trước khi tạo đơn</p>
+                  <p v-else-if="cartItems.filter(c => !c.isGift).length === 0" class="ob-submit-hint">Vui lòng thêm sản phẩm vào đơn</p>
+                </div>
+
+              </div>
+            </div><!-- /ob-pos-body -->
 
             <!-- ═══ CONFIRM CLEAR DIALOG ═══ -->
             <transition name="ob-fade">
@@ -207,15 +607,54 @@
                 <span>{{ toastMessage }}</span>
               </div>
             </transition>
+
+            <!-- ═══ PRODUCT DETAIL POPOVER (...) ═══ -->
+            <ProductDetailPopover
+              v-if="activeDetailTarget"
+              :product-id="activeDetailTarget.product.id"
+              :product-code="activeDetailTarget.product.code"
+              :product-name="activeDetailTarget.product.name"
+              :base-price="activeDetailTarget.product.basePrice"
+              :unit="activeDetailTarget.product.unit"
+              :customer-id="draft?.posCustomerId"
+              :customer-name="customerInfo.name"
+              :popover-pos="activeDetailTarget.popoverPos"
+              @close="closeProductDetailPopover"
+            />
           </div><!-- /ob-modal-frame -->
 
+          <!-- ═══ RESIZER SPLITTER (Invisible Hover Indicator) ═══ -->
+          <div
+            class="ob-split-resizer"
+            :class="{ 'ob-split-resizer--active': isResizing }"
+            title="Kéo để thay đổi kích thước chat (Nhấp kép để đặt lại)"
+            @mousedown="startResize"
+            @dblclick="resetChatPanelWidth"
+          >
+            <div class="ob-split-resizer-bar" />
+          </div>
+
           <!-- ═══ MINI CHAT PANEL ═══ -->
-          <div class="ob-mini-chat-outer">
+          <div class="ob-mini-chat-outer" :style="{ width: `${chatPanelWidth}px` }">
             <MiniChatPanel
               :contact-id="draft?.contactId"
               :contact-name="draft?.contactName"
+              :contact-phone="draft?.contactPhone"
+              :pos-customer-code="draft?.posCustomerCode"
             />
           </div>
+
+          <!-- ═══ CHAT HEADS DOCK (mép phải, bên phải MiniChat) ═══ -->
+          <SessionDock
+            :sessions="sessionStore.sessions"
+            :active-session-id="sessionStore.activeSessionId"
+            :is-switching="sessionStore.isSwitching"
+            :inbound-contacts="inboundContacts"
+            @switch="handleSwitchSession"
+            @discard="handleDiscardSession"
+            @open-inbound="handleOpenInbound"
+          />
+
         </div><!-- /ob-modal-wrapper -->
       </div>
     </transition>
@@ -223,31 +662,33 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue';
-import { ShoppingBag, AlertTriangle, Minus, X, Check, Lock, RotateCcw, ArrowDown } from 'lucide-vue-next';
-import { User, Truck, Tag, Sparkles, Zap } from 'lucide-vue-next';
+import { ref, computed, watch, watchEffect, onMounted } from 'vue';
+import {
+  ShoppingBag, ShoppingCart, AlertTriangle, Minus, X, RotateCcw,
+  Search, Loader2, Tag, User, Truck, MapPin, Home, Box, MessageSquare,
+  CreditCard, CheckCircle2, Plus, Trash2, Percent, Gift, FileText,
+  Zap, UserCheck, Eye, MoreHorizontal, Lock,
+} from 'lucide-vue-next';
 import { api } from '@/api';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useWorkspaceSessionStore } from '@/stores/use-workspace-sessions';
+import { useMiniChatBridgeStore } from '@/stores/use-mini-chat-bridge';
+import { useAuthStore } from '@/stores/auth';
+import { useLongPressStep } from '@/composables/useLongPressStep';
+import { OrderPricingCalculator } from '@/utils/orderPricingCalculator';
+import { ProductStockValidator } from '@/utils/ProductStockValidator';
 
-// Sub-components
-import SectionAccordion from './SectionAccordion.vue';
-import type { AccordionSection } from './SectionAccordion.vue';
-import Section1Customer from './Section1Customer.vue';
-import Section2Products from './Section2Products.vue';
-import Section3Logistics from './Section3Logistics.vue';
-import Section4Review from './Section4Review.vue';
+// Shared components (giữ nguyên)
+import SessionDock from './SessionDock.vue';
 
-// Existing shared components (unchanged)
-import OrderSummaryDrawer from '../OrderSummaryDrawer.vue';
 import SuccessModal from '../SuccessModal.vue';
-import InvoiceTemplateModal from '../InvoiceTemplateModal.vue';
 import MiniChatPanel from '../MiniChatPanel.vue';
+import InvoiceTemplateModal from '../InvoiceTemplateModal.vue';
+import ProductDetailPopover from '../ProductDetailPopover.vue';
 
-import type {
-  POSProduct, POSBranch, CustomerInfo, CartItem, PromotionProgram,
-} from '../types';
-import { formatVND, PRICE_BOOKS, getEffectiveProductPrice, MOCK_PROMOTIONS, evaluatePromoCondition } from '../types';
+import type { POSProduct, POSBranch, CustomerInfo, PromotionProgram } from '../types';
+import { formatVND, PRICE_BOOKS, PAYMENT_METHODS, getEffectiveProductPrice, MOCK_PROMOTIONS, evaluatePromoCondition } from '../types';
 
+// ─── Props / Emits ────────────────────────────────────────────────
 const props = defineProps<{
   draftId: string;
 }>();
@@ -256,51 +697,234 @@ const emit = defineEmits<{
   'order-created': [data: any];
 }>();
 
-// ─── Store ────────────────────────────────────────────────────────────
-const draftStore = useOrderDraftStore();
+// ─── Stores ───────────────────────────────────────────────────────
+const authStore = useAuthStore();
+const sessionStore = useWorkspaceSessionStore();
+const draftStore = sessionStore; // backward compat alias
+const miniChatBridge = useMiniChatBridgeStore();
 
-// Draft hiện tại (reactive reference to store entry)
-const draft = computed(() => draftStore.drafts.find(d => d.id === props.draftId) ?? null);
+// ─── Long Press Stepper (Global OOP Composable) ─────────────────────
+const { getHoldProps } = useLongPressStep();
 
-// Modal visible khi draft tồn tại và không minimize
-const isModalVisible = computed(() => !!draft.value && !draft.value.isMinimized);
+const creatorName = computed(() => authStore.user?.fullName || 'Nhân viên POS');
 
-// Helper: đọc field từ draft
-function d<K extends keyof NonNullable<typeof draft.value>>(key: K) {
-  return draft.value?.[key];
+// ─── Inbound Contacts (Group 2 Chat Heads) ───────────────────────
+// Khách hàng nhắn tin tới nhưng chưa có phiên tạo đơn
+// Persist to localStorage để không mất khi modal đóng/mở lại
+import type { InboundContact } from './SessionDock.vue';
+
+const INBOUND_STORAGE_KEY = 'workspace_inbound_contacts_v1';
+const MAX_INBOUND = 10;
+
+// Load từ localStorage
+function loadInboundContacts(): InboundContact[] {
+  try {
+    const raw = localStorage.getItem(INBOUND_STORAGE_KEY);
+    if (raw) return JSON.parse(raw) as InboundContact[];
+  } catch { /* ignore */ }
+  return [];
 }
 
-// ─── Backend data ─────────────────────────────────────────────────────
-const branches = ref<POSBranch[]>([]);
+function saveInboundContacts(list: InboundContact[]) {
+  try {
+    localStorage.setItem(INBOUND_STORAGE_KEY, JSON.stringify(list));
+  } catch { /* ignore */ }
+}
 
-// ─── Derived from draft (store) ───────────────────────────────────────
-const cartItems = computed(() => draft.value?.cartItems ?? []);
+const inboundContacts = ref<InboundContact[]>(loadInboundContacts());
 
-const selectedProductIds = computed<Record<number, number>>(() => {
-  const map: Record<number, number> = {};
-  for (const item of cartItems.value) {
-    map[item.product.id] = item.quantity;
+// Auto-persist khi thay đổi
+watch(inboundContacts, (val) => saveInboundContacts(val), { deep: true });
+
+function onInboundMessage(event: Event) {
+  const detail = (event as CustomEvent).detail as {
+    conversationId: string;
+    contactId?: string;
+    contactName?: string;
+    contactAvatar?: string;
+    message: { content?: string; sentAt?: string };
+  };
+  if (!detail?.conversationId) return;
+
+  // Bỏ qua nếu conversation đang hiện trong MiniChat (user đang xem)
+  const currentConvId = miniChatBridge.conversation?.id;
+  if (detail.conversationId === currentConvId) return;
+
+  // Bỏ qua nếu đã có session cho khách này (thuộc Nhóm 1)
+  const hasSession = sessionStore.sessions.some(
+    s => s.conversationId === detail.conversationId || s.contactId === detail.contactId,
+  );
+  if (hasSession) return; // Nhóm 1 xử lý qua store listener
+
+  const preview = detail.message?.content
+    ? (detail.message.content.length > 50
+      ? detail.message.content.slice(0, 50) + '…'
+      : detail.message.content)
+    : 'Tin nhắn mới';
+
+  // Tìm existing inbound contact
+  const existing = inboundContacts.value.find(c => c.conversationId === detail.conversationId);
+  if (existing) {
+    // Cập nhật message mới nhất + tăng unread
+    existing.lastMessage = preview;
+    existing.unreadCount = (existing.unreadCount || 0) + 1;
+    // Đẩy lên đầu
+    inboundContacts.value = [
+      existing,
+      ...inboundContacts.value.filter(c => c.conversationId !== detail.conversationId),
+    ];
+  } else {
+    // Thêm mới
+    const contact: InboundContact = {
+      conversationId: detail.conversationId,
+      contactId: detail.contactId,
+      contactName: detail.contactName || 'Khách hàng',
+      contactAvatar: detail.contactAvatar,
+      lastMessage: preview,
+      unreadCount: 1,
+    };
+    inboundContacts.value = [contact, ...inboundContacts.value].slice(0, MAX_INBOUND);
   }
-  return map;
+}
+
+async function handleOpenInbound(contact: InboundContact) {
+  // Check giới hạn phiên
+  if (sessionStore.sessions.length >= 5) {
+    toastMessage.value = 'Đã đạt tối đa 5 phiên. Vui lòng đóng 1 phiên trước.';
+    setTimeout(() => { toastMessage.value = ''; }, 3000);
+    return;
+  }
+
+  // Tạo phiên mới (hoặc trả về session cũ nếu KH đã có) → add vào Nhóm 1
+  const newSessionId = sessionStore.openDraft({
+    contactId: contact.contactId,
+    contactName: contact.contactName,
+    contactAvatar: contact.contactAvatar,
+    contactPhone: contact.contactPhone,
+    conversationId: contact.conversationId,
+  });
+
+  // Xóa khỏi Nhóm 2 (đã được add vào Nhóm 1)
+  inboundContacts.value = inboundContacts.value.filter(
+    c => c.conversationId !== contact.conversationId,
+  );
+
+  // Switch sang phiên vừa tạo/mở để Sales làm việc ngay
+  if (newSessionId) {
+    await handleSwitchSession(newSessionId);
+  }
+}
+
+// Register event listener
+let _notifListenerAdded = false;
+onMounted(() => {
+  if (!_notifListenerAdded && typeof window !== 'undefined') {
+    window.addEventListener('workspace:inbound-message', onInboundMessage);
+    _notifListenerAdded = true;
+  }
 });
 
-const selectedBranch = computed<POSBranch | null>(() => {
-  const branchId = draft.value?.branchId;
-  if (!branchId) return null;
-  return branches.value.find(b => b.id === branchId) || null;
+// Auto-link conversationId và đồng bộ thông tin contact (sĐT, mã POS) từ MiniChat vào session hiện tại
+// Khi SalesChatView publish conversation → bridge.conversation cập nhật
+// → tự động backfill phone, posCustomerCode, conversationId nếu session còn thiếu
+watchEffect(() => {
+  const conv = miniChatBridge.conversation;
+  const session = sessionStore.activeSession;
+  if (conv && session) {
+    const convContactId = conv.contact?.id;
+    const isMatch = (convContactId && session.contactId === convContactId) || (conv.id && session.conversationId === conv.id);
+    if (isMatch) {
+      const patch: Partial<WorkspaceSession> = {};
+      if (!session.conversationId && conv.id) patch.conversationId = conv.id;
+      if (!session.contactPhone && conv.contact?.phone) patch.contactPhone = conv.contact.phone;
+      if (!session.posCustomerCode && (conv.contact as any)?.posCustomerCode) {
+        patch.posCustomerCode = (conv.contact as any).posCustomerCode;
+      }
+      if (!session.posCustomerId && (conv.contact as any)?.posCustomerId) {
+        patch.posCustomerId = (conv.contact as any).posCustomerId;
+      }
+      if (Object.keys(patch).length > 0) {
+        sessionStore.updateSession(session.id, patch);
+      }
+    }
+  }
 });
 
-const totalAmount = computed(() => {
-  const pbId = draft.value?.priceBookId || 'standard';
-  return cartItems.value.reduce((sum, item) => {
-    const unitPrice = getEffectiveProductPrice(item.product.basePrice, pbId);
-    return sum + Math.max(0, unitPrice * item.quantity - (item.discount || 0));
-  }, 0);
+// ─── Unread badge cho session hiện tại ───────────────────────────
+const currentSessionUnread = computed(() => {
+  const session = sessionStore.activeSession;
+  return session?.unreadCount ?? 0;
 });
 
-const orderDiscountAmount = computed(() => Math.max(0, draft.value?.orderDiscount || 0));
-const grandTotal = computed(() => Math.max(0, totalAmount.value - orderDiscountAmount.value));
-const totalCartCount = computed(() => cartItems.value.reduce((sum, item) => sum + item.quantity, 0));
+function scrollMiniChatToBottom() {
+  // Clear unread khi user click badge
+  if (sessionStore.activeSession) {
+    sessionStore.clearUnread(sessionStore.activeSession.id);
+  }
+  // Scroll mini chat panel to bottom
+  const chatEl = document.querySelector('.mini-chat-messages, .mc-messages');
+  if (chatEl) chatEl.scrollTop = chatEl.scrollHeight;
+}
+
+// ─── Resizable Splitter (Order Builder <-> Mini Chat) ──────────────
+const defaultChatWidth = 340;
+const savedWidth = localStorage.getItem('ob_mini_chat_width');
+const chatPanelWidth = ref<number>(savedWidth ? Math.min(Math.max(Number(savedWidth), 260), 650) : defaultChatWidth);
+const isResizing = ref<boolean>(false);
+
+function startResize(e: MouseEvent) {
+  e.preventDefault();
+  isResizing.value = true;
+  const startX = e.clientX;
+  const startWidth = chatPanelWidth.value;
+
+  document.body.style.cursor = 'col-resize';
+  document.body.style.userSelect = 'none';
+
+  const onMouseMove = (moveEvent: MouseEvent) => {
+    const deltaX = startX - moveEvent.clientX;
+    const newWidth = Math.min(Math.max(startWidth + deltaX, 260), 650);
+    chatPanelWidth.value = newWidth;
+  };
+
+  const onMouseUp = () => {
+    isResizing.value = false;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+    localStorage.setItem('ob_mini_chat_width', String(chatPanelWidth.value));
+  };
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+function resetChatPanelWidth() {
+  chatPanelWidth.value = defaultChatWidth;
+  localStorage.setItem('ob_mini_chat_width', String(defaultChatWidth));
+}
+
+// Draft hiện tại — theo activeSessionId (thay đổi khi switch session)
+// Fallback sang props.draftId nếu chưa có activeSessionId (lần đầu mở)
+const draft = computed(() => {
+  const targetId = sessionStore.activeSessionId || props.draftId;
+  return draftStore.drafts.find(d => d.id === targetId) ?? null;
+});
+
+// Modal visible khi BẤT KỲ session nào đang active (không minimize)
+const isModalVisible = computed(() => {
+  // Hiện modal nếu có ít nhất 1 session đang mở (không minimize)
+  return sessionStore.sessions.some(s => !s.isMinimized);
+});
+
+// ─── Backend data ─────────────────────────────────────────────────
+const branches = ref<POSBranch[]>([]);
+const productsLoading = ref(false);
+const searchResults = ref<POSProduct[]>([]);
+
+// ─── Derived từ draft ─────────────────────────────────────────────
+const cartItems = computed(() => draft.value?.cartItems ?? []);
 
 const customerInfo = computed<CustomerInfo>(() => ({
   posCustomerId: draft.value?.posCustomerId || 0,
@@ -310,12 +934,157 @@ const customerInfo = computed<CustomerInfo>(() => ({
   phone: draft.value?.contactPhone,
 }));
 
-// ─── UI state (local — không cần persist) ────────────────────────────
+const totalAmount = computed(() => {
+  return OrderPricingCalculator.calculateSubtotal(cartItems.value);
+});
+
+// ─── OOP Warehouse Stock Validation ──────────────────────────────
+const itemBranchStockMap = ref<Record<string, number>>({});
+
+async function fetchItemBranchStock(productId: number, branchId: number) {
+  const key = `${productId}-${branchId}`;
+  if (itemBranchStockMap.value[key] !== undefined) {
+    return itemBranchStockMap.value[key];
+  }
+  try {
+    const res = await api.get('/pos/inventory/product', { params: { productId, branchId } });
+    const stockData = res.data?.data;
+    let stock = stockData?.available ?? stockData?.onHand ?? 0;
+    if (stockData?.branches && Array.isArray(stockData.branches)) {
+      const b = stockData.branches.find((item: any) => item.branchId === branchId);
+      if (b) stock = b.available ?? b.onHand ?? 0;
+    }
+    itemBranchStockMap.value[key] = stock;
+    return stock;
+  } catch {
+    itemBranchStockMap.value[key] = 0;
+    return 0;
+  }
+}
+
+watchEffect(async () => {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  let updated = false;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const targetBranchId = item.warehouseId || draft.value.branchId || (branches.value[0]?.id || 1);
+    const stockKey = `${item.product.id}-${targetBranchId}`;
+
+    let stock = itemBranchStockMap.value[stockKey];
+    if (stock === undefined) {
+      stock = await fetchItemBranchStock(item.product.id, targetBranchId);
+    }
+
+    const check = ProductStockValidator.validateStock(stock, item.quantity);
+    const isOutOfStock = !check.isValid;
+
+    if (item.isOutOfStock !== isOutOfStock || item.warehouseId !== targetBranchId) {
+      items[i] = {
+        ...item,
+        warehouseId: targetBranchId,
+        isOutOfStock,
+      };
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+});
+
+function handleItemWarehouseChange(idx: number, newBranchId: number) {
+  const items = [...cartItems.value];
+  if (!items[idx]) return;
+  const item = items[idx];
+
+  const stockKey = `${item.product.id}-${newBranchId}`;
+  delete itemBranchStockMap.value[stockKey];
+
+  items[idx] = {
+    ...item,
+    warehouseId: newBranchId,
+  };
+  draftStore.updateDraft(props.draftId, { cartItems: items });
+
+  fetchItemBranchStock(item.product.id, newBranchId).then(stock => {
+    const check = ProductStockValidator.validateStock(stock, item.quantity);
+    const updatedItems = [...cartItems.value];
+    if (updatedItems[idx]) {
+      updatedItems[idx] = {
+        ...updatedItems[idx],
+        isOutOfStock: !check.isValid,
+      };
+      draftStore.updateDraft(props.draftId, { cartItems: updatedItems });
+    }
+  });
+}
+
+function getItemStockBadgeClass(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  const check = ProductStockValidator.validateStock(stock, item.quantity);
+  if (check.status === 'OutOfStock') return 'ob-item-stock-badge--out';
+  if (check.status === 'LowStock') return 'ob-item-stock-badge--low';
+  return 'ob-item-stock-badge--in';
+}
+
+function getItemStockBadgeLabel(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  if (stock === undefined) return '...';
+  const check = ProductStockValidator.validateStock(stock, item.quantity);
+  return check.message;
+}
+
+function getItemStockBadgeTitle(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  return `Tồn kho khả dụng: ${stock ?? 0} SP`;
+}
+
+const orderDiscountAmount = computed(() => {
+  if (!draft.value) return 0;
+  const type = draft.value.orderDiscountType || 'amount';
+  const val = draft.value.orderDiscountValue || 0;
+  if (type === 'percent') return Math.floor(totalAmount.value * (val / 100));
+  return Math.max(0, val);
+});
+
+const grandTotal = computed(() => {
+  return OrderPricingCalculator.calculateGrandTotal(totalAmount.value, orderDiscountAmount.value);
+});
+const totalCartCount = computed(() => cartItems.value.reduce((sum, item) => sum + item.quantity, 0));
+
+// Ngày giờ hiện tại
+const currentDateTime = computed(() => {
+  const now = new Date();
+  return now.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+});
+
+// ─── UI State ─────────────────────────────────────────────────────
+const activeLeftView = ref<'cart' | 'invoice_preview'>('cart');
 const showClearConfirm = ref(false);
-const isDrawerOpen = ref(false);
 const isSuccessOpen = ref(false);
 const submitting = ref(false);
 const toastMessage = ref<string | null>(null);
+
+const selectedBranch = computed(() => {
+  if (!draft.value?.branchId) return branches.value[0] || null;
+  return branches.value.find(b => b.id === draft.value?.branchId) || null;
+});
+
+// Search
+const searchQuery = ref('');
+const isSearchOpen = ref(false);
+let searchTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Line discount inline editor
+const lineDiscountOpenIdx = ref(-1);
+const lineDiscountValue = ref(0);
+const lineDiscountType = ref<'amount' | 'percent'>('amount');
 
 // Success data
 const completedOrderCode = ref('');
@@ -323,85 +1092,170 @@ const completedTotalItems = ref(0);
 const completedFinalTotal = ref(0);
 const completedPaymentMethod = ref('');
 
-// ─── Section Accordion State (lưu vào store) ─────────────────────────
-const activeSection = computed({
-  get: () => draft.value?.activeSection ?? 'customer',
-  set: (v) => draftStore.updateDraft(props.draftId, { activeSection: v }),
-});
-const completedSections = computed({
-  get: () => draft.value?.completedSections ?? [],
-  set: (v) => draftStore.updateDraft(props.draftId, { completedSections: v }),
-});
-
-const lockedSections = computed<string[]>(() => {
-  const locked: string[] = [];
-  const realItems = cartItems.value.filter(c => !c.isGift);
-  if (realItems.length === 0) locked.push('logistics');
-  if (!completedSections.value.includes('logistics')) locked.push('review');
-  if (realItems.length === 0) locked.push('review');
-  return locked;
-});
-
-const accordionSections = computed<AccordionSection[]>(() => [
-  {
-    id: 'customer',
-    title: 'Thông tin khách hàng',
-    icon: User,
-    summary: customerInfo.value.name + (customerInfo.value.posCustomerCode ? ` · ${customerInfo.value.posCustomerCode}` : ''),
-    nextLabel: 'Tiếp theo →',
-  },
-  {
-    id: 'products',
-    title: 'Sản phẩm & Khuyến mãi',
-    icon: ShoppingBag,
-    summary: cartItems.value.filter(c => !c.isGift).length > 0
-      ? `${cartItems.value.filter(c => !c.isGift).length} SP · ${formatVND(grandTotal.value)}${(draft.value?.appliedPromoIds?.length || 0) > 0 ? ` · ${draft.value!.appliedPromoIds!.length} KM` : ''}`
-      : undefined,
-    nextLabel: 'Tiếp theo →',
-    nextDisabled: cartItems.value.filter(c => !c.isGift).length === 0,
-  },
-  {
-    id: 'logistics',
-    title: 'Vận chuyển & Thanh toán',
-    icon: Truck,
-    summary: selectedBranch.value
-      ? `${selectedBranch.value.name} · ${draft.value?.paymentMethod === 'cash' ? 'Tiền mặt' : draft.value?.paymentMethod === 'bank_transfer' ? 'Chuyển khoản' : 'Quẹt thẻ'}`
-      : undefined,
-    lockReason: 'Thêm sản phẩm trước',
-    nextLabel: 'Tiếp theo →',
-    nextDisabled: !draft.value?.branchId,
-  },
-  {
-    id: 'review',
-    title: 'Xem lại & Chốt đơn',
-    icon: Sparkles,
-    lockReason: 'Hoàn thành vận chuyển & thanh toán trước',
-    showNext: false,
-  },
-]);
-
-function handleOpenSection(sectionId: string) {
-  if (lockedSections.value.includes(sectionId)) return;
-  activeSection.value = sectionId;
+// ─── Search handlers ──────────────────────────────────────────────
+function onSearchInput() {
+  if (searchTimer) clearTimeout(searchTimer);
+  const term = searchQuery.value.trim();
+  if (!term) { searchResults.value = []; return; }
+  searchTimer = setTimeout(() => fetchProducts(term), 280);
 }
 
-function handleNextSection() {
-  const sectionOrder = ['customer', 'products', 'logistics', 'review'];
-  const currentIdx = sectionOrder.indexOf(activeSection.value);
-  const newCompleted = [...completedSections.value];
-  if (!newCompleted.includes(activeSection.value)) {
-    newCompleted.push(activeSection.value);
-    completedSections.value = newCompleted;
+function onSearchBlur() {
+  setTimeout(() => { isSearchOpen.value = false; }, 200);
+}
+
+function clearSearch() {
+  searchQuery.value = '';
+  searchResults.value = [];
+  isSearchOpen.value = false;
+}
+
+async function fetchProducts(keyword: string) {
+  productsLoading.value = true;
+  isSearchOpen.value = true;
+  try {
+    const { data } = await api.get<{ items: any[]; nextCursor: string | null }>('/pos/products', {
+      params: { limit: 20, keyword },
+    });
+    const items = data?.items || [];
+    searchResults.value = items.map((p: any) => ({
+      id: p.posId,
+      code: p.code || '',
+      name: p.name || '',
+      categoryName: p.categoryName || '',
+      basePrice: p.basePrice || 0,
+      unit: p.unit || '',
+      onHand: p.onHand,
+      imageUrl: p.images?.[0]?.image || p.imageUrl || undefined,
+    }));
+  } catch (err) {
+    console.error('fetchProducts failed:', err);
+  } finally {
+    productsLoading.value = false;
   }
-  if (currentIdx < sectionOrder.length - 1) {
-    const nextId = sectionOrder[currentIdx + 1];
-    if (!lockedSections.value.includes(nextId)) {
-      activeSection.value = nextId;
+}
+
+// Quick add: thêm SP trực tiếp từ dropdown (qty=1)
+function quickAddProduct(product: POSProduct) {
+  handleAddProduct(product);
+  searchQuery.value = '';
+  searchResults.value = [];
+  isSearchOpen.value = false;
+}
+
+// ─── Line total helper ────────────────────────────────────────────
+function getLineTotal(item: typeof cartItems.value[0]) {
+  return OrderPricingCalculator.calculateLineTotal(item.product.basePrice, item.quantity, item.discount, item.isGift);
+}
+
+// ─── Cart item qty controls ───────────────────────────────────────
+function changeItemQty(idx: number, delta: number) {
+  const item = cartItems.value[idx];
+  if (!item) return;
+  const newQty = Math.max(1, item.quantity + delta);
+  handleUpdateQuantity(item.product.id, newQty);
+}
+
+// ─── Product Detail Popover (...) ──────────────────────────────
+interface ActiveDetailTarget {
+  product: POSProduct;
+  popoverPos: { top: number; left: number };
+  targetX: number;
+  targetY: number;
+}
+
+const activeDetailTarget = ref<ActiveDetailTarget | null>(null);
+
+function openProductDetailPopover(event: MouseEvent, item: CartItem) {
+  // If clicking on the currently open popover target button, toggle close
+  if (activeDetailTarget.value?.product.id === item.product.id) {
+    activeDetailTarget.value = null;
+    return;
+  }
+
+  const target = event.currentTarget as HTMLElement;
+  const container = document.querySelector('.ob-modal-frame') as HTMLElement || document.body;
+  if (!target || !container) return;
+
+  const targetRect = target.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const popoverWidth = 520;
+
+  const targetX = Math.round(targetRect.left - containerRect.left + targetRect.width / 2);
+  const targetY = Math.round(targetRect.top - containerRect.top + targetRect.height / 2);
+
+  const maxLeft = Math.max(12, Math.round(containerRect.width - popoverWidth - 16));
+  let pLeft = Math.round(targetX - popoverWidth / 2);
+  pLeft = Math.max(16, Math.min(pLeft, maxLeft));
+
+  let pTop = Math.round(targetRect.top - containerRect.top - 180);
+  if (pTop < 10) {
+    pTop = Math.round(targetRect.bottom - containerRect.top + 16);
+  }
+
+  activeDetailTarget.value = {
+    product: item.product,
+    popoverPos: { top: pTop, left: pLeft },
+    targetX,
+    targetY,
+  };
+}
+
+function closeProductDetailPopover() {
+  activeDetailTarget.value = null;
+}
+
+// ─── Line discount editor ─────────────────────────────────────────
+function openLineDiscount(idx: number) {
+  if (lineDiscountOpenIdx.value === idx) {
+    const val = Number(lineDiscountValue.value) || 0;
+    if (val > 0) {
+      applyLineDiscount(idx);
+    } else {
+      lineDiscountOpenIdx.value = -1;
     }
+    return;
+  }
+
+  lineDiscountOpenIdx.value = idx;
+  const item = cartItems.value[idx];
+  lineDiscountValue.value = item?.discount || 0;
+  lineDiscountType.value = 'amount';
+}
+
+function applyLineDiscount(idx: number) {
+  const item = cartItems.value[idx];
+  if (!item) return;
+  const basePrice = item.product.basePrice;
+  const perUnitDiscount = OrderPricingCalculator.calculatePerUnitDiscountFromInput(
+    basePrice,
+    lineDiscountType.value,
+    lineDiscountValue.value
+  );
+  handleUpdateProductDiscount(item.product.id, perUnitDiscount);
+  lineDiscountOpenIdx.value = -1;
+}
+
+// ─── Package update helper ────────────────────────────────────────
+function updatePackage(field: 'length' | 'width' | 'height' | 'weight', event: Event) {
+  const val = Number((event.target as HTMLInputElement).value) || undefined;
+  handleUpdatePackageMetrics({
+    length: field === 'length' ? val : draft.value?.packageLength,
+    width: field === 'width' ? val : draft.value?.packageWidth,
+    height: field === 'height' ? val : draft.value?.packageHeight,
+    weight: field === 'weight' ? val : draft.value?.packageWeight,
+  });
+}
+
+// ─── Clear all promos ─────────────────────────────────────────────
+function clearAllPromos() {
+  if (!draft.value?.appliedPromoIds) return;
+  for (const id of [...draft.value.appliedPromoIds]) {
+    handleRemovePromotion(id);
   }
 }
 
-// ─── Handlers ─────────────────────────────────────────────────────────
+// ─── Handlers (giữ nguyên từ bản cũ) ─────────────────────────────
 function handleMinimize() {
   draftStore.minimizeDraft(props.draftId);
 }
@@ -438,45 +1292,62 @@ function handleUpdateProductDiscount(productId: number, discount: number) {
   }
 }
 
-function handleUpdateOrderDiscount(discount: number) {
-  draftStore.updateDraft(props.draftId, { orderDiscount: Math.min(Math.max(0, discount), totalAmount.value) });
+function handleUpdateOrderDiscount(discountVal: number) {
+  draftStore.updateDraft(props.draftId, { orderDiscountValue: Math.max(0, discountVal) });
 }
 
-function resetAll() {
-  draftStore.updateDraft(props.draftId, {
-    cartItems: [],
-    branchId: branches.value.length > 0 ? branches.value[0].id : null,
-    paymentMethod: 'cash',
-    orderStatus: 1,
-    priceBookId: 'standard',
-    orderDiscount: 0,
-    appliedPromoIds: [],
-    description: '',
-    paidAmount: 0,
-    deliveryAddress: '',
-    activeSection: 'customer',
-    completedSections: [],
-  });
-  isDrawerOpen.value = false;
-  isSuccessOpen.value = false;
-  submitting.value = false;
-}
-
-
-
-// ─── Cart Operations ──────────────────────────────────────────────────
-function handleAddProduct(product: POSProduct) {
+function handleUpdateCartItemNote(idx: number, note: string) {
   if (!draft.value) return;
   const items = [...cartItems.value];
-  const existing = items.find(c => c.product.id === product.id);
-  if (existing) {
-    existing.quantity++;
-    showToast(`Đã tăng số lượng ${product.name}.`);
+  if (items[idx]) {
+    items[idx] = { ...items[idx], note: note.trim() || undefined };
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+}
+
+function handleUpdateCartItemNoteById(productId: number, note: string) {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  const idx = items.findIndex((i) => i.product.id === productId);
+  if (idx !== -1) {
+    items[idx] = { ...items[idx], note: note.trim() || undefined };
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+}
+
+const newlyAddedProductId = ref<number | null>(null);
+
+function triggerNewItemHighlight(productId: number) {
+  newlyAddedProductId.value = productId;
+  setTimeout(() => {
+    if (newlyAddedProductId.value === productId) {
+      newlyAddedProductId.value = null;
+    }
+  }, 1600);
+}
+
+function handleAddProduct(product: POSProduct, opts?: { quantity?: number; discount?: number; note?: string; conditionType?: string }) {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  const qty = opts?.quantity || 1;
+  const discount = opts?.discount || 0;
+  const note = opts?.note || '';
+  const conditionType = opts?.conditionType as 'normal' | 'damaged' | 'near_expiry' | undefined;
+
+  const existingIdx = items.findIndex(c =>
+    c.product.id === product.id && !c.isGift &&
+    (c.note || '') === note && (c.discount || 0) === discount && c.conditionType === conditionType
+  );
+  if (existingIdx !== -1) {
+    const existing = items[existingIdx];
+    existing.quantity += qty;
+    items.splice(existingIdx, 1);
+    items.unshift(existing);
   } else {
-    items.push({ product, quantity: 1 });
-    showToast(`Đã thêm ${product.name}.`);
+    items.unshift({ product, quantity: qty, discount, note: note || undefined, conditionType });
   }
   draftStore.updateDraft(props.draftId, { cartItems: items });
+  triggerNewItemHighlight(product.id);
 }
 
 function handleUpdateQuantity(productId: number, quantity: number) {
@@ -485,24 +1356,22 @@ function handleUpdateQuantity(productId: number, quantity: number) {
   if (item) { item.quantity = quantity; draftStore.updateDraft(props.draftId, { cartItems: items }); }
 }
 
-function handleRemoveProduct(productId: number) {
-  const items = cartItems.value.filter(c => c.product.id !== productId);
+function handleRemoveProduct(indexOrId: number) {
+  const items = [...cartItems.value];
+  if (typeof indexOrId === 'number' && indexOrId >= 0 && indexOrId < items.length && items[indexOrId]) {
+    items.splice(indexOrId, 1);
+  } else {
+    const idx = items.findIndex(c => c.product.id === indexOrId);
+    if (idx !== -1) items.splice(idx, 1);
+  }
   draftStore.updateDraft(props.draftId, { cartItems: items });
 }
 
-function handleClearOrder() {
-  draftStore.updateDraft(props.draftId, { cartItems: [], appliedPromoIds: [] });
-  showToast('Đã xóa sạch đơn hàng.');
-}
-
-// ─── Promotion Handlers ──────────────────────────────────────────
 function handleApplyPromotion(promo: PromotionProgram) {
   if (!draft.value) return;
   if (draft.value.appliedPromoIds?.includes(promo.id)) return;
-
   const items = [...cartItems.value];
   let newOrderDiscount = draft.value.orderDiscount || 0;
-
   if (promo.reward.type === 'free_product' && promo.reward.giftProduct) {
     const gift = promo.reward.giftProduct;
     const qty = promo.reward.giftQuantity ?? 1;
@@ -514,7 +1383,6 @@ function handleApplyPromotion(promo: PromotionProgram) {
     newOrderDiscount += promo.reward.discountAmount;
     showToast(`💰 Đã giảm thêm ${formatVND(promo.reward.discountAmount)}!`);
   }
-
   draftStore.updateDraft(props.draftId, {
     cartItems: items,
     orderDiscount: newOrderDiscount,
@@ -556,21 +1424,29 @@ watch(
   { deep: true },
 );
 
-// ─── Sidebar selections ───────────────────────────────────────────────
 function handleSelectBranch(branchId: number) { draftStore.updateDraft(props.draftId, { branchId }); }
 function handleSelectPayment(method: string) { draftStore.updateDraft(props.draftId, { paymentMethod: method }); }
-function handleSelectOrderStatus(status: number) { draftStore.updateDraft(props.draftId, { orderStatus: status }); }
 function handleUpdateDeliveryAddress(address: string) { draftStore.updateDraft(props.draftId, { deliveryAddress: address }); }
+function handleUpdateBillNote(note: string) { draftStore.updateDraft(props.draftId, { billNote: note, description: note }); }
+function handleUpdateShippingNote(note: string) { draftStore.updateDraft(props.draftId, { shippingNote: note }); }
+function handleUpdatePackageMetrics(metrics: { length?: number; width?: number; height?: number; weight?: number }) {
+  draftStore.updateDraft(props.draftId, {
+    packageLength: metrics.length,
+    packageWidth: metrics.width,
+    packageHeight: metrics.height,
+    packageWeight: metrics.weight,
+  });
+}
 
 function handleReset() {
-  draftStore.updateDraft(props.draftId, { cartItems: [], paidAmount: 0, description: '', orderStatus: 1, activeSection: 'customer', completedSections: [] });
+  draftStore.updateDraft(props.draftId, { cartItems: [], paidAmount: 0, description: '', billNote: '', orderStatus: 1 });
   showToast('Đã đặt lại đơn hàng.');
 }
 
-// ─── Submit Order ─────────────────────────────────────────────────────
+// ─── Submit Order (giữ nguyên logic) ─────────────────────────────
 async function handleSubmitOrder() {
   if (!draft.value) return;
-  if (cartItems.value.length === 0) { showToast('Vui lòng thêm sản phẩm trước khi tạo đơn.'); return; }
+  if (cartItems.value.filter(c => !c.isGift).length === 0) { showToast('Vui lòng thêm sản phẩm trước khi tạo đơn.'); return; }
   if (!draft.value.branchId) { showToast('Vui lòng chọn chi nhánh.'); return; }
   if (!draft.value.posCustomerId) { showToast('Chưa liên kết khách hàng POS.'); return; }
 
@@ -588,13 +1464,13 @@ async function handleSubmitOrder() {
         quantity: c.quantity,
         unitPrice: getEffectiveProductPrice(c.product.basePrice, 'standard'),
         discount: c.discount || 0,
-        note: '',
+        note: c.note || '',
       })),
       discount: draft.value.orderDiscount || 0,
       paidAmount: 0,
       paymentMethod: draft.value.paymentMethod || 'cash',
       orderStatus: 1,
-      description: draft.value.description || '',
+      description: draft.value.description || draft.value.billNote || '',
     };
 
     const { data } = await api.post<any>('/pos/orders', payload);
@@ -603,7 +1479,6 @@ async function handleSubmitOrder() {
       completedTotalItems.value = cartItems.value.reduce((s, c) => s + c.quantity, 0);
       completedFinalTotal.value = grandTotal.value;
       completedPaymentMethod.value = draft.value.paymentMethod;
-      isDrawerOpen.value = false;
       isSuccessOpen.value = true;
       emit('order-created', data.data);
     } else {
@@ -622,18 +1497,54 @@ function handleSuccessClose() {
   showToast('Đơn hàng thành công! Đã dọn sạch.');
 }
 
-// ─── Toast ────────────────────────────────────────────────────────────
+// ─── Toast ────────────────────────────────────────────────────────
 function showToast(msg: string) {
   toastMessage.value = msg;
   setTimeout(() => { toastMessage.value = null; }, 3000);
 }
 
-// ─── Fetch branches khi workspace mount ──────────────────────────────
-onMounted(() => {
-  fetchBranches();
-});
+// ─── Session Switch / Discard ─────────────────────────────────────
 
-// Set branch default khi branches load xong
+async function handleSwitchSession(targetSessionId: string) {
+  if (targetSessionId === sessionStore.activeSessionId) return;
+
+  // Save current scroll position
+  const scrollEl = document.querySelector('.ob-pos-body');
+  const saveScrollPositions: Record<string, number> = scrollEl
+    ? { 'pos-body': scrollEl.scrollTop }
+    : {};
+
+  // Switch session (includes skeleton 300ms)
+  await sessionStore.switchSession(targetSessionId, {
+    saveScrollPosition: saveScrollPositions,
+  });
+
+  // Switch MiniChat conversation
+  const targetSession = sessionStore.sessions.find(s => s.id === targetSessionId);
+  if (targetSession?.conversationId) {
+    miniChatBridge.switchConversation(targetSession.conversationId);
+  } else if (targetSession?.contactId) {
+    // Session chưa có conversationId — yêu cầu bridge tìm theo contactId
+    miniChatBridge.switchByContact(targetSession.contactId);
+  }
+
+  // Restore scroll position after DOM update
+  const { nextTick } = await import('vue');
+  await nextTick();
+  if (targetSession?.scrollPositions?.['pos-body'] && scrollEl) {
+    scrollEl.scrollTop = targetSession.scrollPositions['pos-body'];
+  }
+}
+
+function handleDiscardSession(sessionId: string, _contactName: string) {
+  showClearConfirm.value = true;
+  // Store session id for confirm dialog
+  (showClearConfirm as any)._discardTarget = sessionId;
+}
+
+// ─── Fetch branches ───────────────────────────────────────────────
+onMounted(() => { fetchBranches(); });
+
 async function fetchBranches() {
   try {
     const { data } = await api.get<{ success: boolean; data: { id: number; name: string }[] }>('/pos/branches');
@@ -648,53 +1559,9 @@ async function fetchBranches() {
 </script>
 
 <style scoped>
-/* ═══ FLOATING WIDGET ═══ */
-.ob-floating-widget {
-  position: fixed;
-  bottom: 24px;
-  left: 24px;
-  z-index: 9999;
-  background: #ffffff;
-  border: 2px solid #0068FF;
-  border-radius: 16px;
-  padding: 10px 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  box-shadow: 0 10px 30px rgba(0, 104, 255, 0.25);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  user-select: none;
-}
-.ob-floating-widget:hover {
-  transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 14px 36px rgba(0, 104, 255, 0.35);
-}
-.ob-floating-widget__icon {
-  width: 38px; height: 38px;
-  border-radius: 10px; background: #0068FF; color: #fff;
-  display: flex; align-items: center; justify-content: center;
-  position: relative; flex-shrink: 0;
-}
-.ob-floating-widget__badge {
-  position: absolute; top: -6px; right: -6px;
-  background: #ef4444; color: #fff;
-  font-size: 10px; font-weight: 800;
-  width: 18px; height: 18px; border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  border: 2px solid #fff;
-}
-.ob-floating-widget__info { display: flex; flex-direction: column; }
-.ob-floating-widget__title { font-size: 12px; font-weight: 800; color: #1e293b; }
-.ob-floating-widget__meta { font-size: 10px; color: #64748b; display: flex; align-items: center; gap: 4px; margin-top: 2px; }
-.ob-floating-widget__amount { font-weight: 700; color: #0068FF; font-family: monospace; }
-.ob-floating-widget__expand-hint {
-  padding: 6px; border-radius: 8px; background: #eff6ff; color: #0068FF;
-  display: flex; align-items: center; justify-content: center; margin-left: 4px;
-}
-.ob-sep { opacity: 0.4; }
-
-/* ═══ Overlay ═══ */
+/* ════════════════════════════════════
+   OVERLAY & WRAPPER
+   ════════════════════════════════════ */
 .ob-modal-overlay {
   position: fixed; inset: 0; z-index: 9000;
   background: rgba(15, 23, 42, 0.45);
@@ -703,181 +1570,911 @@ async function fetchBranches() {
   display: flex; align-items: center; justify-content: center;
   padding: 12px 10px;
 }
-
-/* ═══ Wrapper ═══ */
 .ob-modal-wrapper {
   display: flex; flex-direction: row; align-items: stretch;
-  gap: 10px;
+  gap: 5px;
   width: 99.5vw;
-  max-width: clamp(1200px, 90vw, 1800px);
+  max-width: clamp(1200px, 96vw, 1850px);
   height: 95vh;
-  max-height: clamp(820px, 94vh, 1100px);
+  max-height: clamp(800px, 94vh, 1100px);
   position: relative; z-index: 10;
 }
-
-/* ═══ Frame ═══ */
 .ob-modal-frame {
+  position: relative;
   flex: 1; min-width: 0;
-  background: #fff;
+  background: #f1f5f9;
   border-radius: 16px;
   border: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
   display: flex; flex-direction: column;
 }
 
-/* ═══ Mini Chat ═══ */
-.ob-mini-chat-outer {
-  width: 340px; flex-shrink: 0; height: 100%;
+/* ════════════════════════════════════
+   RESIZER SPLITTER (Invisible Hover Indicator)
+   ════════════════════════════════════ */
+.ob-split-resizer {
+  width: 6px;
+  margin: 0 -5px;
+  height: 100%;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  z-index: 25;
+  user-select: none;
+  flex-shrink: 0;
+  touch-action: none;
+}
+.ob-split-resizer-bar {
+  width: 3px;
+  height: 48px;
+  background: #bfdbfe;
+  border-radius: 999px;
+  opacity: 0;
+  transition: opacity 0.2s ease, background 0.2s ease, height 0.2s ease, box-shadow 0.2s ease;
+}
+.ob-split-resizer:hover .ob-split-resizer-bar,
+.ob-split-resizer--active .ob-split-resizer-bar {
+  opacity: 1;
+  background: #0068FF;
+  height: 96px;
+  box-shadow: 0 0 10px rgba(0, 104, 255, 0.4);
 }
 
-/* ═══ Header ═══ */
+/* ════════════════════════════════════
+   MINI CHAT OUTER
+   ════════════════════════════════════ */
+.ob-mini-chat-outer {
+  flex-shrink: 0; height: 100%;
+}
+
+/* ════════════════════════════════════
+   WINDOW HEADER
+   ════════════════════════════════════ */
 .ob-modal__header {
-  background: #f8fafc;
+  background: #fff;
   border-bottom: 1px solid #e2e8f0;
   padding: 10px 16px;
   display: flex; align-items: center; justify-content: space-between;
   flex-shrink: 0; user-select: none;
 }
-/* ═══ Outer Stepper Rail (Thanh tiến trình tách riêng gọn gàng ở chính giữa) ═══ */
-.ob-outer-left-rail {
-  width: 48px;
-  flex-shrink: 0;
-  background: #ffffff;
-  border-radius: 16px;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 14px 0;
-  gap: 6px;
-  user-select: none;
-  align-self: center;
-  height: auto;
-}
-
-.ob-rail-step {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 2px solid #cbd5e1;
-  background: #ffffff;
-  color: #64748b;
-  font-size: 11.5px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.ob-rail-step:hover:not(.ob-rail-step--locked) {
-  border-color: #0068FF;
-  color: #0068FF;
-  transform: scale(1.1);
-  box-shadow: 0 2px 8px rgba(0, 104, 255, 0.15);
-}
-.ob-rail-step--active {
-  border-color: #0068FF !important;
-  background: #0068FF !important;
-  color: #ffffff !important;
-  box-shadow: 0 0 0 3px rgba(0, 104, 255, 0.2);
-}
-.ob-rail-step--done {
-  border-color: #10b981;
-  background: #dcfce7;
-  color: #15803d;
-}
-.ob-rail-step--locked {
-  border-color: #e2e8f0;
-  background: #f8fafc;
-  color: #cbd5e1;
-  cursor: not-allowed;
-}
-
-.ob-rail-step-arrow {
-  color: #cbd5e1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s ease;
-  margin: 2px 0;
-}
-.ob-rail-step-arrow--done {
-  color: #0068FF;
-}
-
+.ob-modal__header-left { display: flex; align-items: center; gap: 14px; min-width: 0; }
 .ob-modal__title-group { display: flex; align-items: center; gap: 8px; }
-.ob-win-btn--reset:hover {
-  background: #fef3c7;
-  color: #d97706;
-  border-color: #fde68a;
-}
 .ob-modal__title {
   font-size: 14px; font-weight: 800; color: #1e293b;
   letter-spacing: -0.02em; margin: 0;
 }
-.ob-modal__reset-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 6px 12px; font-size: 12px; font-weight: 700;
-  color: #64748b; background: #fff;
-  border: 1px solid #e2e8f0; border-radius: 8px;
-  cursor: pointer; transition: all 0.15s;
+.ob-modal__customer-badge {
+  font-size: 11px; font-weight: 700;
+  background: #eff6ff; color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+  border-radius: 20px; padding: 2px 10px;
 }
-.ob-modal__reset-btn:hover { background: #f1f5f9; color: #1e293b; }
-.ob-win-controls { display: flex; align-items: center; gap: 4px; margin-left: 6px; }
+.ob-modal__unread-badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  font-size: 11px; font-weight: 700;
+  background: #ef4444; color: #fff;
+  border-radius: 20px; padding: 2px 10px;
+  cursor: pointer;
+  animation: ob-unread-pulse 2s ease-in-out infinite;
+  transition: background 0.15s ease;
+}
+.ob-modal__unread-badge:hover { background: #dc2626; }
+@keyframes ob-unread-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+}
+.ob-modal__header-right { display: flex; align-items: center; gap: 6px; }
+.ob-win-controls { display: flex; align-items: center; gap: 4px; }
 .ob-win-btn {
   width: 32px; height: 30px; border-radius: 6px;
   border: 1px solid #e2e8f0; background: #fff; color: #64748b;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer; transition: all 0.15s ease;
 }
+.ob-win-btn--reset:hover { background: #fef3c7; color: #d97706; border-color: #fde68a; }
 .ob-win-btn--minimize:hover { background: #f1f5f9; color: #0068FF; border-color: #cbd5e1; }
 .ob-win-btn--close:hover { background: #ef4444; color: #fff; border-color: #ef4444; }
 
-/* ═══ Workspace (Sections area) ═══ */
-.ob-modal__workspace {
-  flex: 1; display: flex; overflow: hidden; position: relative;
+/* ════════════════════════════════════
+   POS HEADER ROW (Search + Bảng giá)
+   ════════════════════════════════════ */
+.ob-pos-header {
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  flex-shrink: 0;
 }
-.ob-sections-scroll {
+
+/* Search Zone */
+.ob-search-zone {
+  flex: 1; max-width: 440px;
+  position: relative;
+  display: flex; align-items: center;
+}
+.ob-search-icon {
+  position: absolute; left: 10px;
+  color: #94a3b8; pointer-events: none; z-index: 1;
+}
+.ob-search-input {
+  width: 100%;
+  padding: 8px 36px 8px 34px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 13px; color: #1e293b;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  background: #f8fafc;
+  font-family: inherit;
+}
+.ob-search-input:focus {
+  border-color: #0068FF;
+  box-shadow: 0 0 0 3px rgba(0, 104, 255, 0.08);
+  background: #fff;
+}
+.ob-search-clear {
+  position: absolute; right: 8px;
+  width: 20px; height: 20px; border-radius: 50%;
+  border: none; background: #e2e8f0; color: #64748b;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: background 0.15s;
+}
+.ob-search-clear:hover { background: #cbd5e1; }
+
+/* Search Dropdown */
+.ob-search-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+  max-height: 300px; overflow-y: auto;
+  z-index: 200;
+}
+.ob-search-state {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 16px; font-size: 12.5px; color: #64748b;
+}
+.ob-search-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.ob-search-item:last-child { border-bottom: none; }
+.ob-search-item:hover { background: #f0f9ff; }
+.ob-search-item__info { flex: 1; min-width: 0; }
+.ob-search-item__name { display: block; font-size: 13px; font-weight: 600; color: #1e293b; }
+.ob-search-item__code { display: block; font-size: 10.5px; color: #94a3b8; font-family: monospace; }
+.ob-search-item__price { font-size: 12px; font-weight: 700; color: #0068FF; white-space: nowrap; flex-shrink: 0; }
+.ob-search-item__action {
+  font-size: 11px; font-weight: 700;
+  background: #0068FF; color: #fff;
+  border-radius: 6px; padding: 3px 8px;
+  flex-shrink: 0; white-space: nowrap;
+}
+
+/* Bảng giá */
+.ob-pricebook {
+  display: flex; align-items: center; gap: 6px;
+  flex-shrink: 0;
+}
+.ob-pricebook__icon { color: #64748b; }
+.ob-pricebook__label { font-size: 11.5px; font-weight: 700; color: #64748b; white-space: nowrap; }
+.ob-pricebook__select {
+  padding: 6px 10px; border: 1.5px solid #e2e8f0;
+  border-radius: 8px; font-size: 12px; font-weight: 600;
+  color: #1e293b; background: #f8fafc; outline: none;
+  cursor: pointer; transition: border-color 0.15s;
+}
+.ob-pricebook__select:focus { border-color: #0068FF; }
+
+/* Quick Summary */
+.ob-quick-summary {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: #f0f9ff; border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.ob-quick-summary__count { font-size: 12px; font-weight: 700; color: #1e293b; }
+.ob-quick-summary__sep { color: #94a3b8; }
+.ob-quick-summary__total { font-size: 12px; font-weight: 800; color: #0068FF; font-family: monospace; }
+
+/* Toggle View Button */
+.ob-toggle-view-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.ob-toggle-view-btn:hover {
+  background: #f8fafc;
+  border-color: #0068FF;
+  color: #0068FF;
+}
+.ob-toggle-view-btn--active {
+  background: #0068FF;
+  border-color: #0068FF;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 104, 255, 0.25);
+}
+.ob-toggle-view-btn--active:hover {
+  background: #0056cc;
+  border-color: #0056cc;
+  color: #ffffff;
+}
+
+/* Embedded Invoice Preview Area */
+.ob-invoice-preview-embedded {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 16px 20px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.ob-invoice-preview-embedded::-webkit-scrollbar {
+  width: 6px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 3px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 3px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.ob-invoice-preview-embedded :deep(.ob-invoice-preview-container) {
+  width: 100%;
+  transform: scale(0.98);
+  transform-origin: top center;
+  margin-bottom: 12px;
+}
+
+/* ════════════════════════════════════
+   POS BODY: 2 CỘT
+   ════════════════════════════════════ */
+.ob-pos-body {
+  flex: 1; display: flex; overflow: hidden;
+}
+
+/* ════════════════════════════════════
+   CỘT TRÁI (60%)
+   ════════════════════════════════════ */
+.ob-pos-left {
+  flex: 0 0 60%;
+  max-width: 60%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid #e2e8f0;
+}
+
+/* Cart list scroll area */
+.ob-cart-list {
+  flex: 1; overflow-y: auto;
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 6px;
+}
+.ob-cart-list::-webkit-scrollbar { width: 4px; }
+.ob-cart-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 2px; }
+
+/* Empty state */
+.ob-cart-empty {
+  flex: 1; display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 48px 24px;
+  text-align: center;
+}
+.ob-cart-empty__icon { color: #cbd5e1; margin-bottom: 14px; }
+.ob-cart-empty__title { font-size: 14px; font-weight: 700; color: #475569; margin: 0 0 6px; }
+.ob-cart-empty__sub { font-size: 12px; color: #94a3b8; margin: 0; line-height: 1.5; }
+
+/* Cart item card */
+.ob-cart-item {
+  position: relative;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px 12px;
+  transition: box-shadow 0.15s, border-color 0.15s, background-color 0.15s;
+}
+.ob-cart-item:hover { box-shadow: 0 2px 8px rgba(0, 104, 255, 0.06); border-color: #bfdbfe; }
+.ob-cart-item--gift { border-color: #fbcfe8; background: #fdf2f8; }
+.ob-cart-item--damaged { border-color: #fca5a5; background: #fff5f5; }
+.ob-cart-item--near-expiry { border-color: #fde68a; background: #fffbeb; }
+
+/* Out of Stock styling: soft red background & border */
+.ob-cart-item--out-of-stock {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+}
+
+/* Horizontal Wire Line + Center Lock Overlay */
+.ob-out-of-stock-lock-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Elegant horizontal dashed line (- - -) matching exact width of product card */
+.ob-lock-wire-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed #dc2626;
+  transform: translateY(-50%);
+  opacity: 0.9;
+}
+
+/* Center Lock Icon Badge */
+.ob-lock-icon-badge {
+  position: relative;
+  z-index: 11;
+  width: 28px;
+  height: 28px;
+  background: #dc2626;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(185, 28, 28, 0.45);
+}
+
+.ob-lock-svg-icon {
+  color: #ffffff;
+}
+
+/* Top Right Warehouse Pill Badge (Fixed Width - No Jump/Resize) */
+.ob-item-warehouse-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 176px;
+  box-sizing: border-box;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 2px 8px;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.ob-item-warehouse-pill:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
+}
+
+.ob-item-warehouse-pill--out {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+
+.ob-warehouse-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-warehouse-icon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.ob-item-warehouse-select {
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1e293b;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ob-warehouse-divider {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.ob-item-stock-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.ob-item-stock-badge--in { background: #dcfce7; color: #166534; }
+.ob-item-stock-badge--low { background: #fef9c3; color: #854d0e; }
+.ob-item-stock-badge--out { background: #fee2e2; color: #991b1b; }
+
+/* Smooth slide-down & warm amber flash highlight animation for newly added product */
+.ob-cart-item--newly-added {
+  animation: ob-slide-down-highlight 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes ob-slide-down-highlight {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.97);
+    background: #fef08a;
+    border-color: #eab308;
+    box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.3), 0 8px 24px rgba(234, 179, 8, 0.15);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0) scale(1.01);
+    background: #fef9c3;
+    border-color: #eab308;
+    box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.25);
+  }
+  70% {
+    background: #fefce8;
+    border-color: #fde047;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+}
+
+/* Vue TransitionGroup animation for cart list */
+.ob-cart-list-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ob-cart-list-anim-move,
+.ob-cart-list-anim-enter-active,
+.ob-cart-list-anim-leave-active {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ob-cart-list-anim-enter-from {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.97);
+}
+
+.ob-cart-list-anim-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
+
+.ob-cart-item__top {
+  display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
+  margin-bottom: 8px;
+}
+.ob-cart-item__name-wrap {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 5px; flex: 1; min-width: 0;
+}
+.ob-cart-item__code {
+  font-family: monospace; font-size: 10.5px; color: #94a3b8;
+  background: #f1f5f9; padding: 1px 5px; border-radius: 4px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.ob-cart-item__name {
+  font-size: 13px; font-weight: 700; color: #1e293b;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.ob-cart-item__note {
+  font-size: 11px; color: #6366f1; font-style: italic;
+  white-space: nowrap;
+}
+
+/* Badges */
+.ob-badge {
+  display: inline-flex; align-items: center;
+  font-size: 10.5px; font-weight: 700;
+  padding: 2px 7px; border-radius: 12px;
+  white-space: nowrap; flex-shrink: 0;
+}
+.ob-badge--red { background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; }
+.ob-badge--amber { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.ob-badge--pink { background: #fce7f3; color: #9d174d; border: 1px solid #fbcfe8; }
+
+/* Action buttons */
+.ob-cart-item__actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.ob-item-btn {
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: 6px;
+  font-size: 11px; font-weight: 700;
+  border: 1px solid transparent;
+  cursor: pointer; transition: all 0.12s;
+}
+.ob-item-btn--discount {
+  background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe;
+}
+.ob-item-btn--discount:hover { background: #dbeafe; }
+.ob-item-btn--detail {
+  background: #f8fafc; color: #475569; border-color: #cbd5e1;
+  padding: 4px 6px;
+}
+.ob-item-btn--detail:hover { background: #e2e8f0; color: #0f172a; }
+.ob-item-btn--remove {
+  background: #fff; color: #ef4444; border-color: #fca5a5;
+}
+.ob-item-btn--remove:hover { background: #fee2e2; }
+
+/* Bottom row: qty + note + giá */
+.ob-cart-item__bottom {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
+}
+
+.ob-cart-item__note-inline {
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-item-note-input {
+  width: 100%;
+  height: 28px;
+  padding: 3px 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #334155;
+  background: #f8fafc;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.ob-item-note-input:focus {
+  border-style: solid;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+/* Qty controls pill widget */
+.ob-qty-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+}
+.ob-qty-btn {
+  width: 26px; height: 26px; border-radius: 6px;
+  border: none; background: #ffffff; color: #334155;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+.ob-qty-btn:hover:not(:disabled) { background: #0068FF; color: #ffffff; }
+.ob-qty-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; background: transparent; }
+.ob-qty-input {
+  width: 44px; height: 26px;
+  border: none; background: transparent;
+  text-align: center; font-size: 13px; font-weight: 700;
+  color: #0f172a; outline: none;
+}
+.ob-qty-input:disabled { opacity: 0.5; }
+
+/* Price group & columns */
+.ob-cart-item__price-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ob-cart-item__price-col,
+.ob-cart-item__total-col {
+  display: flex; flex-direction: column; align-items: flex-end;
+}
+.ob-cart-item__price-label {
+  font-size: 10px; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 1px;
+}
+.ob-cart-item__price-val {
+  font-size: 12.5px; font-weight: 600; color: #334155;
+  font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace;
+}
+.ob-cart-item__total-val {
+  font-size: 13.5px; font-weight: 800; color: #0068FF;
+  font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace;
+}
+
+/* Line discount editor */
+.ob-line-discount-editor {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  margin-top: 8px; padding: 8px 12px;
+  background: #f0f9ff; border: 1px solid #bfdbfe;
+  border-radius: 8px; flex-wrap: wrap;
+}
+.ob-line-discount-editor__label { font-size: 11.5px; font-weight: 700; color: #1e293b; white-space: nowrap; }
+.ob-line-discount-editor__input {
+  width: 90px; padding: 5px 8px;
+  border: 1.5px solid #93c5fd; border-radius: 6px;
+  font-size: 13px; font-weight: 600; color: #1e293b;
+  outline: none; text-align: right;
+}
+.ob-line-discount-editor__input:focus { border-color: #0068FF; }
+.ob-line-discount-editor__toggle { display: flex; border: 1.5px solid #bfdbfe; border-radius: 6px; overflow: hidden; }
+.ob-line-discount-editor__apply {
+  padding: 5px 12px; background: #0068FF; color: #fff;
+  border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s;
+}
+.ob-line-discount-editor__apply:hover { background: #0056d2; }
+.ob-line-discount-editor__cancel {
+  padding: 5px 10px; background: #f1f5f9; color: #64748b;
+  border: none; border-radius: 6px;
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: background 0.15s;
+}
+.ob-line-discount-editor__cancel:hover { background: #e2e8f0; }
+
+/* Unit buttons (dùng chung) */
+.ob-unit-btn {
+  padding: 4px 8px; border: none;
+  font-size: 11.5px; font-weight: 700; color: #64748b;
+  background: #fff; cursor: pointer; transition: all 0.12s;
+}
+.ob-unit-btn--active { background: #0068FF; color: #fff; }
+.ob-unit-btn:hover:not(.ob-unit-btn--active) { background: #f1f5f9; }
+
+/* Left footer */
+.ob-left-footer {
+  flex-shrink: 0; padding: 10px 12px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+  display: flex; flex-direction: column; gap: 8px;
+}
+
+/* Promo bar */
+.ob-promo-applied-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  background: #fdf2f8; border: 1px solid #fbcfe8;
+  border-radius: 8px; font-size: 12px; font-weight: 700; color: #9d174d;
+}
+.ob-promo-applied-bar__icon { color: #db2777; flex-shrink: 0; }
+.ob-promo-applied-bar__clear {
+  margin-left: auto; padding: 3px 8px;
+  border: 1px solid #fbcfe8; border-radius: 6px;
+  background: #fff; color: #db2777;
+  font-size: 11px; font-weight: 700; cursor: pointer;
+  transition: background 0.12s;
+}
+.ob-promo-applied-bar__clear:hover { background: #fce7f3; }
+
+/* Ghi chú */
+.ob-note-area { display: flex; flex-direction: column; gap: 5px; }
+.ob-note-area__label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.ob-note-area__input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 8px;
+  font-size: 12.5px; color: #1e293b;
+  outline: none; resize: none;
+  font-family: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s;
+  box-sizing: border-box;
+}
+.ob-note-area__input:focus { border-color: #0068FF; box-shadow: 0 0 0 3px rgba(0, 104, 255, 0.08); }
+
+/* ════════════════════════════════════
+   CỘT PHẢI (40%)
+   ════════════════════════════════════ */
+/* ════════════════════════════════════
+   CỘT PHẢI (40%) - CỐ ĐỊNH, PHÂN BỔ ĐỀU CHIỀU CAO
+   ════════════════════════════════════ */
+.ob-pos-right {
+  flex: 0 0 40%;
+  max-width: 40%;
+  overflow: hidden;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   background: #f8fafc;
 }
 
-.ob-sections-scroll::-webkit-scrollbar { width: 5px; }
-.ob-sections-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-
-/* ═══ Checkout Overlay ═══ */
-.ob-modal__checkout-overlay {
-  position: absolute; inset: 0; z-index: 60;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(5px);
-  -webkit-backdrop-filter: blur(5px);
-  display: flex;
+/* Right cards */
+.ob-right-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px 14px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
-.ob-modal__checkout-content { width: 100%; height: 100%; display: flex; }
-.ob-modal__checkout-template-wrap {
-  flex: 1; overflow-y: auto; padding: 20px;
-  display: flex; justify-content: center; align-items: flex-start;
-}
-.ob-modal__checkout-drawer-wrap {
-  width: 400px; min-width: 360px; max-width: 420px;
-  height: 100%; flex-shrink: 0;
-  background: #fff; border-left: 1px solid #cbd5e1;
-  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.15); z-index: 10;
+.ob-card-header {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10.5px; font-weight: 800; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  margin-bottom: 8px;
 }
 
-/* ═══ Confirm Dialog ═══ */
+/* Customer card */
+.ob-customer-info { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ob-customer-avatar {
+  width: 36px; height: 36px; border-radius: 50%;
+  background: linear-gradient(135deg, #0068FF, #3b82f6);
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 2px 6px rgba(0, 104, 255, 0.2);
+}
+.ob-customer-avatar span { font-size: 15px; font-weight: 800; color: #fff; }
+.ob-customer-details { flex: 1; min-width: 0; }
+.ob-customer-name { font-size: 13.5px; font-weight: 800; color: #1e293b; margin-bottom: 2px; }
+.ob-customer-meta { font-size: 11px; color: #64748b; }
+.ob-creator-row {
+  display: flex; align-items: center; gap: 6px;
+  padding-top: 8px; border-top: 1px solid #f1f5f9;
+}
+.ob-creator-name { font-size: 11.5px; font-weight: 700; color: #1e293b; flex: 1; }
+.ob-creator-time { font-size: 10px; color: #94a3b8; white-space: nowrap; }
+
+/* Logistics card */
+.ob-logistics-field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 8px; }
+.ob-logistics-field:last-child { margin-bottom: 0; }
+.ob-logistics-label {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 10.5px; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.03em;
+}
+.ob-logistics-select,
+.ob-logistics-input {
+  width: 100%; padding: 6px 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  font-size: 12.5px; font-weight: 500; color: #1e293b;
+  background: #fff; outline: none;
+  transition: border-color 0.15s;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+.ob-logistics-select:focus,
+.ob-logistics-input:focus { border-color: #0068FF; }
+.ob-package-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 5px;
+}
+.ob-package-input {
+  padding: 5px 7px;
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  font-size: 12px; text-align: center; color: #1e293b;
+  background: #fff; outline: none;
+  transition: border-color 0.15s; font-family: inherit;
+  width: 100%; box-sizing: border-box;
+}
+.ob-package-input:focus { border-color: #0068FF; }
+.ob-logistics-textarea {
+  width: 100%; padding: 6px 10px;
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  font-size: 12.5px; color: #1e293b;
+  background: #fff; outline: none; resize: none;
+  transition: border-color 0.15s; font-family: inherit;
+  box-sizing: border-box;
+  min-height: 42px; height: 42px;
+}
+.ob-logistics-textarea:focus { border-color: #0068FF; }
+
+/* Payment card */
+.ob-payment-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 6px;
+}
+.ob-payment-row__label { font-size: 12.5px; color: #475569; }
+.ob-payment-row__val { font-size: 12.5px; font-weight: 700; color: #1e293b; font-family: monospace; }
+.ob-payment-row--discount { align-items: center; }
+.ob-discount-inline { display: flex; align-items: center; gap: 5px; }
+.ob-discount-inline__input {
+  width: 80px; padding: 4px 7px; text-align: right;
+  border: 1.5px solid #e2e8f0; border-radius: 7px;
+  font-size: 12.5px; font-weight: 600; color: #1e293b;
+  outline: none; transition: border-color 0.15s;
+}
+.ob-discount-inline__input:focus { border-color: #0068FF; }
+.ob-discount-type-toggle { display: flex; border: 1.5px solid #e2e8f0; border-radius: 7px; overflow: hidden; }
+.ob-payment-divider { height: 1px; background: #e2e8f0; margin: 8px 0; }
+.ob-payment-row--total .ob-payment-row__label { font-size: 13.5px; font-weight: 700; color: #1e293b; }
+.ob-payment-row__total { font-size: 19px; font-weight: 900; color: #0068FF; font-family: monospace; letter-spacing: -0.03em; }
+
+.ob-payment-method {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.ob-payment-method__label { font-size: 12px; font-weight: 700; color: #475569; }
+.ob-payment-method__toggle { display: flex; border: 1.5px solid #e2e8f0; border-radius: 8px; overflow: hidden; }
+.ob-pay-btn {
+  padding: 5px 12px; border: none;
+  font-size: 12px; font-weight: 700; color: #64748b;
+  background: #fff; cursor: pointer;
+  transition: all 0.12s;
+  display: flex; align-items: center; gap: 5px;
+}
+.ob-pay-btn:hover:not(.ob-pay-btn--active) { background: #f8fafc; }
+.ob-pay-btn--active { background: #0068FF; color: #fff; }
+
+/* Submit button */
+.ob-submit-btn {
+  display: flex; align-items: center; justify-content: center; gap: 7px;
+  width: 100%; padding: 11px 16px;
+  border: none; border-radius: 9px;
+  background: #0068FF; color: #fff;
+  font-size: 13.5px; font-weight: 800; letter-spacing: 0.03em;
+  cursor: pointer; transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 3px 12px rgba(0, 104, 255, 0.25);
+  font-family: inherit;
+}
+.ob-submit-btn:hover:not(:disabled) {
+  background: #0056d2;
+  box-shadow: 0 5px 16px rgba(0, 104, 255, 0.35);
+  transform: translateY(-1px);
+}
+.ob-submit-btn:active:not(:disabled) { transform: scale(0.98); }
+.ob-submit-btn:disabled {
+  opacity: 0.5; cursor: not-allowed;
+  transform: none; box-shadow: none;
+  background: #94a3b8;
+}
+.ob-submit-hint { font-size: 10.5px; color: #f59e0b; text-align: center; margin: 4px 0 0; }
+
+/* ════════════════════════════════════
+   CONFIRM DIALOG
+   ════════════════════════════════════ */
 .ob-confirm-overlay {
   position: absolute; inset: 0; z-index: 80;
   background: rgba(15, 23, 42, 0.5);
   backdrop-filter: blur(4px);
-  display: flex; align-items: center; justify-content: center;
-  padding: 16px;
+  display: flex; align-items: center; justify-content: center; padding: 16px;
 }
 .ob-confirm-card {
   background: #fff; border-radius: 20px; padding: 24px;
@@ -895,15 +2492,96 @@ async function fetchBranches() {
 .ob-confirm-card__actions { display: flex; gap: 10px; }
 .ob-confirm-btn {
   flex: 1; padding: 10px 14px; border-radius: 10px;
-  font-size: 12px; font-weight: 700; border: none; cursor: pointer;
-  transition: all 0.15s;
+  font-size: 12px; font-weight: 700; border: none; cursor: pointer; transition: all 0.15s;
 }
 .ob-confirm-btn--cancel { background: #f1f5f9; color: #64748b; }
 .ob-confirm-btn--cancel:hover { background: #e2e8f0; color: #1e293b; }
 .ob-confirm-btn--danger { background: #ef4444; color: #fff; }
 .ob-confirm-btn--danger:hover { background: #dc2626; }
 
-/* ═══ Toast ═══ */
+/* ════════════════════════════════════
+   INBOUND MESSAGE NOTIFICATIONS
+   ════════════════════════════════════ */
+.ob-notif-stack {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 8px;
+  pointer-events: none;
+}
+.ob-notif-item {
+  pointer-events: all;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(15, 23, 42, 0.92);
+  backdrop-filter: blur(12px);
+  border-radius: 12px;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(59, 130, 246, 0.1);
+  cursor: pointer;
+  min-width: 240px;
+  max-width: 360px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.ob-notif-item:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(59, 130, 246, 0.3);
+}
+.ob-notif-avatar {
+  width: 32px; height: 32px; min-width: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6, #8b5cf6);
+  display: flex; align-items: center; justify-content: center;
+  color: #fff;
+}
+.ob-notif-body {
+  flex: 1;
+  min-width: 0;
+}
+.ob-notif-name {
+  font-size: 12px;
+  font-weight: 700;
+  color: #e2e8f0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ob-notif-text {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.ob-notif-close {
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.1);
+  border: none;
+  color: #94a3b8;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+.ob-notif-close:hover { background: rgba(239, 68, 68, 0.5); color: #fff; }
+
+/* Transition-group animations */
+.ob-notif-enter-active { transition: all 0.35s cubic-bezier(0.22, 1, 0.36, 1); }
+.ob-notif-leave-active { transition: all 0.25s ease-in; }
+.ob-notif-enter-from { opacity: 0; transform: translateX(-40px) scale(0.9); }
+.ob-notif-leave-to { opacity: 0; transform: translateX(-30px) scale(0.95); }
+.ob-notif-move { transition: transform 0.3s ease; }
+
+/* ════════════════════════════════════
+   TOAST
+   ════════════════════════════════════ */
 .ob-toast {
   position: fixed; bottom: 24px; left: 24px; z-index: 9999;
   background: #0f172a; color: #fff;
@@ -914,9 +2592,9 @@ async function fetchBranches() {
   border: 1px solid #1e293b;
 }
 
-/* ═══ Transitions ═══ */
-.ob-float-enter-active, .ob-float-leave-active { transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1); }
-.ob-float-enter-from, .ob-float-leave-to { opacity: 0; transform: translateY(20px) scale(0.9); }
+/* ════════════════════════════════════
+   TRANSITIONS
+   ════════════════════════════════════ */
 .ob-modal-enter-active, .ob-modal-leave-active { transition: opacity 0.25s ease; }
 .ob-modal-enter-from, .ob-modal-leave-to { opacity: 0; }
 .ob-toast-enter-active, .ob-toast-leave-active { transition: all 0.3s ease; }
@@ -924,16 +2602,57 @@ async function fetchBranches() {
 .ob-fade-enter-active, .ob-fade-leave-active { transition: opacity 0.2s ease; }
 .ob-fade-enter-from, .ob-fade-leave-to { opacity: 0; }
 
-/* ═══ Utility ═══ */
+/* ════════════════════════════════════
+   UTILITY
+   ════════════════════════════════════ */
 .ob-text-blue { color: #0068FF; }
-.ob-text-amber { color: #f59e0b; }
+.ob-text-muted { color: #94a3b8; }
 .ob-text-red { color: #ef4444; }
+.ob-spin { animation: ob-spin 1s linear infinite; }
+@keyframes ob-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 
 :deep(input[type="number"]::-webkit-outer-spin-button),
-:deep(input[type="number"]::-webkit-inner-spin-button) {
-  -webkit-appearance: none; margin: 0;
+:deep(input[type="number"]::-webkit-inner-spin-button) { -webkit-appearance: none; margin: 0; }
+:deep(input[type="number"]) { -moz-appearance: textfield; appearance: textfield; }
+
+/* ════════════════════════════════════
+   SESSION SWITCHING SKELETON OVERLAY
+   ════════════════════════════════════ */
+.ob-skeleton-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  background: rgba(248, 250, 252, 0.92);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
 }
-:deep(input[type="number"]) {
-  -moz-appearance: textfield; appearance: textfield;
+
+.ob-skeleton-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 60%;
+  max-width: 420px;
+  padding: 32px;
+}
+
+.ob-skeleton-bar {
+  height: 14px;
+  border-radius: 8px;
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 200% 100%;
+  animation: ob-shimmer 1.5s ease-in-out infinite;
+}
+.ob-skeleton-bar--title { width: 45%; height: 18px; }
+.ob-skeleton-bar--subtitle { width: 65%; height: 12px; }
+.ob-skeleton-bar--row { width: 100%; }
+.ob-skeleton-bar--short { width: 40%; }
+
+@keyframes ob-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 </style>

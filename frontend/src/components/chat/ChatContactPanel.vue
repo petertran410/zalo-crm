@@ -194,6 +194,18 @@
             </div>
           </template>
         </section>
+
+        <!-- ── CTA chính: Tạo đơn hàng ── -->
+        <button
+          class="sp-cta-primary mt-3"
+          :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
+          :class="{ 'sp-cta-disabled': !posLinkStatus.linked || !orderDraftStore.canOpenNew }"
+          :title="!orderDraftStore.canOpenNew ? (!orderDraftStore.drafts.some(d => !d.isMinimized) ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.' : 'Hãy thu nhỏ đơn hiện tại trước') : ''"
+          @click="openOrderForContact"
+        >
+          <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
+          Tạo đơn hàng
+        </button>
       </div>
 
       <!-- ══════════════════════════════════════════
@@ -336,17 +348,7 @@
             <BranchInventoryWidget @insert-inventory-info="onInsertSuggestionText" />
           </div>
 
-          <!-- ── CTA chính: Tạo đơn hàng ── -->
-          <button
-            class="sp-cta-primary"
-            :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
-            :class="{ 'sp-cta-disabled': !posLinkStatus.linked || !orderDraftStore.canOpenNew }"
-            :title="!orderDraftStore.canOpenNew ? (!orderDraftStore.drafts.some(d => !d.isMinimized) ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.' : 'Hãy thu nhỏ đơn hiện tại trước') : ''"
-            @click="openOrderForContact"
-          >
-            <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
-            Tạo đơn hàng
-          </button>
+
 
 
           <!-- ── Coming Soon: 1 dòng xám nhạt ── -->
@@ -1286,7 +1288,7 @@ import MediaTabPanel from './MediaTabPanel.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ContactDealStageSelector from '@/components/chat/ContactDealStageSelector.vue';
 import OrderDetailModal from './OrderDetailModal.vue';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 
 const orderDraftStore = useOrderDraftStore();
 
@@ -1564,6 +1566,7 @@ function openOrderForContact() {
     contactPhone: props.contact?.phone || undefined,
     posCustomerId: posLinkStatus.value.posCustomerId || undefined,
     posCustomerCode: posLinkStatus.value.posCustomerCode || undefined,
+    conversationId: props.conversationId || undefined,
   });
 }
 const customerType = ref<string | null>('VIP');

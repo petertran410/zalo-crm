@@ -3,8 +3,11 @@
     <!-- ─── Header ─────────────────────────────────────────── -->
     <div class="mcp-header">
       <div class="mcp-header__left">
+        <div class="mcp-header__avatar">
+          {{ (contactName || '?')[0].toUpperCase() }}
+        </div>
         <div class="mcp-header__info">
-          <div class="mcp-header__name">{{ contactName || 'Khách hàng' }}</div>
+          <span class="mcp-header__name">{{ contactName || 'Khách hàng' }}</span>
         </div>
       </div>
       <!-- Nút làm mới ẩn: fallback mode tự poll mỗi 15s, không cần hiển thị thủ công -->
@@ -83,6 +86,8 @@ import { useMiniChatBridgeStore } from '@/stores/use-mini-chat-bridge';
 const props = defineProps<{
   contactId?: string;
   contactName?: string;
+  contactPhone?: string;
+  posCustomerCode?: string;
 }>();
 
 // ── Bridge Store (thay thế inject/provide — hoạt động vượt qua component tree boundary) ──
@@ -227,6 +232,13 @@ async function scrollToBottom(smooth = false) {
   await nextTick();
   if (messagesEl.value) {
     messagesEl.value.scrollTo({ top: messagesEl.value.scrollHeight, behavior: smooth ? 'smooth' : 'auto' });
+    if (!smooth) {
+      setTimeout(() => {
+        if (messagesEl.value) {
+          messagesEl.value.scrollTop = messagesEl.value.scrollHeight;
+        }
+      }, 100);
+    }
   }
 }
 
@@ -265,11 +277,36 @@ const initials = computed(() => {
   return name.split(' ').slice(-2).map(w => w[0]).join('').toUpperCase().slice(0, 2);
 });
 
-// ── Lifecycle ─────────────────────────────────────────────────────────
-// Live mode: watch messages, scroll xuống khi có tin mới
+// ── Lifecycle & Watchers ──────────────────────────────────────────────
+const isSwitchingContact = ref(false);
+
+// 1. Khi chuyển section / contactId khác → scroll xuống đáy LẬP TỨC (instant, không animation)
 watch(
-  () => isLiveMode.value && liveMessagesRef ? liveMessagesRef.value.length : 0,
-  () => { if (isLiveMode.value) void scrollToBottom(true); }
+  () => props.contactId,
+  async (newId, oldId) => {
+    if (newId !== oldId) {
+      isSwitchingContact.value = true;
+      await nextTick();
+      await scrollToBottom(false);
+      setTimeout(() => {
+        isSwitchingContact.value = false;
+      }, 300);
+    }
+  },
+  { immediate: true }
+);
+
+// 2. Khi danh sách tin nhắn thay đổi:
+// - Nếu vừa chuyển section (isSwitchingContact = true) -> scroll tức thì (instant)
+// - Nếu đang xem cùng hội thoại và có tin nhắn mới tăng lên -> scroll mượt (smooth)
+watch(
+  () => displayMessages.value.length,
+  async (newLen, oldLen) => {
+    if (newLen > 0) {
+      const shouldSmooth = !isSwitchingContact.value && oldLen > 0 && newLen > oldLen;
+      await scrollToBottom(shouldSmooth);
+    }
+  }
 );
 
 onMounted(async () => {
@@ -282,7 +319,7 @@ onMounted(async () => {
     }
   } else if (isLiveMode.value) {
     // Live: scroll xuống ngay khi mở modal
-    await scrollToBottom();
+    await scrollToBottom(false);
   }
 });
 
@@ -302,6 +339,8 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
   font-family: 'Inter', system-ui, sans-serif;
 }
 
@@ -339,7 +378,10 @@ onBeforeUnmount(() => {
 
 .mcp-header__info {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .mcp-header__name {
@@ -347,10 +389,32 @@ onBeforeUnmount(() => {
   font-weight: 700;
   color: #fff;
   line-height: 1.2;
-  max-width: 190px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mcp-header__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 10px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.mcp-header__chip--phone {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+}
+
+.mcp-header__chip--pos {
+  background: rgba(34, 197, 94, 0.25);
+  color: #ffffff;
+  border: 1px solid rgba(134, 239, 172, 0.5);
 }
 
 .mcp-header__sub {

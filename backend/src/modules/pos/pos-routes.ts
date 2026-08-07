@@ -782,6 +782,156 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  // GET /api/v1/pos/inventory/product — Tồn kho 1 sản phẩm theo chi nhánh (từ CRM DB, không gọi MCP-POS)
+  app.get('/api/v1/pos/inventory/product', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const query = request.query as any;
+
+      const productId = query.productId ? parseInt(query.productId) : null;
+      const branchId = query.branchId ? parseInt(query.branchId) : null;
+
+      if (!productId || isNaN(productId)) {
+        return reply.status(400).send({ error: 'productId là bắt buộc' });
+      }
+
+      const where: any = { orgId: user.orgId, posProductId: productId };
+      if (branchId && !isNaN(branchId)) {
+        where.branchId = branchId;
+      }
+
+      const records = await prisma.posBranchInventory.findMany({ where });
+
+      if (records.length === 0) {
+        // Không có record → trả Unknown thay vì coi là OutOfStock
+        return {
+          success: true,
+          data: {
+            posProductId: productId,
+            branchId: branchId ?? null,
+            branchName: null,
+            onHand: null,
+            available: null,
+            reserved: null,
+            status: 'Unknown',
+            lastSyncedAt: null,
+          },
+        };
+      }
+
+      if (branchId && !isNaN(branchId)) {
+        // Trả đúng chi nhánh
+        const r = records[0];
+        return {
+          success: true,
+          data: {
+            posProductId: r.posProductId,
+            branchId: r.branchId,
+            branchName: r.branchName,
+            onHand: r.onHand,
+            available: r.available ?? (r.onHand - r.reserved),
+            reserved: r.reserved,
+            minStockLevel: r.minStockLevel,
+            status: r.status ?? 'InStock',
+            lastSyncedAt: r.lastSyncedAt ? r.lastSyncedAt.toISOString() : null,
+          },
+        };
+      }
+
+      // Không có branchId → tổng hợp tất cả chi nhánh
+      const totalOnHand = records.reduce((s, r) => s + r.onHand, 0);
+      const totalAvailable = records.reduce((s, r) => s + (r.available ?? (r.onHand - r.reserved)), 0);
+      const aggregateStatus = totalAvailable <= 0 ? 'OutOfStock' : (records.some(r => r.status === 'LowStock') ? 'LowStock' : 'InStock');
+
+      return {
+        success: true,
+        data: {
+          posProductId: productId,
+          branchId: null,
+          branchName: `Tổng ${records.length} chi nhánh`,
+          onHand: totalOnHand,
+          available: totalAvailable,
+          reserved: records.reduce((s, r) => s + r.reserved, 0),
+          minStockLevel: null,
+          status: aggregateStatus,
+          lastSyncedAt: records[0].lastSyncedAt ? records[0].lastSyncedAt.toISOString() : null,
+          branches: records.map(r => ({
+            branchId: r.branchId,
+            branchName: r.branchName,
+            onHand: r.onHand,
+            available: r.available,
+            status: r.status,
+          })),
+        },
+      };
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch product inventory failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch product inventory' });
+    }
+  });
+
+  // GET /api/v1/pos/orders/price-history — Lịch sử giá bán của khách hàng cho 1 sản phẩm (từ CRM DB)
+  app.get('/api/v1/pos/orders/price-history', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const query = request.query as any;
+
+      const posCustomerId = query.posCustomerId ? parseInt(query.posCustomerId) : null;
+      const posProductId = query.posProductId ? parseInt(query.posProductId) : null;
+      const limit = Math.min(parseInt(query.limit) || 5, 10);
+
+      if (!posCustomerId || isNaN(posCustomerId) || !posProductId || isNaN(posProductId)) {
+        return reply.status(400).send({ error: 'posCustomerId và posProductId là bắt buộc' });
+      }
+
+      // Query pos_order_items JOIN pos_orders lọc theo customerId + productId
+      const items = await prisma.posOrderItem.findMany({
+        where: {
+          posProductId,
+          order: {
+            orgId: user.orgId,
+            posCustomerId,
+          },
+        },
+        include: {
+          order: {
+            select: {
+              code: true,
+              orderDate: true,
+              branchName: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: {
+          order: { orderDate: 'desc' },
+        },
+        take: limit,
+      });
+
+      const history = items.map(item => ({
+        orderCode: item.order.code,
+        orderDate: item.order.orderDate ? item.order.orderDate.toISOString() : null,
+        branchName: item.order.branchName ?? null,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        discount: item.discount,
+        totalPrice: item.totalPrice,
+        isGift: item.unitPrice === 0 && item.discount === 0,
+      }));
+
+      return {
+        success: true,
+        data: history,
+        total: history.length,
+      };
+    } catch (err: any) {
+      logger.error('[pos-routes] Fetch price history failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch price history' });
+    }
+  });
+
   // GET /api/v1/pos/sync-status — Realtime POS sync status indicator for Admin and users
   app.get('/api/v1/pos/sync-status', async (request: FastifyRequest, reply: FastifyReply) => {
     try {

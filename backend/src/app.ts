@@ -38,8 +38,6 @@ import { chatAttachmentRoutes } from './modules/chat/chat-attachment-routes.js';
 import { deviceRoutes } from './modules/devices/device-routes.js';
 import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
-// 2026-08-01: merge test_feature giữ lại dòng app.register(chatArchiveRoutes)
-// nhưng làm rơi import này → app chết ngay khi boot (ReferenceError). Khôi phục.
 import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
 import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
@@ -49,9 +47,6 @@ import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
 import { appointmentPublicRoutes } from './modules/contacts/appointment-public-routes.js';
 import { notesRoutes } from './modules/contacts/notes-routes.js';
-// 2026-08-01: merge test_feature giữ các dòng app.register(...) nhưng làm rơi
-// nguyên cụm import dưới đây → app chết ngay lúc boot (ReferenceError) và
-// webhook/inbox Facebook mất hẳn. Khôi phục đúng như trước merge (065bf06).
 import { tasksRoutes } from './modules/tasks/task-routes.js';
 import { ticketsRoutes } from './modules/tickets/ticket-routes.js';
 import {
@@ -95,6 +90,7 @@ import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
+import { workspaceSessionRoutes } from './modules/pos/workspace-session-routes.js';
 import { posWebhookRoutes } from './routes/pos-webhook-routes.js';
 import { posSyncDashboardRoutes } from './routes/pos-sync-dashboard-routes.js';
 import { startPosWebhookRetryJob } from './jobs/pos-webhook-retry.job.js';
@@ -360,6 +356,7 @@ async function bootstrap() {
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   await app.register(posRoutes);
+  await app.register(workspaceSessionRoutes);
   await app.register(syncRoutes);
   await app.register(posWebhookRoutes);
   await app.register(posSyncDashboardRoutes);
