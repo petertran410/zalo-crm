@@ -923,12 +923,12 @@ const gridStyle = computed(() => {
   if (hasInfo) {
     return {
       gridTemplateColumns: `${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
-      gap: '6px',
+      gap: '5px',
     };
   }
   return {
     gridTemplateColumns: `${convColWidth.value}px 6px 1fr`,
-    gap: '6px',
+    gap: '5px',
   };
 });
 </script>
@@ -945,7 +945,7 @@ const gridStyle = computed(() => {
   width: 100%;
   overflow: hidden;
   background: transparent;
-  gap: 12px;
+  gap: 5px;
 }
 
 /* Khi info-panel đóng, col 4 collapse → grid auto-adjust */

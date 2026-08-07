@@ -113,17 +113,55 @@
                 <span class="ob-quick-summary__sep">·</span>
                 <span class="ob-quick-summary__total">{{ formatVND(grandTotal) }}</span>
               </div>
+
+              <!-- Toggle View: Cart vs Invoice Preview -->
+              <button
+                type="button"
+                class="ob-toggle-view-btn"
+                :class="{ 'ob-toggle-view-btn--active': activeLeftView === 'invoice_preview' }"
+                :title="activeLeftView === 'invoice_preview' ? 'Chuyển sang xem Giỏ hàng' : 'Xem trước Hóa đơn A4 chuẩn'"
+                @click="activeLeftView = activeLeftView === 'cart' ? 'invoice_preview' : 'cart'"
+              >
+                <Eye v-if="activeLeftView === 'cart'" :size="13" />
+                <ShoppingCart v-else :size="13" />
+                <span>{{ activeLeftView === 'cart' ? 'Xem hóa đơn' : 'Xem giỏ hàng' }}</span>
+              </button>
             </div>
 
             <!-- ═══ POS Body: 2 Cột (60/40) ═══ -->
             <div class="ob-pos-body">
 
               <!-- ════════════════════════════════════
-                   CỘT TRÁI (60%): DANH SÁCH SẢN PHẨM
+                   CỘT TRÁI (60%): DANH SÁCH SẢN PHẨM HOẶC XEM TRƯỚC HÓA ĐƠN
                    ════════════════════════════════════ -->
               <div class="ob-pos-left">
-                <!-- Danh sách cart items -->
-                <div class="ob-cart-list">
+                <!-- Chế độ Xem trước Hóa đơn A4 (nhúng InvoiceTemplateModal từ legacy) -->
+                <div v-if="activeLeftView === 'invoice_preview'" class="ob-invoice-preview-embedded">
+                  <InvoiceTemplateModal
+                    :customer="customerInfo"
+                    :cart-items="cartItems"
+                    :branch="selectedBranch"
+                    :ticket-number="'Phiếu tạm'"
+                    :total-before-discount="totalAmount"
+                    :order-discount="orderDiscountAmount"
+                    :paid-amount="0"
+                    :grand-total="grandTotal"
+                    :price-book-id="draft?.priceBookId || 'standard'"
+                    :description="draft?.billNote || draft?.description || ''"
+                    :shipping-note="draft?.shippingNote || ''"
+                    :delivery-address="draft?.deliveryAddress || ''"
+                    :creator-name="creatorName"
+                    @update-quantity="handleUpdateQuantity"
+                    @update-discount="handleUpdateProductDiscount"
+                    @update-description="handleUpdateBillNote"
+                    @update-shipping-note="handleUpdateShippingNote"
+                    @update-order-discount="handleUpdateOrderDiscount"
+                    @update-item-note="handleUpdateCartItemNoteById"
+                  />
+                </div>
+
+                <!-- Chế độ Xem danh sách giỏ hàng (mặc định) -->
+                <div v-else class="ob-cart-list">
                   <!-- Rỗng -->
                   <div v-if="cartItems.length === 0" class="ob-cart-empty">
                     <ShoppingCart :size="36" class="ob-cart-empty__icon" />
@@ -132,17 +170,28 @@
                   </div>
 
                   <!-- Mỗi dòng sản phẩm -->
-                  <div
-                    v-for="(item, idx) in cartItems"
-                    :key="`${item.product.id}-${idx}`"
-                    class="ob-cart-item"
-                    :class="{
-                      'ob-cart-item--gift': item.isGift,
-                      'ob-cart-item--damaged': item.conditionType === 'damaged',
-                      'ob-cart-item--near-expiry': item.conditionType === 'near_expiry',
-                    }"
-                  >
-                    <!-- Row trên: Tên SP + Actions -->
+                  <TransitionGroup name="ob-cart-list-anim" tag="div" class="ob-cart-list-inner">
+                    <div
+                      v-for="(item, idx) in cartItems"
+                      :key="`${item.product.id}-${item.isGift ? 'gift' : 'normal'}`"
+                      class="ob-cart-item"
+                      :class="{
+                        'ob-cart-item--newly-added': newlyAddedProductId === item.product.id,
+                        'ob-cart-item--gift': item.isGift,
+                        'ob-cart-item--damaged': item.conditionType === 'damaged',
+                        'ob-cart-item--near-expiry': item.conditionType === 'near_expiry',
+                        'ob-cart-item--out-of-stock': item.isOutOfStock,
+                      }"
+                    >
+                    <!-- Out of stock overlay: Horizontal wire line + Lock Icon in exact center -->
+                    <div v-if="item.isOutOfStock" class="ob-out-of-stock-lock-overlay">
+                      <div class="ob-lock-wire-line"></div>
+                      <div class="ob-lock-icon-badge" title="Hết hàng tại kho này">
+                        <Lock :size="16" class="ob-lock-svg-icon" />
+                      </div>
+                    </div>
+
+                    <!-- Row trên: Tên SP + Kho chi nhánh Pill Badge + Actions -->
                     <div class="ob-cart-item__top">
                       <div class="ob-cart-item__name-wrap">
                         <!-- Badge condition -->
@@ -155,6 +204,34 @@
                         <!-- Ghi chú dòng -->
                         <span v-if="item.note" class="ob-cart-item__note">📝 {{ item.note }}</span>
                       </div>
+
+                      <!-- Top Right Warehouse Pill Badge (UI/UX Pro Max) -->
+                      <div
+                        class="ob-item-warehouse-pill"
+                        :class="{ 'ob-item-warehouse-pill--out': item.isOutOfStock }"
+                        @click.stop
+                      >
+                        <div class="ob-warehouse-select-wrap">
+                          <Home :size="11" class="ob-warehouse-icon" />
+                          <select
+                            class="ob-item-warehouse-select"
+                            :value="item.warehouseId || draft?.branchId || (branches[0]?.id || 1)"
+                            @change="handleItemWarehouseChange(idx, Number(($event.target as HTMLInputElement).value))"
+                          >
+                            <option v-for="b in branches" :key="b.id" :value="b.id">
+                              {{ b.name }}
+                            </option>
+                          </select>
+                        </div>
+                        <span class="ob-warehouse-divider">|</span>
+                        <span
+                          class="ob-item-stock-badge"
+                          :class="getItemStockBadgeClass(item)"
+                          :title="getItemStockBadgeTitle(item)"
+                        >
+                          {{ getItemStockBadgeLabel(item) }}
+                        </span>
+                      </div>
                       <!-- Action buttons -->
                       <div class="ob-cart-item__actions">
                         <button
@@ -164,6 +241,13 @@
                           @click="openLineDiscount(idx)"
                         >
                           <Percent :size="12" /> Giảm
+                        </button>
+                        <button
+                          class="ob-item-btn ob-item-btn--detail"
+                          title="Lịch sử mua & tồn kho"
+                          @click.stop="openProductDetailPopover($event, item)"
+                        >
+                          <MoreHorizontal :size="13" />
                         </button>
                         <button
                           class="ob-item-btn ob-item-btn--remove"
@@ -177,56 +261,62 @@
 
                     <!-- Row dưới: Qty + Đơn giá + Thành tiền -->
                     <div class="ob-cart-item__bottom">
-                      <!-- Qty controls -->
+                      <!-- Qty controls (ngang) -->
                       <div class="ob-qty-ctrl">
                         <button
                           class="ob-qty-btn"
-                          :disabled="item.quantity <= 1 || item.isGift"
-                          @click="changeItemQty(idx, -1)"
+                          :disabled="item.quantity <= 1"
+                          v-bind="getHoldProps((stepMult) => changeItemQty(idx, -1 * stepMult))"
                         >
-                          <Minus :size="11" />
+                          <Minus :size="12" />
                         </button>
                         <input
                           type="number"
                           class="ob-qty-input"
                           :value="item.quantity"
                           min="1"
-                          :disabled="item.isGift"
                           @change="setItemQty(idx, Number(($event.target as HTMLInputElement).value))"
                         />
                         <button
                           class="ob-qty-btn"
-                          :disabled="item.isGift"
-                          @click="changeItemQty(idx, 1)"
+                          v-bind="getHoldProps((stepMult) => changeItemQty(idx, 1 * stepMult))"
                         >
-                          <Plus :size="11" />
+                          <Plus :size="12" />
                         </button>
                       </div>
 
-                      <!-- Đơn giá -->
-                      <div class="ob-cart-item__price-col">
-                        <span class="ob-cart-item__price-label">Đơn giá</span>
-                        <span class="ob-cart-item__price-val">
-                          {{ formatVND(getEffectiveProductPrice(item.product.basePrice, draft?.priceBookId || 'standard')) }}
-                        </span>
+                      <!-- Inline Product Note Input -->
+                      <div class="ob-cart-item__note-inline">
+                        <input
+                          type="text"
+                          class="ob-item-note-input"
+                          :value="item.note || ''"
+                          placeholder="Ghi chú SP..."
+                          @change="handleUpdateCartItemNote(idx, ($event.target as HTMLInputElement).value)"
+                        />
                       </div>
 
-                      <!-- Chiết khấu dòng -->
-                      <div v-if="(item.discount || 0) > 0" class="ob-cart-item__discount-col">
-                        <span class="ob-cart-item__price-label">Chiết khấu</span>
-                        <span class="ob-cart-item__discount-val">-{{ formatVND(item.discount || 0) }}</span>
-                      </div>
+                      <!-- Group Đơn giá & Thành tiền -->
+                      <div class="ob-cart-item__price-group">
+                        <!-- Đơn giá -->
+                        <div class="ob-cart-item__price-col">
+                          <span class="ob-cart-item__price-label">Đơn giá</span>
+                          <span class="ob-cart-item__price-val">
+                            {{ formatVND(getEffectiveProductPrice(item.product.basePrice, draft?.priceBookId || 'standard')) }}
+                          </span>
+                        </div>
 
-                      <!-- Thành tiền -->
-                      <div class="ob-cart-item__total-col">
-                        <span class="ob-cart-item__price-label">Thành tiền</span>
-                        <span class="ob-cart-item__total-val">
-                          {{ formatVND(getLineTotal(item)) }}
-                        </span>
+                        <!-- Thành tiền -->
+                        <div class="ob-cart-item__total-col">
+                          <span class="ob-cart-item__price-label">Thành tiền</span>
+                          <span class="ob-cart-item__total-val">
+                            {{ formatVND(getLineTotal(item)) }}
+                          </span>
+                        </div>
                       </div>
                     </div>
 
-                    <!-- Line discount inline editor (khi mở) -->
+                    <!-- Line discount editor panel -->
                     <div v-if="lineDiscountOpenIdx === idx" class="ob-line-discount-editor">
                       <span class="ob-line-discount-editor__label">Giảm giá dòng:</span>
                       <input
@@ -251,9 +341,10 @@
                       <button class="ob-line-discount-editor__cancel" @click="lineDiscountOpenIdx = -1">Hủy</button>
                     </div>
                   </div>
-                </div>
+                </TransitionGroup>
+              </div>
 
-                <!-- Ghi chú đơn hàng + KM cộng dồn -->
+                <!-- Ghi chú đơn hàng + KM cộng dồn (LUÔN HIỂN THỊ Ở ĐÁY CỘT TRÁI) -->
                 <div class="ob-left-footer">
                   <!-- Nút KM (nếu có promo đã áp dụng) -->
                   <div v-if="(draft?.appliedPromoIds?.length || 0) > 0" class="ob-promo-applied-bar">
@@ -517,6 +608,19 @@
               </div>
             </transition>
 
+            <!-- ═══ PRODUCT DETAIL POPOVER (...) ═══ -->
+            <ProductDetailPopover
+              v-if="activeDetailTarget"
+              :product-id="activeDetailTarget.product.id"
+              :product-code="activeDetailTarget.product.code"
+              :product-name="activeDetailTarget.product.name"
+              :base-price="activeDetailTarget.product.basePrice"
+              :unit="activeDetailTarget.product.unit"
+              :customer-id="draft?.posCustomerId"
+              :customer-name="customerInfo.name"
+              :popover-pos="activeDetailTarget.popoverPos"
+              @close="closeProductDetailPopover"
+            />
           </div><!-- /ob-modal-frame -->
 
           <!-- ═══ RESIZER SPLITTER (Invisible Hover Indicator) ═══ -->
@@ -563,18 +667,23 @@ import {
   ShoppingBag, ShoppingCart, AlertTriangle, Minus, X, RotateCcw,
   Search, Loader2, Tag, User, Truck, MapPin, Home, Box, MessageSquare,
   CreditCard, CheckCircle2, Plus, Trash2, Percent, Gift, FileText,
-  Zap, UserCheck,
+  Zap, UserCheck, Eye, MoreHorizontal, Lock,
 } from 'lucide-vue-next';
 import { api } from '@/api';
 import { useWorkspaceSessionStore } from '@/stores/use-workspace-sessions';
 import { useMiniChatBridgeStore } from '@/stores/use-mini-chat-bridge';
 import { useAuthStore } from '@/stores/auth';
+import { useLongPressStep } from '@/composables/useLongPressStep';
+import { OrderPricingCalculator } from '@/utils/orderPricingCalculator';
+import { ProductStockValidator } from '@/utils/ProductStockValidator';
 
 // Shared components (giữ nguyên)
 import SessionDock from './SessionDock.vue';
 
 import SuccessModal from '../SuccessModal.vue';
 import MiniChatPanel from '../MiniChatPanel.vue';
+import InvoiceTemplateModal from '../InvoiceTemplateModal.vue';
+import ProductDetailPopover from '../ProductDetailPopover.vue';
 
 import type { POSProduct, POSBranch, CustomerInfo, PromotionProgram } from '../types';
 import { formatVND, PRICE_BOOKS, PAYMENT_METHODS, getEffectiveProductPrice, MOCK_PROMOTIONS, evaluatePromoCondition } from '../types';
@@ -593,6 +702,9 @@ const authStore = useAuthStore();
 const sessionStore = useWorkspaceSessionStore();
 const draftStore = sessionStore; // backward compat alias
 const miniChatBridge = useMiniChatBridgeStore();
+
+// ─── Long Press Stepper (Global OOP Composable) ─────────────────────
+const { getHoldProps } = useLongPressStep();
 
 const creatorName = computed(() => authStore.user?.fullName || 'Nhân viên POS');
 
@@ -823,12 +935,115 @@ const customerInfo = computed<CustomerInfo>(() => ({
 }));
 
 const totalAmount = computed(() => {
-  const pbId = draft.value?.priceBookId || 'standard';
-  return cartItems.value.reduce((sum, item) => {
-    const unitPrice = getEffectiveProductPrice(item.product.basePrice, pbId);
-    return sum + Math.max(0, unitPrice * item.quantity - (item.discount || 0));
-  }, 0);
+  return OrderPricingCalculator.calculateSubtotal(cartItems.value);
 });
+
+// ─── OOP Warehouse Stock Validation ──────────────────────────────
+const itemBranchStockMap = ref<Record<string, number>>({});
+
+async function fetchItemBranchStock(productId: number, branchId: number) {
+  const key = `${productId}-${branchId}`;
+  if (itemBranchStockMap.value[key] !== undefined) {
+    return itemBranchStockMap.value[key];
+  }
+  try {
+    const res = await api.get('/pos/inventory/product', { params: { productId, branchId } });
+    const stockData = res.data?.data;
+    let stock = stockData?.available ?? stockData?.onHand ?? 0;
+    if (stockData?.branches && Array.isArray(stockData.branches)) {
+      const b = stockData.branches.find((item: any) => item.branchId === branchId);
+      if (b) stock = b.available ?? b.onHand ?? 0;
+    }
+    itemBranchStockMap.value[key] = stock;
+    return stock;
+  } catch {
+    itemBranchStockMap.value[key] = 0;
+    return 0;
+  }
+}
+
+watchEffect(async () => {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  let updated = false;
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const targetBranchId = item.warehouseId || draft.value.branchId || (branches.value[0]?.id || 1);
+    const stockKey = `${item.product.id}-${targetBranchId}`;
+
+    let stock = itemBranchStockMap.value[stockKey];
+    if (stock === undefined) {
+      stock = await fetchItemBranchStock(item.product.id, targetBranchId);
+    }
+
+    const check = ProductStockValidator.validateStock(stock, item.quantity);
+    const isOutOfStock = !check.isValid;
+
+    if (item.isOutOfStock !== isOutOfStock || item.warehouseId !== targetBranchId) {
+      items[i] = {
+        ...item,
+        warehouseId: targetBranchId,
+        isOutOfStock,
+      };
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+});
+
+function handleItemWarehouseChange(idx: number, newBranchId: number) {
+  const items = [...cartItems.value];
+  if (!items[idx]) return;
+  const item = items[idx];
+
+  const stockKey = `${item.product.id}-${newBranchId}`;
+  delete itemBranchStockMap.value[stockKey];
+
+  items[idx] = {
+    ...item,
+    warehouseId: newBranchId,
+  };
+  draftStore.updateDraft(props.draftId, { cartItems: items });
+
+  fetchItemBranchStock(item.product.id, newBranchId).then(stock => {
+    const check = ProductStockValidator.validateStock(stock, item.quantity);
+    const updatedItems = [...cartItems.value];
+    if (updatedItems[idx]) {
+      updatedItems[idx] = {
+        ...updatedItems[idx],
+        isOutOfStock: !check.isValid,
+      };
+      draftStore.updateDraft(props.draftId, { cartItems: updatedItems });
+    }
+  });
+}
+
+function getItemStockBadgeClass(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  const check = ProductStockValidator.validateStock(stock, item.quantity);
+  if (check.status === 'OutOfStock') return 'ob-item-stock-badge--out';
+  if (check.status === 'LowStock') return 'ob-item-stock-badge--low';
+  return 'ob-item-stock-badge--in';
+}
+
+function getItemStockBadgeLabel(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  if (stock === undefined) return '...';
+  const check = ProductStockValidator.validateStock(stock, item.quantity);
+  return check.message;
+}
+
+function getItemStockBadgeTitle(item: CartItem): string {
+  const targetBranchId = item.warehouseId || draft.value?.branchId || (branches.value[0]?.id || 1);
+  const stock = itemBranchStockMap.value[`${item.product.id}-${targetBranchId}`];
+  return `Tồn kho khả dụng: ${stock ?? 0} SP`;
+}
 
 const orderDiscountAmount = computed(() => {
   if (!draft.value) return 0;
@@ -838,7 +1053,9 @@ const orderDiscountAmount = computed(() => {
   return Math.max(0, val);
 });
 
-const grandTotal = computed(() => Math.max(0, totalAmount.value - orderDiscountAmount.value));
+const grandTotal = computed(() => {
+  return OrderPricingCalculator.calculateGrandTotal(totalAmount.value, orderDiscountAmount.value);
+});
 const totalCartCount = computed(() => cartItems.value.reduce((sum, item) => sum + item.quantity, 0));
 
 // Ngày giờ hiện tại
@@ -848,10 +1065,16 @@ const currentDateTime = computed(() => {
 });
 
 // ─── UI State ─────────────────────────────────────────────────────
+const activeLeftView = ref<'cart' | 'invoice_preview'>('cart');
 const showClearConfirm = ref(false);
 const isSuccessOpen = ref(false);
 const submitting = ref(false);
 const toastMessage = ref<string | null>(null);
+
+const selectedBranch = computed(() => {
+  if (!draft.value?.branchId) return branches.value[0] || null;
+  return branches.value.find(b => b.id === draft.value?.branchId) || null;
+});
 
 // Search
 const searchQuery = ref('');
@@ -922,9 +1145,7 @@ function quickAddProduct(product: POSProduct) {
 
 // ─── Line total helper ────────────────────────────────────────────
 function getLineTotal(item: typeof cartItems.value[0]) {
-  const pbId = draft.value?.priceBookId || 'standard';
-  const unitPrice = getEffectiveProductPrice(item.product.basePrice, pbId);
-  return Math.max(0, unitPrice * item.quantity - (item.discount || 0));
+  return OrderPricingCalculator.calculateLineTotal(item.product.basePrice, item.quantity, item.discount, item.isGift);
 }
 
 // ─── Cart item qty controls ───────────────────────────────────────
@@ -935,14 +1156,67 @@ function changeItemQty(idx: number, delta: number) {
   handleUpdateQuantity(item.product.id, newQty);
 }
 
-function setItemQty(idx: number, qty: number) {
-  const item = cartItems.value[idx];
-  if (!item) return;
-  handleUpdateQuantity(item.product.id, Math.max(1, qty));
+// ─── Product Detail Popover (...) ──────────────────────────────
+interface ActiveDetailTarget {
+  product: POSProduct;
+  popoverPos: { top: number; left: number };
+  targetX: number;
+  targetY: number;
+}
+
+const activeDetailTarget = ref<ActiveDetailTarget | null>(null);
+
+function openProductDetailPopover(event: MouseEvent, item: CartItem) {
+  // If clicking on the currently open popover target button, toggle close
+  if (activeDetailTarget.value?.product.id === item.product.id) {
+    activeDetailTarget.value = null;
+    return;
+  }
+
+  const target = event.currentTarget as HTMLElement;
+  const container = document.querySelector('.ob-modal-frame') as HTMLElement || document.body;
+  if (!target || !container) return;
+
+  const targetRect = target.getBoundingClientRect();
+  const containerRect = container.getBoundingClientRect();
+  const popoverWidth = 520;
+
+  const targetX = Math.round(targetRect.left - containerRect.left + targetRect.width / 2);
+  const targetY = Math.round(targetRect.top - containerRect.top + targetRect.height / 2);
+
+  const maxLeft = Math.max(12, Math.round(containerRect.width - popoverWidth - 16));
+  let pLeft = Math.round(targetX - popoverWidth / 2);
+  pLeft = Math.max(16, Math.min(pLeft, maxLeft));
+
+  let pTop = Math.round(targetRect.top - containerRect.top - 180);
+  if (pTop < 10) {
+    pTop = Math.round(targetRect.bottom - containerRect.top + 16);
+  }
+
+  activeDetailTarget.value = {
+    product: item.product,
+    popoverPos: { top: pTop, left: pLeft },
+    targetX,
+    targetY,
+  };
+}
+
+function closeProductDetailPopover() {
+  activeDetailTarget.value = null;
 }
 
 // ─── Line discount editor ─────────────────────────────────────────
 function openLineDiscount(idx: number) {
+  if (lineDiscountOpenIdx.value === idx) {
+    const val = Number(lineDiscountValue.value) || 0;
+    if (val > 0) {
+      applyLineDiscount(idx);
+    } else {
+      lineDiscountOpenIdx.value = -1;
+    }
+    return;
+  }
+
   lineDiscountOpenIdx.value = idx;
   const item = cartItems.value[idx];
   lineDiscountValue.value = item?.discount || 0;
@@ -952,13 +1226,13 @@ function openLineDiscount(idx: number) {
 function applyLineDiscount(idx: number) {
   const item = cartItems.value[idx];
   if (!item) return;
-  const pbId = draft.value?.priceBookId || 'standard';
-  const unitPrice = getEffectiveProductPrice(item.product.basePrice, pbId);
-  let discountAmt = lineDiscountValue.value;
-  if (lineDiscountType.value === 'percent') {
-    discountAmt = Math.floor((unitPrice * item.quantity) * (discountAmt / 100));
-  }
-  handleUpdateProductDiscount(item.product.id, discountAmt);
+  const basePrice = item.product.basePrice;
+  const perUnitDiscount = OrderPricingCalculator.calculatePerUnitDiscountFromInput(
+    basePrice,
+    lineDiscountType.value,
+    lineDiscountValue.value
+  );
+  handleUpdateProductDiscount(item.product.id, perUnitDiscount);
   lineDiscountOpenIdx.value = -1;
 }
 
@@ -1022,8 +1296,34 @@ function handleUpdateOrderDiscount(discountVal: number) {
   draftStore.updateDraft(props.draftId, { orderDiscountValue: Math.max(0, discountVal) });
 }
 
-function handleUpdateOrderDiscountType(type: string) {
-  draftStore.updateDraft(props.draftId, { orderDiscountType: type as 'amount' | 'percent' });
+function handleUpdateCartItemNote(idx: number, note: string) {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  if (items[idx]) {
+    items[idx] = { ...items[idx], note: note.trim() || undefined };
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+}
+
+function handleUpdateCartItemNoteById(productId: number, note: string) {
+  if (!draft.value) return;
+  const items = [...cartItems.value];
+  const idx = items.findIndex((i) => i.product.id === productId);
+  if (idx !== -1) {
+    items[idx] = { ...items[idx], note: note.trim() || undefined };
+    draftStore.updateDraft(props.draftId, { cartItems: items });
+  }
+}
+
+const newlyAddedProductId = ref<number | null>(null);
+
+function triggerNewItemHighlight(productId: number) {
+  newlyAddedProductId.value = productId;
+  setTimeout(() => {
+    if (newlyAddedProductId.value === productId) {
+      newlyAddedProductId.value = null;
+    }
+  }, 1600);
 }
 
 function handleAddProduct(product: POSProduct, opts?: { quantity?: number; discount?: number; note?: string; conditionType?: string }) {
@@ -1043,12 +1343,11 @@ function handleAddProduct(product: POSProduct, opts?: { quantity?: number; disco
     existing.quantity += qty;
     items.splice(existingIdx, 1);
     items.unshift(existing);
-    showToast(`Đã tăng số lượng ${product.name}.`);
   } else {
     items.unshift({ product, quantity: qty, discount, note: note || undefined, conditionType });
-    showToast(`Đã thêm ${product.name}.`);
   }
   draftStore.updateDraft(props.draftId, { cartItems: items });
+  triggerNewItemHighlight(product.id);
 }
 
 function handleUpdateQuantity(productId: number, quantity: number) {
@@ -1273,7 +1572,7 @@ async function fetchBranches() {
 }
 .ob-modal-wrapper {
   display: flex; flex-direction: row; align-items: stretch;
-  gap: 4px;
+  gap: 5px;
   width: 99.5vw;
   max-width: clamp(1200px, 96vw, 1850px);
   height: 95vh;
@@ -1281,12 +1580,15 @@ async function fetchBranches() {
   position: relative; z-index: 10;
 }
 .ob-modal-frame {
+  position: relative;
   flex: 1; min-width: 0;
   background: #f1f5f9;
   border-radius: 16px;
   border: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
   overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
   display: flex; flex-direction: column;
 }
 
@@ -1485,6 +1787,70 @@ async function fetchBranches() {
 .ob-quick-summary__sep { color: #94a3b8; }
 .ob-quick-summary__total { font-size: 12px; font-weight: 800; color: #0068FF; font-family: monospace; }
 
+/* Toggle View Button */
+.ob-toggle-view-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 12px; font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+}
+.ob-toggle-view-btn:hover {
+  background: #f8fafc;
+  border-color: #0068FF;
+  color: #0068FF;
+}
+.ob-toggle-view-btn--active {
+  background: #0068FF;
+  border-color: #0068FF;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(0, 104, 255, 0.25);
+}
+.ob-toggle-view-btn--active:hover {
+  background: #0056cc;
+  border-color: #0056cc;
+  color: #ffffff;
+}
+
+/* Embedded Invoice Preview Area */
+.ob-invoice-preview-embedded {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  padding: 8px;
+  box-sizing: border-box;
+}
+
+.ob-invoice-preview-embedded::-webkit-scrollbar {
+  width: 6px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-track {
+  background: #e2e8f0;
+  border-radius: 3px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 3px;
+}
+.ob-invoice-preview-embedded::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
+}
+
+.ob-invoice-preview-embedded :deep(.ob-invoice-preview-container) {
+  width: 100%;
+  transform: scale(0.98);
+  transform-origin: top center;
+  margin-bottom: 12px;
+}
+
 /* ════════════════════════════════════
    POS BODY: 2 CỘT
    ════════════════════════════════════ */
@@ -1525,16 +1891,201 @@ async function fetchBranches() {
 
 /* Cart item card */
 .ob-cart-item {
+  position: relative;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   padding: 10px 12px;
-  transition: box-shadow 0.15s, border-color 0.15s;
+  transition: box-shadow 0.15s, border-color 0.15s, background-color 0.15s;
 }
 .ob-cart-item:hover { box-shadow: 0 2px 8px rgba(0, 104, 255, 0.06); border-color: #bfdbfe; }
 .ob-cart-item--gift { border-color: #fbcfe8; background: #fdf2f8; }
 .ob-cart-item--damaged { border-color: #fca5a5; background: #fff5f5; }
 .ob-cart-item--near-expiry { border-color: #fde68a; background: #fffbeb; }
+
+/* Out of Stock styling: soft red background & border */
+.ob-cart-item--out-of-stock {
+  background: #fef2f2 !important;
+  border-color: #fca5a5 !important;
+}
+
+/* Horizontal Wire Line + Center Lock Overlay */
+.ob-out-of-stock-lock-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Elegant horizontal dashed line (- - -) matching exact width of product card */
+.ob-lock-wire-line {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 0;
+  border-top: 2px dashed #dc2626;
+  transform: translateY(-50%);
+  opacity: 0.9;
+}
+
+/* Center Lock Icon Badge */
+.ob-lock-icon-badge {
+  position: relative;
+  z-index: 11;
+  width: 28px;
+  height: 28px;
+  background: #dc2626;
+  border: 2px solid #ffffff;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 3px 8px rgba(185, 28, 28, 0.45);
+}
+
+.ob-lock-svg-icon {
+  color: #ffffff;
+}
+
+/* Top Right Warehouse Pill Badge (Fixed Width - No Jump/Resize) */
+.ob-item-warehouse-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 176px;
+  box-sizing: border-box;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 2px 8px;
+  transition: all 0.15s ease;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+.ob-item-warehouse-pill:hover {
+  background: #eff6ff;
+  border-color: #93c5fd;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.1);
+}
+
+.ob-item-warehouse-pill--out {
+  background: #fee2e2 !important;
+  border-color: #fca5a5 !important;
+}
+
+.ob-warehouse-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-warehouse-icon {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.ob-item-warehouse-select {
+  border: none;
+  background: transparent;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #1e293b;
+  outline: none;
+  cursor: pointer;
+  padding: 0;
+  width: 100%;
+  max-width: 96px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ob-warehouse-divider {
+  font-size: 11px;
+  color: #cbd5e1;
+  margin: 0 2px;
+  flex-shrink: 0;
+}
+
+.ob-item-stock-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.ob-item-stock-badge--in { background: #dcfce7; color: #166534; }
+.ob-item-stock-badge--low { background: #fef9c3; color: #854d0e; }
+.ob-item-stock-badge--out { background: #fee2e2; color: #991b1b; }
+
+/* Smooth slide-down & warm amber flash highlight animation for newly added product */
+.ob-cart-item--newly-added {
+  animation: ob-slide-down-highlight 1.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes ob-slide-down-highlight {
+  0% {
+    opacity: 0;
+    transform: translateY(-20px) scale(0.97);
+    background: #fef08a;
+    border-color: #eab308;
+    box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.3), 0 8px 24px rgba(234, 179, 8, 0.15);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(0) scale(1.01);
+    background: #fef9c3;
+    border-color: #eab308;
+    box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.25);
+  }
+  70% {
+    background: #fefce8;
+    border-color: #fde047;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    background: #ffffff;
+    border-color: #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+  }
+}
+
+/* Vue TransitionGroup animation for cart list */
+.ob-cart-list-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ob-cart-list-anim-move,
+.ob-cart-list-anim-enter-active,
+.ob-cart-list-anim-leave-active {
+  transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ob-cart-list-anim-enter-from {
+  opacity: 0;
+  transform: translateY(-20px) scale(0.97);
+}
+
+.ob-cart-list-anim-leave-to {
+  opacity: 0;
+  transform: scale(0.95);
+}
 
 .ob-cart-item__top {
   display: flex; align-items: flex-start; justify-content: space-between; gap: 8px;
@@ -1581,52 +2132,105 @@ async function fetchBranches() {
   background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe;
 }
 .ob-item-btn--discount:hover { background: #dbeafe; }
+.ob-item-btn--detail {
+  background: #f8fafc; color: #475569; border-color: #cbd5e1;
+  padding: 4px 6px;
+}
+.ob-item-btn--detail:hover { background: #e2e8f0; color: #0f172a; }
 .ob-item-btn--remove {
   background: #fff; color: #ef4444; border-color: #fca5a5;
 }
 .ob-item-btn--remove:hover { background: #fee2e2; }
 
-/* Bottom row: qty + giá */
+/* Bottom row: qty + note + giá */
 .ob-cart-item__bottom {
-  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 6px;
 }
 
-/* Qty controls */
-.ob-qty-ctrl { display: flex; align-items: center; gap: 4px; }
+.ob-cart-item__note-inline {
+  flex: 1;
+  min-width: 0;
+}
+
+.ob-item-note-input {
+  width: 100%;
+  height: 28px;
+  padding: 3px 8px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 6px;
+  font-size: 11.5px;
+  color: #334155;
+  background: #f8fafc;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.ob-item-note-input:focus {
+  border-style: solid;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+
+/* Qty controls pill widget */
+.ob-qty-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  background: #f1f5f9;
+  padding: 3px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.03);
+}
 .ob-qty-btn {
   width: 26px; height: 26px; border-radius: 6px;
-  border: 1.5px solid #e2e8f0; background: #f8fafc; color: #475569;
+  border: none; background: #ffffff; color: #334155;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: all 0.12s;
+  cursor: pointer; transition: all 0.12s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
-.ob-qty-btn:hover:not(:disabled) { border-color: #0068FF; color: #0068FF; background: #eff6ff; }
-.ob-qty-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.ob-qty-btn:hover:not(:disabled) { background: #0068FF; color: #ffffff; }
+.ob-qty-btn:disabled { opacity: 0.35; cursor: not-allowed; box-shadow: none; background: transparent; }
 .ob-qty-input {
   width: 44px; height: 26px;
-  border: 1.5px solid #e2e8f0; border-radius: 6px;
+  border: none; background: transparent;
   text-align: center; font-size: 13px; font-weight: 700;
-  color: #1e293b; outline: none;
-  transition: border-color 0.15s;
+  color: #0f172a; outline: none;
 }
-.ob-qty-input:focus { border-color: #0068FF; }
-.ob-qty-input:disabled { opacity: 0.5; background: #f8fafc; }
+.ob-qty-input:disabled { opacity: 0.5; }
 
-/* Price columns */
-.ob-cart-item__price-col,
-.ob-cart-item__discount-col,
-.ob-cart-item__total-col {
-  display: flex; flex-direction: column; align-items: flex-end; min-width: 72px;
+/* Price group & columns */
+.ob-cart-item__price-group {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
-.ob-cart-item__price-label { font-size: 10px; color: #94a3b8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
-.ob-cart-item__price-val { font-size: 12.5px; font-weight: 600; color: #475569; font-family: monospace; }
-.ob-cart-item__discount-val { font-size: 12.5px; font-weight: 700; color: #dc2626; font-family: monospace; }
-.ob-cart-item__total-val { font-size: 13.5px; font-weight: 800; color: #0068FF; font-family: monospace; }
-.ob-cart-item__total-col { margin-left: auto; }
+.ob-cart-item__price-col,
+.ob-cart-item__total-col {
+  display: flex; flex-direction: column; align-items: flex-end;
+}
+.ob-cart-item__price-label {
+  font-size: 10px; font-weight: 700; color: #64748b;
+  text-transform: uppercase; letter-spacing: 0.04em;
+  margin-bottom: 1px;
+}
+.ob-cart-item__price-val {
+  font-size: 12.5px; font-weight: 600; color: #334155;
+  font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace;
+}
+.ob-cart-item__total-val {
+  font-size: 13.5px; font-weight: 800; color: #0068FF;
+  font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace;
+}
 
 /* Line discount editor */
 .ob-line-discount-editor {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 8px; padding: 8px 10px;
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  margin-top: 8px; padding: 8px 12px;
   background: #f0f9ff; border: 1px solid #bfdbfe;
   border-radius: 8px; flex-wrap: wrap;
 }

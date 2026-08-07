@@ -762,6 +762,7 @@ watch(searchQuery, () => {
   height: calc(100vh - var(--smax-topnav-h, 52px));
   overflow: hidden;
   background: var(--smax-grey-100);
+  gap: 5px;
 }
 
 /* Khi info-panel đóng, col 4 collapse → grid auto-adjust */

@@ -339,6 +339,8 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
   overflow: hidden;
+  isolation: isolate;
+  transform: translateZ(0);
   font-family: 'Inter', system-ui, sans-serif;
 }
 

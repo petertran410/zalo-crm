@@ -48,6 +48,10 @@ export interface CartItem {
   conditionType?: 'normal' | 'damaged' | 'near_expiry';
   discountType?: 'amount' | 'percent';
   discountValue?: number;      // Giá trị user nhập vào (50000 hoặc 10)
+
+  // Kho chi nhánh & trạng thái tồn kho
+  warehouseId?: number;        // ID kho chi nhánh riêng cho dòng sản phẩm
+  isOutOfStock?: boolean;      // true = hết hàng (không được xuất hiện trên hóa đơn)
 }
 
 /** Bảng giá cố định cho từng tệp khách hàng */
