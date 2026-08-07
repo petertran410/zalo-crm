@@ -716,7 +716,7 @@
             <section v-if="props.contactId" class="ip-section px-3 py-2">
               <div class="d-flex justify-space-between align-center mb-2">
                 <span class="text-subtitle-2 font-weight-bold slate-dark">
-                  🛒 KiotViet POS
+                  🛒 POS
                 </span>
                 <v-chip
                   v-if="posLinkStatus.linked"
