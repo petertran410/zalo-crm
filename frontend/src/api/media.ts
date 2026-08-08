@@ -252,7 +252,10 @@ export async function listMediaTags(
   return data.tags as Array<{ tag: string; count: number }>;
 }
 
-/** Tạo thư mục. parentId != null → thư mục con (tối đa 10 cấp, BE chặn). */
+/**
+ * Tạo thư mục. parentId != null → thư mục con (tối đa 10 cấp, BE chặn).
+ * Trùng tên với thư mục anh em → BE trả 409 FOLDER_NAME_TAKEN (axios ném lỗi).
+ */
 export async function createMediaFolder(
   name: string,
   visibility: 'private' | 'public' = 'private',
@@ -260,4 +263,26 @@ export async function createMediaFolder(
 ): Promise<{ folder: { id: string; name: string; parentId: string | null; diskSlug: string | null } }> {
   const { data } = await api.post('/media/folders', { name, visibility, parentId });
   return data;
+}
+
+/**
+ * Như createMediaFolder nhưng TRÙNG TÊN thì dùng lại thư mục sẵn có thay vì ném lỗi.
+ * Dành cho luồng tải-cả-thư-mục: tải lại đúng cây đó lần hai phải chạy tiếp được, chứ
+ * không được hỏng chỉ vì thư mục đã tồn tại từ lần trước.
+ * BE trả kèm `folder` đang chiếm tên trong thân lỗi 409 nên không cần gọi thêm lượt nào.
+ */
+export async function createOrReuseMediaFolder(
+  name: string,
+  parentId: string | null = null,
+): Promise<{ id: string; reused: boolean }> {
+  try {
+    const res = await createMediaFolder(name, 'private', parentId);
+    return { id: res.folder.id, reused: false };
+  } catch (e: any) {
+    const d = e?.response?.data;
+    if (e?.response?.status === 409 && d?.code === 'FOLDER_NAME_TAKEN' && d?.folder?.id) {
+      return { id: d.folder.id, reused: true };
+    }
+    throw e;
+  }
 }

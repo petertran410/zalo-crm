@@ -25,7 +25,7 @@ import { buildMediaScopeWhere, isOrgOwner, activeShareWhere } from './media-acce
 import {
   createFolderOnDisk, mirrorAssetIntoFolder, unmirrorAssetFromFolder,
   renameFolderOnDisk, deleteFolderOnDisk,
-  collectDescendantIds, folderDepth, MAX_FOLDER_DEPTH,
+  collectDescendantIds, folderDepth, MAX_FOLDER_DEPTH, findSiblingWithSameName,
 } from './media-folder-service.js';
 import { randomBytes } from 'node:crypto';
 import { downloadMediaToTemp } from '../chat/chat-media-helpers.js';
@@ -33,12 +33,22 @@ import { createMediaMessage, getUserFullName } from '../chat/chat-helpers.js';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { generateThumbnail, sendNativeVideo } from '../../shared/video-processor.js';
 import { uploadBuffer, getObjectBuffer, keyFromPublicUrl } from '../../shared/storage/minio-client.js';
+import { mimeToExt } from '../../shared/storage/types.js';
 import { scanOrPass } from '../../shared/security/clamav-client.js';
 import { readFile } from 'node:fs/promises';
 import { logger } from '../../shared/utils/logger.js';
 import { saveOneMessageToMedia, type SaveOneResult } from './save-from-chat-helper.js';
 
-const ALLOWED_IMAGE = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+// 2026-08-08 (anh chốt): mở thêm SVG + ICO.
+//   SVG — LÀM SẠCH bắt buộc trước khi lưu (shared/svg-sanitizer.ts), fail-closed: bẩn/hỏng
+//         thì 422 chứ không lưu bản gốc. Giữ vector để tải về còn phóng to / sửa được.
+//   ICO — ảnh bitmap thuần, KHÔNG mang được mã, nên lưu nguyên (sharp cũng không đọc ICO).
+//         Nhận cả 2 mime trình duyệt hay gửi.
+const ALLOWED_IMAGE = [
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+  'image/svg+xml',
+  'image/x-icon', 'image/vnd.microsoft.icon',
+];
 const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
 // File types: tái dùng list của chat-attachment (KHÔNG mở rộng tùy tiện — checklist reuse).
 const ALLOWED_FILE = [
@@ -53,8 +63,11 @@ const ALLOWED_FILE = [
 ];
 // Giới hạn (design review E5): ảnh >15MB báo quá lớn.
 const IMAGE_MAX = 15 * 1024 * 1024;
+// TRẦN THẬT của cả request là 500MB, đặt ở @fastify/multipart (app.ts) — không route nào
+// vượt qua được. FILE_MAX từng ghi 1GB nên đọc code cứ tưởng tải được tệp 1GB, thực tế
+// multipart đã chặn từ trước khi vào đây. Chỉnh cho khớp để khỏi hiểu nhầm (2026-08-08).
 const VIDEO_MAX = 500 * 1024 * 1024;
-const FILE_MAX = 1024 * 1024 * 1024;
+const FILE_MAX = 500 * 1024 * 1024;
 
 // GĐ13a Thùng rác Media (2026-06-12): giữ trong thùng rác 30 ngày rồi cron tự dọn (xóa hàng DB,
 // KHÔNG đụng byte MinIO). TRASH_EMPTY_BATCH: dọn-sạch-thủ-công xóa tối đa N/lần tránh khóa DB lâu.
@@ -398,6 +411,12 @@ export async function mediaRoutes(app: FastifyInstance) {
         if (created.length === 0) return reply.status(400).send({ error: 'Không có tệp nào' });
         return { assets: created };
       } catch (err: any) {
+        // SVG bẩn/hỏng là lỗi TỆP của người dùng, không phải sự cố hệ thống → 422 kèm lý do.
+        // Fail-closed: đã vào nhánh này thì KHÔNG có tệp nào được lưu.
+        if (err?.code === 'SVG_REJECTED') {
+          logger.warn(`[media][av] từ chối SVG user=${userId}: ${err.message}`);
+          return reply.status(422).send({ error: err.message, code: 'SVG_REJECTED' });
+        }
         logger.error('[media] upload error:', err);
         return reply.status(500).send({ error: err?.message ?? 'upload failed' });
       }
@@ -801,7 +820,19 @@ export async function mediaRoutes(app: FastifyInstance) {
       if (!buf) return reply.status(404).send({ error: 'Không tìm thấy tệp' });
       // Tên tải về: name truyền lên (đã có đuôi) → fallback basename của key. Lọc ký tự cấm header.
       const rawName = (q.name && q.name.trim()) || decodeURIComponent(key.split('/').pop() || 'tep');
-      const safeName = rawName.replace(/["\r\n]/g, '').slice(0, 200);
+      // ĐUÔI PHẢI KHỚP NỘI DUNG (2026-08-08). Ảnh jpg/png bị nén thành WebP lúc tải lên, nhưng
+      // tên hiển thị vẫn giữ đuôi cũ → tải về được "bang-gia.png" mà ruột là WebP. Trình duyệt
+      // đoán được nên không ai để ý, còn Photoshop/Word/thư viện ảnh Android thì tin vào đuôi
+      // và báo hỏng. Lấy đuôi THẬT từ mimeType của blob và vá lại tên.
+      const blob = await prisma.mediaBlob.findFirst({
+        where: { orgId: request.user!.orgId, minioKey: key },
+        select: { mimeType: true },
+      });
+      const trueExt = blob ? mimeToExt(blob.mimeType) : '';
+      const named = trueExt && !rawName.toLowerCase().endsWith(trueExt)
+        ? `${rawName.replace(/\.[A-Za-z0-9]{1,8}$/, '')}${trueExt}`
+        : rawName;
+      const safeName = named.replace(/["\r\n]/g, '').slice(0, 200);
       // RFC5987 cho tên Unicode (tiếng Việt) — filename* để trình duyệt giữ dấu.
       reply
         .header('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`)
@@ -1080,6 +1111,20 @@ export async function mediaRoutes(app: FastifyInstance) {
         }
       }
 
+      // Chặn TRÙNG TÊN trong cùng một cấp (2026-08-08, anh chốt phương án 2).
+      // "Việt Nam" và "việt nam" là MỘT tên dưới mắt người dùng, và cũng ra chung một
+      // thư mục đĩa. Thà báo lỗi ngay còn hơn lặng lẽ đẻ "viet_nam_2" — tên đĩa lệch tên
+      // trong kho thì mở ổ đĩa ra không còn đối chiếu được nữa.
+      // Trả kèm thư mục đang chiếm tên để bên tải-cả-thư-mục DÙNG LẠI thay vì báo hỏng.
+      const clash = await findSiblingWithSameName(user.orgId, parentId, body.name.trim());
+      if (clash) {
+        return reply.status(409).send({
+          error: `Đã có thư mục tên "${clash.name}" ở đây rồi`,
+          code: 'FOLDER_NAME_TAKEN',
+          folder: { id: clash.id, name: clash.name },
+        });
+      }
+
       const folder = await prisma.mediaAlbum.create({
         data: {
           orgId: user.orgId,
@@ -1111,9 +1156,19 @@ export async function mediaRoutes(app: FastifyInstance) {
       // Chỉ chủ thư mục (hoặc Chủ tài khoản) mới đổi tên được.
       const folder = await prisma.mediaAlbum.findFirst({
         where: { id, orgId: user.orgId, ...(isOrgOwner(user) ? {} : { ownerUserId: userId }) },
-        select: { id: true },
+        select: { id: true, parentId: true },
       });
       if (!folder) return reply.status(404).send({ error: 'Không tìm thấy thư mục' });
+
+      // Đổi tên cũng phải né trùng tên anh em — nếu không sẽ lách được luật chặn lúc tạo.
+      const clash = await findSiblingWithSameName(user.orgId, folder.parentId, body.name.trim(), folder.id);
+      if (clash) {
+        return reply.status(409).send({
+          error: `Đã có thư mục tên "${clash.name}" ở đây rồi`,
+          code: 'FOLDER_NAME_TAKEN',
+          folder: { id: clash.id, name: clash.name },
+        });
+      }
 
       const updated = await prisma.mediaAlbum.update({
         where: { id: folder.id }, data: { name: body.name.trim() },

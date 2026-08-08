@@ -236,6 +236,7 @@
 import { ref, computed, onMounted } from 'vue';
 import {
   listMediaPaged, listMediaUploaders, uploadMedia, listMediaFolders, createMediaFolder,
+  createOrReuseMediaFolder,
   listTrash, restoreMedia, permanentDeleteMedia, emptyTrash,
   archiveMedia, bulkUpdateMedia,
   type MediaAssetItem, type MediaFolder, type TrashItem,
@@ -494,13 +495,31 @@ function fmtSize(bytes: number | null | undefined): string {
   return bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/**
+ * Trần SỐ TỆP mỗi request của @fastify/multipart (`files: 10` — xem backend app.ts).
+ * Chọn 50 ảnh một lượt mà gửi một request thì server chặn ngay từ tầng multipart, KHÔNG
+ * phải lỗi kích thước. Nên mọi đường tải lên đều phải cắt thành từng mẻ ≤ 10.
+ */
+const UPLOAD_BATCH = 10;
+function chunk<T>(arr: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+}
+
 function triggerUpload() { fileInput.value?.click(); }
 async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
   try {
-    const res = await uploadMedia(files, { visibility: 'private', folderId: activeFolder.value ?? undefined });
+    const batches = chunk(files, UPLOAD_BATCH);
+    const assets: Array<{ id: string; name: string; deduped: boolean }> = [];
+    for (const b of batches) {
+      const part = await uploadMedia(b, { visibility: 'private', folderId: activeFolder.value ?? undefined });
+      assets.push(...part.assets);
+    }
+    const res = { assets };
     const dup = res.assets.filter((a) => a.deduped).length;
     toast.success(dup > 0 ? `Đã tải ${res.assets.length} tệp (${dup} đã có sẵn, không tốn thêm dung lượng)` : `Đã tải ${res.assets.length} tệp lên kho`);
     reload();
@@ -556,22 +575,18 @@ async function onFolderPicked(e: Event) {
       .filter(Boolean)
       .sort((a, b) => a.split('/').length - b.split('/').length);
 
+    let reusedCount = 0;
     for (const dir of allDirs) {
       const segs = dir.split('/');
       const parentPath = segs.slice(0, -1).join('/');
       const parentId = parentPath ? made.get(parentPath) ?? null : activeFolder.value;
       const leaf = segs[segs.length - 1];
 
-      // Tải lại CÙNG một thư mục lần thứ hai thì DÙNG LẠI thư mục cũ, không tạo bản trùng:
-      // BE không khoá trùng tên, mà trên đĩa hai thư mục cùng tên lại slug ra cùng một chỗ
-      // → hai thư mục trong kho dùng chung một thư mục đĩa, nhìn rất khó hiểu.
-      const existing = folders.value.find(
-        (f) => f.name === leaf && (f.parentId ?? null) === parentId,
-      );
-      if (existing) { made.set(dir, existing.id); continue; }
-
-      const res = await createMediaFolder(leaf, 'private', parentId);
-      made.set(dir, res.folder.id);
+      // Tải lại CÙNG một cây lần thứ hai phải chạy tiếp được: BE chặn trùng tên (409), ở đây
+      // bắt lấy và DÙNG LẠI thư mục cũ. Nhờ vậy tải bổ sung tệp vào cây có sẵn vẫn hoạt động.
+      const { id, reused } = await createOrReuseMediaFolder(leaf, parentId);
+      if (reused) reusedCount++;
+      made.set(dir, id);
     }
 
     // Tải tệp vào đúng thư mục của nó. Lỗi 1 nhóm không chặn các nhóm còn lại.
@@ -579,17 +594,22 @@ async function onFolderPicked(e: Event) {
     let failed = 0;
     for (const [dir, group] of byDir) {
       const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
-      try {
-        const res = await uploadMedia(group, { visibility: 'private', folderId: folderId ?? undefined });
-        ok += res.assets.length;
-      } catch {
-        failed += group.length;
+      // Cắt mẻ ≤ UPLOAD_BATCH: một thư mục 50 ảnh mà gửi 1 request sẽ vượt trần
+      // `files: 10` của multipart và hỏng CẢ thư mục đó.
+      for (const b of chunk(group, UPLOAD_BATCH)) {
+        try {
+          const res = await uploadMedia(b, { visibility: 'private', folderId: folderId ?? undefined });
+          ok += res.assets.length;
+        } catch {
+          failed += b.length;
+        }
       }
     }
+    const reusedNote = reusedCount > 0 ? `, ${reusedCount} thư mục đã có sẵn` : '';
     toast.success(
       failed > 0
-        ? `Đã tải ${ok} tệp vào ${allDirs.length} thư mục (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
-        : `Đã tải ${ok} tệp vào ${allDirs.length} thư mục`,
+        ? `Đã tải ${ok} tệp vào ${allDirs.length} thư mục${reusedNote} (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
+        : `Đã tải ${ok} tệp vào ${allDirs.length} thư mục${reusedNote}`,
     );
     if (activeFolder.value) expanded.value = new Set(expanded.value).add(activeFolder.value);
     loadFolders();

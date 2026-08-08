@@ -7,6 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { slugifyFolderName, safeFolderSlug, slugifyFileName } from '../../src/shared/folder-slug.js';
 import { joinFolderSlug } from '../../src/shared/storage/folder-mirror.js';
+import { pickFreeFolderSlug, isSameFolderName } from '../../src/modules/media/media-folder-service.js';
 
 describe('slugifyFolderName — bỏ dấu + gạch dưới', () => {
   it('ví dụ anh chốt: "việt nam" → "viet_nam"', () => {
@@ -74,5 +75,83 @@ describe('joinFolderSlug — cây thư mục lồng nhau', () => {
   it('nối cha + con bằng dấu /', () => {
     expect(joinFolderSlug('viet_nam', 'bao_gia')).toBe('viet_nam/bao_gia');
     expect(joinFolderSlug('viet_nam/bao_gia', '2026')).toBe('viet_nam/bao_gia/2026');
+  });
+});
+
+/**
+ * HỒI QUY (2026-08-08) — lỗi ĐỤNG SLUG do bỏ dấu.
+ *
+ * Bỏ dấu là ánh xạ NHIỀU-VỀ-MỘT: "Việt Nam" / "việt nam" / "viet-nam" / "Viêt Nam!!!"
+ * đều ra "viet_nam". Trước khi vá, mọi thư mục cùng slug DÙNG CHUNG một thư mục đĩa →
+ * tệp hai thư mục nằm lẫn nhau, và xoá một thư mục (rm -r) cuốn luôn liên kết thư mục kia.
+ */
+describe('pickFreeFolderSlug — né đụng slug sau khi bỏ dấu', () => {
+  /** Giả lập DB: tập slug đã bị thư mục KHÁC chiếm. */
+  const taken = (...slugs: string[]) => async (s: string) => slugs.includes(s);
+
+  it('chưa ai chiếm → lấy đúng slug gốc', async () => {
+    expect(await pickFreeFolderSlug('Việt Nam', 'id1', null, taken())).toBe('viet_nam');
+  });
+
+  it('slug đã bị chiếm → thêm hậu tố _2', async () => {
+    expect(await pickFreeFolderSlug('việt nam', 'id2', null, taken('viet_nam'))).toBe('viet_nam_2');
+  });
+
+  it('bị chiếm liên tiếp → đếm tiếp _3, _4', async () => {
+    expect(await pickFreeFolderSlug('VIỆT  NAM', 'id3', null, taken('viet_nam', 'viet_nam_2'))).toBe('viet_nam_3');
+    expect(await pickFreeFolderSlug('viet-nam', 'id4', null, taken('viet_nam', 'viet_nam_2', 'viet_nam_3'))).toBe('viet_nam_4');
+  });
+
+  it('né đụng theo TỪNG CẤP, không phải toàn cục', async () => {
+    // "cha/viet_nam" bận nhưng gốc "viet_nam" trống → mỗi cấp xét riêng.
+    expect(await pickFreeFolderSlug('Việt Nam', 'id5', 'cha', taken('cha/viet_nam'))).toBe('cha/viet_nam_2');
+    expect(await pickFreeFolderSlug('Việt Nam', 'id6', null, taken('cha/viet_nam'))).toBe('viet_nam');
+  });
+
+  it('tất cả 6 cách viết cùng tên → 6 thư mục đĩa KHÁC nhau', async () => {
+    const used = new Set<string>();
+    const out: string[] = [];
+    for (const n of ['việt nam', 'Việt Nam', 'VIỆT  NAM', 'viet-nam', 'viet_nam', 'Viêt Nam!!!']) {
+      const slug = await pickFreeFolderSlug(n, `id-${out.length}`, null, async (s) => used.has(s));
+      used.add(slug);
+      out.push(slug);
+    }
+    expect(new Set(out).size).toBe(6); // ← trước khi vá: 1
+    expect(out).toEqual(['viet_nam', 'viet_nam_2', 'viet_nam_3', 'viet_nam_4', 'viet_nam_5', 'viet_nam_6']);
+  });
+
+  it('vẫn là lưới an toàn cho DỮ LIỆU CŨ đã trùng từ trước khi chặn', async () => {
+    // Chặn-trùng-tên chỉ áp cho thư mục tạo MỚI; hàng cũ đã đụng nhau vẫn phải tách được.
+    expect(await pickFreeFolderSlug('Việt Nam', 'legacy', null, taken('viet_nam'))).toBe('viet_nam_2');
+  });
+
+  it('cạn 50 hậu tố → rơi về id, KHÔNG bao giờ trả slug đã bị chiếm', async () => {
+    const all = new Set(['viet_nam', ...Array.from({ length: 60 }, (_, i) => `viet_nam_${i + 2}`)]);
+    const slug = await pickFreeFolderSlug('Việt Nam', 'abc123def456', null, async (s) => all.has(s));
+    expect(all.has(slug)).toBe(false);
+    expect(slug).toBe('viet_nam_abc123de');
+  });
+});
+
+/**
+ * Luật CHẶN TRÙNG TÊN cùng cấp (anh chốt phương án 2, 2026-08-08) — thay vì đẻ thư mục
+ * "viet_nam_2", báo lỗi ngay lúc tạo để tên trên đĩa luôn khớp tên trong kho.
+ */
+describe('isSameFolderName — hai tên có là MỘT dưới mắt người dùng', () => {
+  it('khác dấu / hoa thường / dấu câu → CÙNG một tên', () => {
+    for (const other of ['việt nam', 'VIỆT  NAM', 'viet-nam', 'viet_nam', 'Viêt Nam!!!', '  Việt Nam  ']) {
+      expect(isSameFolderName('Việt Nam', other)).toBe(true);
+    }
+  });
+
+  it('tên thật sự khác nhau → KHÔNG chặn', () => {
+    expect(isSameFolderName('Việt Nam', 'Hà Nội')).toBe(false);
+    expect(isSameFolderName('Báo giá', 'Báo giá 2026')).toBe(false);
+    expect(isSameFolderName('hop_dong', 'hop_dong_2')).toBe(false);
+  });
+
+  it('tên slug ra RỖNG (toàn emoji/dấu) → coi như khác, không chặn oan', () => {
+    expect(isSameFolderName('🎉', '🚀')).toBe(false);
+    expect(isSameFolderName('———', '🎉')).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
 import { candidateDownloadUrls } from '../chat/chat-media-helpers.js';
 import { generateThumbnail, probeVideoFile } from '../../shared/video-processor.js';
+import { sanitizeSvg } from '../../shared/svg-sanitizer.js';
 import { logger } from '../../shared/utils/logger.js';
 import type { MediaAsset, MediaBlob } from '@prisma/client';
 
@@ -105,6 +106,22 @@ export async function compressImage(
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ buffer: Buffer; mimeType: string; width?: number; height?: number; compressed: boolean }> {
+  // SVG (2026-08-08): LÀM SẠCH thay vì nén, và FAIL-CLOSED.
+  // Đặt TRƯỚC mọi nhánh khác để không đời nào rơi xuống fallback "lỗi thì lưu bản gốc"
+  // ở cuối hàm — với SVG, lưu bản gốc đúng bằng lưu thứ mình đang cố chặn.
+  // Ném ra ngoài ⇒ route trả 422 và tệp KHÔNG được lưu.
+  if (mimeType === 'image/svg+xml') {
+    const clean = sanitizeSvg(buffer); // tự ném nếu bẩn/hỏng
+    let w: number | undefined;
+    let h: number | undefined;
+    try {
+      const meta = await sharp(clean).metadata();
+      w = meta.width;
+      h = meta.height;
+    } catch { /* không đọc được kích thước — không sao, vẫn lưu bản đã sạch */ }
+    return { buffer: clean, mimeType, width: w, height: h, compressed: false };
+  }
+
   if (!COMPRESSIBLE.has(mimeType)) {
     // GIF / non-image → giữ nguyên, chỉ đọc kích thước nếu là ảnh.
     let w: number | undefined;
@@ -136,6 +153,9 @@ export async function compressImage(
     };
   } catch (err) {
     // D10(2): không để mất ảnh — fallback bản gốc.
+    // ⚠️ Fallback này là FAIL-OPEN, chỉ an toàn với ảnh raster (jpeg/png/webp — không chạy
+    // được mã). Định dạng nào có thể mang mã (SVG) PHẢI chặn từ nhánh riêng bên trên và
+    // ném lỗi, TUYỆT ĐỐI không để rơi xuống đây.
     logger.warn('[media] compressImage failed, fallback to original:', (err as Error)?.message ?? err);
     return { buffer, mimeType, compressed: false };
   }

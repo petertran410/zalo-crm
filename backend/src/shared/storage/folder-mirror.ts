@@ -67,11 +67,18 @@ export async function ensureFolderDir(
   name: string,
   parentSlug?: string | null,
 ): Promise<string | null> {
+  return ensureFolderDirExact(joinFolderSlug(parentSlug, safeFolderSlug(name, folderId)), folderId);
+}
+
+/**
+ * Như ensureFolderDir nhưng nhận THẲNG đường dẫn slug đã tính sẵn — dùng khi caller đã
+ * giải quyết xong việc đụng tên (xem media-folder-service.uniqueFolderSlug).
+ */
+export async function ensureFolderDirExact(slug: string, folderId = '?'): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
-  const slug = joinFolderSlug(parentSlug, safeFolderSlug(name, folderId));
   const dir = folderPath(slug);
   if (!dir) {
-    logger.warn(`[folder-mirror] slug không hợp lệ, bỏ qua mkdir: folderId=${folderId} name="${name}"`);
+    logger.warn(`[folder-mirror] slug không hợp lệ, bỏ qua mkdir: folderId=${folderId} slug="${slug}"`);
     return null;
   }
   try {
@@ -187,17 +194,17 @@ export async function unlinkFromFolder(slug: string, linkName: string): Promise<
   }
 }
 
-/** Đổi tên thư mục kho → đổi tên thư mục đĩa. Trả slug mới, hoặc null nếu skip/lỗi. */
+/**
+ * Đổi tên thư mục kho → đổi tên thư mục đĩa. Trả slug mới, hoặc null nếu skip/lỗi.
+ * `newSlug` là đường dẫn ĐÃ tính sẵn và đã né đụng độ (media-folder-service.uniqueFolderSlug).
+ */
 export async function renameFolderDir(
   folderId: string,
   oldSlug: string | null,
-  newName: string,
-  parentSlug?: string | null,
+  newSlug: string,
 ): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
-  // Đổi tên CHỈ đổi đoạn cuối — thư mục cha giữ nguyên chỗ cũ.
-  const newSlug = joinFolderSlug(parentSlug, safeFolderSlug(newName, folderId));
-  if (!oldSlug || oldSlug === newSlug) return ensureFolderDir(folderId, newName, parentSlug);
+  if (!oldSlug || oldSlug === newSlug) return ensureFolderDirExact(newSlug, folderId);
 
   const from = folderPath(oldSlug);
   const to = folderPath(newSlug);
@@ -205,8 +212,8 @@ export async function renameFolderDir(
   try {
     const destExists = await stat(to).then(() => true).catch(() => false);
     if (destExists) {
-      // Thư mục đích đã bận (2 tên khác nhau slug ra cùng chuỗi, vd "Việt Nam" và "viet nam").
-      // KHÔNG trộn 2 thư mục — giữ nguyên thư mục cũ, chỉ log để anh biết mà đổi tên.
+      // Còn sót thư mục đĩa không ai nhận (vd tạo tay ngoài app). KHÔNG trộn hai thư mục —
+      // giữ nguyên chỗ cũ và log để còn lần ra. (Đụng độ do slug đã né ở tầng service.)
       logger.warn(`[folder-mirror] slug đích đã tồn tại, giữ nguyên thư mục cũ: ${oldSlug} → ${newSlug}`);
       return oldSlug;
     }
@@ -216,7 +223,8 @@ export async function renameFolderDir(
     await rename(from, to);
     return newSlug;
   } catch (err: any) {
-    if (err?.code === 'ENOENT') return ensureFolderDir(folderId, newName);
+    // Thư mục nguồn không còn (bị xoá tay ngoài app) → tạo thẳng thư mục đích.
+    if (err?.code === 'ENOENT') return ensureFolderDirExact(newSlug, folderId);
     logger.warn(`[folder-mirror] rename lỗi (${oldSlug} → ${newSlug}):`, err?.message ?? err);
     return null;
   }

@@ -224,6 +224,18 @@ async function bootstrap() {
       cacheControl: true,
       maxAge: "365d",
       immutable: true,
+      // LỚP PHÒNG THỦ THỨ HAI cho SVG (2026-08-08). SVG đã được làm sạch lúc tải lên
+      // (shared/svg-sanitizer.ts), nhưng /files phục vụ KHÔNG cần đăng nhập nên đây là
+      // chỗ dễ tổn thương nhất — nếu bộ lọc có ngày bị né, đừng để trình duyệt RENDER
+      // tệp đó trong origin của mình. Ép tải về thay vì mở, và cấm đoán-kiểu-nội-dung.
+      setHeaders(res: any, filePath: string) {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (/\.svgz?$/i.test(filePath)) {
+          res.setHeader("Content-Type", "application/octet-stream");
+          res.setHeader("Content-Disposition", "attachment");
+          res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+        }
+      },
     });
   }
 
