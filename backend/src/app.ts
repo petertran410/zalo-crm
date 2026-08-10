@@ -204,8 +204,13 @@ async function bootstrap() {
 
   await app.register(fastifyMultipart, {
     limits: {
-      fileSize: 500 * 1024 * 1024, // 500 MB — video cap; per-kind size enforced in route
-      files: 10,
+      // TRẦN CHUNG rộng, phục vụ đường gửi tệp trong CHAT (ảnh 100MB / video 500MB —
+      // xem chat-attachment-routes.ts). Route nào cần chặt hơn thì tự đặt limits riêng
+      // qua request.parts({ limits }) — kho lưu trữ làm vậy: 10MB/tệp, 25 tệp, 100MB/lượt.
+      fileSize: 500 * 1024 * 1024,
+      // 2026-08-08: 10 → 25 để kho lưu trữ gửi được 25 tệp/lượt. Đây là TRẦN TRÊN; route
+      // vẫn tự siết thấp hơn được, nhưng không thể vượt quá con số này.
+      files: 25,
     },
   });
 

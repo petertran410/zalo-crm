@@ -61,13 +61,25 @@ const ALLOWED_FILE = [
   'application/vnd.ms-powerpoint',
   'application/zip', 'application/x-zip-compressed',
 ];
-// Giới hạn (design review E5): ảnh >15MB báo quá lớn.
-const IMAGE_MAX = 15 * 1024 * 1024;
-// TRẦN THẬT của cả request là 500MB, đặt ở @fastify/multipart (app.ts) — không route nào
-// vượt qua được. FILE_MAX từng ghi 1GB nên đọc code cứ tưởng tải được tệp 1GB, thực tế
-// multipart đã chặn từ trước khi vào đây. Chỉnh cho khớp để khỏi hiểu nhầm (2026-08-08).
-const VIDEO_MAX = 500 * 1024 * 1024;
-const FILE_MAX = 500 * 1024 * 1024;
+/**
+ * HẠN MỨC TẢI LÊN KHO (anh chốt 2026-08-08) — áp cho MỌI loại tệp, không phân biệt
+ * ảnh / video / tài liệu:
+ *
+ *   • 10MB   mỗi TỆP (kể cả từng tệp bên trong thư mục tải lên)
+ *   • 100MB  mỗi LƯỢT tải lên (tổng các tệp trong cùng một request)
+ *   • 25     tệp mỗi lượt
+ *
+ * ⚠️ CHỈ áp cho KHO LƯU TRỮ. Gửi tệp trong CHAT có hạn mức riêng rộng hơn nhiều
+ *    (chat-attachment-routes.ts: ảnh 100MB, video 500MB) — nên hạn mức ở đây đặt theo
+ *    TỪNG REQUEST qua request.parts({ limits }), KHÔNG sửa multipart toàn cục ở app.ts.
+ *    Sửa toàn cục sẽ chặn luôn đường gửi tệp cho khách.
+ *
+ * 25 × 10MB = 250MB nên trần 100MB/lượt mới là cái chạm trước — cố ý: nó chặn một lượt
+ * tải lên ngốn hết RAM (mỗi tệp đều đọc TRỌN vào bộ nhớ trước khi xử lý).
+ */
+const PER_FILE_MAX = 10 * 1024 * 1024;
+const REQUEST_TOTAL_MAX = 100 * 1024 * 1024;
+const MAX_FILES_PER_REQUEST = 25;
 
 // GĐ13a Thùng rác Media (2026-06-12): giữ trong thùng rác 30 ngày rồi cron tự dọn (xóa hàng DB,
 // KHÔNG đụng byte MinIO). TRASH_EMPTY_BATCH: dọn-sạch-thủ-công xóa tối đa N/lần tránh khóa DB lâu.
@@ -354,8 +366,15 @@ export async function mediaRoutes(app: FastifyInstance) {
       // → đọc khi register thì còn 'private'. Fix: GOM file buffers + fields TRƯỚC, register SAU.
       const pending: Array<{ buffer: Buffer; mimeType: string; kind: MediaKind; filename: string }> = [];
 
+      let totalBytes = 0;
       try {
-        for await (const part of request.parts()) {
+        // limits ĐẶT RIÊNG CHO REQUEST NÀY (không đụng multipart toàn cục — chat cần trần
+        // rộng hơn nhiều). fileSize chặn ngay ở tầng luồng: tệp quá cỡ bị cắt từ lúc đọc,
+        // không đọc trọn 500MB vào RAM rồi mới từ chối.
+        const parts = request.parts({
+          limits: { fileSize: PER_FILE_MAX, files: MAX_FILES_PER_REQUEST },
+        });
+        for await (const part of parts) {
           if (part.type === 'field') {
             if (part.fieldname === 'visibility' && part.value === 'public') visibility = 'public';
             if (part.fieldname === 'folderId' && part.value) folderId = String(part.value);
@@ -371,10 +390,22 @@ export async function mediaRoutes(app: FastifyInstance) {
             return reply.status(415).send({ error: `Loại tệp không hỗ trợ: ${part.mimetype}` });
           }
           const buf = await part.toBuffer();
-          const max = kind === 'image' ? IMAGE_MAX : kind === 'video' ? VIDEO_MAX : FILE_MAX;
-          if (buf.length > max) {
+
+          // Trần MỖI TỆP. multipart đã chặn ở tầng luồng, đây là lớp thứ hai + cho thông báo
+          // rõ ràng (busboy chỉ cắt cụt tệp chứ không tự nói tệp nào hỏng).
+          if (buf.length > PER_FILE_MAX || (part.file as any)?.truncated) {
             return reply.status(413).send({
-              error: kind === 'image' ? 'Ảnh quá lớn (tối đa 15MB)' : `${kind} vượt ${max / 1024 / 1024}MB`,
+              error: `Tệp "${part.filename}" quá lớn — tối đa ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
+              code: 'FILE_TOO_LARGE',
+            });
+          }
+
+          // Trần CẢ LƯỢT: cộng dồn, vượt là dừng luôn (chưa ghi gì xuống đĩa ở bước này).
+          totalBytes += buf.length;
+          if (totalBytes > REQUEST_TOTAL_MAX) {
+            return reply.status(413).send({
+              error: `Tổng dung lượng một lượt tải lên vượt ${REQUEST_TOTAL_MAX / 1024 / 1024}MB — chia nhỏ ra nhé`,
+              code: 'UPLOAD_TOO_LARGE',
             });
           }
           // GĐ13b: quét virus (fail-open mặc định; AV tắt → skip ngay). Chặn nếu nhiễm.
@@ -416,6 +447,20 @@ export async function mediaRoutes(app: FastifyInstance) {
         if (err?.code === 'SVG_REJECTED') {
           logger.warn(`[media][av] từ chối SVG user=${userId}: ${err.message}`);
           return reply.status(422).send({ error: err.message, code: 'SVG_REJECTED' });
+        }
+        // Hạn mức do multipart tự chặn ở tầng luồng — cũng là lỗi người dùng, trả 413 kèm
+        // đúng con số thay vì "upload failed" chung chung.
+        if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
+          return reply.status(413).send({
+            error: `Tệp quá lớn — tối đa ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
+            code: 'FILE_TOO_LARGE',
+          });
+        }
+        if (err?.code === 'FST_FILES_LIMIT') {
+          return reply.status(413).send({
+            error: `Tối đa ${MAX_FILES_PER_REQUEST} tệp mỗi lượt tải lên`,
+            code: 'TOO_MANY_FILES',
+          });
         }
         logger.error('[media] upload error:', err);
         return reply.status(500).send({ error: err?.message ?? 'upload failed' });

@@ -496,15 +496,40 @@ function fmtSize(bytes: number | null | undefined): string {
 }
 
 /**
- * Trần SỐ TỆP mỗi request của @fastify/multipart (`files: 10` — xem backend app.ts).
- * Chọn 50 ảnh một lượt mà gửi một request thì server chặn ngay từ tầng multipart, KHÔNG
- * phải lỗi kích thước. Nên mọi đường tải lên đều phải cắt thành từng mẻ ≤ 10.
+ * HẠN MỨC PHẢI KHỚP BACKEND (media-routes.ts) — lệch là người dùng ăn 413 giữa chừng:
+ *   10MB mỗi tệp · 100MB mỗi lượt · 25 tệp mỗi lượt.
  */
-const UPLOAD_BATCH = 10;
-function chunk<T>(arr: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const UPLOAD_BATCH = 25;
+
+/**
+ * Chia tệp thành từng mẻ gửi được: mỗi mẻ ≤ 25 tệp VÀ ≤ 100MB.
+ * Chỉ đếm số tệp là chưa đủ — 25 tệp × 10MB = 250MB, vượt trần 100MB của một lượt.
+ */
+function batchFiles(files: File[]): File[][] {
+  const out: File[][] = [];
+  let cur: File[] = [];
+  let bytes = 0;
+  for (const f of files) {
+    if (cur.length >= UPLOAD_BATCH || (cur.length > 0 && bytes + f.size > MAX_BATCH_BYTES)) {
+      out.push(cur);
+      cur = [];
+      bytes = 0;
+    }
+    cur.push(f);
+    bytes += f.size;
+  }
+  if (cur.length) out.push(cur);
   return out;
+}
+
+/** Tách tệp quá cỡ ra TRƯỚC khi gửi — báo ngay còn hơn để server trả 413 giữa chừng. */
+function splitOversize(files: File[]): { ok: File[]; tooBig: File[] } {
+  const ok: File[] = [];
+  const tooBig: File[] = [];
+  for (const f of files) (f.size > MAX_FILE_BYTES ? tooBig : ok).push(f);
+  return { ok, tooBig };
 }
 
 function triggerUpload() { fileInput.value?.click(); }
@@ -512,10 +537,19 @@ async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
+  // Chặn tệp quá 10MB ngay tại máy người dùng — nói rõ tệp nào, thay vì để server 413.
+  const { ok: sendable, tooBig } = splitOversize(files);
+  if (tooBig.length) {
+    const names = tooBig.slice(0, 3).map((f) => `"${f.name}" (${fmtSize(f.size)})`).join(', ');
+    toast.warning(
+      `Bỏ qua ${tooBig.length} tệp quá 10MB: ${names}${tooBig.length > 3 ? '…' : ''}`,
+    );
+  }
+  if (!sendable.length) { input.value = ''; return; }
+
   try {
-    const batches = chunk(files, UPLOAD_BATCH);
     const assets: Array<{ id: string; name: string; deduped: boolean }> = [];
-    for (const b of batches) {
+    for (const b of batchFiles(sendable)) {
       const part = await uploadMedia(b, { visibility: 'private', folderId: activeFolder.value ?? undefined });
       assets.push(...part.assets);
     }
@@ -557,9 +591,20 @@ async function onFolderPicked(e: Event) {
   input.value = '';
   if (!files.length) return;
 
+  // Trần 10MB áp cho TỪNG TỆP BÊN TRONG thư mục nữa — loại ra trước khi dựng cây, để
+  // thư mục nào chỉ chứa toàn tệp quá cỡ thì cũng không được tạo ra.
+  const { ok: usable, tooBig } = splitOversize(files);
+  if (tooBig.length) {
+    toast.warning(`Bỏ qua ${tooBig.length}/${files.length} tệp quá 10MB trong thư mục này`);
+  }
+  if (!usable.length) {
+    toast.warning('Mọi tệp trong thư mục đều quá 10MB — không tạo thư mục nào');
+    return;
+  }
+
   // Gom tệp theo đường dẫn thư mục chứa nó ("" = ngay trong thư mục gốc được chọn).
   const byDir = new Map<string, File[]>();
-  for (const f of files) {
+  for (const f of usable) {
     const rel = (f as any).webkitRelativePath as string | undefined;
     const dir = rel ? rel.split('/').slice(0, -1).join('/') : '';
     const arr = byDir.get(dir) ?? [];
@@ -600,9 +645,9 @@ async function onFolderPicked(e: Event) {
     const gotFiles = new Set<string>();
     for (const [dir, group] of byDir) {
       const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
-      // Cắt mẻ ≤ UPLOAD_BATCH: một thư mục 50 ảnh mà gửi 1 request sẽ vượt trần
-      // `files: 10` của multipart và hỏng CẢ thư mục đó.
-      for (const b of chunk(group, UPLOAD_BATCH)) {
+      // Cắt mẻ theo CẢ số tệp lẫn dung lượng: một thư mục 50 ảnh gửi 1 request sẽ vượt
+      // trần 25 tệp, và 25 ảnh nặng cũng vượt trần 100MB — cả hai đều hỏng cả thư mục đó.
+      for (const b of batchFiles(group)) {
         try {
           const res = await uploadMedia(b, { visibility: 'private', folderId: folderId ?? undefined });
           ok += res.assets.length;
