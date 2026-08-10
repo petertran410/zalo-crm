@@ -13,7 +13,7 @@
         <span class="hs-bbox"><img :src="brandLogo" :alt="brandName" @error="onLogoError" /></span>
       </RouterLink>
 
-      <!-- Primary nav tabs — chỉ ở chế độ thanh ngang -->
+      <!-- Primary nav tabs, chỉ ở chế độ thanh ngang -->
       <nav v-if="navMode === 'bar'" class="nav-tabs">
         <RouterLink
           v-for="tab in visiblePrimaryTabs"
@@ -76,7 +76,7 @@
       </v-menu>
     </header>
 
-    <!-- Phase Internal Contact 2-method 2026-05-23 — banner persistent nếu sale chưa setup -->
+    <!-- Banner cố định cho sale chưa setup liên hệ nội bộ -->
     <div v-if="showInternalContactBanner" class="ic-banner">
       <span class="ic-banner-icon">⚠</span>
       <div class="ic-banner-text">
@@ -128,7 +128,7 @@
       </v-main>
     </div>
 
-    <!-- 2026-06-04: Anh chốt gỡ MiniOnboardingIndicator — badge 4/4 hiện đè
+    <!-- Đã gỡ MiniOnboardingIndicator: badge 4/4 hiện đè mọi UI sau khi sale hoàn tất.
          mọi UI gây rối mắt sau khi sale hoàn tất. Sẽ code lại setup 4 bước. -->
 
     <!-- 2026-06-01: LeadFloatingButton moved → ConversationFilterSidebar (chỉ render trong /chat).
@@ -175,15 +175,14 @@ const orderDraftStore = useOrderDraftStore();
 usePosNotification();
 // 2026-06-04: gỡ MiniOnboardingIndicator (Anh chốt code lại setup 4 bước sau)
 // LeadFloatingButton moved to ConversationFilterSidebar 2026-06-01
-// 2026-06-08: gỡ import api — banner "BỎ LỠ thông báo" đã tắt (checkInternalContactSetup no-op).
+// Đã gỡ import api vì banner "BỎ LỠ thông báo" đã tắt.
 const theme = useTheme();
 const route = useRoute();
 const authStore = useAuthStore();
 const router = useRouter();
 
-// 2026-06-09 (anh báo menu bar kẹt, phải F5) — điều khiển dropdown nav bằng v-model
-// + ép đóng HẾT sau mỗi điều hướng (kể cả khi điều hướng bị huỷ/chặn quyền). Dropdown
-// Vuetify (z-index 2000) nếu kẹt mở sẽ phủ lên nav (z-index 100) nuốt click → đây là gốc lỗi.
+// Dropdown Vuetify ở z-index 2000, kẹt mở là phủ lên nav và nuốt hết click. Vì vậy giữ
+// bằng v-model rồi ép đóng sau mỗi điều hướng, kể cả điều hướng bị huỷ hay chặn quyền.
 const reportsMenu = ref(false);
 const settingsMenu = ref(false);
 const userMenu = ref(false);
@@ -193,15 +192,9 @@ function closeAllNavMenus() {
   userMenu.value = false;
 }
 
-// 2026-06-23 (anh báo: thao tác 1 lúc ở MỌI module rồi click nav không chuyển được, phải
-// F5; hover vẫn hiện href ⇒ KHÔNG phải overlay phủ-hình). GỐC: overlay Vuetify (v-menu/
-// v-dialog, z-index 2000) bị KẸT/ORPHAN — activator unmount giữa lúc mở (list re-render,
-// đổi route…) để lại overlay + listener "click-outside" ở document → click nav bị nuốt
-// (đóng overlay ma thay vì điều hướng). Fix cũ chỉ đóng 3 menu NAV, không dọn overlay từ
-// module khác. Đây là DỌN TOÀN CỤC mọi overlay kẹt sau mỗi điều hướng:
-//   1) Esc native → Vuetify tự đóng overlay còn mounted (sạch, không lỗi removeChild).
-//   2) nextTick xong gỡ orphan DOM còn sót trong .v-overlay-container (component đã unmount
-//      nên Vuetify không quản nữa → gỡ an toàn; bọc try/catch chống race).
+// Overlay Vuetify bị mồ côi khi activator unmount giữa lúc đang mở sẽ để lại listener
+// click-outside ở document, khiến click nav bị nuốt thay vì điều hướng. Đóng riêng 3 menu
+// nav là không đủ vì overlay có thể đến từ module bất kỳ, nên phải dọn toàn cục.
 function sweepStuckOverlays() {
   try {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -222,13 +215,13 @@ function cleanupAfterNav() {
 router.afterEach(() => cleanupAfterNav());
 router.onError(() => cleanupAfterNav());
 
-// Phase Internal Contact 2-method 2026-05-23 — banner cho sale chưa setup
+// Banner cho sale chưa setup liên hệ nội bộ
 // Phase Onboarding v1 redesign 2026-05-24: ẨN banner khi đang ở Dashboard route
 // vì OnboardingChecklist đã cover. Banner chỉ nhắc ở các tab khác (Chat, Bạn bè,...).
 const IC_BANNER_DISMISS_KEY = 'ic-banner-dismissed-until';
 const _showICBannerRaw = ref(false);
 const showInternalContactBanner = computed(() => {
-  // Hide trên Dashboard — checklist đã hiện
+  // Hide trên Dashboard vì checklist đã hiện ở đó
   if (route.path === '/') return false;
   return _showICBannerRaw.value;
 });
@@ -258,7 +251,7 @@ function dismissInternalContactBanner() {
   localStorage.setItem(IC_BANNER_DISMISS_KEY, String(Date.now() + 24 * 60 * 60 * 1000));
 }
 
-// Brand lockup trên menu — logo + tên tổ chức (đồng bộ /login, /setup-password).
+// Brand lockup trên menu: logo và tên tổ chức, đồng bộ với /login.
 const DEFAULT_LOGO = '/brand/hs-monogram.png';
 const brandLogo = ref(DEFAULT_LOGO);
 const brandName = ref('Hi-CRM');
@@ -306,14 +299,11 @@ let navObserver: ResizeObserver | null = null;
 function syncNavMode() {
   navMode.value = window.innerWidth < NAV_RAIL_MAX ? 'rail' : 'bar';
 }
-// Gắn HAI nguồn kích hoạt cho cùng một hàm (idempotent nên gọi trùng vô hại):
-// ResizeObserver là nguồn chính (bắt cả zoom, cắm/rút màn, dock devtools — những
-// ca 'resize' hay bỏ sót), còn window 'resize' là lưới an toàn. Chấp nhận thừa vì
-// nếu cả hai cùng câm thì nav kẹt một chế độ cho tới lần tải lại — hỏng nặng hơn
-// nhiều so với chi phí 3 dòng. (Ghi chú: trong trình duyệt điều khiển qua CDP,
-// việc ép đổi kích thước khung nhìn KHÔNG bắn cả resize lẫn ResizeObserver lẫn
-// matchMedia change — đo 2026-08-05 — nên đường chuyển chế độ không tự kiểm được
-// bằng công cụ, chỉ kiểm được bằng cách tải lại ở từng bề rộng.)
+// Cố tình nghe cả ResizeObserver lẫn window resize dù hàm này idempotent: ResizeObserver
+// bắt được zoom và cắm rút màn hình, window resize là lưới an toàn. Cả hai cùng câm thì
+// nav kẹt một chế độ tới lần tải lại, đắt hơn nhiều so với chi phí nghe thừa một nguồn.
+// Trình duyệt điều khiển qua CDP không bắn sự kiện nào trong số này, nên đường chuyển chế
+// độ chỉ kiểm được bằng cách tải lại ở từng bề rộng.
 
 
 // Hai module này chưa có kế hoạch dùng nên chỉ tắt lối vào, route vẫn giữ nguyên và gõ
@@ -325,12 +315,12 @@ interface NavTab {
   path: string;
   label: string;
   icon: string;
-  /** Nhãn rút gọn cho rail dọc — ô chỉ rộng 62px. Không có thì dùng label. */
+  /** Nhãn rút gọn cho rail dọc vì ô chỉ rộng 62px. Không có thì dùng label. */
   short?: string;
   matchPrefix?: string;
-  /** Tab gom nhiều route (vd Lịch & Việc = /appointments + /tasks) — sáng ở bất kỳ cái nào. */
+  /** Tab gom nhiều route thì sáng ở bất kỳ route nào trong đó. */
   matchAny?: string[];
-  // RBAC 2026-06-08 — resource cần để thấy tab. Không có resource = luôn hiện.
+  // Resource cần để thấy tab. Không có resource nghĩa là luôn hiện.
   resource?: string;
 }
 
@@ -345,7 +335,7 @@ const primaryTabs: NavTab[] = [
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
   // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
   { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
-  // 2026-08-04 — gộp "Lịch hẹn" + "Công việc" thành 1 mặt Schedule (direction 1A).
+  // Gộp "Lịch hẹn" và "Công việc" thành một mặt Schedule.
   // 2 trang vẫn riêng, nhưng vào từ một chỗ rồi chuyển qua lại bằng tab con
   // (ScheduleTabs). matchPrefix nhận cả /tasks để tab vẫn sáng khi đang ở đó.
   { path: '/appointments',           label: 'Công việc',   icon: 'mdi-calendar-check-outline', matchAny: ['/appointments', '/tasks'] },
@@ -354,7 +344,7 @@ const primaryTabs: NavTab[] = [
   { path: '/pos',                    label: 'Cửa hàng POS', short: 'POS', icon: 'mdi-storefront-outline' },
 ];
 
-// RBAC 2026-06-09 — tab Marketing là module gồm nhiều chức năng. Hiện nếu user có
+// Tab Marketing gồm nhiều chức năng, hiện nếu user có quyền bất kỳ chức năng nào và trỏ
 // quyền BẤT KỲ chức năng nào, và trỏ tới chức năng ĐẦU TIÊN user có quyền (vd Sale
 // chỉ có Khối → tab Marketing trỏ thẳng /marketing/blocks). Thứ tự = thứ tự sidebar.
 const MARKETING_FUNCTIONS: Array<{ path: string; resource: string }> = [
@@ -369,10 +359,10 @@ const marketingEntry = computed(() =>
   MARKETING_FUNCTIONS.find((f) => authStore.canAccess(f.resource))?.path ?? null,
 );
 
-// RBAC 2026-06-08 — chỉ hiện tab user có quyền (Dashboard + Lịch hẹn luôn hiện).
+// Chỉ hiện tab user có quyền, Dashboard và Lịch hẹn thì luôn hiện.
 const visiblePrimaryTabs = computed(() => {
   const tabs = primaryTabs.filter((t) => !t.resource || authStore.canAccess(t.resource));
-  // Tab Marketing — edition-aware (open-core):
+  // Tab Marketing khác nhau giữa hai edition:
   //  - EE: menu Marketing đầy đủ (triggers/sequences/…); hiện khi có quyền ≥1 chức năng.
   //  - Community: menu Marketing RIÊNG, chỉ Quét nhóm + Tệp khách hàng (route /marketing
   //    chỉ đăng ký khi !isExtension — xem router). KHÔNG dùng marketingEntry (resource EE).
@@ -397,7 +387,7 @@ const visiblePrimaryTabs = computed(() => {
   }
   return tabs;
 });
-// (2026-06-10) Bỏ showOrgGroup/showCrmGroup — dropdown redesign thành lối tắt phẳng,
+// Bỏ showOrgGroup và showCrmGroup: dropdown giờ là lối tắt phẳng, lọc per-item theo grants.
 // lọc per-item theo grants trực tiếp, không còn subheader nhóm cần gate.
 
 function isActive(tab: NavTab): boolean {
@@ -411,13 +401,13 @@ function isActive(tab: NavTab): boolean {
   return route.path === tab.path || route.path.startsWith(tab.path + '/');
 }
 // isSettingsActive / isReportsActive đã chuyển vào NavSettingsMenu / NavReportsMenu
-// (2026-08-05) — mỗi dropdown tự tính trạng thái sáng của nó.
+// Mỗi dropdown tự tính trạng thái sáng của nó.
 
 // Workspace selector đã ẩn ở Variant A 2026-05-28 (single-tenant chưa cần switch).
 // Sau này multi-tenant → revert back template + uncomment block dưới.
 
-// Avatar top nav 2026-06-13 — dùng <Avatar/> (ảnh thật + fallback chữ cái), bỏ initials thủ công.
-// 2026-06-13 (anh chốt): bỏ chọn theme tối — app luôn theme sáng 'hsLight' (mặc định ở vuetify.ts).
+// Avatar top nav dùng <Avatar/> có ảnh thật kèm fallback chữ cái.
+// Bỏ chọn theme tối, app luôn dùng theme sáng hsLight.
 
 function logout() {
   authStore.logout();
@@ -432,7 +422,7 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
-/* Phase Internal Contact 2-method 2026-05-23 — banner persistent */
+/* Banner cố định cho sale chưa setup liên hệ nội bộ */
 .ic-banner {
   display: flex; align-items: center; gap: 14px;
   padding: 10px 20px;

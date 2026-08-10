@@ -1,5 +1,5 @@
 /**
- * local-driver.ts — lưu file lên ổ đĩa VPS (config.uploadDir).
+ * Lưu file lên ổ đĩa VPS tại config.uploadDir.
  *
  * File nằm tại {uploadDir}/{key}, ví dụ {uploadDir}/media/{hash}.jpg.
  * Serve công khai qua route tĩnh /files (đăng ký trong app.ts) →

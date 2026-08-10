@@ -71,7 +71,7 @@
       </div>
     </section>
 
-    <!-- Filter row — LEVER 1: Quyền (Loại = tabs ở trên) + nút Lọc sâu -->
+    <!-- Lọc theo quyền, loại nằm ở tabs phía trên -->
     <div v-if="!trashMode" class="m-filter">
       <span class="crumb">Tất cả<template v-if="activeFolder"> ▸ <b>{{ activeFolderName }}</b></template></span>
       <span v-for="tag in activeTags" :key="tag" class="chip coral" @click="toggleTag(tag)">#{{ tag }} <XIcon :size="11" :stroke-width="2.2" /></span>
@@ -154,7 +154,7 @@
           <button class="bulk-clear" @click="clearPicked">Bỏ chọn</button>
         </div>
 
-        <!-- Dải "Hay dùng nhất" đã GỠ 2026-06-15 (Anh chốt) — sẽ build module báo cáo riêng. -->
+        <!-- Đã gỡ dải "Hay dùng nhất", sẽ build module báo cáo riêng. -->
 
         <div v-if="loading" class="m-empty"><div class="spin"></div> Đang tải…</div>
 
@@ -166,7 +166,7 @@
           <div class="empty-hint"><LightbulbIcon :size="13" :stroke-width="1.9" /> Hoặc chuột phải ảnh trong chat → <b>Lưu vào Media</b></div>
         </div>
 
-        <!-- TỆP: list detail theo dòng (sale phân biệt được tệp nào — anh chốt 2026-06-12) -->
+        <!-- Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào. -->
         <div v-else-if="activeKind === 'file'" class="m-flist">
           <div v-for="a in items" :key="a.id" class="frow" :class="{ sel: selected?.id === a.id }" @click="select(a)">
             <span class="ficon" :style="{ background: fileIcon(a.name).bg, color: fileIcon(a.name).fg }">{{ fileIcon(a.name).label }}</span>
@@ -247,7 +247,7 @@ import {
   Lightbulb as LightbulbIcon, FolderUp as FolderUpIcon,
 } from 'lucide-vue-next';
 
-// Icon placeholder theo loại media (thay emoji 🎬📄🖼 — Lucide, thống nhất 2026-06-15).
+// Icon placeholder theo loại media.
 function kindIcon(kind: string) {
   return kind === 'video' ? VideoIcon : kind === 'file' ? FileIcon : ImageIcon;
 }
@@ -285,7 +285,7 @@ const folderInput = ref<HTMLInputElement | null>(null);
 /** Khoá nút để không bấm chồng lên nhau khi đang dựng cây và tải thư mục. */
 const folderUploading = ref(false);
 
-// LEVER 2 (lọc sâu — anh chốt 2026-06-12).
+// Lọc sâu.
 const showLever2 = ref(false);
 const sortBy = ref<'recent' | 'newest' | 'most_used' | 'name'>('recent');
 const sinceBy = ref<'' | '7d' | '30d' | '90d'>('');
@@ -396,7 +396,7 @@ async function reload() {
   }
 }
 
-// Danh sách người sở hữu ảnh (đổ vào dropdown lọc) — khớp kind + visibility đang xem.
+// Đổ vào dropdown lọc, khớp kind và visibility đang xem.
 async function loadUploaders() {
   try {
     uploaders.value = await listMediaUploaders({
@@ -459,7 +459,7 @@ async function onBulkTrash() {
   if (ids.length === 0) return;
   if (!window.confirm(`Chuyển ${ids.length} mục vào Thùng rác?\n(Khôi phục được trong 30 ngày. Lịch sử chat đã gửi không bị ảnh hưởng.)`)) return;
   try {
-    // Tái dùng archiveMedia (DELETE /media/:id = vào thùng rác) — chạy tuần tự cho an toàn.
+    // Chạy tuần tự cho an toàn.
     let ok = 0;
     for (const id of ids) { try { await archiveMedia(id); ok++; } catch { /* skip lỗi lẻ */ } }
     toast.success(`Đã chuyển ${ok}/${ids.length} mục vào Thùng rác`);
@@ -749,7 +749,7 @@ async function onEmptyTrash() {
   }
 }
 
-// Dải "Hay dùng nhất" (mediaStats) đã GỠ 2026-06-15 — build module báo cáo riêng sau.
+
 
 onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 </script>
@@ -819,7 +819,7 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .m-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; }
 @media (min-width:1600px) { .m-grid { grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:14px; } }
 @media (min-width:2200px) { .m-grid { grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:16px; } }
-/* TỆP — list detail theo dòng (anh chốt: grid card không phân biệt được tệp nào). */
+/* Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào. */
 .m-flist { display:flex; flex-direction:column; border:1px solid var(--hairline); border-radius:var(--r-md); overflow:hidden; background:var(--canvas); }
 .frow { display:flex; align-items:center; gap:13px; padding:11px 14px; border-bottom:1px solid var(--hairline); cursor:pointer; }
 .frow:last-child { border-bottom:none; }
@@ -847,9 +847,9 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .empty-hint { margin-top:10px; background:#f5e9d4; border:1px solid #e6d3ad; color:#6b5520; padding:6px 16px; border-radius:var(--pill); font-size:12px; display:inline-flex; align-items:center; gap:6px; }
 .spin { width:18px; height:18px; border:2px solid var(--strong); border-top-color:var(--ink); border-radius:50%; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
-/* Dải "Hay dùng nhất" đã GỠ 2026-06-15 — build module báo cáo riêng sau. */
 
-/* NGUỒN ảnh: nick nào / sale nào (2026-06-15) — Lucide icon, không emoji. */
+
+/* Nguồn ảnh: nick nào, sale nào. */
 .src { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .src span { overflow:hidden; text-overflow:ellipsis; }
 .src-row { display:flex; align-items:center; gap:4px; margin-top:2px; }

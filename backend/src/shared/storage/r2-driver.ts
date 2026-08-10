@@ -1,5 +1,5 @@
 /**
- * r2-driver.ts — lưu file lên Cloudflare R2 (hoặc bất kỳ S3-compatible) qua AWS SDK v3.
+ * Lưu file lên Cloudflare R2 hoặc bất kỳ S3-compatible nào qua AWS SDK v3.
  *
  * R2 lưu ý:
  *   - region phải là 'auto'
@@ -46,7 +46,7 @@ async function objectExists(key: string): Promise<boolean> {
 
 export const r2Driver: StorageDriver = {
   publicUrl(key: string): string {
-    // KHÔNG có /{bucket}/ — domain công khai R2 đã map vào bucket root.
+    // Không có /{bucket}/ vì domain công khai R2 đã map vào bucket root.
     return `${config.s3PublicUrl}/${key}`;
   },
 

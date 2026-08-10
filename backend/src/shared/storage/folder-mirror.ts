@@ -1,22 +1,14 @@
 /**
- * folder-mirror.ts — Phase Kho Lưu Trữ (Storage) 2026-07-22.
+ * Soi ổ đĩa máy chủ là thấy đúng cây thư mục người dùng tạo trong kho:
  *
- * Người dùng tạo thư mục trong tab Kho → hệ thống tạo LUÔN thư mục THẬT trên đĩa
- * với tên đã bỏ dấu ("việt nam" → "viet_nam"), và đặt LIÊN KẾT CỨNG (hardlink) của
- * từng tệp vào trong đó với tên đọc được:
+ *   {uploadDir}/media/3b80dc4f….webp          kho phẳng, tên là vân tay nội dung
+ *   {uploadDir}/folders/viet_nam/bao_gia.pdf  hardlink, cùng byte, không tốn thêm đĩa
  *
- *   {uploadDir}/media/3b80dc4f….webp          ← kho phẳng, tên = vân tay nội dung (dedup)
- *   {uploadDir}/folders/viet_nam/bao_gia.pdf  ← hardlink, CÙNG byte, KHÔNG tốn thêm đĩa
+ * Dùng hardlink chứ không symlink vì hardlink là tên thứ hai của cùng khối byte, nên xoá
+ * "bản gốc" thì tên trong thư mục vẫn mở được bình thường.
  *
- * Vì sao hardlink chứ không phải shortcut (symlink): hardlink KHÔNG phải con trỏ —
- * nó là TÊN THỨ HAI của cùng khối byte. Xoá "bản gốc" thì tên trong thư mục vẫn mở
- * được bình thường. (Thực tế trong app này chưa có đường nào xoá byte: "Xoá khỏi kho"
- * chỉ set archivedAt, còn media-trash-gc-cron có invariant KHÔNG đụng byte vì phần lớn
- * blob dùng chung với lịch sử chat.)
- *
- * ⚠️ CHỈ chạy với STORAGE_DRIVER=local. Với R2 không có đĩa thật → skip + log debug.
- * ⚠️ MỌI hàm ở đây KHÔNG BAO GIỜ throw ra ngoài — hỏng thư mục đĩa không được làm
- *    hỏng request upload. Lỗi → logger.warn rồi trả false.
+ * Chỉ chạy với STORAGE_DRIVER=local, và không hàm nào ở đây được throw ra ngoài: thư mục
+ * đĩa chỉ là tiện ích soi bằng mắt, hỏng nó không được làm hỏng request upload.
  */
 import { link, copyFile, mkdir, rename, rm, stat, unlink, readdir } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
@@ -116,11 +108,11 @@ async function resolveLinkName(dir: string, wanted: string, srcAbs: string): Pro
 }
 
 /**
- * Đặt hardlink của 1 tệp kho vào thư mục đĩa. Idempotent — gọi lại không tạo bản trùng.
+ * Idempotent: gọi lại không tạo bản trùng.
  *
  * @param slug        slug thư mục (đã lưu ở DB)
  * @param objectKey   key kho phẳng, vd 'media/3b80….webp'
- * @param displayName tên hiển thị của asset ("Báo giá Q4.pdf") — sẽ slug thành tên tệp
+ * @param displayName tên hiển thị của asset, sẽ được slug thành tên tệp
  * @returns tên tệp đã đặt trong thư mục, hoặc null nếu skip/lỗi
  */
 export async function linkIntoFolder(
@@ -173,7 +165,7 @@ export async function linkIntoFolder(
 
 /**
  * Gỡ tên tệp khỏi thư mục đĩa (khi bỏ vào thùng rác / chuyển thư mục khác).
- * CHỈ xoá TÊN trong thư mục — byte trong kho phẳng giữ nguyên (đó là điểm của hardlink).
+ * Chỉ xoá tên trong thư mục, byte trong kho phẳng giữ nguyên. Đó là điểm của hardlink.
  */
 export async function unlinkFromFolder(slug: string, linkName: string): Promise<boolean> {
   if (!isFolderMirrorEnabled()) return false;
@@ -223,7 +215,7 @@ export async function renameFolderDir(
 
 /**
  * Xoá thư mục đĩa khi người dùng xoá thư mục kho.
- * MẶC ĐỊNH chỉ xoá khi thư mục RỖNG — an toàn, tránh gỡ nhầm hàng loạt tên tệp.
+ * Mặc định chỉ xoá khi thư mục rỗng, tránh gỡ nhầm hàng loạt tên tệp.
  * Truyền force=true để xoá cả các hardlink bên trong (byte kho phẳng VẪN GIỮ).
  */
 export async function removeFolderDir(slug: string, force = false): Promise<boolean> {

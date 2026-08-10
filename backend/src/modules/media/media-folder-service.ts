@@ -1,13 +1,6 @@
 /**
- * media-folder-service.ts — Phase Kho Lưu Trữ (Storage) 2026-07-22.
- *
- * Cầu nối DB ↔ thư mục THẬT trên đĩa (shared/storage/folder-mirror.ts).
- * Anh chốt: người dùng tạo thư mục trong tab Kho → hệ thống tạo LUÔN thư mục cùng tên
- * đã bỏ dấu trên đĩa ("việt nam" → "viet_nam"), và tệp trong thư mục đó xuất hiện thật
- * bên trong (liên kết cứng, không tốn thêm đĩa).
- *
- * MỌI hàm ở đây fire-and-forget được: không throw, chỉ log. Thư mục đĩa là TIỆN ÍCH
- * soi bằng tay — nó hỏng thì kho vẫn chạy bình thường (nguồn sự thật là DB).
+ * Cầu nối giữa DB và thư mục thật trên đĩa (shared/storage/folder-mirror.ts).
+ * Mọi hàm ở đây fire-and-forget được: nguồn sự thật là DB, thư mục đĩa hỏng thì kho vẫn chạy.
  */
 import { prisma } from '../../shared/database/prisma-client.js';
 import { keyFromPublicUrl } from '../../shared/storage/minio-client.js';
@@ -175,7 +168,7 @@ export async function mirrorAssetIntoFolder(
 
 /**
  * Gỡ tên tệp khỏi thư mục đĩa (bỏ vào thùng rác / chuyển sang thư mục khác).
- * CHỈ gỡ TÊN — byte trong kho phẳng giữ nguyên, nên tệp không hề mất.
+ * Chỉ gỡ tên, byte trong kho phẳng giữ nguyên nên tệp không hề mất.
  */
 export async function unmirrorAssetFromFolder(orgId: string, assetId: string): Promise<void> {
   if (!isFolderMirrorEnabled()) return;
@@ -263,7 +256,7 @@ export async function folderDepth(orgId: string, folderId: string | null): Promi
 
 /**
  * Xoá thư mục đĩa khi xoá thư mục kho. force=true gỡ cả liên kết bên trong
- * (byte kho phẳng VẪN GIỮ — xem folder-mirror).
+ * Byte trong kho phẳng vẫn giữ nguyên.
  */
 export async function deleteFolderOnDisk(orgId: string, folderId: string, force = false): Promise<void> {
   if (!isFolderMirrorEnabled()) return;

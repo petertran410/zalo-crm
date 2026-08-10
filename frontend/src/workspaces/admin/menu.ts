@@ -1,22 +1,13 @@
 /**
- * Admin Workspace — Menu Config
- * ──────────────────────────────
- * Hiển thị ĐẦY ĐỦ tất cả tính năng của hệ thống.
- * Dành cho Owner, Admin — toàn quyền quản lý.
+ * Menu đầy đủ cho Owner và Admin.
  *
- * ⚠️ FILE NÀY HIỆN KHÔNG ĐƯỢC DÙNG ĐỂ RENDER NAV (xác minh 2026-08-05).
- * Chỉ `SalesLayout.vue` đọc `activeConfig.menu`; `DefaultLayout.vue` — layout của
- * admin và 6 workspace khác (manager/marketing/finance/director/warehouse/
- * call-center) — dựng nav từ mảng `primaryTabs` HARDCODE bên trong chính nó.
- * Vì vậy nội dung dưới đây đã trôi khỏi nav thật (thiếu Marketing, còn ghi
- * "Lịch hẹn" thay vì "Công việc", thiếu gộp /appointments + /tasks).
+ * FILE NÀY KHÔNG ĐƯỢC DÙNG ĐỂ RENDER NAV: chỉ SalesLayout đọc activeConfig.menu, còn
+ * DefaultLayout dựng nav từ mảng primaryTabs hardcode bên trong nó, nên nội dung dưới
+ * đây đã trôi khỏi nav thật.
  *
- * KHÔNG chuyển DefaultLayout sang đọc file này nếu chưa điền menu cho cả 6
- * workspace kia: hôm nay tất cả đều dùng chung 10 tab của primaryTabs, chuyển
- * sang menu riêng sẽ khiến manager tụt còn 5 tab và marketing/finance/director/
- * warehouse/call-center còn 3 tab, mất hẳn Dashboard + Tin nhắn.
- *
- * Dropdown: Báo cáo (7 màn + Phân tích nâng cao) · Cài đặt (lối tắt).
+ * Đừng chuyển DefaultLayout sang đọc file này khi chưa điền menu cho cả 6 workspace kia:
+ * hiện tất cả dùng chung primaryTabs, chuyển sang menu riêng sẽ làm chúng mất Dashboard
+ * và Tin nhắn.
  */
 
 import type { MenuItemConfig } from '../types';
@@ -72,7 +63,7 @@ export const adminMenu: MenuItemConfig[] = [
   },
 ];
 
-/** Dropdown "Báo cáo" — 7 màn + Phân tích nâng cao. */
+/** Dropdown "Báo cáo": 7 màn và Phân tích nâng cao. */
 export const adminReportsDropdown: MenuItemConfig[] = [
   { key: 'rpt-overview',   title: 'Tổng quan điều hành',     icon: 'mdi-view-dashboard-outline', to: '/reports/tong-quan' },
   { key: 'rpt-nick',       title: 'Vận hành Nick Zalo',      icon: 'mdi-cellphone-link',         to: '/reports/nick' },
@@ -84,7 +75,7 @@ export const adminReportsDropdown: MenuItemConfig[] = [
   { key: 'rpt-analytics',  title: 'Phân tích nâng cao',      icon: 'mdi-chart-line',             to: '/analytics', dividerBefore: true },
 ];
 
-/** Dropdown "Cài đặt" — lối tắt hay dùng. */
+/** Dropdown "Cài đặt": lối tắt hay dùng. */
 export const adminSettingsShortcuts: MenuItemConfig[] = [
   { key: 'stg-profile',      title: 'Hồ sơ của tôi',      icon: 'mdi-account-outline',         to: '/settings/personal/profile' },
   { key: 'stg-users',        title: 'Nhân viên',           icon: 'mdi-account-group-outline',   to: '/settings/rbac/users',             resource: 'user' },

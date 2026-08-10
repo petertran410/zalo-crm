@@ -1,5 +1,5 @@
 /**
- * media-routes.ts — Phase Media Library 2026-06-11 (GĐ1).
+ * Route kho phương tiện: list, tải lên, lưu từ chat, gửi đi, thùng rác, thư mục, chia sẻ.
  *
  * Kho phương tiện: list / upload / "Lưu từ chat" / chèn vào chat.
  * RBAC (checklist điều 2-3): authMiddleware toàn route + requireGrant('media', …).
@@ -20,7 +20,7 @@ import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { registerAsset, bumpUsage, resolveSavedVisibility, generateWatermarkVariant, disableWatermark, saveAnnotatedVariant, logMediaUsage, normalizeTags, type MediaKind, type MediaStorageScope } from './media-service.js';
-// Kho Lưu Trữ 2026-07-22 — luật "ai thấy tệp nào" + thư mục thật trên đĩa.
+// Luật "ai thấy tệp nào" và thư mục thật trên đĩa.
 import { buildMediaScopeWhere, isOrgOwner, activeShareWhere } from './media-access.js';
 import {
   createFolderOnDisk, mirrorAssetIntoFolder, unmirrorAssetFromFolder,
@@ -46,7 +46,7 @@ const ALLOWED_IMAGE = [
   'image/x-icon', 'image/vnd.microsoft.icon',
 ];
 const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
-// File types: tái dùng list của chat-attachment (KHÔNG mở rộng tùy tiện — checklist reuse).
+// Tái dùng đúng list của chat-attachment, không mở rộng tuỳ tiện.
 const ALLOWED_FILE = [
   'application/pdf',
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -136,7 +136,7 @@ export function buildSendFileName(
 export async function mediaRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
 
-  // ── GET /api/v1/media — list kho (scope owner + visibility) ────────────────
+  // GET /api/v1/media : list kho (scope owner + visibility)
   app.get(
     '/api/v1/media',
     { preHandler: requireGrant('media', 'access') },
@@ -147,13 +147,13 @@ export async function mediaRoutes(app: FastifyInstance) {
         kind?: string; tag?: string; folderId?: string;
         visibility?: string; q?: string; limit?: string;
         // Lever 2 (anh chốt 2026-06-12): lọc sâu.
-        since?: string;        // '7d' | '30d' | '90d' — tải lên/dùng trong N ngày
+        since?: string;        // '7d' | '30d' | '90d': tải lên hoặc dùng trong N ngày
         sizeMin?: string; sizeMax?: string; // byte
         sort?: string;         // 'recent' (mặc định, theo lastUsedAt) | 'newest' (createdAt) | 'most_used' | 'name'
         // 2026-06-16: phân trang theo trang (block picker) + lọc theo người tải lên.
-        skip?: string;         // offset — bỏ qua N kết quả đầu (page * limit)
+        skip?: string;         // offset, bỏ qua N kết quả đầu (page * limit)
         ownerUserId?: string;  // chỉ ảnh của 1 sale cụ thể (dropdown người upload)
-        // Kho Lưu Trữ 2026-07-22: lọc theo phạm vi — 'catalog' (kho chung) | 'private_upload'
+        // Lọc theo phạm vi: catalog là kho chung, private_upload là tệp riêng của tab Kho.
         // (tệp tải lên tab Kho). Bỏ trống = cả hai (đúng quyền xem của người gọi).
         storageScope?: string;
       };
@@ -211,7 +211,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       const limit = Math.min(parseInt(q.limit ?? '60', 10) || 60, 200);
       const skip = Math.max(parseInt(q.skip ?? '0', 10) || 0, 0);
       // include owner + sourceZaloAccount để hiện "ảnh từ nick nào / sale nào" trong 1 query
-      // (chống N+1 — eng-review #6). select chỉ field cần, không kéo nguyên row nick/user.
+      // Chống N+1: select chỉ field cần, không kéo nguyên row nick hay user.
       // total: tổng số khớp filter (KHÔNG phụ thuộc skip/take) → FE hiện "Trang X/Y" + đếm.
       const [total, assets] = await Promise.all([
         prisma.mediaAsset.count({ where }),
@@ -248,7 +248,7 @@ export async function mediaRoutes(app: FastifyInstance) {
           kind: a.kind,
           name: a.name,
           visibility: a.visibility,
-          // Kho Lưu Trữ 2026-07-22 — FE hiện huy hiệu "Riêng tư / đã chia sẻ" + nút Chia sẻ
+          // FE cần để hiện huy hiệu "Riêng tư / đã chia sẻ" và nút Chia sẻ.
           // (chỉ chủ tệp mới thấy nút). mine=false + private_upload = xem nhờ liên kết.
           storageScope: a.storageScope,
           mine: a.ownerUserId === userId,
@@ -267,9 +267,8 @@ export async function mediaRoutes(app: FastifyInstance) {
           watermarkPosition: a.watermarkPosition,
           watermarkOpacity: a.watermarkOpacity,
           watermarkUrl: wm?.publicUrl ?? null,
-          // D11: ảnh lưu từ nick Riêng tư → FE hỏi xác nhận trước khi chia sẻ công khai.
-          // 2026-06-15: đọc CỜ riêng (không suy từ sourceZaloAccountId nữa — nick thường giờ
-          // cũng có id nguồn để hiển thị, nhưng KHÔNG phải Riêng tư).
+          // Đọc cờ riêng chứ không suy từ sourceZaloAccountId, vì nick thường giờ cũng có
+          // id nguồn để hiển thị nhưng không phải nick Riêng tư.
           sourceFromPrivateNick: a.sourceIsPrivateNick,
           favorited: favSet.has(a.id),
           // Nguồn để HIỂN THỊ "ảnh từ nick nào / sale nào / kích thước" (createdAt đã có ở trên).
@@ -285,7 +284,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/uploaders — danh sách người tải lên (cho dropdown lọc) ──
+  // GET /api/v1/media/uploaders : danh sách người tải lên (cho dropdown lọc)
   // Trả các sale có ảnh trong scope hiện tại + số lượng, để FE đổ vào dropdown "Người upload".
   // Nhận kind/visibility để dropdown KHỚP đúng view (vd block picker chỉ ảnh công khai).
   app.get(
@@ -329,7 +328,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/upload — tải ảnh/file lên kho (multipart) ───────────
+  // POST /api/v1/media/upload : tải ảnh/file lên kho (multipart)
   // Đảo lại quyết định auth-only của 2026-07-22: tải lên nay đòi media.create do admin cấp,
   // nên ai chưa có quyền này sẽ mất quyền tải lên ngay khi bản này lên.
   app.post(
@@ -410,7 +409,7 @@ export async function mediaRoutes(app: FastifyInstance) {
             storageScope,
           });
           // Thư mục THẬT trên đĩa (anh chốt): đặt liên kết cứng của tệp vào thư mục đã bỏ dấu.
-          // Fire-and-forget — hỏng thư mục đĩa KHÔNG được làm hỏng lần tải lên.
+          // Fire-and-forget: hỏng thư mục đĩa không được làm hỏng lần tải lên.
           if (folderId) void mirrorAssetIntoFolder(user.orgId, res.asset.id, folderId);
           created.push({ id: res.asset.id, name: res.asset.name, deduped: res.deduped });
         }
@@ -441,7 +440,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/save-from-chat — "Lưu vào Media" từ bong bóng chat ──
+  // POST /api/v1/media/save-from-chat : "Lưu vào Media" từ bong bóng chat
   app.post(
     '/api/v1/media/save-from-chat',
     { preHandler: requireGrant('media', 'create') },
@@ -459,9 +458,9 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/save-from-chat-batch — lưu NHIỀU tin (cả album / chọn 5-10 tấm) ──
+  // POST /api/v1/media/save-from-chat-batch : lưu NHIỀU tin (cả album / chọn 5-10 tấm)
   // Nhận messageIds[] (các tile cùng album, hoặc tập ảnh sale tự tick). Lưu lần lượt qua
-  // dedup (ảnh trùng không tốn thêm). 1 ảnh lỗi/blocked KHÔNG làm hỏng cả batch — trả per-item.
+  // dedup (ảnh trùng không tốn thêm). Một ảnh lỗi không làm hỏng cả batch, trả per-item.
   app.post(
     '/api/v1/media/save-from-chat-batch',
     { preHandler: requireGrant('media', 'create') },
@@ -489,7 +488,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/:id/send — chèn 1 asset từ kho vào 1 hội thoại ──────
+  // POST /api/v1/media/:id/send : chèn 1 asset từ kho vào 1 hội thoại
   app.post(
     '/api/v1/media/:id/send',
     { preHandler: requireGrant('media', 'access') },
@@ -531,7 +530,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         return reply.status(409).send({ error: 'Nick này đã bị xóa — chỉ xem lại lịch sử, không gửi được.', code: 'NICK_ARCHIVED' });
       }
 
-      // Guard sớm: nick phải đang KẾT NỐI (status connected) — tránh treo khi nick
+      // Nick phải đang kết nối, nếu không request sẽ treo cho tới lúc timeout.
       // QR-pending/disconnected. zaloOps cũng check lại, nhưng báo sớm rõ hơn cho sale.
       const instance = zaloPool.getInstance(conversation.zaloAccountId);
       if (!instance?.api || instance.status !== 'connected') {
@@ -557,12 +556,12 @@ export async function mediaRoutes(app: FastifyInstance) {
       const caption = body.caption ?? '';
 
       // GĐ1: tải object kho về temp → gửi từ local path (như chat hiện tại).
-      // (GĐ3 sẽ tối ưu forward/cache per-nick — chưa làm ở GĐ1.)
+      // (GĐ3 sẽ tối ưu forward và cache per-nick, chưa làm ở GĐ1.)
       let tmp: { path: string; cleanup: () => Promise<void> } | null = null;
       try {
         // ẢNH/VIDEO: KHÔNG truyền filename (name "Lưu từ chat" không đuôi → temp mất đuôi →
         // Zalo coi ảnh thành FILE). Để downloadMediaToTemp lấy đuôi .webp/.mp4 từ URL.
-        // FILE (pdf/excel/doc): BẮT BUỘC truyền tên thật + đuôi — zca-js lấy tên+đuôi khách
+      // FILE (pdf/excel/doc): bắt buộc truyền tên thật kèm đuôi, vì zca-js lấy tên và đuôi
         // nhìn thấy từ basename temp; thiếu đuôi → "file lỗi". (anh báo 2026-06-12.)
         const sendName = asset.kind === 'file' ? buildSendFileName(asset, blob) : undefined;
         tmp = await downloadMediaToTemp({ url: blob.publicUrl, filename: sendName }, asset.kind);
@@ -579,7 +578,7 @@ export async function mediaRoutes(app: FastifyInstance) {
           zaloMsgId = String(sendResult?.msgId || sendResult?.data?.msgId || '');
           content = JSON.stringify({ href: blob.publicUrl, thumb: blob.publicUrl, size: blob.sizeBytes });
         } else if (asset.kind === 'video') {
-          // VIDEO: gửi NATIVE (player + thumbnail + duration) như chat thường — KHÔNG sendFile
+      // VIDEO: gửi native (player, thumbnail, duration) như chat thường, không dùng sendFile
           // (sendFile làm video thành "file .mp4 tải về", mất player). Sinh thumbnail bằng ffmpeg,
           // mirror lên MinIO để lưu vào content. Native lỗi → fallback sendFile (vẫn gửi được).
           // (anh chốt 2026-06-12: video gửi từ kho phải đẹp như chat.)
@@ -636,7 +635,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         await bumpUsage(asset.id);
         // Gắn tag/dự án LÚC GỬI (anh chốt 2026-06-15): sale bấm chip gợi ý → tag dính vào ảnh,
         // bữa sau tìm lại dễ. Ghi tag TỰ DO (ai gửi cũng thêm được, kể cả ảnh công khai của
-        // sale khác — Anh chốt ưu tiên tag phong phú cho ảnh dùng chung, KHÁC scope owner của
+      // sale khác. Ưu tiên tag phong phú cho ảnh dùng chung, khác scope owner của
         // PATCH /:id và /bulk; CHỈ áp cho addTags lúc gửi, KHÔNG nới quyền sửa tên/visibility).
         if (Array.isArray(body.addTags) && body.addTags.length) {
           const merged = normalizeTags([...(asset.tagIds ?? []), ...body.addTags]);
@@ -667,7 +666,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── PATCH /api/v1/media/:id — sửa quyền/tên/tag (GĐ2) ──────────────────────
+  // PATCH /api/v1/media/:id : sửa quyền/tên/tag (GĐ2)
   app.patch(
     '/api/v1/media/:id',
     { preHandler: requireGrant('media', 'edit') },
@@ -686,11 +685,8 @@ export async function mediaRoutes(app: FastifyInstance) {
       });
       if (!asset) return reply.status(404).send({ error: 'Không tìm thấy media (hoặc không thuộc bạn)' });
 
-      // PRIVACY (D11 — anh chốt 2026-06-12: HỎI XÁC NHẬN thay vì chặn cứng):
-      // Ảnh lưu từ nick Riêng tư → chuyển Công khai PHẢI kèm confirmShare=true (FE đã hiện
-      // dialog "có thể chứa thông tin khách — chắc chắn chia sẻ?"). Thiếu → trả NEED_CONFIRM.
-      // 2026-06-15: đọc CỜ sourceIsPrivateNick (KHÔNG suy từ sourceZaloAccountId — nick thường
-      // giờ cũng có id nguồn nhưng không phải Riêng tư, không được bắt xác nhận oan).
+      // Ảnh lưu từ nick Riêng tư có thể chứa thông tin khách, nên chuyển sang Công khai phải
+      // kèm confirmShare. Đọc cờ sourceIsPrivateNick để không bắt nick thường xác nhận oan.
       const sharingPrivateNickAsset = body.visibility === 'public' && asset.sourceIsPrivateNick;
       if (sharingPrivateNickAsset && !body.confirmShare) {
         return reply.status(409).send({
@@ -729,9 +725,9 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── PATCH /api/v1/media/bulk — gán folder / tag HÀNG LOẠT (GĐ12 multi-select) ─
+  // PATCH /api/v1/media/bulk : gán folder / tag HÀNG LOẠT (GĐ12 multi-select)
   // Chỉ áp cho asset active CỦA MÌNH (hoặc view_all). KHÔNG đổi visibility ở bulk (tránh
-  // vô tình chia sẻ ảnh nick Riêng tư — privacy; đổi visibility vẫn qua PATCH /:id đơn lẻ
+  // vô tình chia sẻ ảnh nick Riêng tư. Đổi visibility vẫn qua PATCH /:id đơn lẻ
   // có cổng confirmShare D11). folderId=null = bỏ khỏi thư mục.
   app.patch(
     '/api/v1/media/bulk',
@@ -772,7 +768,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         }
       }
       // Gán thêm tag: hợp nhất tag mới vào tag cũ per-asset (không ghi đè tag đang có).
-      // normalizeTags: lowercase + dedup (gộp tag/dự án, không phân biệt hoa/thường — 2026-06-15).
+      // normalizeTags gộp hoa thường để lọc và đếm không bị tách nhóm.
       if (body.addTags && body.addTags.length) {
         const clean = normalizeTags(body.addTags);
         for (const a of scoped) {
@@ -785,7 +781,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/:id — vào THÙNG RÁC (xóa MỀM, giữ object MinIO) ────
+  // DELETE /api/v1/media/:id : vào THÙNG RÁC (xóa MỀM, giữ object MinIO)
   // GĐ13a (2026-06-12): archivedAt = dấu thùng rác. grant 'edit' đủ (sale xóa ảnh CỦA MÌNH).
   // Xóa của người khác cần view_all (admin). Ghi trashedById để audit + scope khôi phục.
   app.delete(
@@ -796,7 +792,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       const userId = (user as any).userId ?? user.id;
       const { id } = request.params as { id: string };
       const canViewAll = await userHasGrant(userId, 'media', 'view_all');
-      // Kho Lưu Trữ 2026-07-22: tệp riêng tư của tab Kho KHÔNG cho view_all xoá hộ —
+      // Tệp riêng tư của tab Kho không cho view_all xoá hộ,
       // chỉ chủ tệp hoặc Chủ tài khoản. (Kho chung giữ nguyên luật cũ.)
       const asset = await prisma.mediaAsset.findFirst({
         where: {
@@ -819,7 +815,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/download — tải file kho kèm ĐÚNG TÊN (2026-06-13, anh báo) ──────
+  // GET /api/v1/media/download : tải file kho kèm ĐÚNG TÊN (2026-06-13, anh báo)
   // Kho lưu object media/{hash}.ext → mở thẳng URL = tải về tên-hash. Endpoint proxy stream
   // file + Content-Disposition filename="tên thật" → trình duyệt tải đúng tên (như Zalo real).
   // Query: url (public URL kho) + name (tên hiển thị). Auth qua authMiddleware (hook preHandler).
@@ -830,7 +826,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       if (!q.url) return reply.status(400).send({ error: 'Thiếu url' });
       const key = keyFromPublicUrl(q.url);
       if (!key) return reply.status(400).send({ error: 'URL không thuộc kho' });
-      // BUFFER (không pipe stream) — pipe MinIO-stream vào reply đôi khi TREO (socket hang up,
+      // Đọc hết thành Buffer chứ không pipe: pipe stream vào reply đôi khi treo socket.
       // anh gặp 2 file). Đọc hết thành Buffer rồi send → ổn định, file kho nhỏ vài MB.
       const buf = await getObjectBuffer(key);
       if (!buf) return reply.status(404).send({ error: 'Không tìm thấy tệp' });
@@ -847,7 +843,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         ? `${rawName.replace(/\.[A-Za-z0-9]{1,8}$/, '')}${trueExt}`
         : rawName;
       const safeName = named.replace(/["\r\n]/g, '').slice(0, 200);
-      // RFC5987 cho tên Unicode (tiếng Việt) — filename* để trình duyệt giữ dấu.
+      // RFC5987 cho tên Unicode: filename* để trình duyệt giữ được dấu tiếng Việt.
       reply
         .header('Content-Disposition', `attachment; filename="${safeName}"; filename*=UTF-8''${encodeURIComponent(safeName)}`)
         .header('Content-Type', 'application/octet-stream')
@@ -857,7 +853,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/trash — danh sách asset trong thùng rác ──────────────
+  // GET /api/v1/media/trash : danh sách asset trong thùng rác
   // GĐ13a: chỉ asset archivedAt != null. Scope owner (sale) / view_all (admin). Có limit+cursor.
   // Trả thêm archivedAt + trashedById + daysUntilPurge (30 - số ngày đã trong thùng).
   app.get(
@@ -901,7 +897,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/:id/restore — khôi phục từ thùng rác về kho ─────────
+  // POST /api/v1/media/:id/restore : khôi phục từ thùng rác về kho
   // GĐ13a: archivedAt về null + clear trashedById. Scope như DELETE (chủ / view_all).
   app.post(
     '/api/v1/media/:id/restore',
@@ -923,9 +919,9 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/:id/permanent — xóa cứng 1 asset NGAY ─────────────
+  // DELETE /api/v1/media/:id/permanent : xóa cứng 1 asset NGAY
   // GĐ13a: cần grant media.delete (mạnh hơn edit). BẮT BUỘC asset đang ở thùng rác
-  // (archivedAt != null) — chặn bypass xóa cứng asset active. KHÔNG đụng byte MinIO.
+  // Bắt buộc asset đang ở thùng rác để chặn bypass xoá cứng asset active.
   app.delete(
     '/api/v1/media/:id/permanent',
     { preHandler: requireGrant('media', 'delete') },
@@ -945,7 +941,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/trash/empty — dọn sạch thùng rác (DB) ─────────────
+  // DELETE /api/v1/media/trash/empty : dọn sạch thùng rác (DB)
   // GĐ13a: cần grant media.delete. Sale xóa của mình; admin (view_all) xóa cả org.
   // Batch theo cap để không khóa DB lâu. KHÔNG đụng byte MinIO.
   app.delete(
@@ -959,7 +955,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         orgId: user.orgId, archivedAt: { not: null },
         ...(canViewAll ? {} : { ownerUserId: userId }),
       };
-      // Lấy id theo cap (deterministic) rồi xóa — tránh deleteMany ôm nghìn hàng 1 phát.
+      // Lấy id theo cap rồi mới xoá, tránh deleteMany ôm nghìn hàng một phát.
       const victims = await prisma.mediaAsset.findMany({
         where, select: { id: true }, orderBy: [{ archivedAt: 'asc' }, { id: 'asc' }], take: TRASH_EMPTY_BATCH,
       });
@@ -970,7 +966,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/:id/annotate — lưu bản annotated từ FE canvas (base64) ─
+  // POST /api/v1/media/:id/annotate : lưu bản annotated từ FE canvas (base64)
   app.post(
     '/api/v1/media/:id/annotate',
     { preHandler: requireGrant('media', 'edit') },
@@ -1018,7 +1014,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/:id/watermark — đóng dấu logo HS (sinh variant) ─────
+  // POST /api/v1/media/:id/watermark : đóng dấu logo HS (sinh variant)
   app.post(
     '/api/v1/media/:id/watermark',
     { preHandler: requireGrant('media', 'edit') },
@@ -1046,7 +1042,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/:id/watermark — TẮT watermark (gửi lại ảnh gốc) ────
+  // DELETE /api/v1/media/:id/watermark : TẮT watermark (gửi lại ảnh gốc)
   app.delete(
     '/api/v1/media/:id/watermark',
     { preHandler: requireGrant('media', 'edit') },
@@ -1070,7 +1066,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/folders — cây thư mục (scope owner + visibility) ─────
+  // GET /api/v1/media/folders : cây thư mục (scope owner + visibility)
   app.get(
     '/api/v1/media/folders',
     { preHandler: requireGrant('media', 'access') },
@@ -1096,7 +1092,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── POST /api/v1/media/folders — tạo thư mục ──────────────────────────────
+  // POST /api/v1/media/folders : tạo thư mục
   // Cùng grant với upload vì ai tải tệp lên được thì phải tạo được thư mục để xếp tệp.
   app.post(
     '/api/v1/media/folders',
@@ -1150,7 +1146,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── PATCH /api/v1/media/folders/:id — đổi tên thư mục (kéo theo thư mục đĩa) ──
+  // PATCH /api/v1/media/folders/:id : đổi tên thư mục (kéo theo thư mục đĩa)
   app.patch(
     '/api/v1/media/folders/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1188,7 +1184,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/folders/:id — xoá thư mục (kéo theo thư mục đĩa) ──
+  // DELETE /api/v1/media/folders/:id : xoá thư mục (kéo theo thư mục đĩa)
   // Tệp bên trong KHÔNG mất: MediaAsset.folderId SetNull (schema), byte kho phẳng giữ nguyên.
   // Chỉ các LIÊN KẾT trong thư mục đĩa bị gỡ (force=true).
   // FK cascade tự dọn thư mục con trong DB, nhưng tệp bên trong chúng phải tự trả về
@@ -1218,9 +1214,9 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/suggest?conversationId= — gợi ý ảnh theo NGỮ CẢNH (GĐ3a-4)
+  // GET /api/v1/media/suggest?conversationId= : gợi ý ảnh theo NGỮ CẢNH (GĐ3a-4)
   // Match MediaAsset.tagIds với tag/dự án của Contact đang chat. Chỉ ảnh CÔNG KHAI
-  // hoặc CỦA CHÍNH sale (không lộ ảnh riêng tư người khác — privacy).
+  // hoặc của chính sale đó, không lộ ảnh riêng tư của người khác.
   app.get(
     '/api/v1/media/suggest',
     { preHandler: requireGrant('media', 'access') },
@@ -1242,7 +1238,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         ...(Array.isArray(conv.contact.autoTags) ? conv.contact.autoTags : []),
       ].map((t) => String(t).replace(/^auto:/, '').trim().toLowerCase()).filter(Boolean);
       const custTags = [...new Set(raw)];
-      // 2026-06-20 (anh chốt): GỠ phần gợi-ý-ẢNH (items) — gợi ý không đúng + sale không dùng.
+  // Đã gỡ phần gợi ý ảnh: gợi ý không đúng và sale không dùng.
       // GIỮ contactTags để MediaSendPicker hiện chip "tag khách" khi sale gửi ảnh (vẫn dùng).
       // items/matchedTags trả rỗng để KHÔNG vỡ type FE cũ.
       void userId;
@@ -1250,7 +1246,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/tags — danh sách tag đang dùng (autocomplete) ─────────
+  // GET /api/v1/media/tags : danh sách tag đang dùng (autocomplete)
   // 2026-06-15: gom tag distinct từ MediaAsset.tagIds (scope owner + public), kèm số lượng,
   // xếp theo phổ biến. Dùng cho autocomplete ô tag (panel chi tiết) + chip "tag hay dùng"
   // lúc gửi khi khách chưa có tag (empty-state). unnest mảng tagIds bằng raw SQL.
@@ -1279,7 +1275,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/stats — top ảnh hay dùng + tổng quan (GĐ4 đo hiệu quả) ──
+  // GET /api/v1/media/stats : top ảnh hay dùng + tổng quan (GĐ4 đo hiệu quả)
   app.get(
     '/api/v1/media/stats',
     { preHandler: requireGrant('media', 'access') },
@@ -1316,7 +1312,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── Bộ sưu tập YÊU THÍCH cá nhân (GĐ5) — MediaAlbum kind='favorite', 1/user ─
+  // Bộ sưu tập YÊU THÍCH cá nhân (GĐ5) : MediaAlbum kind='favorite', 1/user
   async function getOrCreateFavoriteAlbum(orgId: string, userId: string) {
     let fav = await prisma.mediaAlbum.findFirst({ where: { orgId, ownerUserId: userId, kind: 'favorite' } });
     if (!fav) {
@@ -1327,7 +1323,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     return fav;
   }
 
-  // POST /media/:id/favorite — toggle yêu thích (thêm/bỏ khỏi bộ sưu tập cá nhân).
+  // POST /media/:id/favorite: toggle yêu thích.
   app.post(
     '/api/v1/media/:id/favorite',
     { preHandler: requireGrant('media', 'access') },
@@ -1356,7 +1352,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // GET /media/favorites — danh sách ảnh yêu thích của user.
+  // GET /media/favorites: danh sách ảnh yêu thích của user.
   app.get(
     '/api/v1/media/favorites',
     { preHandler: requireGrant('media', 'access') },
@@ -1382,7 +1378,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // POST /media/album/send — gửi NHIỀU asset (cả album) vào 1 hội thoại 1 lần (GĐ5).
+  // POST /media/album/send: gửi nhiều asset vào một hội thoại trong một lần.
   app.post(
     '/api/v1/media/album/send',
     { preHandler: requireGrant('media', 'access') },
@@ -1457,13 +1453,9 @@ export async function mediaRoutes(app: FastifyInstance) {
         const sendResult: any = await zaloOps.sendImage(
           conversation.zaloAccountId, threadId, threadType as 0 | 1, tmps.map((t) => t.path), io, body.caption ?? '',
         );
-        // FIX 2026-06-12 (anh chốt — bug album hiển thị 8+1 rời realtime):
-        // KHÔNG tạo placeholder 1-dòng cho album. Placeholder cũ (albumKey=null) hiện RỜI
-        // ngay sau gửi; echo Zalo (~1-2s) gom N-1 ảnh kia → "8 chung + 1 rời", F5 mới đủ.
-        // Bỏ placeholder → echo Zalo về (mỗi ảnh có albumKey chung) tự hiện ĐỦ N ảnh 1 cụm,
-        // KHÔNG bao giờ lệch. Tradeoff: sale chờ ~1-2s thấy album (chấp nhận được).
-        // KHÔNG bumpUsage/log ở đây nữa — chuyển sang khi echo về (tránh đếm khi gửi lỗi).
-        // Vẫn đếm usage NGAY vì gửi đã thành công (sendImage không throw):
+        // Cố tình KHÔNG tạo placeholder cho album: placeholder hiện rời ngay, rồi echo Zalo
+        // về sau 1-2s gom số ảnh còn lại thành "8 chung + 1 rời". Đợi echo thì luôn đủ cụm.
+        // Đếm usage ngay vì sendImage không throw nghĩa là đã gửi thành công.
         await prisma.conversation.update({ where: { id: conversation.id }, data: { lastMessageAt: new Date(), isReplied: true, unreadCount: 0 } });
         for (const a of assets) {
           await bumpUsage(a.id);
@@ -1492,7 +1484,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   );
 
   // ══════════════════════════════════════════════════════════════════════════
-  // CHIA SẺ TỆP RIÊNG TƯ — Phase Kho Lưu Trữ 2026-07-22
+  // CHIA SẺ TỆP RIÊNG TƯ
   // Tệp tải lên tab Kho mặc định chỉ người tải lên thấy. Muốn người khác xem →
   // chủ tệp tạo liên kết chia sẻ. KỂ CẢ admin cũng phải qua đường này (anh chốt).
   // Chỉ CHỦ TỆP (hoặc Chủ tài khoản) mới chia sẻ/thu hồi được.
@@ -1509,8 +1501,8 @@ export async function mediaRoutes(app: FastifyInstance) {
     });
   }
 
-  // ── POST /api/v1/media/:id/share — tạo liên kết chia sẻ ────────────────────
-  // body.userId (tuỳ chọn): chia sẻ ĐÍCH DANH — người đó mở tab Kho là thấy tệp.
+  // POST /api/v1/media/:id/share : tạo liên kết chia sẻ
+  // body.userId (tuỳ chọn): chia sẻ đích danh, người đó mở tab Kho là thấy tệp.
   //   Bỏ trống → liên kết MỞ trong org: ai đã đăng nhập + cầm token đều xem được.
   // body.expiresInHours (tuỳ chọn): tự hết hạn sau N giờ.
   app.post(
@@ -1525,7 +1517,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         const asset = await findOwnedAsset(user.orgId, id, userId, user);
         if (!asset) return reply.status(404).send({ error: 'Không tìm thấy tệp (hoặc tệp không phải của bạn)' });
 
-        // Người nhận phải cùng org — chống chia sẻ xuyên tổ chức.
+      // Người nhận phải cùng org để chống chia sẻ xuyên tổ chức.
         if (body.userId) {
           const target = await prisma.user.findFirst({
             where: { id: body.userId, orgId: user.orgId }, select: { id: true },
@@ -1555,9 +1547,8 @@ export async function mediaRoutes(app: FastifyInstance) {
             update: { token, revokedAt: null, expiresAt, sharedById: userId },
           });
         } else {
-          // Liên kết MỞ (sharedWithUserId=null): KHÔNG upsert được — Postgres coi mỗi NULL là
-          // khác nhau nên unique không ràng buộc nhánh này, và Prisma không nhận null trong
-          // khoá phức. Tự tìm-rồi-sửa/tạo để mỗi tệp chỉ có đúng 1 liên kết mở.
+          // Không upsert được vì Postgres coi mỗi NULL là khác nhau nên unique không ràng
+          // buộc nhánh này. Tự tìm rồi sửa để mỗi tệp chỉ có đúng một liên kết mở.
           const existing = await prisma.mediaShare.findFirst({
             where: { mediaAssetId: asset.id, orgId: user.orgId, sharedWithUserId: null },
             orderBy: { createdAt: 'asc' },
@@ -1593,7 +1584,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/:id/shares — ai đang xem được tệp này ────────────────
+  // GET /api/v1/media/:id/shares : ai đang xem được tệp này
   app.get(
     '/api/v1/media/:id/shares',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -1625,7 +1616,7 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── DELETE /api/v1/media/shares/:shareId — thu hồi ────────────────────────
+  // DELETE /api/v1/media/shares/:shareId : thu hồi
   // Giữ hàng (audit: ai từng xem được, bao nhiêu lượt), chỉ set revokedAt.
   app.delete(
     '/api/v1/media/shares/:shareId',
@@ -1648,8 +1639,8 @@ export async function mediaRoutes(app: FastifyInstance) {
     },
   );
 
-  // ── GET /api/v1/media/shared/:token — mở tệp bằng liên kết chia sẻ ─────────
-  // VẪN cần đăng nhập (authMiddleware ở hook đầu file) — liên kết chỉ mở trong org,
+  // GET /api/v1/media/shared/:token : mở tệp bằng liên kết chia sẻ
+  // Vẫn cần đăng nhập: liên kết chỉ mở được trong phạm vi org,
   // không phải liên kết công khai ra Internet. Token sai/thu hồi/hết hạn → 404 (không
   // phân biệt lý do, tránh dò token).
   app.get(
