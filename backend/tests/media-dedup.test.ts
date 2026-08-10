@@ -40,18 +40,52 @@ describe('media dedup — content-hash key', () => {
 });
 
 describe('compressImage — nén + fallback (sharp)', () => {
-  it('nén ảnh PNG lớn → ra webp, cạnh dài ≤ 2000', async () => {
-    // tạo ảnh 3000x100 đặc (vượt MAX_EDGE 2000)
+  // 2026-08-08 (anh chốt): ĐỔI HỢP ĐỒNG — trước đây mọi ảnh bị ép sang WebP và thu cạnh
+  // dài về 2000px. Nay GIỮ ĐỊNH DẠNG + GIỮ KÍCH THƯỚC, chỉ nén trong cùng định dạng.
+  // Ca test cũ ("PNG lớn → ra webp, cạnh ≤ 2000") mô tả hành vi KHÔNG CÒN ĐÚNG, viết lại.
+  it('GIỮ định dạng: png → png, jpeg → jpeg, webp → webp', async () => {
+    const mk = (fmt: 'png' | 'jpeg' | 'webp') =>
+      sharp({ create: { width: 600, height: 400, channels: 3, background: { r: 200, g: 60, b: 10 } } })[fmt]().toBuffer();
+
+    for (const [fmt, mime] of [['png', 'image/png'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp']] as const) {
+      const out = await compressImage(await mk(fmt), mime);
+      expect(out.mimeType).toBe(mime); // ← không bao giờ đổi sang định dạng khác
+    }
+  });
+
+  it('GIỮ kích thước: ảnh vượt 2000px KHÔNG còn bị thu nhỏ', async () => {
     const big = await sharp({
       create: { width: 3000, height: 100, channels: 3, background: { r: 200, g: 60, b: 10 } },
     }).png().toBuffer();
 
     const out = await compressImage(big, 'image/png');
+    expect(out.mimeType).toBe('image/png');
+    expect(out.width).toBe(3000);  // trước đây bị ép xuống 2000
+    expect(out.height).toBe(100);
+  });
+
+  it('JPEG vẫn nén thật (mất dữ liệu, quality 80) và nhỏ đi', async () => {
+    // Ảnh có gradient để nén JPEG có chỗ phát huy — nền một màu thì mã hoá kiểu gì cũng nhỏ.
+    const w = 800, h = 600;
+    const raw = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = (y * w + x) * 3;
+      raw[i] = (x / w) * 255; raw[i + 1] = (y / h) * 255; raw[i + 2] = ((x + y) % 64) * 4;
+    }
+    const src = await sharp(raw, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 95 }).toBuffer();
+
+    const out = await compressImage(src, 'image/jpeg');
     expect(out.compressed).toBe(true);
-    expect(out.mimeType).toBe('image/webp');
-    expect(out.width).toBeLessThanOrEqual(2000);
-    // bytes thật lưu phải nhỏ hơn ảnh gốc to (nén có tác dụng)
-    expect(out.buffer.length).toBeLessThan(big.length);
+    expect(out.mimeType).toBe('image/jpeg');
+    expect(out.width).toBe(w);
+    expect(out.buffer.length).toBeLessThan(src.length);
+  });
+
+  it('nén xong PHÌNH TO hơn gốc → giữ bản gốc, không lưu bản to hơn', async () => {
+    const tiny = await sharp({ create: { width: 8, height: 8, channels: 3, background: '#000' } }).png().toBuffer();
+    const out = await compressImage(tiny, 'image/png');
+    expect(out.buffer.length).toBeLessThanOrEqual(tiny.length);
+    expect(out.mimeType).toBe('image/png');
   });
 
   it('ảnh hỏng/không decode được → fallback bản gốc, không ném lỗi (D10)', async () => {

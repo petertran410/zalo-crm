@@ -236,7 +236,7 @@
 import { ref, computed, onMounted } from 'vue';
 import {
   listMediaPaged, listMediaUploaders, uploadMedia, listMediaFolders, createMediaFolder,
-  createOrReuseMediaFolder,
+  createOrReuseMediaFolder, deleteMediaFolder,
   listTrash, restoreMedia, permanentDeleteMedia, emptyTrash,
   archiveMedia, bulkUpdateMedia,
   type MediaAssetItem, type MediaFolder, type TrashItem,
@@ -576,6 +576,9 @@ async function onFolderPicked(e: Event) {
       .sort((a, b) => a.split('/').length - b.split('/').length);
 
     let reusedCount = 0;
+    // Thư mục do CHÍNH lần này tạo ra — chỉ những cái này mới được phép dọn nếu tải hỏng.
+    // Thư mục dùng lại (đã có từ trước) TUYỆT ĐỐI không đụng tới.
+    const createdHere: string[] = [];
     for (const dir of allDirs) {
       const segs = dir.split('/');
       const parentPath = segs.slice(0, -1).join('/');
@@ -586,12 +589,15 @@ async function onFolderPicked(e: Event) {
       // bắt lấy và DÙNG LẠI thư mục cũ. Nhờ vậy tải bổ sung tệp vào cây có sẵn vẫn hoạt động.
       const { id, reused } = await createOrReuseMediaFolder(leaf, parentId);
       if (reused) reusedCount++;
+      else createdHere.push(id);
       made.set(dir, id);
     }
 
     // Tải tệp vào đúng thư mục của nó. Lỗi 1 nhóm không chặn các nhóm còn lại.
+    // Ghi lại thư mục nào NHẬN ĐƯỢC ít nhất 1 tệp, để biết cái nào rỗng mà dọn.
     let ok = 0;
     let failed = 0;
+    const gotFiles = new Set<string>();
     for (const [dir, group] of byDir) {
       const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
       // Cắt mẻ ≤ UPLOAD_BATCH: một thư mục 50 ảnh mà gửi 1 request sẽ vượt trần
@@ -600,17 +606,46 @@ async function onFolderPicked(e: Event) {
         try {
           const res = await uploadMedia(b, { visibility: 'private', folderId: folderId ?? undefined });
           ok += res.assets.length;
+          if (folderId && res.assets.length) gotFiles.add(folderId);
         } catch {
           failed += b.length;
         }
       }
     }
+
+    // DỌN THƯ MỤC RỖNG (anh chốt 2026-08-08): thư mục được tạo TRƯỚC khi tải tệp, nên khi
+    // mọi tệp bị từ chối (thư mục mã nguồn toàn .py chẳng hạn) sẽ còn lại cả cây thư mục
+    // trống trơn. Chỉ xoá thư mục do lần này tạo, KHÔNG nhận được tệp nào, và KHÔNG có
+    // thư mục con nào còn sống — xoá từ sâu lên nông để cha rỗng sau con cũng được dọn.
+    const survivors = new Set(gotFiles);
+    const deepestFirst = allDirs
+      .filter((d) => createdHere.includes(made.get(d)!))
+      .sort((a, b) => b.split('/').length - a.split('/').length);
+    let cleaned = 0;
+    for (const dir of deepestFirst) {
+      const id = made.get(dir)!;
+      if (survivors.has(id)) continue;
+      // Còn con nào sống sót thì giữ cha lại (không thể xoá cha của thư mục có tệp).
+      const hasLiveChild = allDirs.some((d) => d.startsWith(`${dir}/`) && survivors.has(made.get(d)!));
+      if (hasLiveChild) { survivors.add(id); continue; }
+      try { await deleteMediaFolder(id); cleaned++; } catch { survivors.add(id); }
+    }
+
     const reusedNote = reusedCount > 0 ? `, ${reusedCount} thư mục đã có sẵn` : '';
-    toast.success(
-      failed > 0
-        ? `Đã tải ${ok} tệp vào ${allDirs.length} thư mục${reusedNote} (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
-        : `Đã tải ${ok} tệp vào ${allDirs.length} thư mục${reusedNote}`,
-    );
+    const keptFolders = allDirs.length - cleaned;
+    if (ok === 0 && failed > 0) {
+      toast.warning(
+        `Không tải được tệp nào (${failed} tệp — nhiều khả năng định dạng không hỗ trợ). ` +
+        `Đã dọn ${cleaned} thư mục rỗng vừa tạo.`,
+      );
+    } else {
+      const cleanNote = cleaned > 0 ? `, dọn ${cleaned} thư mục rỗng` : '';
+      toast.success(
+        failed > 0
+          ? `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote} (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
+          : `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote}`,
+      );
+    }
     if (activeFolder.value) expanded.value = new Set(expanded.value).add(activeFolder.value);
     loadFolders();
     reload();

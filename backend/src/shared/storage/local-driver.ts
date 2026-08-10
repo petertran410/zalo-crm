@@ -33,7 +33,13 @@ export const localDriver: StorageDriver = {
 
   async uploadBuffer(buffer: Buffer, mimeType: string, originalName?: string): Promise<UploadResult> {
     if (!buffer || buffer.length === 0) throw new Error('uploadBuffer: empty buffer (refusing 0-byte object)');
-    const ext = originalName ? extname(originalName) : mimeToExt(mimeType);
+    // Đuôi lấy theo NỘI DUNG THẬT (mimeType) trước, tên tệp chỉ là phương án dự phòng
+    // cho loại mà mimeToExt chưa biết (pdf/docx/xlsx/zip…) — 2026-08-08.
+    //
+    // Trước đây lấy theo tên tệp: ảnh nén xong thành WebP mà key vẫn là `{hash}.png`, nên
+    // /files phục vụ ruột WebP kèm Content-Type: image/png. Trình duyệt tự đoán nên không
+    // ai để ý, nhưng đó là nói dối — và nguy hiểm hơn kể từ khi /files bật `nosniff`.
+    const ext = mimeToExt(mimeType) || (originalName ? extname(originalName) : '');
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const key = `media/${contentHash}${ext}`;
     const url = this.publicUrl(key);

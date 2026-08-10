@@ -266,6 +266,15 @@ export async function createMediaFolder(
 }
 
 /**
+ * Xoá 1 thư mục. Tệp bên trong KHÔNG mất — chỉ bị bỏ ra khỏi thư mục (folderId = null),
+ * byte trong kho phẳng giữ nguyên. Xoá thư mục cha kéo theo cả cây con (BE cascade).
+ */
+export async function deleteMediaFolder(id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/media/folders/${id}`);
+  return data;
+}
+
+/**
  * Như createMediaFolder nhưng TRÙNG TÊN thì dùng lại thư mục sẵn có thay vì ném lỗi.
  * Dành cho luồng tải-cả-thư-mục: tải lại đúng cây đó lần hai phải chạy tiếp được, chứ
  * không được hỏng chỉ vì thư mục đã tồn tại từ lần trước.

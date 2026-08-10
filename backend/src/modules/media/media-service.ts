@@ -30,11 +30,29 @@ import { logger } from '../../shared/utils/logger.js';
 import type { MediaAsset, MediaBlob } from '@prisma/client';
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-// Ngưỡng nén: cạnh dài tối đa + chất lượng webp. Ảnh bảng giá/mặt bằng giữ rõ chữ.
-const MAX_EDGE = 2000;
-// 2026-07-22 (anh chốt "nén 80%"): hạ 82 → 80. Ảnh chụp điện thoại thường còn ~10-20%
-// dung lượng gốc; bảng giá/mặt bằng vẫn đọc rõ chữ ở mức này.
-const WEBP_QUALITY = 80;
+
+/*
+ * 2026-08-08 (anh chốt): GIỮ NGUYÊN ĐỊNH DẠNG và GIỮ NGUYÊN KÍCH THƯỚC.
+ *   png → png       jpg/jpeg → jpg       webp → webp
+ * Trước đây mọi ảnh đều bị ép sang WebP và thu cạnh dài về 2000px. Hệ quả: tải lên
+ * "bang-gia.png" nhưng tải về lại là ruột WebP mang đuôi .png (Photoshop/Word/thư viện
+ * ảnh Android tin vào đuôi nên báo hỏng), và ảnh in khổ lớn bị thu nhỏ mất chi tiết.
+ * VẪN NÉN, chỉ là nén TRONG CÙNG định dạng — xem QUALITY ngay dưới.
+ * (MAX_EDGE đã bỏ hẳn: không còn đường nào thu nhỏ ảnh.)
+ */
+
+/**
+ * `quality` là THANG CHẤT LƯỢNG của bộ mã hoá (0–100), KHÔNG phải mục tiêu dung lượng:
+ * không có nghĩa "còn 80%" cũng không phải "giảm 80%". Dung lượng ra phụ thuộc hoàn toàn
+ * vào nội dung ảnh — đo thực tế: ảnh nhiễu còn ~71%, ảnh chụp thường còn ~10–20%.
+ */
+const QUALITY = 80;
+
+// PNG là định dạng KHÔNG MẤT DỮ LIỆU. Muốn nhỏ đi thật sự thì phải giảm số màu
+// (palette hoá) — với ảnh chụp/gradient sẽ thấy rõ vệt màu. Nên PNG chỉ ép mức nén
+// lossless cao nhất: an toàn tuyệt đối về chất lượng, đổi lại chỉ nhỏ được ít.
+const PNG_COMPRESSION_LEVEL = 9;
+
 // GIF (ảnh động) KHÔNG nén qua sharp (mất animation) — giữ nguyên.
 const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -136,17 +154,40 @@ export async function compressImage(
     return { buffer, mimeType, width: w, height: h, compressed: false };
   }
   try {
-    const img = sharp(buffer, { failOn: 'error' });
-    const meta = await img.metadata();
-    const needResize = (meta.width ?? 0) > MAX_EDGE || (meta.height ?? 0) > MAX_EDGE;
-    let pipeline = img.rotate(); // tôn trọng EXIF orientation
-    if (needResize) {
-      pipeline = pipeline.resize(MAX_EDGE, MAX_EDGE, { fit: 'inside', withoutEnlargement: true });
+    // GIỮ ĐỊNH DẠNG + GIỮ KÍCH THƯỚC (2026-08-08): không đổi sang WebP, không resize.
+    //   .rotate()          — vẫn áp EXIF orientation vào pixel, nếu không ảnh chụp dọc
+    //                        bằng điện thoại sẽ hiện nằm ngang ở chỗ không đọc EXIF.
+    //   .keepIccProfile()  — giữ hồ sơ màu, nếu bỏ thì ảnh đã hiệu chỉnh màu sẽ lệch tông.
+    //                        EXIF/GPS vẫn bị lược đi (mặc định của sharp) — tránh lộ vị trí
+    //                        chụp khi gửi ảnh cho khách.
+    const pipeline = sharp(buffer, { failOn: 'error' }).rotate().keepIccProfile();
+
+    const encoded =
+      mimeType === 'image/png'
+        // PNG lossless: chỉ ép mức nén cao nhất, KHÔNG palette hoá (sẽ mất màu).
+        ? pipeline.png({ compressionLevel: PNG_COMPRESSION_LEVEL })
+        : mimeType === 'image/webp'
+          ? pipeline.webp({ quality: QUALITY })
+          : pipeline.jpeg({ quality: QUALITY, mozjpeg: true });
+
+    const out = await encoded.toBuffer({ resolveWithObject: true });
+
+    // Nén xong mà PHÌNH TO hơn bản gốc thì giữ bản gốc (hay gặp với PNG đã tối ưu sẵn,
+    // hoặc JPEG chất lượng thấp bị mã hoá lại). Không có lý do gì lưu bản to hơn.
+    if (out.data.length >= buffer.length) {
+      const dim = (() => { try { return imageSize(buffer); } catch { return undefined; } })();
+      return {
+        buffer,
+        mimeType,
+        width: dim?.width ?? out.info.width,
+        height: dim?.height ?? out.info.height,
+        compressed: false,
+      };
     }
-    const out = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer({ resolveWithObject: true });
+
     return {
       buffer: out.data,
-      mimeType: 'image/webp',
+      mimeType, // ← KHÔNG đổi: png ra png, jpg ra jpg, webp ra webp
       width: out.info.width,
       height: out.info.height,
       compressed: true,
