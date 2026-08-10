@@ -24,27 +24,18 @@ import { safeFolderSlug, slugifyFolderName } from '../../shared/folder-slug.js';
 import { logger } from '../../shared/utils/logger.js';
 
 /**
- * Hai tên thư mục có phải LÀ MỘT dưới mắt người dùng không (2026-08-08).
- *
- * So bằng chuỗi đã bỏ dấu — đúng bằng lớp tương đương gây đụng thư mục đĩa:
- *   "Việt Nam" ≡ "việt nam" ≡ "viet-nam" ≡ "Viêt Nam!!!"  (đều ra "viet_nam")
- *
- * Dùng để CHẶN tạo hai thư mục trùng tên trong cùng một cấp, thay vì lặng lẽ đẻ ra
- * "viet_nam_2" — thư mục đĩa phải soi được bằng mắt thì mới có ích, mà tên đĩa lệch
- * tên trong kho là mất luôn tính chất đó.
+ * So bằng chuỗi đã bỏ dấu, đúng bằng lớp tương đương gây đụng thư mục đĩa: "Việt Nam",
+ * "việt nam", "viet-nam" đều ra "viet_nam" nên với người dùng chúng là một tên.
  */
 export function isSameFolderName(a: string, b: string): boolean {
   const sa = slugifyFolderName(a);
   const sb = slugifyFolderName(b);
-  // Tên toàn emoji/dấu slug ra rỗng — coi như KHÁC nhau, để không chặn oan mọi tên lạ.
+  // Tên toàn emoji slug ra rỗng, coi như khác nhau để không chặn oan mọi tên lạ.
   if (!sa || !sb) return false;
   return sa === sb;
 }
 
-/**
- * Thư mục anh em (cùng org + cùng cha) đã mang tên tương đương chưa.
- * `excludeId` để lúc đổi tên không tự so với chính mình.
- */
+/** `excludeId` để lúc đổi tên không tự so với chính mình. */
 export async function findSiblingWithSameName(
   orgId: string,
   parentId: string | null,
@@ -63,18 +54,12 @@ export async function findSiblingWithSameName(
   return siblings.find((s) => isSameFolderName(s.name, name)) ?? null;
 }
 
-/** Sâu tối đa của cây thư mục — chặn người dùng dựng cây vô hạn + chặn vòng lặp cha-con. */
+/** Vừa chặn dựng cây vô hạn, vừa là lưới an toàn nếu dữ liệu cũ lỡ có vòng lặp cha con. */
 export const MAX_FOLDER_DEPTH = 10;
 
 /**
- * Chọn đường dẫn slug CHƯA BỊ THƯ MỤC KHÁC CHIẾM (2026-08-08, phát hiện lúc thử biên).
- *
- * Bỏ dấu là phép ánh xạ NHIỀU-VỀ-MỘT: "Việt Nam", "việt nam", "viet-nam", "Viêt Nam!!!"
- * đều ra "viet_nam". Trước đây mọi thư mục cùng slug dùng CHUNG một thư mục đĩa, nên
- * tệp của hai thư mục khác nhau nằm lẫn vào nhau — và xoá một thư mục (rm -r) sẽ cuốn
- * luôn liên kết của thư mục kia. Nay thư mục thứ hai lấy "viet_nam_2".
- *
- * Chỉ đụng độ trong CÙNG một tổ chức mới tính (diskSlug là duy nhất theo org).
+ * Lưới an toàn cho dữ liệu cũ đã trùng slug từ trước khi có luật chặn trùng tên: hai thư
+ * mục dùng chung một thư mục đĩa thì xoá cái này sẽ cuốn luôn liên kết của cái kia.
  */
 async function uniqueFolderSlug(
   orgId: string,
@@ -92,8 +77,8 @@ async function uniqueFolderSlug(
 }
 
 /**
- * Phần THUẦN của uniqueFolderSlug — tách ra để thử được mà không cần DB.
- * `isTaken` trả true nếu đường dẫn slug đó đã có thư mục KHÁC chiếm.
+ * Phần thuần của uniqueFolderSlug, tách ra để thử được mà không cần DB.
+ * `isTaken` trả true nếu đường dẫn slug đó đã có thư mục khác chiếm.
  */
 export async function pickFreeFolderSlug(
   name: string,
@@ -106,14 +91,11 @@ export async function pickFreeFolderSlug(
     const candidate = joinFolderSlug(parentSlug, i === 1 ? base : `${base}_${i}`);
     if (!(await isTaken(candidate))) return candidate;
   }
-  // 50 thư mục cùng tên trong một cấp — cực hiếm; rơi về id cho chắc chắn không đụng.
+  // 50 thư mục cùng tên một cấp là cực hiếm, rơi về id cho chắc chắn không đụng.
   return joinFolderSlug(parentSlug, `${base}_${folderId.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}`);
 }
 
-/**
- * Slug đĩa của thư mục CHA (null nếu là thư mục gốc / chưa mirror). Cha chưa có slug —
- * thư mục tạo trước khi có tính năng mirror — thì tạo bù, để cây con không bị treo ở gốc.
- */
+/** Thư mục tạo trước khi có tính năng mirror thì chưa có slug, tạo bù để cây con khỏi treo ở gốc. */
 async function parentSlugOf(parentId: string | null | undefined): Promise<string | null> {
   if (!parentId) return null;
   const parent = await prisma.mediaAlbum.findUnique({
@@ -125,13 +107,7 @@ async function parentSlugOf(parentId: string | null | undefined): Promise<string
   return createFolderOnDisk(parent.id, parent.name, parent.parentId);
 }
 
-/**
- * Tạo thư mục đĩa cho 1 MediaAlbum và ghi lại slug đã dùng vào DB.
- * Gọi ngay sau khi tạo thư mục trong kho.
- *
- * 2026-08-07: thư mục lồng nhau — slug là đường dẫn tương đối ("viet_nam/bao_gia"), dựng
- * bằng cách nối slug của cha. Cha tạo trước con nên chuỗi này luôn phân giải được.
- */
+/** slug là đường dẫn tương đối nhiều cấp ("viet_nam/bao_gia"), dựng bằng cách nối slug của cha. */
 export async function createFolderOnDisk(
   folderId: string,
   name: string,
@@ -180,7 +156,6 @@ export async function mirrorAssetIntoFolder(
     ]);
     if (!asset || !folder) return;
 
-    // Thư mục tạo trước khi có tính năng này → chưa có slug, tạo bù bây giờ.
     const slug = folder.diskSlug ?? (await createFolderOnDisk(folder.id, folder.name, folder.parentId));
     if (!slug) return;
 
@@ -218,12 +193,9 @@ export async function unmirrorAssetFromFolder(orgId: string, assetId: string): P
 }
 
 /**
- * Đổi tên thư mục kho → đổi tên thư mục đĩa + cập nhật slug trong DB.
- *
- * 2026-08-07 (cây lồng nhau): rename trên đĩa kéo theo CẢ cây con (một lệnh rename thư mục),
- * nhưng diskSlug của các thư mục con trong DB là chuỗi đường dẫn nên đã trỏ sai — phải
- * viết lại tiền tố cho toàn bộ con cháu. Không làm bước này thì lần tải tệp kế tiếp vào
- * thư mục con sẽ mkdir lại cây cũ ở chỗ cũ.
+ * Rename trên đĩa kéo theo cả cây con trong một lệnh, nhưng diskSlug của con cháu trong DB
+ * là chuỗi đường dẫn nên trỏ sai và phải viết lại tiền tố, nếu không lần tải tệp kế tiếp
+ * vào thư mục con sẽ mkdir lại cây cũ ở chỗ cũ.
  */
 export async function renameFolderOnDisk(orgId: string, folderId: string, newName: string): Promise<void> {
   if (!isFolderMirrorEnabled()) return;
@@ -233,15 +205,12 @@ export async function renameFolderOnDisk(orgId: string, folderId: string, newNam
     });
     if (!folder) return;
     const oldSlug = folder.diskSlug;
-    // Đổi tên cũng phải né đụng slug như lúc tạo (vd đổi "Hồ sơ" → "Việt Nam" khi đã có
-    // thư mục "việt nam") — nếu không rename sẽ bị bỏ qua và tên đĩa lệch hẳn tên trong kho.
     const target = await uniqueFolderSlug(orgId, folder.id, newName, await parentSlugOf(folder.parentId));
     const slug = await renameFolderDir(folder.id, oldSlug, target);
     if (!slug || slug === oldSlug) return;
 
     await prisma.mediaAlbum.update({ where: { id: folder.id }, data: { diskSlug: slug } });
 
-    // Viết lại tiền tố đường dẫn cho con cháu ("cu/con" → "moi/con").
     if (oldSlug) {
       const descendants = await collectDescendantIds(orgId, folder.id);
       if (descendants.length) {
@@ -262,11 +231,7 @@ export async function renameFolderOnDisk(orgId: string, folderId: string, newNam
   }
 }
 
-/**
- * Mọi id thư mục con cháu của `rootId` (KHÔNG gồm chính nó), duyệt theo tầng.
- * Giới hạn MAX_FOLDER_DEPTH tầng — vừa khớp giới hạn lúc tạo, vừa là lưới an toàn nếu
- * dữ liệu cũ lỡ có vòng lặp cha-con.
- */
+/** Mọi id thư mục con cháu của `rootId`, không gồm chính nó. */
 export async function collectDescendantIds(orgId: string, rootId: string): Promise<string[]> {
   const out: string[] = [];
   let frontier = [rootId];
@@ -281,7 +246,7 @@ export async function collectDescendantIds(orgId: string, rootId: string): Promi
   return out;
 }
 
-/** Số tầng từ gốc tới thư mục này (gốc = 0). Trả MAX_FOLDER_DEPTH nếu vượt giới hạn. */
+/** Số tầng từ gốc tới thư mục này, gốc = 0. */
 export async function folderDepth(orgId: string, folderId: string | null): Promise<number> {
   let depth = 0;
   let cur = folderId;

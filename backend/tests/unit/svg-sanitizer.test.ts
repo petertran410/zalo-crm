@@ -1,9 +1,6 @@
 /**
- * svg-sanitizer.test.ts — Kho lưu trữ 2026-08-08.
- *
- * SVG được LƯU NGUYÊN DẠNG VECTOR (không raster hoá) nên bộ lọc là thứ DUY NHẤT đứng giữa
- * tệp người dùng tải lên và /files — nơi phục vụ byte thật mà KHÔNG cần đăng nhập.
- * Mỗi ca dưới đây là một đường tấn công thật; hỏng ca nào là XSS lưu trữ ca đó.
+ * SVG lưu nguyên dạng vector nên bộ lọc là thứ duy nhất đứng giữa tệp người dùng và /files,
+ * nơi phục vụ byte thật không cần đăng nhập. Hỏng ca nào ở đây là XSS lưu trữ ca đó.
  */
 import { describe, it, expect } from 'vitest';
 import { sanitizeSvg, SvgRejectedError, SVG_MAX_BYTES } from '../../src/shared/svg-sanitizer.js';
@@ -12,7 +9,7 @@ const NS = 'xmlns="http://www.w3.org/2000/svg"';
 const svg = (inner: string, attrs = '') => Buffer.from(`<svg ${NS} width="100" height="100" ${attrs}>${inner}</svg>`);
 const out = (b: Buffer) => sanitizeSvg(b).toString('utf8');
 
-describe('sanitizeSvg — giữ được SVG lành', () => {
+describe('sanitizeSvg: giữ được SVG lành', () => {
   it('hình cơ bản đi qua nguyên vẹn', () => {
     const s = out(svg('<rect width="100" height="100" fill="blue"/>'));
     expect(s).toContain('<svg');
@@ -20,7 +17,7 @@ describe('sanitizeSvg — giữ được SVG lành', () => {
     expect(s).toContain('blue');
   });
 
-  it('giữ path, group, style nội tuyến — thứ logo thật hay dùng', () => {
+  it('giữ path, group, style nội tuyến, thứ logo thật hay dùng', () => {
     const s = out(svg('<g><path d="M0 0 L10 10" stroke="#f00" stroke-width="2"/></g>'));
     expect(s).toContain('path');
     expect(s).toContain('M0 0 L10 10');
@@ -29,11 +26,11 @@ describe('sanitizeSvg — giữ được SVG lành', () => {
   it('giữ VECTOR (không biến thành ảnh raster)', () => {
     const s = out(svg('<circle cx="50" cy="50" r="40"/>'));
     expect(s).toContain('<svg');
-    expect(s).toContain('circle');   // vẫn sửa/phóng to được — lý do chọn làm sạch thay vì raster hoá
+    expect(s).toContain('circle'); // vẫn phóng to và sửa được, lý do chọn làm sạch thay vì raster hoá
   });
 });
 
-describe('sanitizeSvg — chặn mã thực thi', () => {
+describe('sanitizeSvg: chặn mã thực thi', () => {
   const strip = (inner: string, attrs = '') => out(svg(inner, attrs)).toLowerCase();
 
   it('bỏ <script>', () => {
@@ -48,7 +45,7 @@ describe('sanitizeSvg — chặn mã thực thi', () => {
     expect(strip('<image onerror="alert(1)" width="10" height="10"/>')).not.toContain('onerror');
   });
 
-  it('bỏ <foreignObject> — cửa nhét HTML tuỳ ý', () => {
+  it('bỏ <foreignObject>, cửa nhét HTML tuỳ ý', () => {
     const s = strip('<foreignObject><body xmlns="http://www.w3.org/1999/xhtml"><img src=x onerror=alert(1)></body></foreignObject>');
     expect(s).not.toContain('foreignobject');
     expect(s).not.toContain('onerror');
@@ -76,8 +73,8 @@ describe('sanitizeSvg — chặn mã thực thi', () => {
   });
 });
 
-describe('sanitizeSvg — FAIL-CLOSED (từ chối hẳn, không lưu bản gốc)', () => {
-  it('DOCTYPE/ENTITY → ném lỗi, KHÔNG cố lọc (chặn XXE)', () => {
+describe('sanitizeSvg: FAIL-CLOSED (từ chối hẳn, không lưu bản gốc)', () => {
+  it('DOCTYPE và ENTITY bị ném lỗi thay vì cố lọc, để chặn XXE', () => {
     const xxe = Buffer.from(
       `<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x SYSTEM "file:///etc/passwd">]><svg ${NS}><text>&x;</text></svg>`,
     );
@@ -85,23 +82,23 @@ describe('sanitizeSvg — FAIL-CLOSED (từ chối hẳn, không lưu bản gố
     expect(() => sanitizeSvg(xxe)).toThrow(/XXE/i);
   });
 
-  it('bom entity (billion laughs) → ném lỗi ngay ở bước DOCTYPE', () => {
+  it('bom entity bị ném lỗi ngay ở bước DOCTYPE', () => {
     const bomb = Buffer.from(
       `<?xml version="1.0"?><!DOCTYPE s [<!ENTITY a "aaaa"><!ENTITY b "&a;&a;&a;&a;">]><svg ${NS}><text>&b;</text></svg>`,
     );
     expect(() => sanitizeSvg(bomb)).toThrow(SvgRejectedError);
   });
 
-  it('tệp rỗng → ném lỗi', () => {
+  it('tệp rỗng bị ném lỗi', () => {
     expect(() => sanitizeSvg(Buffer.alloc(0))).toThrow(SvgRejectedError);
   });
 
-  it('vượt trần kích thước → ném lỗi', () => {
+  it('vượt trần kích thước bị ném lỗi', () => {
     const huge = Buffer.concat([svg('<rect/>'), Buffer.alloc(SVG_MAX_BYTES + 1, 0x20)]);
     expect(() => sanitizeSvg(huge)).toThrow(/quá lớn/i);
   });
 
-  it('không phải SVG → ném lỗi (không lặng lẽ cho qua)', () => {
+  it('không phải SVG thì ném lỗi, không lặng lẽ cho qua', () => {
     expect(() => sanitizeSvg(Buffer.from('<html><body>xin chào</body></html>'))).toThrow(SvgRejectedError);
     expect(() => sanitizeSvg(Buffer.from('chỉ là chữ thường'))).toThrow(SvgRejectedError);
   });

@@ -33,10 +33,8 @@ export function isFolderMirrorEnabled(): boolean {
 }
 
 /**
- * Chặn cứng slug thoát khỏi FOLDERS_ROOT (slug đã chỉ còn [a-z0-9_], đây là lớp thứ 2).
- *
- * 2026-08-07 (thư mục lồng nhau): slug giờ là ĐƯỜNG DẪN TƯƠNG ĐỐI nhiều cấp nối bằng '/',
- * vd "viet_nam/bao_gia". Mỗi đoạn vẫn chỉ [a-z0-9_] nên '..' không lọt qua được regex.
+ * Chặn cứng slug thoát khỏi FOLDERS_ROOT. slug là đường dẫn tương đối nhiều cấp, mỗi đoạn
+ * chỉ [a-z0-9_] nên '..' không lọt qua được regex.
  */
 function folderPath(slug: string): string | null {
   if (!slug || !/^[a-z0-9_]+(\/[a-z0-9_]+)*$/.test(slug)) return null;
@@ -45,7 +43,7 @@ function folderPath(slug: string): string | null {
   return p;
 }
 
-/** Nối slug cha + tên đoạn con thành đường dẫn tương đối. Cha rỗng = thư mục gốc. */
+/** Cha rỗng nghĩa là thư mục gốc. */
 export function joinFolderSlug(parentSlug: string | null | undefined, segment: string): string {
   return parentSlug ? `${parentSlug}/${segment}` : segment;
 }
@@ -70,10 +68,7 @@ export async function ensureFolderDir(
   return ensureFolderDirExact(joinFolderSlug(parentSlug, safeFolderSlug(name, folderId)), folderId);
 }
 
-/**
- * Như ensureFolderDir nhưng nhận THẲNG đường dẫn slug đã tính sẵn — dùng khi caller đã
- * giải quyết xong việc đụng tên (xem media-folder-service.uniqueFolderSlug).
- */
+/** Nhận thẳng slug đã tính sẵn, dùng khi caller đã tự giải quyết việc đụng tên. */
 export async function ensureFolderDirExact(slug: string, folderId = '?'): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
   const dir = folderPath(slug);
@@ -194,10 +189,7 @@ export async function unlinkFromFolder(slug: string, linkName: string): Promise<
   }
 }
 
-/**
- * Đổi tên thư mục kho → đổi tên thư mục đĩa. Trả slug mới, hoặc null nếu skip/lỗi.
- * `newSlug` là đường dẫn ĐÃ tính sẵn và đã né đụng độ (media-folder-service.uniqueFolderSlug).
- */
+/** `newSlug` là đường dẫn đã tính sẵn và đã né đụng độ ở tầng service. */
 export async function renameFolderDir(
   folderId: string,
   oldSlug: string | null,
@@ -212,18 +204,17 @@ export async function renameFolderDir(
   try {
     const destExists = await stat(to).then(() => true).catch(() => false);
     if (destExists) {
-      // Còn sót thư mục đĩa không ai nhận (vd tạo tay ngoài app). KHÔNG trộn hai thư mục —
-      // giữ nguyên chỗ cũ và log để còn lần ra. (Đụng độ do slug đã né ở tầng service.)
+      // Thư mục đĩa không ai nhận, thường do tạo tay ngoài app. Không trộn hai thư mục.
       logger.warn(`[folder-mirror] slug đích đã tồn tại, giữ nguyên thư mục cũ: ${oldSlug} → ${newSlug}`);
       return oldSlug;
     }
-    // Thư mục cha phải tồn tại thì rename mới chạy (cây lồng nhau 2026-08-07).
+    // Thư mục cha phải tồn tại thì rename mới chạy.
     const parentDir = to.slice(0, to.lastIndexOf(sep));
     if (parentDir.startsWith(FOLDERS_ROOT)) await mkdir(parentDir, { recursive: true });
     await rename(from, to);
     return newSlug;
   } catch (err: any) {
-    // Thư mục nguồn không còn (bị xoá tay ngoài app) → tạo thẳng thư mục đích.
+    // Thư mục nguồn bị xoá tay ngoài app thì tạo thẳng thư mục đích.
     if (err?.code === 'ENOENT') return ensureFolderDirExact(newSlug, folderId);
     logger.warn(`[folder-mirror] rename lỗi (${oldSlug} → ${newSlug}):`, err?.message ?? err);
     return null;

@@ -204,12 +204,9 @@ async function bootstrap() {
 
   await app.register(fastifyMultipart, {
     limits: {
-      // TRẦN CHUNG rộng, phục vụ đường gửi tệp trong CHAT (ảnh 100MB / video 500MB —
-      // xem chat-attachment-routes.ts). Route nào cần chặt hơn thì tự đặt limits riêng
-      // qua request.parts({ limits }) — kho lưu trữ làm vậy: 10MB/tệp, 25 tệp, 100MB/lượt.
+      // Trần chung phải rộng vì gửi tệp trong chat cần tới 500MB. Route nào cần chặt hơn
+      // thì tự đặt limits riêng qua request.parts(), như kho lưu trữ đang làm.
       fileSize: 500 * 1024 * 1024,
-      // 2026-08-08: 10 → 25 để kho lưu trữ gửi được 25 tệp/lượt. Đây là TRẦN TRÊN; route
-      // vẫn tự siết thấp hơn được, nhưng không thể vượt quá con số này.
       files: 25,
     },
   });
@@ -229,10 +226,8 @@ async function bootstrap() {
       cacheControl: true,
       maxAge: "365d",
       immutable: true,
-      // LỚP PHÒNG THỦ THỨ HAI cho SVG (2026-08-08). SVG đã được làm sạch lúc tải lên
-      // (shared/svg-sanitizer.ts), nhưng /files phục vụ KHÔNG cần đăng nhập nên đây là
-      // chỗ dễ tổn thương nhất — nếu bộ lọc có ngày bị né, đừng để trình duyệt RENDER
-      // tệp đó trong origin của mình. Ép tải về thay vì mở, và cấm đoán-kiểu-nội-dung.
+      // SVG đã được làm sạch lúc tải lên, nhưng /files phục vụ không cần đăng nhập nên nếu
+      // bộ lọc có ngày bị né thì đừng để trình duyệt render tệp đó trong origin của mình.
       setHeaders(res: any, filePath: string) {
         res.setHeader("X-Content-Type-Options", "nosniff");
         if (/\.svgz?$/i.test(filePath)) {

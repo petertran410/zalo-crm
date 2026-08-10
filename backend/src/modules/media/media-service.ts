@@ -31,29 +31,19 @@ import type { MediaAsset, MediaBlob } from '@prisma/client';
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
 
-/*
- * 2026-08-08 (anh chốt): GIỮ NGUYÊN ĐỊNH DẠNG và GIỮ NGUYÊN KÍCH THƯỚC.
- *   png → png       jpg/jpeg → jpg       webp → webp
- * Trước đây mọi ảnh đều bị ép sang WebP và thu cạnh dài về 2000px. Hệ quả: tải lên
- * "bang-gia.png" nhưng tải về lại là ruột WebP mang đuôi .png (Photoshop/Word/thư viện
- * ảnh Android tin vào đuôi nên báo hỏng), và ảnh in khổ lớn bị thu nhỏ mất chi tiết.
- * VẪN NÉN, chỉ là nén TRONG CÙNG định dạng — xem QUALITY ngay dưới.
- * (MAX_EDGE đã bỏ hẳn: không còn đường nào thu nhỏ ảnh.)
- */
-
 /**
- * `quality` là THANG CHẤT LƯỢNG của bộ mã hoá (0–100), KHÔNG phải mục tiêu dung lượng:
- * không có nghĩa "còn 80%" cũng không phải "giảm 80%". Dung lượng ra phụ thuộc hoàn toàn
- * vào nội dung ảnh — đo thực tế: ảnh nhiễu còn ~71%, ảnh chụp thường còn ~10–20%.
+ * Thang chất lượng của bộ mã hoá, KHÔNG phải mục tiêu dung lượng: không phải "còn 80%"
+ * cũng không phải "giảm 80%". Đo thực tế cùng mức này: JPEG còn ~38%, WebP ~53%, PNG ~100%.
  */
 const QUALITY = 80;
 
-// PNG là định dạng KHÔNG MẤT DỮ LIỆU. Muốn nhỏ đi thật sự thì phải giảm số màu
-// (palette hoá) — với ảnh chụp/gradient sẽ thấy rõ vệt màu. Nên PNG chỉ ép mức nén
-// lossless cao nhất: an toàn tuyệt đối về chất lượng, đổi lại chỉ nhỏ được ít.
+/**
+ * PNG là định dạng không mất dữ liệu nên chỉ ép được mức nén lossless, gần như không nhỏ đi.
+ * Muốn nhỏ thật phải palette hoá, mà ảnh chụp và gradient sẽ nổi vệt màu.
+ */
 const PNG_COMPRESSION_LEVEL = 9;
 
-// GIF (ảnh động) KHÔNG nén qua sharp (mất animation) — giữ nguyên.
+// GIF không đi qua sharp vì sẽ mất animation.
 const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export type MediaKind = 'image' | 'video' | 'file';
@@ -114,34 +104,28 @@ export interface RegisterAssetResult {
 }
 
 /**
- * Nén ảnh (sharp): resize cạnh dài về MAX_EDGE, encode webp chất lượng cao.
- * D10(2): sharp lỗi (ảnh hỏng/format lạ) → fallback trả buffer GỐC + log warn.
- * GIF/video/file → trả nguyên bytes (không nén qua sharp).
- *
- * @returns { buffer, mimeType, width?, height?, compressed }
+ * Nén ảnh nhưng GIỮ NGUYÊN định dạng và kích thước: png ra png, jpg ra jpg, webp ra webp.
+ * Trước đây ép hết sang WebP và thu về 2000px, khiến tải lên .png mà tải về là ruột WebP.
  */
 export async function compressImage(
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ buffer: Buffer; mimeType: string; width?: number; height?: number; compressed: boolean }> {
-  // SVG (2026-08-08): LÀM SẠCH thay vì nén, và FAIL-CLOSED.
-  // Đặt TRƯỚC mọi nhánh khác để không đời nào rơi xuống fallback "lỗi thì lưu bản gốc"
-  // ở cuối hàm — với SVG, lưu bản gốc đúng bằng lưu thứ mình đang cố chặn.
-  // Ném ra ngoài ⇒ route trả 422 và tệp KHÔNG được lưu.
+  // Phải đứng trước mọi nhánh khác để không rơi xuống fallback "lỗi thì lưu bản gốc" ở
+  // cuối hàm, vì với SVG thì lưu bản gốc đúng bằng lưu thứ đang cố chặn.
   if (mimeType === 'image/svg+xml') {
-    const clean = sanitizeSvg(buffer); // tự ném nếu bẩn/hỏng
+    const clean = sanitizeSvg(buffer);
     let w: number | undefined;
     let h: number | undefined;
     try {
       const meta = await sharp(clean).metadata();
       w = meta.width;
       h = meta.height;
-    } catch { /* không đọc được kích thước — không sao, vẫn lưu bản đã sạch */ }
+    } catch { /* thiếu kích thước không ảnh hưởng gì, vẫn lưu bản đã sạch */ }
     return { buffer: clean, mimeType, width: w, height: h, compressed: false };
   }
 
   if (!COMPRESSIBLE.has(mimeType)) {
-    // GIF / non-image → giữ nguyên, chỉ đọc kích thước nếu là ảnh.
     let w: number | undefined;
     let h: number | undefined;
     if (IMAGE_MIMES.has(mimeType)) {
@@ -149,22 +133,17 @@ export async function compressImage(
         const dim = imageSize(buffer);
         w = dim.width;
         h = dim.height;
-      } catch { /* ảnh không đọc được dimension — bỏ qua */ }
+      } catch { /* bỏ qua */ }
     }
     return { buffer, mimeType, width: w, height: h, compressed: false };
   }
   try {
-    // GIỮ ĐỊNH DẠNG + GIỮ KÍCH THƯỚC (2026-08-08): không đổi sang WebP, không resize.
-    //   .rotate()          — vẫn áp EXIF orientation vào pixel, nếu không ảnh chụp dọc
-    //                        bằng điện thoại sẽ hiện nằm ngang ở chỗ không đọc EXIF.
-    //   .keepIccProfile()  — giữ hồ sơ màu, nếu bỏ thì ảnh đã hiệu chỉnh màu sẽ lệch tông.
-    //                        EXIF/GPS vẫn bị lược đi (mặc định của sharp) — tránh lộ vị trí
-    //                        chụp khi gửi ảnh cho khách.
+    // rotate() áp EXIF orientation vào pixel, nếu không ảnh chụp dọc sẽ nằm ngang ở chỗ
+    // không đọc EXIF. keepIccProfile() giữ hồ sơ màu, bỏ đi thì ảnh hiệu chỉnh màu lệch tông.
     const pipeline = sharp(buffer, { failOn: 'error' }).rotate().keepIccProfile();
 
     const encoded =
       mimeType === 'image/png'
-        // PNG lossless: chỉ ép mức nén cao nhất, KHÔNG palette hoá (sẽ mất màu).
         ? pipeline.png({ compressionLevel: PNG_COMPRESSION_LEVEL })
         : mimeType === 'image/webp'
           ? pipeline.webp({ quality: QUALITY })
@@ -172,8 +151,7 @@ export async function compressImage(
 
     const out = await encoded.toBuffer({ resolveWithObject: true });
 
-    // Nén xong mà PHÌNH TO hơn bản gốc thì giữ bản gốc (hay gặp với PNG đã tối ưu sẵn,
-    // hoặc JPEG chất lượng thấp bị mã hoá lại). Không có lý do gì lưu bản to hơn.
+    // PNG đã tối ưu sẵn và JPEG chất lượng thấp hay phình ra khi mã hoá lại.
     if (out.data.length >= buffer.length) {
       const dim = (() => { try { return imageSize(buffer); } catch { return undefined; } })();
       return {
@@ -187,16 +165,14 @@ export async function compressImage(
 
     return {
       buffer: out.data,
-      mimeType, // ← KHÔNG đổi: png ra png, jpg ra jpg, webp ra webp
+      mimeType,
       width: out.info.width,
       height: out.info.height,
       compressed: true,
     };
   } catch (err) {
-    // D10(2): không để mất ảnh — fallback bản gốc.
-    // ⚠️ Fallback này là FAIL-OPEN, chỉ an toàn với ảnh raster (jpeg/png/webp — không chạy
-    // được mã). Định dạng nào có thể mang mã (SVG) PHẢI chặn từ nhánh riêng bên trên và
-    // ném lỗi, TUYỆT ĐỐI không để rơi xuống đây.
+    // D10(2): không để mất ảnh. Fallback này FAIL-OPEN nên chỉ an toàn với ảnh raster;
+    // định dạng mang được mã như SVG phải chặn ở nhánh riêng bên trên, không rơi xuống đây.
     logger.warn('[media] compressImage failed, fallback to original:', (err as Error)?.message ?? err);
     return { buffer, mimeType, compressed: false };
   }

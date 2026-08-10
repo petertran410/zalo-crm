@@ -9,8 +9,7 @@
           <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
         </div>
         <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>
-        <!-- Tải cả THƯ MỤC (2026-08-07): webkitdirectory cho chọn 1 thư mục, trình duyệt trả
-             mọi tệp bên trong kèm đường dẫn tương đối → dựng lại đúng cây thư mục trong kho. -->
+        <!-- Trình duyệt trả mọi tệp bên trong kèm đường dẫn tương đối, đủ để dựng lại cây. -->
         <button class="btn-folder" :disabled="folderUploading" title="Tải lên cả một thư mục (giữ nguyên thư mục con)" @click="triggerFolderUpload">
           <FolderUpIcon :size="15" :stroke-width="1.9" /> Tải thư mục
         </button>
@@ -21,8 +20,7 @@
           <Trash2Icon :size="15" :stroke-width="1.9" /> Thùng rác
         </button>
         <input ref="fileInput" type="file" multiple accept="image/*,video/*,.pdf,.xlsx,.docx,.zip" hidden @change="onFilesPicked" />
-        <!-- webkitdirectory: thuộc tính không chuẩn nhưng Chrome/Edge/Firefox/Safari đều hiểu.
-             Vue cần :webkitdirectory="true" vì đây không phải attribute HTML hợp lệ. -->
+        <!-- Vue cần :webkitdirectory="true" vì đây không phải attribute HTML hợp lệ. -->
         <input
           ref="folderInput"
           type="file"
@@ -113,8 +111,7 @@
     </div>
 
     <div v-if="!trashMode" class="m-work">
-      <!-- Folder tree — cây lồng nhau (2026-08-07). BE trả danh sách phẳng + parentId,
-           `folderTree` dựng cây, `visibleFolderRows` làm phẳng lại theo nhánh đang mở. -->
+      <!-- BE trả danh sách phẳng kèm parentId, FE tự dựng cây. -->
       <aside class="m-tree">
         <div class="tree-ttl">Thư mục
           <button class="addf" title="Tạo thư mục gốc" @click="onCreateFolder(null)">＋</button>
@@ -128,7 +125,7 @@
           :style="{ paddingLeft: `${8 + row.depth * 13}px` }"
           @click="setFolder(row.folder.id)"
         >
-          <!-- Mũi tên chỉ hiện ở thư mục CÓ con; bấm mũi tên chỉ mở/gập, không đổi thư mục đang xem. -->
+          <!-- click.stop để bấm mũi tên chỉ mở gập, không đổi luôn thư mục đang xem. -->
           <button
             v-if="row.hasChildren"
             class="tw"
@@ -285,7 +282,7 @@ const activeTags = ref<string[]>([]);
 const selected = ref<MediaAssetItem | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const folderInput = ref<HTMLInputElement | null>(null);
-/** Đang dựng cây + tải cả thư mục — khoá nút để không bấm chồng lên nhau. */
+/** Khoá nút để không bấm chồng lên nhau khi đang dựng cây và tải thư mục. */
 const folderUploading = ref(false);
 
 // LEVER 2 (lọc sâu — anh chốt 2026-06-12).
@@ -306,9 +303,7 @@ const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)
 
 const activeFolderName = computed(() => folders.value.find((f) => f.id === activeFolder.value)?.name ?? '');
 
-// ── Cây thư mục lồng nhau (2026-08-07) ──────────────────────────────────────
-// BE trả DANH SÁCH PHẲNG + parentId. Dựng cây ở FE để 1 request là đủ (số thư mục nhỏ),
-// và để lọc theo quyền vẫn nằm gọn một chỗ ở BE.
+// Dựng cây ở FE để một request là đủ, và để lọc theo quyền vẫn nằm gọn một chỗ ở BE.
 const expanded = ref<Set<string>>(new Set());
 function toggleExpand(id: string) {
   const next = new Set(expanded.value);
@@ -316,7 +311,7 @@ function toggleExpand(id: string) {
   expanded.value = next;
 }
 
-/** parentId → danh sách con, sắp theo tên. Thư mục có cha đã bị lọc mất (quyền) coi như gốc. */
+/** Thư mục có cha đã bị lọc mất vì thiếu quyền thì coi như thư mục gốc. */
 const childrenByParent = computed(() => {
   const ids = new Set(folders.value.map((f) => f.id));
   const map = new Map<string | null, MediaFolder[]>();
@@ -330,7 +325,7 @@ const childrenByParent = computed(() => {
   return map;
 });
 
-/** Cây làm phẳng thành các dòng để v-for — chỉ gồm nhánh đang mở. */
+/** Làm phẳng thành các dòng để v-for, chỉ gồm nhánh đang mở. */
 const visibleFolderRows = computed(() => {
   const rows: Array<{ folder: MediaFolder; depth: number; hasChildren: boolean }> = [];
   const walk = (parentId: string | null, depth: number) => {
@@ -495,18 +490,12 @@ function fmtSize(bytes: number | null | undefined): string {
   return bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
-/**
- * HẠN MỨC PHẢI KHỚP BACKEND (media-routes.ts) — lệch là người dùng ăn 413 giữa chừng:
- *   10MB mỗi tệp · 100MB mỗi lượt · 25 tệp mỗi lượt.
- */
+/** Phải khớp hạn mức ở media-routes.ts, lệch là người dùng ăn 413 giữa chừng. */
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
 const MAX_BATCH_BYTES = 100 * 1024 * 1024;
 const UPLOAD_BATCH = 25;
 
-/**
- * Chia tệp thành từng mẻ gửi được: mỗi mẻ ≤ 25 tệp VÀ ≤ 100MB.
- * Chỉ đếm số tệp là chưa đủ — 25 tệp × 10MB = 250MB, vượt trần 100MB của một lượt.
- */
+/** Chỉ đếm số tệp là chưa đủ vì 25 tệp x 10MB = 250MB, vượt trần 100MB mỗi lượt. */
 function batchFiles(files: File[]): File[][] {
   const out: File[][] = [];
   let cur: File[] = [];
@@ -524,7 +513,7 @@ function batchFiles(files: File[]): File[][] {
   return out;
 }
 
-/** Tách tệp quá cỡ ra TRƯỚC khi gửi — báo ngay còn hơn để server trả 413 giữa chừng. */
+/** Báo ngay tại máy người dùng còn hơn để server trả 413 giữa chừng. */
 function splitOversize(files: File[]): { ok: File[]; tooBig: File[] } {
   const ok: File[] = [];
   const tooBig: File[] = [];
@@ -537,7 +526,6 @@ async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
-  // Chặn tệp quá 10MB ngay tại máy người dùng — nói rõ tệp nào, thay vì để server 413.
   const { ok: sendable, tooBig } = splitOversize(files);
   if (tooBig.length) {
     const names = tooBig.slice(0, 3).map((f) => `"${f.name}" (${fmtSize(f.size)})`).join(', ');
@@ -578,11 +566,8 @@ async function onCreateFolder(parentId: string | null = null) {
   }
 }
 
-// ── Tải lên CẢ THƯ MỤC (2026-08-07) ─────────────────────────────────────────
-// input[webkitdirectory] trả về danh sách tệp phẳng, mỗi tệp mang webkitRelativePath dạng
-// "bao_gia/2026/q4.pdf". Ta dựng lại đúng cây đó bằng các thư mục kho (tạo lần lượt từ gốc
-// xuống, nhớ id trong `made` để không tạo trùng), rồi tải từng nhóm tệp vào thư mục của nó.
-// Thư mục gốc được chọn nằm DƯỚI thư mục đang mở, nên tải vào "Tất cả" thì nó thành gốc.
+// Cây thư mục được dựng lại từ webkitRelativePath của từng tệp, dạng "bao_gia/2026/q4.pdf".
+// Thư mục được chọn nằm dưới thư mục đang mở, nên tải vào "Tất cả" thì nó thành thư mục gốc.
 function triggerFolderUpload() { folderInput.value?.click(); }
 
 async function onFolderPicked(e: Event) {
@@ -591,18 +576,17 @@ async function onFolderPicked(e: Event) {
   input.value = '';
   if (!files.length) return;
 
-  // Trần 10MB áp cho TỪNG TỆP BÊN TRONG thư mục nữa — loại ra trước khi dựng cây, để
-  // thư mục nào chỉ chứa toàn tệp quá cỡ thì cũng không được tạo ra.
+  // Loại tệp quá cỡ trước khi dựng cây, để thư mục toàn tệp quá cỡ không bị tạo ra.
   const { ok: usable, tooBig } = splitOversize(files);
   if (tooBig.length) {
     toast.warning(`Bỏ qua ${tooBig.length}/${files.length} tệp quá 10MB trong thư mục này`);
   }
   if (!usable.length) {
-    toast.warning('Mọi tệp trong thư mục đều quá 10MB — không tạo thư mục nào');
+    toast.warning('Mọi tệp trong thư mục đều quá 10MB, không tạo thư mục nào');
     return;
   }
 
-  // Gom tệp theo đường dẫn thư mục chứa nó ("" = ngay trong thư mục gốc được chọn).
+  // Khoá rỗng nghĩa là tệp nằm ngay trong thư mục gốc được chọn.
   const byDir = new Map<string, File[]>();
   for (const f of usable) {
     const rel = (f as any).webkitRelativePath as string | undefined;
@@ -614,15 +598,14 @@ async function onFolderPicked(e: Event) {
 
   folderUploading.value = true;
   try {
-    // Tạo thư mục trước, theo thứ tự nông → sâu để cha luôn có trước con.
-    const made = new Map<string, string>(); // đường dẫn tương đối → id thư mục kho
+    // Sắp nông trước sâu sau để thư mục cha luôn tồn tại trước con.
+    const made = new Map<string, string>(); // đường dẫn tương đối sang id thư mục kho
     const allDirs = [...new Set([...byDir.keys()].flatMap(dirAndAncestors))]
       .filter(Boolean)
       .sort((a, b) => a.split('/').length - b.split('/').length);
 
     let reusedCount = 0;
-    // Thư mục do CHÍNH lần này tạo ra — chỉ những cái này mới được phép dọn nếu tải hỏng.
-    // Thư mục dùng lại (đã có từ trước) TUYỆT ĐỐI không đụng tới.
+    // Chỉ thư mục do lần này tạo mới được phép dọn, thư mục có sẵn tuyệt đối không đụng tới.
     const createdHere: string[] = [];
     for (const dir of allDirs) {
       const segs = dir.split('/');
@@ -630,23 +613,20 @@ async function onFolderPicked(e: Event) {
       const parentId = parentPath ? made.get(parentPath) ?? null : activeFolder.value;
       const leaf = segs[segs.length - 1];
 
-      // Tải lại CÙNG một cây lần thứ hai phải chạy tiếp được: BE chặn trùng tên (409), ở đây
-      // bắt lấy và DÙNG LẠI thư mục cũ. Nhờ vậy tải bổ sung tệp vào cây có sẵn vẫn hoạt động.
+      // BE chặn trùng tên bằng 409, bắt lấy và dùng lại để tải bổ sung vào cây có sẵn vẫn chạy.
       const { id, reused } = await createOrReuseMediaFolder(leaf, parentId);
       if (reused) reusedCount++;
       else createdHere.push(id);
       made.set(dir, id);
     }
 
-    // Tải tệp vào đúng thư mục của nó. Lỗi 1 nhóm không chặn các nhóm còn lại.
-    // Ghi lại thư mục nào NHẬN ĐƯỢC ít nhất 1 tệp, để biết cái nào rỗng mà dọn.
+    // gotFiles ghi lại thư mục nhận được ít nhất một tệp, để biết cái nào rỗng mà dọn.
     let ok = 0;
     let failed = 0;
     const gotFiles = new Set<string>();
     for (const [dir, group] of byDir) {
       const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
-      // Cắt mẻ theo CẢ số tệp lẫn dung lượng: một thư mục 50 ảnh gửi 1 request sẽ vượt
-      // trần 25 tệp, và 25 ảnh nặng cũng vượt trần 100MB — cả hai đều hỏng cả thư mục đó.
+      // Vượt trần số tệp hay trần dung lượng đều làm hỏng cả thư mục đó, nên cắt mẻ theo cả hai.
       for (const b of batchFiles(group)) {
         try {
           const res = await uploadMedia(b, { visibility: 'private', folderId: folderId ?? undefined });
@@ -658,10 +638,8 @@ async function onFolderPicked(e: Event) {
       }
     }
 
-    // DỌN THƯ MỤC RỖNG (anh chốt 2026-08-08): thư mục được tạo TRƯỚC khi tải tệp, nên khi
-    // mọi tệp bị từ chối (thư mục mã nguồn toàn .py chẳng hạn) sẽ còn lại cả cây thư mục
-    // trống trơn. Chỉ xoá thư mục do lần này tạo, KHÔNG nhận được tệp nào, và KHÔNG có
-    // thư mục con nào còn sống — xoá từ sâu lên nông để cha rỗng sau con cũng được dọn.
+    // Thư mục tạo trước khi tải tệp, nên khi mọi tệp bị từ chối sẽ còn lại cả cây trống trơn.
+    // Xoá từ sâu lên nông để thư mục cha rỗng đi sau khi mất con cũng được dọn theo.
     const survivors = new Set(gotFiles);
     const deepestFirst = allDirs
       .filter((d) => createdHere.includes(made.get(d)!))
@@ -670,7 +648,7 @@ async function onFolderPicked(e: Event) {
     for (const dir of deepestFirst) {
       const id = made.get(dir)!;
       if (survivors.has(id)) continue;
-      // Còn con nào sống sót thì giữ cha lại (không thể xoá cha của thư mục có tệp).
+      // Không thể xoá cha của một thư mục còn tệp.
       const hasLiveChild = allDirs.some((d) => d.startsWith(`${dir}/`) && survivors.has(made.get(d)!));
       if (hasLiveChild) { survivors.add(id); continue; }
       try { await deleteMediaFolder(id); cleaned++; } catch { survivors.add(id); }
@@ -680,14 +658,14 @@ async function onFolderPicked(e: Event) {
     const keptFolders = allDirs.length - cleaned;
     if (ok === 0 && failed > 0) {
       toast.warning(
-        `Không tải được tệp nào (${failed} tệp — nhiều khả năng định dạng không hỗ trợ). ` +
+        `Không tải được tệp nào (${failed} tệp, nhiều khả năng định dạng không hỗ trợ). ` +
         `Đã dọn ${cleaned} thư mục rỗng vừa tạo.`,
       );
     } else {
       const cleanNote = cleaned > 0 ? `, dọn ${cleaned} thư mục rỗng` : '';
       toast.success(
         failed > 0
-          ? `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote} (${failed} tệp lỗi — có thể do định dạng không hỗ trợ)`
+          ? `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote} (${failed} tệp lỗi, có thể do định dạng không hỗ trợ)`
           : `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote}`,
       );
     }
@@ -701,7 +679,7 @@ async function onFolderPicked(e: Event) {
   }
 }
 
-/** "a/b/c" → ["a", "a/b", "a/b/c"] — để tạo đủ cả thư mục trung gian không chứa tệp nào. */
+/** "a/b/c" thành ["a", "a/b", "a/b/c"], để tạo đủ cả thư mục trung gian không chứa tệp nào. */
 function dirAndAncestors(dir: string): string[] {
   if (!dir) return [];
   const segs = dir.split('/');
@@ -793,7 +771,7 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .m-search { display:flex; align-items:center; gap:7px; border:1px solid var(--hairline); border-radius:var(--r-sm); padding:6px 12px; width:240px; }
 .m-search input { border:none; outline:none; font-size:13px; width:100%; background:transparent; color:var(--body); }
 .btn-dark { background:var(--ink); color:#fff; border:none; border-radius:var(--r-md); padding:8px 16px; font-size:13.5px; font-weight:500; cursor:pointer; }
-/* Tải cả thư mục — thứ yếu so với "+ Tải lên" nên để dạng viền, cùng khuôn .btn-trash/.btn-multi. */
+/* Thứ yếu so với "+ Tải lên" nên để dạng viền, cùng khuôn .btn-trash và .btn-multi. */
 .btn-folder { display:inline-flex; align-items:center; gap:6px; background:#fff; color:var(--muted); border:1px solid var(--hairline); border-radius:var(--r-md); padding:7px 13px; font-size:13px; font-weight:500; cursor:pointer; }
 .btn-folder:hover:not(:disabled) { border-color:#1786be; color:#1786be; }
 .btn-folder:disabled { opacity:.5; cursor:default; }
@@ -826,7 +804,7 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 /* Mũi tên mở/gập. .tw-empty giữ đúng chỗ trống để nhãn các cấp thẳng hàng. */
 .tw { width:13px; flex-shrink:0; border:none; background:none; padding:0; cursor:pointer; color:var(--muted); font-size:10px; line-height:1; text-align:left; }
 .tw-empty { cursor:default; }
-/* Nút "+" tạo thư mục con — chỉ hiện khi rê chuột lên dòng, tránh rối cây. */
+/* Chỉ hiện khi rê chuột lên dòng, tránh rối cây. */
 .addsub { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 2px; opacity:0; }
 .f:hover .addsub { opacity:1; }
 .addsub:hover { color:var(--ink); }

@@ -40,32 +40,30 @@ describe('media dedup — content-hash key', () => {
 });
 
 describe('compressImage — nén + fallback (sharp)', () => {
-  // 2026-08-08 (anh chốt): ĐỔI HỢP ĐỒNG — trước đây mọi ảnh bị ép sang WebP và thu cạnh
-  // dài về 2000px. Nay GIỮ ĐỊNH DẠNG + GIỮ KÍCH THƯỚC, chỉ nén trong cùng định dạng.
-  // Ca test cũ ("PNG lớn → ra webp, cạnh ≤ 2000") mô tả hành vi KHÔNG CÒN ĐÚNG, viết lại.
-  it('GIỮ định dạng: png → png, jpeg → jpeg, webp → webp', async () => {
+  // Hợp đồng đã đổi: trước ép hết sang WebP và thu về 2000px, nay giữ định dạng và kích thước.
+  it('giữ định dạng: png ra png, jpeg ra jpeg, webp ra webp', async () => {
     const mk = (fmt: 'png' | 'jpeg' | 'webp') =>
       sharp({ create: { width: 600, height: 400, channels: 3, background: { r: 200, g: 60, b: 10 } } })[fmt]().toBuffer();
 
     for (const [fmt, mime] of [['png', 'image/png'], ['jpeg', 'image/jpeg'], ['webp', 'image/webp']] as const) {
       const out = await compressImage(await mk(fmt), mime);
-      expect(out.mimeType).toBe(mime); // ← không bao giờ đổi sang định dạng khác
+      expect(out.mimeType).toBe(mime);
     }
   });
 
-  it('GIỮ kích thước: ảnh vượt 2000px KHÔNG còn bị thu nhỏ', async () => {
+  it('giữ kích thước: ảnh vượt 2000px không còn bị thu nhỏ', async () => {
     const big = await sharp({
       create: { width: 3000, height: 100, channels: 3, background: { r: 200, g: 60, b: 10 } },
     }).png().toBuffer();
 
     const out = await compressImage(big, 'image/png');
     expect(out.mimeType).toBe('image/png');
-    expect(out.width).toBe(3000);  // trước đây bị ép xuống 2000
+    expect(out.width).toBe(3000); // trước đây bị ép xuống 2000
     expect(out.height).toBe(100);
   });
 
   it('JPEG vẫn nén thật (mất dữ liệu, quality 80) và nhỏ đi', async () => {
-    // Ảnh có gradient để nén JPEG có chỗ phát huy — nền một màu thì mã hoá kiểu gì cũng nhỏ.
+    // Nền một màu thì mã hoá kiểu gì cũng nhỏ, cần gradient để phép nén có chỗ phát huy.
     const w = 800, h = 600;
     const raw = Buffer.alloc(w * h * 3);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {

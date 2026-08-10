@@ -4283,13 +4283,9 @@ model MediaAlbum {
   // Kho Lưu Trữ 2026-07-22 — tên thư mục THẬT trên đĩa, đã bỏ dấu ("việt nam" → "viet_nam").
   // Lưu lại thay vì slug lại từ `name` mỗi lần: đổi tên thư mục có thể thất bại (slug đích đã
   // bận) → DB phải nhớ thư mục đĩa ĐANG dùng là cái nào. null = chưa mirror (driver R2 / lỗi).
-  //
-  // 2026-08-07 (thư mục lồng nhau): giá trị này giờ là ĐƯỜNG DẪN TƯƠNG ĐỐI từ {uploadDir}/folders,
-  // các cấp nối bằng '/', vd "viet_nam/bao_gia". Hàng cũ chỉ có 1 cấp ("viet_nam") vẫn hợp lệ
-  // vì đó cũng là một đường dẫn tương đối — không cần backfill.
+  // Nay là đường dẫn tương đối nhiều cấp ("viet_nam/bao_gia"); hàng cũ một cấp vẫn hợp lệ.
   diskSlug    String?  @map("disk_slug")
-  // Thư mục cha. null = thư mục gốc. Cascade: xoá cha → xoá cả cây con (route vẫn tự gỡ liên kết
-  // đĩa + trả tệp về "không thư mục" trước khi xoá, xem DELETE /media/folders/:id).
+  // null là thư mục gốc. Xoá cha cascade cả cây con, route tự dọn liên kết đĩa trước khi xoá.
   parentId    String?  @map("parent_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")

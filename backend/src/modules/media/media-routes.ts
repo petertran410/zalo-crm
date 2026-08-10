@@ -39,11 +39,7 @@ import { readFile } from 'node:fs/promises';
 import { logger } from '../../shared/utils/logger.js';
 import { saveOneMessageToMedia, type SaveOneResult } from './save-from-chat-helper.js';
 
-// 2026-08-08 (anh chốt): mở thêm SVG + ICO.
-//   SVG — LÀM SẠCH bắt buộc trước khi lưu (shared/svg-sanitizer.ts), fail-closed: bẩn/hỏng
-//         thì 422 chứ không lưu bản gốc. Giữ vector để tải về còn phóng to / sửa được.
-//   ICO — ảnh bitmap thuần, KHÔNG mang được mã, nên lưu nguyên (sharp cũng không đọc ICO).
-//         Nhận cả 2 mime trình duyệt hay gửi.
+// SVG bắt buộc đi qua svg-sanitizer trước khi lưu. ICO là bitmap thuần, không mang được mã.
 const ALLOWED_IMAGE = [
   'image/jpeg', 'image/png', 'image/webp', 'image/gif',
   'image/svg+xml',
@@ -62,24 +58,16 @@ const ALLOWED_FILE = [
   'application/zip', 'application/x-zip-compressed',
 ];
 /**
- * HẠN MỨC TẢI LÊN KHO (anh chốt 2026-08-08) — áp cho MỌI loại tệp, không phân biệt
- * ảnh / video / tài liệu:
- *
- *   • 10MB   mỗi TỆP (kể cả từng tệp bên trong thư mục tải lên)
- *   • 100MB  mỗi LƯỢT tải lên (tổng các tệp trong cùng một request)
- *   • 25     tệp mỗi lượt
- *
- * ⚠️ CHỈ áp cho KHO LƯU TRỮ. Gửi tệp trong CHAT có hạn mức riêng rộng hơn nhiều
- *    (chat-attachment-routes.ts: ảnh 100MB, video 500MB) — nên hạn mức ở đây đặt theo
- *    TỪNG REQUEST qua request.parts({ limits }), KHÔNG sửa multipart toàn cục ở app.ts.
- *    Sửa toàn cục sẽ chặn luôn đường gửi tệp cho khách.
- *
- * 25 × 10MB = 250MB nên trần 100MB/lượt mới là cái chạm trước — cố ý: nó chặn một lượt
- * tải lên ngốn hết RAM (mỗi tệp đều đọc TRỌN vào bộ nhớ trước khi xử lý).
+ * Hạn mức tải lên kho, áp cho mọi loại tệp. Đặt theo từng request qua request.parts()
+ * chứ không sửa multipart toàn cục, vì gửi tệp trong chat cần trần rộng hơn nhiều.
  */
 const PER_FILE_MAX = 10 * 1024 * 1024;
+// 25 x 10MB = 250MB nên trần này chạm trước, cố ý để chặn một lượt tải ngốn hết RAM.
 const REQUEST_TOTAL_MAX = 100 * 1024 * 1024;
 const MAX_FILES_PER_REQUEST = 25;
+
+// TODO(video): kho chưa dùng cho video. Trần 10MB chỉ đủ vài giây quay bằng điện thoại,
+// muốn hỗ trợ thật thì phải cho kind='video' một trần riêng và tính lại chỗ lưu trữ.
 
 // GĐ13a Thùng rác Media (2026-06-12): giữ trong thùng rác 30 ngày rồi cron tự dọn (xóa hàng DB,
 // KHÔNG đụng byte MinIO). TRASH_EMPTY_BATCH: dọn-sạch-thủ-công xóa tối đa N/lần tránh khóa DB lâu.
@@ -342,16 +330,8 @@ export async function mediaRoutes(app: FastifyInstance) {
   );
 
   // ── POST /api/v1/media/upload — tải ảnh/file lên kho (multipart) ───────────
-  // 2026-08-07 (anh chốt): ĐẢO lại quyết định "auth-only" của 2026-07-22 — tải lên GIỜ ĐÒI
-  // quyền media.create, do admin cấp qua nhóm quyền. Chủ tài khoản (role='owner') và admin
-  // vẫn đi qua hết vì userHasGrant tự bypass ở 2 vai này.
-  //
-  // ⚠️ Người đang KHÔNG có media.create sẽ mất quyền tải lên ngay khi bản này lên —
-  //    admin phải cấp lại trong Phân quyền. (Trước đây mọi tài khoản đăng nhập đều tải được.)
-  //
-  // Phạm vi lưu KHÔNG đổi: mặc định vẫn 'private_upload' (chỉ người tải lên + Chủ tài khoản
-  // + người được chia sẻ mới thấy; media.view_all KHÔNG bypass). Truyền field
-  // `storageScope=catalog` để tải lên KHO CHUNG như cũ — giờ cùng đòi đúng grant này.
+  // Đảo lại quyết định auth-only của 2026-07-22: tải lên nay đòi media.create do admin cấp,
+  // nên ai chưa có quyền này sẽ mất quyền tải lên ngay khi bản này lên.
   app.post(
     '/api/v1/media/upload',
     { preHandler: requireGrant('media', 'create') },
@@ -368,9 +348,8 @@ export async function mediaRoutes(app: FastifyInstance) {
 
       let totalBytes = 0;
       try {
-        // limits ĐẶT RIÊNG CHO REQUEST NÀY (không đụng multipart toàn cục — chat cần trần
-        // rộng hơn nhiều). fileSize chặn ngay ở tầng luồng: tệp quá cỡ bị cắt từ lúc đọc,
-        // không đọc trọn 500MB vào RAM rồi mới từ chối.
+        // fileSize chặn ngay ở tầng luồng nên tệp quá cỡ bị cắt từ lúc đọc, không nuốt trọn
+        // 500MB vào RAM rồi mới từ chối.
         const parts = request.parts({
           limits: { fileSize: PER_FILE_MAX, files: MAX_FILES_PER_REQUEST },
         });
@@ -391,20 +370,19 @@ export async function mediaRoutes(app: FastifyInstance) {
           }
           const buf = await part.toBuffer();
 
-          // Trần MỖI TỆP. multipart đã chặn ở tầng luồng, đây là lớp thứ hai + cho thông báo
-          // rõ ràng (busboy chỉ cắt cụt tệp chứ không tự nói tệp nào hỏng).
+          // Busboy chỉ cắt cụt tệp chứ không nói tệp nào hỏng, nên vẫn cần kiểm ở đây để
+          // báo đúng tên tệp cho người dùng.
           if (buf.length > PER_FILE_MAX || (part.file as any)?.truncated) {
             return reply.status(413).send({
-              error: `Tệp "${part.filename}" quá lớn — tối đa ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
+              error: `Tệp "${part.filename}" vượt quá ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
               code: 'FILE_TOO_LARGE',
             });
           }
 
-          // Trần CẢ LƯỢT: cộng dồn, vượt là dừng luôn (chưa ghi gì xuống đĩa ở bước này).
           totalBytes += buf.length;
           if (totalBytes > REQUEST_TOTAL_MAX) {
             return reply.status(413).send({
-              error: `Tổng dung lượng một lượt tải lên vượt ${REQUEST_TOTAL_MAX / 1024 / 1024}MB — chia nhỏ ra nhé`,
+              error: `Tổng dung lượng một lượt tải lên vượt ${REQUEST_TOTAL_MAX / 1024 / 1024}MB, chia nhỏ ra nhé`,
               code: 'UPLOAD_TOO_LARGE',
             });
           }
@@ -413,9 +391,6 @@ export async function mediaRoutes(app: FastifyInstance) {
           if (av.blocked) return reply.status(422).send({ error: av.reason, code: 'AV_BLOCKED' });
           pending.push({ buffer: buf, mimeType: part.mimetype, kind, filename: part.filename });
         }
-
-        // (2026-08-07) Bỏ kiểm media.create riêng cho nhánh 'catalog': preHandler ở trên đã
-        // đòi đúng grant đó cho MỌI nhánh, kiểm lại ở đây là thừa.
 
         // Register SAU khi đã đọc hết parts → visibility/folderId/tagIds chắc chắn đầy đủ.
         const created: any[] = [];
@@ -442,17 +417,15 @@ export async function mediaRoutes(app: FastifyInstance) {
         if (created.length === 0) return reply.status(400).send({ error: 'Không có tệp nào' });
         return { assets: created };
       } catch (err: any) {
-        // SVG bẩn/hỏng là lỗi TỆP của người dùng, không phải sự cố hệ thống → 422 kèm lý do.
-        // Fail-closed: đã vào nhánh này thì KHÔNG có tệp nào được lưu.
+        // Mấy nhánh dưới đều là lỗi TỆP của người dùng, không phải sự cố hệ thống, nên trả
+        // mã lỗi kèm lý do cụ thể thay vì 500 "upload failed".
         if (err?.code === 'SVG_REJECTED') {
           logger.warn(`[media][av] từ chối SVG user=${userId}: ${err.message}`);
           return reply.status(422).send({ error: err.message, code: 'SVG_REJECTED' });
         }
-        // Hạn mức do multipart tự chặn ở tầng luồng — cũng là lỗi người dùng, trả 413 kèm
-        // đúng con số thay vì "upload failed" chung chung.
         if (err?.code === 'FST_REQ_FILE_TOO_LARGE') {
           return reply.status(413).send({
-            error: `Tệp quá lớn — tối đa ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
+            error: `Tệp vượt quá ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
             code: 'FILE_TOO_LARGE',
           });
         }
@@ -726,9 +699,8 @@ export async function mediaRoutes(app: FastifyInstance) {
         });
       }
 
-      // Thư mục THẬT trên đĩa (2026-08-07): trước đây CHỈ lúc tải lên mới đặt liên kết, nên
-      // tệp chuyển thư mục sau đó không bao giờ hiện trong thư mục đĩa. Gỡ liên kết cũ PHẢI
-      // chạy TRƯỚC khi ghi folderId mới (unmirror đọc thư mục hiện tại từ DB để biết gỡ ở đâu).
+      // Gỡ liên kết cũ phải chạy TRƯỚC khi ghi folderId mới, vì unmirror đọc thư mục hiện
+      // tại từ DB để biết gỡ ở đâu.
       const movingFolder = body.folderId !== undefined && body.folderId !== asset.folderId;
       if (movingFolder) await unmirrorAssetFromFolder(user.orgId, id);
 
@@ -742,7 +714,7 @@ export async function mediaRoutes(app: FastifyInstance) {
         },
       });
 
-      // Đặt liên kết vào thư mục mới. Fire-and-forget: hỏng đĩa không được làm hỏng lần sửa.
+      // Fire-and-forget: hỏng thư mục đĩa không được làm hỏng lần sửa.
       if (movingFolder && body.folderId) void mirrorAssetIntoFolder(user.orgId, id, body.folderId);
 
       // AUDIT privacy (S8): chuyển sang Công khai → ghi log (đặc biệt ảnh từ nick Riêng tư).
@@ -786,8 +758,7 @@ export async function mediaRoutes(app: FastifyInstance) {
 
       // Gán folder: 1 update chung cho tất cả (cùng giá trị).
       if (body.folderId !== undefined) {
-        // Thư mục THẬT trên đĩa (2026-08-07) — như PATCH /:id: gỡ liên kết cũ TRƯỚC khi ghi
-        // folderId mới, đặt liên kết mới SAU. Tuần tự theo từng tệp cho an toàn (tối đa 200).
+        // Như PATCH /:id: gỡ liên kết cũ trước khi ghi folderId mới, đặt liên kết mới sau.
         for (const a of scoped) await unmirrorAssetFromFolder(user.orgId, a.id);
 
         await prisma.mediaAsset.updateMany({
@@ -865,10 +836,8 @@ export async function mediaRoutes(app: FastifyInstance) {
       if (!buf) return reply.status(404).send({ error: 'Không tìm thấy tệp' });
       // Tên tải về: name truyền lên (đã có đuôi) → fallback basename của key. Lọc ký tự cấm header.
       const rawName = (q.name && q.name.trim()) || decodeURIComponent(key.split('/').pop() || 'tep');
-      // ĐUÔI PHẢI KHỚP NỘI DUNG (2026-08-08). Ảnh jpg/png bị nén thành WebP lúc tải lên, nhưng
-      // tên hiển thị vẫn giữ đuôi cũ → tải về được "bang-gia.png" mà ruột là WebP. Trình duyệt
-      // đoán được nên không ai để ý, còn Photoshop/Word/thư viện ảnh Android thì tin vào đuôi
-      // và báo hỏng. Lấy đuôi THẬT từ mimeType của blob và vá lại tên.
+      // Dữ liệu cũ có ảnh bị nén thành WebP nhưng tên vẫn giữ đuôi .png, tải về Photoshop
+      // và Word báo hỏng vì chúng tin vào đuôi. Lấy đuôi thật từ mimeType của blob.
       const blob = await prisma.mediaBlob.findFirst({
         where: { orgId: request.user!.orgId, minioKey: key },
         select: { mimeType: true },
@@ -947,8 +916,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       });
       if (!asset) return reply.status(404).send({ error: 'Không tìm thấy media trong thùng rác' });
       await prisma.mediaAsset.update({ where: { id }, data: { archivedAt: null, trashedById: null } });
-      // Bỏ vào thùng rác đã GỠ tên khỏi thư mục đĩa → khôi phục phải đặt lại, nếu không tệp
-      // về kho nhưng thư mục đĩa vẫn trống (2026-08-07).
+      // Bỏ vào thùng rác đã gỡ tên khỏi thư mục đĩa nên khôi phục phải đặt lại.
       if (asset.folderId) void mirrorAssetIntoFolder(user.orgId, id, asset.folderId);
       logger.info(`[media][audit] restore asset=${id} user=${userId}`);
       return { ok: true };
@@ -1118,8 +1086,7 @@ export async function mediaRoutes(app: FastifyInstance) {
             : { OR: [{ ownerUserId: userId }, { visibility: 'public' }] }),
         },
         orderBy: { name: 'asc' },
-        // diskSlug: đường dẫn thư mục THẬT trên đĩa — FE hiện để anh biết mở chỗ nào.
-        // parentId: FE tự dựng cây từ danh sách phẳng này (2026-08-07).
+        // FE tự dựng cây từ danh sách phẳng này bằng parentId.
         select: {
           id: true, name: true, kind: true, visibility: true,
           ownerUserId: true, diskSlug: true, parentId: true,
@@ -1130,10 +1097,7 @@ export async function mediaRoutes(app: FastifyInstance) {
   );
 
   // ── POST /api/v1/media/folders — tạo thư mục ──────────────────────────────
-  // Nguyên tắc giữ nguyên: ai tải tệp lên được thì tạo được thư mục để xếp tệp — nên route
-  // này đi CÙNG grant với upload (2026-08-07: cả hai là media.create).
-  // Tạo LUÔN thư mục THẬT trên đĩa với tên đã bỏ dấu ("việt nam" → "viet_nam") để mở ổ đĩa
-  // trên máy chủ là thấy đúng cây thư mục.
+  // Cùng grant với upload vì ai tải tệp lên được thì phải tạo được thư mục để xếp tệp.
   app.post(
     '/api/v1/media/folders',
     { preHandler: requireGrant('media', 'create') },
@@ -1143,7 +1107,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       const body = request.body as { name: string; visibility?: 'private' | 'public'; parentId?: string | null };
       if (!body?.name?.trim()) return reply.status(400).send({ error: 'Tên thư mục bắt buộc' });
 
-      // Thư mục cha (2026-08-07) — phải cùng org và là thư mục thật, không phải bộ sưu tập.
+      // kind='folder' để không cho lồng vào bộ sưu tập Yêu thích.
       const parentId = body.parentId?.trim() || null;
       if (parentId) {
         const parent = await prisma.mediaAlbum.findFirst({
@@ -1156,11 +1120,9 @@ export async function mediaRoutes(app: FastifyInstance) {
         }
       }
 
-      // Chặn TRÙNG TÊN trong cùng một cấp (2026-08-08, anh chốt phương án 2).
-      // "Việt Nam" và "việt nam" là MỘT tên dưới mắt người dùng, và cũng ra chung một
-      // thư mục đĩa. Thà báo lỗi ngay còn hơn lặng lẽ đẻ "viet_nam_2" — tên đĩa lệch tên
-      // trong kho thì mở ổ đĩa ra không còn đối chiếu được nữa.
-      // Trả kèm thư mục đang chiếm tên để bên tải-cả-thư-mục DÙNG LẠI thay vì báo hỏng.
+      // "Việt Nam" và "việt nam" ra chung một thư mục đĩa, nên thà báo lỗi còn hơn lặng lẽ
+      // đẻ "viet_nam_2" khiến tên trên đĩa hết đối chiếu được với tên trong kho.
+      // Trả kèm thư mục đang chiếm tên để bên tải-cả-thư-mục dùng lại thay vì báo hỏng.
       const clash = await findSiblingWithSameName(user.orgId, parentId, body.name.trim());
       if (clash) {
         return reply.status(409).send({
@@ -1205,7 +1167,7 @@ export async function mediaRoutes(app: FastifyInstance) {
       });
       if (!folder) return reply.status(404).send({ error: 'Không tìm thấy thư mục' });
 
-      // Đổi tên cũng phải né trùng tên anh em — nếu không sẽ lách được luật chặn lúc tạo.
+      // Đổi tên cũng phải né trùng tên anh em, nếu không sẽ lách được luật chặn lúc tạo.
       const clash = await findSiblingWithSameName(user.orgId, folder.parentId, body.name.trim(), folder.id);
       if (clash) {
         return reply.status(409).send({
@@ -1229,10 +1191,8 @@ export async function mediaRoutes(app: FastifyInstance) {
   // ── DELETE /api/v1/media/folders/:id — xoá thư mục (kéo theo thư mục đĩa) ──
   // Tệp bên trong KHÔNG mất: MediaAsset.folderId SetNull (schema), byte kho phẳng giữ nguyên.
   // Chỉ các LIÊN KẾT trong thư mục đĩa bị gỡ (force=true).
-  //
-  // 2026-08-07 (cây lồng nhau): xoá thư mục cha là xoá CẢ cây con. FK parent_id ON DELETE
-  // CASCADE tự dọn hàng con trong DB, nhưng tệp trong các thư mục con thì PHẢI tự trả về
-  // "không thư mục" trước — nếu không chúng giữ folderLinkName trỏ vào thư mục đã biến mất.
+  // FK cascade tự dọn thư mục con trong DB, nhưng tệp bên trong chúng phải tự trả về
+  // "không thư mục" trước, nếu không sẽ giữ folderLinkName trỏ vào thư mục đã biến mất.
   app.delete(
     '/api/v1/media/folders/:id',
     async (request: FastifyRequest, reply: FastifyReply) => {

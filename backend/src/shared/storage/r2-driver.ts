@@ -52,7 +52,7 @@ export const r2Driver: StorageDriver = {
 
   async uploadBuffer(buffer: Buffer, mimeType: string, originalName?: string): Promise<UploadResult> {
     if (!buffer || buffer.length === 0) throw new Error('uploadBuffer: empty buffer (refusing 0-byte object)');
-    // Đuôi theo NỘI DUNG THẬT trước, tên tệp chỉ là dự phòng — khớp local-driver (2026-08-08).
+    // Đuôi theo nội dung thật, tên tệp chỉ là dự phòng. Khớp local-driver.
     const ext = mimeToExt(mimeType) || (originalName ? extname(originalName) : '');
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const key = `media/${contentHash}${ext}`;

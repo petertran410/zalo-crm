@@ -121,9 +121,9 @@ export interface MediaFolder {
   kind: string;
   visibility: 'private' | 'public';
   ownerUserId: string | null;
-  /** Thư mục cha — null = thư mục gốc. BE trả danh sách PHẲNG, FE tự dựng cây (2026-08-07). */
+  /** null nghĩa là thư mục gốc. */
   parentId?: string | null;
-  /** Đường dẫn thư mục thật trên đĩa máy chủ, vd "viet_nam/bao_gia". */
+  /** Đường dẫn thư mục thật trên đĩa máy chủ. */
   diskSlug?: string | null;
 }
 
@@ -252,10 +252,7 @@ export async function listMediaTags(
   return data.tags as Array<{ tag: string; count: number }>;
 }
 
-/**
- * Tạo thư mục. parentId != null → thư mục con (tối đa 10 cấp, BE chặn).
- * Trùng tên với thư mục anh em → BE trả 409 FOLDER_NAME_TAKEN (axios ném lỗi).
- */
+/** Trùng tên với thư mục anh em thì BE trả 409 FOLDER_NAME_TAKEN. */
 export async function createMediaFolder(
   name: string,
   visibility: 'private' | 'public' = 'private',
@@ -265,20 +262,15 @@ export async function createMediaFolder(
   return data;
 }
 
-/**
- * Xoá 1 thư mục. Tệp bên trong KHÔNG mất — chỉ bị bỏ ra khỏi thư mục (folderId = null),
- * byte trong kho phẳng giữ nguyên. Xoá thư mục cha kéo theo cả cây con (BE cascade).
- */
+/** Tệp bên trong không mất, chỉ bị bỏ ra khỏi thư mục. Xoá cha kéo theo cả cây con. */
 export async function deleteMediaFolder(id: string): Promise<{ ok: boolean }> {
   const { data } = await api.delete(`/media/folders/${id}`);
   return data;
 }
 
 /**
- * Như createMediaFolder nhưng TRÙNG TÊN thì dùng lại thư mục sẵn có thay vì ném lỗi.
- * Dành cho luồng tải-cả-thư-mục: tải lại đúng cây đó lần hai phải chạy tiếp được, chứ
- * không được hỏng chỉ vì thư mục đã tồn tại từ lần trước.
- * BE trả kèm `folder` đang chiếm tên trong thân lỗi 409 nên không cần gọi thêm lượt nào.
+ * Trùng tên thì dùng lại thư mục sẵn có thay vì ném lỗi, để tải lại đúng cây đó lần hai
+ * vẫn chạy tiếp được. BE trả kèm thư mục đang chiếm tên trong thân lỗi 409.
  */
 export async function createOrReuseMediaFolder(
   name: string,
