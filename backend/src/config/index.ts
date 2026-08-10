@@ -168,7 +168,7 @@ export const config = {
    * Client SDK @dieptra/mcp-client: OAuth client_credentials + Streamable HTTP /mcp.
    * baseUrl = origin only (vd https://sandbox-mcp.hisweetievietnam.com), không kèm /mcp.
    * Để trống clientId/secret → feature disabled (routes trả 503). */
-  hisweetieMcpUrl: (envValue('HISWEETIE_MCP_URL') || '').replace(/\/+$/, ''),
-  hisweetieClientId: envValue('HISWEETIE_CLIENT_ID') || '',
-  hisweetieClientSecret: envValue('HISWEETIE_CLIENT_SECRET') || '',
+  hisweetieMcpUrl: (envValue('HISWEETIE_MCP_URL') || envValue('HISWEETIE_POS_BASE_URL') || '').replace(/\/+$/, ''),
+  hisweetieClientId: envValue('HISWEETIE_CLIENT_ID') || envValue('HISWEETIE_POS_CLIENT_ID') || '',
+  hisweetieClientSecret: envValue('HISWEETIE_CLIENT_SECRET') || envValue('HISWEETIE_POS_CLIENT_SECRET') || '',
 };

@@ -361,17 +361,6 @@
 
         <!-- ─── ORDERS TAB ─── -->
         <div v-show="salesTab === 'orders'" class="sp-pane sp-pane-padded">
-          <CustomerOrdersWidget
-            :contact-id="props.contactId"
-            :is-pos-linked="posLinkStatus.linked"
-            :pos-customer-id="posLinkStatus.posCustomerId"
-            :pos-customer-code="posLinkStatus.posCustomerCode"
-            :customer-name="props.contact?.fullName || headerFullName"
-            :customer-phone="props.contact?.phone"
-            @create-order="openOrderForContact"
-            @open-detail="openOrderDetail"
-          />
-
           <!-- Header: tiêu đề (không có nút Tạo đơn — đặt ở Overview tab) -->
           <div class="sp-orders-header">
             <div class="sp-orders-title">
@@ -1279,7 +1268,6 @@ import PosCustomerForm from '@/components/pos/PosCustomerForm.vue';
 import PosLinkSearchDialog from '@/components/pos/PosLinkSearchDialog.vue';
 import CustomerDebtWidget from '@/components/pos/CustomerDebtWidget.vue';
 import BranchInventoryWidget from '@/components/pos/BranchInventoryWidget.vue';
-import CustomerOrdersWidget from '@/components/pos/CustomerOrdersWidget.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';
