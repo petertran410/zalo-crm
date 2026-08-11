@@ -21,8 +21,16 @@ export interface OrderDraftEntry {
   orderDiscount: number;
   appliedPromoIds: string[];
   description: string;
+  billNote?: string;
+  shippingNote?: string;
   paidAmount: number;
   deliveryAddress: string;
+  packageLength?: number;
+  packageWidth?: number;
+  packageHeight?: number;
+  packageWeight?: number;
+  orderDiscountType?: 'amount' | 'percent';
+  orderDiscountValue?: number;
   // UI state
   activeSection: string;
   completedSections: string[];
@@ -61,8 +69,16 @@ function makeDraft(opts: OpenDraftOptions): OrderDraftEntry {
     orderDiscount: 0,
     appliedPromoIds: [],
     description: '',
+    billNote: '',
+    shippingNote: '',
     paidAmount: 0,
     deliveryAddress: '',
+    packageLength: undefined,
+    packageWidth: undefined,
+    packageHeight: undefined,
+    packageWeight: undefined,
+    orderDiscountType: 'amount',
+    orderDiscountValue: 0,
     activeSection: 'customer',
     completedSections: [],
     isMinimized: false,
@@ -113,13 +129,16 @@ export const useOrderDraftStore = defineStore('orderDrafts', () => {
       : null;
 
     if (existing) {
-      // Thu nhỏ cái đang mở (nếu khác) + expand cái existing + cập nhật avatar nếu có
+      // Thu nhỏ cái đang mở (nếu khác) + expand cái existing + cập nhật info nếu có
       drafts.value = drafts.value.map(d => {
         if (d.id === existing.id) {
           return {
             ...d,
             isMinimized: false,
             contactAvatar: opts.contactAvatar || d.contactAvatar,
+            contactPhone: opts.contactPhone || d.contactPhone,
+            posCustomerId: opts.posCustomerId || d.posCustomerId,
+            posCustomerCode: opts.posCustomerCode || d.posCustomerCode,
           };
         }
         if (!d.isMinimized) return { ...d, isMinimized: true };

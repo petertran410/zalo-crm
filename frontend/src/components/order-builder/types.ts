@@ -12,6 +12,7 @@ export interface CustomerInfo {
   zaloId?: string;
   avatar?: string;
   address?: string;
+  secondaryAddresses?: string[];
 }
 
 /** Sản phẩm POS (từ DB cục bộ pos_products) */
@@ -39,8 +40,18 @@ export interface CartItem {
   product: POSProduct;
   quantity: number;
   discount?: number;           // Chiết khấu sản phẩm (VNĐ)
+  note?: string;               // Ghi chú riêng cho từng sản phẩm
   isGift?: boolean;            // true = hàng quà tặng từ khuyến mãi
   promoId?: string;            // ID chương trình KM đã áp dụng
+  
+  // Mở rộng chiết khấu và trạng thái
+  conditionType?: 'normal' | 'damaged' | 'near_expiry';
+  discountType?: 'amount' | 'percent';
+  discountValue?: number;      // Giá trị user nhập vào (50000 hoặc 10)
+
+  // Kho chi nhánh & trạng thái tồn kho
+  warehouseId?: number;        // ID kho chi nhánh riêng cho dòng sản phẩm
+  isOutOfStock?: boolean;      // true = hết hàng (không được xuất hiện trên hóa đơn)
 }
 
 /** Bảng giá cố định cho từng tệp khách hàng */
@@ -62,11 +73,22 @@ export interface DraftOrder {
   paymentMethod: string;
   orderStatus: number;
   priceBookId?: string;
-  orderDiscount?: number;
+  orderDiscount?: number;      // (VNĐ) số tiền chiết khấu thực tính
+  orderDiscountType?: 'amount' | 'percent';
+  orderDiscountValue?: number; // giá trị user nhập vào
   appliedPromoIds?: string[];
   description: string;
+  billNote?: string;
+  shippingNote?: string;
   paidAmount: number;
   deliveryAddress?: string;
+  
+  // Kích thước, cân nặng giao hàng
+  packageLength?: number;
+  packageWidth?: number;
+  packageHeight?: number;
+  packageWeight?: number; // kg hoặc gram tùy anh quy định, UI đang để linh hoạt
+  
   createdAt: string;
 }
 
@@ -104,7 +126,6 @@ export function formatVND(value: number): string {
 export const PAYMENT_METHODS: PaymentMethodOption[] = [
   { value: 'cash',          label: 'Tiền mặt (COD)',         icon: '💵', description: 'Thanh toán tiền mặt khi nhận hàng' },
   { value: 'bank_transfer', label: 'Chuyển khoản (VietQR)', icon: '🏦', description: 'Quét mã VietQR tự động khớp' },
-  { value: 'card',          label: 'Quẹt thẻ',               icon: '💳', description: 'Thanh toán bằng thẻ ngân hàng' },
 ];
 
 /** Danh sách trạng thái đơn */

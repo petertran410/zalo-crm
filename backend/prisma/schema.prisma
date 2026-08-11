@@ -198,6 +198,7 @@ model Organization {
   posBranchInventory      PosBranchInventory[]
   posWebhookLogs          PosWebhookLog[]
   syncJobs                SyncJob[]
+  workspaceSessions       WorkspaceSession[]
 
   @@map("organizations")
 }
@@ -351,6 +352,7 @@ model User {
   createdChatArchives       ChatArchive[]                @relation("ChatArchiveCreatedBy")
   syncJobs                  SyncJob[]                    @relation("SyncJobUser")
   createdPosOrders          PosOrder[]                   @relation("UserPosOrders")
+  workspaceSessions         WorkspaceSession[]
 
   @@map("users")
 }
@@ -4718,4 +4720,28 @@ model PosWebhookLog {
   @@index([status, attempts, createdAt])
   @@index([orgId, eventType])
   @@map("pos_webhook_logs")
+}
+
+// Sales Workspace Session — mỗi session là ngữ cảnh làm việc của 1 Sales với 1 khách hàng.
+// Lưu trạng thái giỏ hàng, shipping, payment, ghi chú, UI state dưới dạng JSON.
+// Backend sync: Prisma (source of truth) + Redis (hot cache). Frontend dùng LocalStorage
+// làm primary storage, sync lên backend debounced 2s. Last Write Wins.
+model WorkspaceSession {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  userId          String   @map("user_id")
+  contactId       String?  @map("contact_id")
+  contactName     String   @map("contact_name")
+  sessionData     Json     @map("session_data")  // Full session payload (cart, shipping, payment, notes, UI state)
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org  Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])  // 1 contact = 1 active session per user
+  @@index([userId, isActive])
+  @@index([orgId, userId])
+  @@map("workspace_sessions")
 }

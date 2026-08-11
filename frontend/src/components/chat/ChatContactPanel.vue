@@ -194,6 +194,18 @@
             </div>
           </template>
         </section>
+
+        <!-- ── CTA chính: Tạo đơn hàng ── -->
+        <button
+          class="sp-cta-primary mt-3"
+          :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
+          :class="{ 'sp-cta-disabled': !posLinkStatus.linked || !orderDraftStore.canOpenNew }"
+          :title="!orderDraftStore.canOpenNew ? (!orderDraftStore.drafts.some(d => !d.isMinimized) ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.' : 'Hãy thu nhỏ đơn hiện tại trước') : ''"
+          @click="openOrderForContact"
+        >
+          <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
+          Tạo đơn hàng
+        </button>
       </div>
 
       <!-- ══════════════════════════════════════════
@@ -336,17 +348,7 @@
             <BranchInventoryWidget @insert-inventory-info="onInsertSuggestionText" />
           </div>
 
-          <!-- ── CTA chính: Tạo đơn hàng ── -->
-          <button
-            class="sp-cta-primary"
-            :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
-            :class="{ 'sp-cta-disabled': !posLinkStatus.linked || !orderDraftStore.canOpenNew }"
-            :title="!orderDraftStore.canOpenNew ? (!orderDraftStore.drafts.some(d => !d.isMinimized) ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.' : 'Hãy thu nhỏ đơn hiện tại trước') : ''"
-            @click="openOrderForContact"
-          >
-            <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
-            Tạo đơn hàng
-          </button>
+
 
 
           <!-- ── Coming Soon: 1 dòng xám nhạt ── -->
@@ -359,17 +361,6 @@
 
         <!-- ─── ORDERS TAB ─── -->
         <div v-show="salesTab === 'orders'" class="sp-pane sp-pane-padded">
-          <CustomerOrdersWidget
-            :contact-id="props.contactId"
-            :is-pos-linked="posLinkStatus.linked"
-            :pos-customer-id="posLinkStatus.posCustomerId"
-            :pos-customer-code="posLinkStatus.posCustomerCode"
-            :customer-name="props.contact?.fullName || headerFullName"
-            :customer-phone="props.contact?.phone"
-            @create-order="openOrderForContact"
-            @open-detail="openOrderDetail"
-          />
-
           <!-- Header: tiêu đề (không có nút Tạo đơn — đặt ở Overview tab) -->
           <div class="sp-orders-header">
             <div class="sp-orders-title">
@@ -1277,7 +1268,6 @@ import PosCustomerForm from '@/components/pos/PosCustomerForm.vue';
 import PosLinkSearchDialog from '@/components/pos/PosLinkSearchDialog.vue';
 import CustomerDebtWidget from '@/components/pos/CustomerDebtWidget.vue';
 import BranchInventoryWidget from '@/components/pos/BranchInventoryWidget.vue';
-import CustomerOrdersWidget from '@/components/pos/CustomerOrdersWidget.vue';
 import AiSummaryCard from '@/components/ai/ai-summary-card.vue';
 import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import AutomationCardList from './AutomationCardList.vue';
@@ -1286,7 +1276,7 @@ import MediaTabPanel from './MediaTabPanel.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import ContactDealStageSelector from '@/components/chat/ContactDealStageSelector.vue';
 import OrderDetailModal from './OrderDetailModal.vue';
-import { useOrderDraftStore } from '@/stores/use-order-drafts';
+import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 
 const orderDraftStore = useOrderDraftStore();
 
@@ -1564,6 +1554,7 @@ function openOrderForContact() {
     contactPhone: props.contact?.phone || undefined,
     posCustomerId: posLinkStatus.value.posCustomerId || undefined,
     posCustomerCode: posLinkStatus.value.posCustomerCode || undefined,
+    conversationId: props.conversationId || undefined,
   });
 }
 const customerType = ref<string | null>('VIP');

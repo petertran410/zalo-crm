@@ -94,7 +94,8 @@ function formatCurrency(val: number | null | undefined) {
 <style scoped>
 .pos-products-page {
   background-color: #f8fafc;
-  height: calc(100vh - var(--smax-topnav-h));
+  height: 100%;
+  flex: 1;
   display: flex;
   flex-direction: column;
   overflow: hidden;

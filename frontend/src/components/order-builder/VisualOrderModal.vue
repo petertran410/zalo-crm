@@ -281,7 +281,12 @@ const totalAmount = computed(() => {
 
 const orderDiscountAmount = computed(() => {
   if (!activeDraft.value) return 0;
-  return Math.max(0, activeDraft.value.orderDiscount || 0);
+  const type = activeDraft.value.orderDiscountType || 'amount';
+  const val = activeDraft.value.orderDiscountValue || 0;
+  if (type === 'percent') {
+    return Math.floor(totalAmount.value * (val / 100));
+  }
+  return Math.max(0, val);
 });
 
 const grandTotal = computed(() => {
@@ -357,10 +362,14 @@ function handleUpdateProductDiscount(productId: number, discount: number) {
   }
 }
 
-function handleUpdateOrderDiscount(discount: number) {
+function handleUpdateOrderDiscount(discountVal: number) {
   if (!activeDraft.value) return;
-  const maxAllowed = totalAmount.value;
-  activeDraft.value.orderDiscount = Math.min(Math.max(0, discount), maxAllowed);
+  activeDraft.value.orderDiscountValue = Math.max(0, discountVal);
+}
+
+function handleUpdateOrderDiscountType(type: string) {
+  if (!activeDraft.value) return;
+  activeDraft.value.orderDiscountType = type as 'amount' | 'percent';
 }
 
 // ─── Init / Reset ─────────────────────────────────────────────────────
@@ -375,6 +384,8 @@ function initDraft(): DraftOrder {
     orderStatus: 1,
     priceBookId: 'standard',
     orderDiscount: 0,
+    orderDiscountType: 'amount',
+    orderDiscountValue: 0,
     appliedPromoIds: [],
     description: '',
     paidAmount: 0,
@@ -481,12 +492,15 @@ function handleDeleteDraft(id: string) {
 // ─── Cart Operations ──────────────────────────────────────────────────
 function handleAddProduct(product: POSProduct) {
   if (!activeDraft.value) return;
-  const existing = activeDraft.value.cartItems.find(c => c.product.id === product.id);
-  if (existing) {
+  const existingIdx = activeDraft.value.cartItems.findIndex(c => c.product.id === product.id);
+  if (existingIdx !== -1) {
+    const existing = activeDraft.value.cartItems[existingIdx];
     existing.quantity++;
+    activeDraft.value.cartItems.splice(existingIdx, 1);
+    activeDraft.value.cartItems.unshift(existing);
     showToast(`Đã tăng số lượng ${product.name}.`);
   } else {
-    activeDraft.value.cartItems.push({ product, quantity: 1 });
+    activeDraft.value.cartItems.unshift({ product, quantity: 1 });
     showToast(`Đã thêm ${product.name} vào bảng vẽ.`);
   }
 }

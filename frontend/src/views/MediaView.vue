@@ -5,7 +5,7 @@
       <h1 class="m-title">Kho lưu trữ</h1>
       <div class="m-tools">
         <div class="m-search">
-          <span class="i">🔍</span>
+          <span class="material-symbols-outlined i">search</span>
           <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
         </div>
         <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>

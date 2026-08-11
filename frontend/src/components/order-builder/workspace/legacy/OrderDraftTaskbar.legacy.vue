@@ -1,60 +1,59 @@
 <template>
   <teleport to="body">
     <transition name="odt-slide">
-      <div v-if="store.sessions.length > 0 && !store.hasActiveFullSession" class="odt-taskbar">
+      <div v-if="store.drafts.length > 0" class="odt-taskbar">
         <!-- Label & counter -->
         <div class="odt-label">
           <ShoppingBag :size="14" class="odt-label__icon" />
-          <span class="odt-label__title">PHIÊN</span>
-          <span class="odt-label__badge">{{ store.sessions.length }} phiên</span>
-          <span v-if="store.totalUnread > 0" class="odt-label__unread">💬 {{ store.totalUnread }}</span>
+          <span class="odt-label__title">HÀNG ĐỢI</span>
+          <span class="odt-label__badge">{{ store.drafts.length }}/3</span>
         </div>
 
-        <!-- Avatar Bubble Items (Các phiên đơn nháp) -->
+        <!-- Avatar Bubble Items (Tối đa 3 đơn nháp) -->
         <transition-group name="odt-bubble-anim" tag="div" class="odt-bubbles">
           <div
-            v-for="(draft, idx) in visibleDrafts"
+            v-for="draft in visibleDrafts"
             :key="draft.id"
             class="odt-bubble"
             :class="{ 'odt-bubble--active': !draft.isMinimized }"
-            :title="`${draft.contactName || 'Khách hàng'} • ${cartCount(draft)} SP • ${formatVND(grandTotal(draft))}`"
+            :title="`${draft.contactName} • ${cartCount(draft)} SP • ${formatVND(grandTotal(draft))}`"
             @click="handleCardClick(draft.id)"
           >
-            <!-- Orbit Container -->
+            <!-- Orbit Container (Vành Chức Năng Bao Quanh Avatar) -->
             <div class="odt-bubble__orbit">
-              <!-- Animated Gradient Ring -->
+              <!-- Animated Rotating Gradient Ring (Vành chạy vòng tròn) -->
               <div class="odt-bubble__ring" />
 
-              <!-- Avatar Image or Initials -->
-              <img
-                v-if="draft.contactAvatar && !avatarErrorMap[draft.id]"
-                :src="draft.contactAvatar"
-                :alt="draft.contactName"
-                class="odt-bubble__img"
-                @error="avatarErrorMap[draft.id] = true"
-              />
-              <div v-else class="odt-bubble__avatar-bg">
-                <span class="odt-bubble__initials">{{ getInitials(draft.contactName) }}</span>
-              </div>
-
-              <!-- Cart items badge (góc dưới phải) -->
+              <!-- Bottom-Right Badge: Product count badge on orbit ring -->
               <div v-if="cartCount(draft) > 0" class="odt-bubble__badge-left" title="Số lượng sản phẩm">
                 {{ cartCount(draft) }}
               </div>
 
-              <!-- Close button [X] (góc trên phải - hover mới hiện) -->
+              <!-- Top-Right Badge: Close button [X] on orbit ring -->
               <button
                 class="odt-bubble__badge-right"
                 title="Xóa đơn nháp"
-                @click.stop="confirmClose(draft.id, draft.contactName || 'Khách hàng')"
+                @click.stop="confirmClose(draft.id, draft.contactName)"
               >
                 <X :size="10" />
               </button>
+
+              <!-- Center Main Circle: Large Avatar (Image or Initials) -->
+              <div class="odt-bubble__avatar">
+                <img
+                  v-if="draft.contactAvatar && !avatarErrorMap[draft.id]"
+                  :src="draft.contactAvatar"
+                  class="odt-bubble__img"
+                  alt=""
+                  @error="avatarErrorMap[draft.id] = true"
+                />
+                <span v-else class="odt-bubble__initials">{{ getInitials(draft.contactName) }}</span>
+              </div>
             </div>
 
-            <!-- Side Label: Name & Total Price -->
+            <!-- Bottom Label: Name & Total Price under avatar -->
             <div class="odt-bubble__info">
-              <div class="odt-bubble__name">{{ draft.contactName || 'Khách hàng' }}</div>
+              <div class="odt-bubble__name">{{ draft.contactName }}</div>
               <div class="odt-bubble__price" v-if="grandTotal(draft) > 0">
                 {{ formatVND(grandTotal(draft)) }}
               </div>
@@ -119,16 +118,16 @@
 <script setup lang="ts">
 import { ref, reactive, computed } from 'vue';
 import { ShoppingBag, Maximize2, Minus, X, ChevronUp, ChevronDown } from 'lucide-vue-next';
-import { useWorkspaceSessionStore, type WorkspaceSession as OrderDraftEntry } from '@/stores/use-workspace-sessions';
+import { useOrderDraftStore, type OrderDraftEntry } from '@/stores/use-order-drafts';
 import { formatVND, getEffectiveProductPrice } from '@/components/order-builder/types';
 
-const store = useWorkspaceSessionStore();
+const store = useOrderDraftStore();
 const overflowOpen = ref(false);
 const avatarErrorMap = reactive<Record<string, boolean>>({});
 
-// Visible = tối đa 5 đầu tiên
-const visibleDrafts = computed(() => store.sessions.slice(0, 5));
-const overflowDrafts = computed(() => store.sessions.slice(5));
+// Visible = tối đa 3 đầu tiên
+const visibleDrafts = computed(() => store.drafts.slice(0, 3));
+const overflowDrafts = computed(() => store.drafts.slice(3));
 
 function getInitials(name: string): string {
   if (!name) return 'KH';
@@ -177,19 +176,20 @@ function doClose() {
   position: fixed;
   bottom: 20px;
   right: 24px;
-  z-index: 8500;
+  z-index: 9000;
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 8px 16px;
-  background: rgba(255, 255, 255, 0.95);
+  padding: 7px 16px 8px 16px;
+  background: rgba(255, 255, 255, 0.98);
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid #cbd5e1;
-  border-radius: 24px;
-  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
-  pointer-events: auto;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 20px 20px 14px 14px;
+  box-shadow: 0 10px 30px -5px rgba(15, 23, 42, 0.18), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+  pointer-events: none;
+  overflow: visible;
 }
+.odt-taskbar > * { pointer-events: auto; }
 
 /* Slide up/down animation */
 .odt-slide-enter-active, .odt-slide-leave-active { transition: transform 0.25s ease, opacity 0.25s ease; }
@@ -199,33 +199,32 @@ function doClose() {
 .odt-label {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 11px;
+  gap: 7px;
+  font-size: 11.5px;
   font-weight: 700;
   color: #334155;
   letter-spacing: 0.02em;
   white-space: nowrap;
   user-select: none;
-  padding-right: 8px;
-  margin-right: 2px;
-  border-right: 1px solid #e2e8f0;
+  padding-right: 12px;
+  border-right: 1.5px solid #e2e8f0;
 }
 .odt-label__icon {
   color: #0068FF;
 }
 .odt-label__title {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 800;
   color: #1e293b;
-  letter-spacing: 0.03em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .odt-label__badge {
   background: #eff6ff;
   color: #0068FF;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 800;
-  padding: 1px 6px;
+  padding: 2px 7px;
   border-radius: 10px;
   border: 1px solid #bfdbfe;
 }
@@ -233,8 +232,10 @@ function doClose() {
 /* ── Bubbles container ───────────────────────────────────────────────── */
 .odt-bubbles {
   display: flex;
-  align-items: center;
-  gap: 10px;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: -42px; /* Vành 58px trồi 75% ra ngoài khung nền */
+  overflow: visible;
 }
 
 .odt-bubble-anim-enter-active, .odt-bubble-anim-leave-active { transition: all 0.2s ease; }
@@ -245,57 +246,50 @@ function doClose() {
 .odt-bubble {
   position: relative;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  padding: 4px 10px 4px 4px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 20px;
+  width: 70px;
   cursor: pointer;
   user-select: none;
-  transition: all 0.15s ease;
+  transition: transform 0.15s ease;
+  padding-top: 0;
+  overflow: visible;
 }
 .odt-bubble:hover {
-  background: #eff6ff;
-  border-color: #93c5fd;
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(0, 104, 255, 0.12);
-}
-.odt-bubble--active {
-  background: #eff6ff;
-  border-color: #3b82f6;
-  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+  transform: translateY(-3px);
 }
 
-/* ── Orbit Container (Avatar Ring) ───────────────── */
+/* ── Orbit Container (Vành Chức Năng Bao Quanh Avatar) ───────────────── */
 .odt-bubble__orbit {
   position: relative;
-  width: 36px;
-  height: 36px;
+  width: 58px;
+  height: 58px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
 }
 
+/* Rotating gradient laser ring track */
 .odt-bubble__ring {
   position: absolute;
   inset: -1px;
   border-radius: 50%;
-  padding: 2px;
+  padding: 3px; /* Độ dày vành 3px */
   background: conic-gradient(from 0deg, transparent 0%, #10b981 35%, #0068FF 70%, #38bdf8 92%, #ffffff 100%);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
   animation: odt-ring-spin 3.5s linear infinite;
-  opacity: 0.8;
+  opacity: 0.9;
+  transition: opacity 0.2s ease, filter 0.2s ease;
 }
 
 .odt-bubble--active .odt-bubble__ring {
   opacity: 1;
   background: conic-gradient(from 0deg, transparent 0%, #06b6d4 30%, #0068FF 65%, #22c55e 90%, #ffffff 100%);
   animation: odt-ring-spin 2s linear infinite;
+  filter: drop-shadow(0 0 6px rgba(0, 104, 255, 0.75));
 }
 
 @keyframes odt-ring-spin {
@@ -303,30 +297,7 @@ function doClose() {
   to { transform: rotate(360deg); }
 }
 
-.odt-bubble__img {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.odt-bubble__avatar-bg {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #0068FF, #2563eb);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.odt-bubble__initials {
-  font-size: 11.5px;
-  font-weight: 800;
-  color: #ffffff;
-}
-
-/* 1) Bottom-Right Badge (Số sản phẩm) */
+/* 1) Bottom-Right Badge (Số sản phẩm - đính trên Vành Chức Năng) */
 .odt-bubble__badge-left {
   position: absolute;
   bottom: -2px;
@@ -334,56 +305,91 @@ function doClose() {
   z-index: 5;
   background: #10b981;
   color: #ffffff;
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 800;
-  width: 16px;
-  height: 16px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid #ffffff;
-  box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
+  box-shadow: 0 2.5px 6px rgba(16, 185, 129, 0.4);
+  border: 2px solid #ffffff;
 }
 
-/* 2) Top-Right Badge (Nút tắt [X] - hover mới hiện) */
+/* 2) Top-Right Badge (Nút tắt [X] - đính trên Vành Chức Năng) */
 .odt-bubble__badge-right {
   position: absolute;
-  top: -3px;
-  right: -3px;
-  z-index: 6;
-  background: #ef4444;
-  color: #ffffff;
-  width: 16px;
-  height: 16px;
+  top: -2px;
+  right: -2px;
+  z-index: 5;
+  background: #ffffff;
+  color: #059669;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1.5px solid #ffffff;
+  border: 2px solid #10b981;
   padding: 0;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  box-shadow: 0 1px 4px rgba(239, 68, 68, 0.4);
+  box-shadow: 0 2.5px 5px rgba(16, 185, 129, 0.25);
+  transition: all 0.15s ease;
 }
 .odt-bubble:hover .odt-bubble__badge-right {
-  opacity: 1;
+  background: #ef4444;
+  color: #ffffff;
+  border-color: #ffffff;
+  box-shadow: 0 2.5px 6px rgba(239, 68, 68, 0.4);
 }
 
-/* Side Info: Name & Price */
+/* 3) Center Main Circle: Large Avatar (nằm gọn khít bên trong Vành) */
+.odt-bubble__avatar {
+  position: relative;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, 0.9), 0 3px 8px rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+}
+
+.odt-bubble__img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.odt-bubble__initials {
+  font-size: 15px;
+  font-weight: 800;
+  color: #334155;
+  letter-spacing: -0.02em;
+}
+.odt-bubble--active .odt-bubble__initials {
+  color: #0068FF;
+}
+
+/* 4) Bottom Info: Name & Price under avatar */
 .odt-bubble__info {
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-  text-align: left;
+  align-items: center;
+  width: 100%;
+  text-align: center;
 }
 .odt-bubble__name {
-  font-size: 11.5px;
+  font-size: 11px;
   font-weight: 700;
   color: #1e293b;
-  max-width: 85px;
+  max-width: 70px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -392,8 +398,8 @@ function doClose() {
 .odt-bubble__price {
   font-size: 10.5px;
   font-weight: 800;
-  color: #0068FF;
-  max-width: 85px;
+  color: #059669;
+  max-width: 70px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
