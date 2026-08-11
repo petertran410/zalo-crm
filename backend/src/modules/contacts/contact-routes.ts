@@ -79,15 +79,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       if (status) where.status = status;
       if (statusId) where.statusId = statusId;
       if (assignedUserId) where.assignedUserId = assignedUserId;
-      // 2026-06-03 fix (office-hours review): filter Zalo phải KHỚP logic hiển thị
-      // zaloDisplay() ở frontend — "Có Zalo" = có Friend row HOẶC zalo identity HOẶC
-      // hasZalo=true (không chỉ hasZalo raw). Trước đây filter dùng hasZalo raw nên
-      // 1.360 KH có Friend nhưng hasZalo=null bị filter "Có Zalo" bỏ sót (lệch 33%).
-      //
-      //   "Có Zalo"        = hasZalo=true OR có Friend OR có zaloUid/globalId/username
-      //   "Không tìm thấy" = KHÔNG có Zalo (none of yesShape) VÀ hasZalo=false (đã quét ra no)
-      //   "Chưa tìm"       = KHÔNG có Zalo VÀ hasZalo=null (chưa quét)
-      // Push vào where.AND để KHÔNG đụng where.OR của search.
+      // "Có Zalo" phải khớp đúng zaloDisplay() ở frontend: có Friend row, có zalo identity, hoặc
+      // hasZalo=true. Dùng hasZalo thô như trước bỏ sót 1.360 KH có Friend nhưng hasZalo=null.
+      // Push vào where.AND để không đụng where.OR của search.
       if (hasZalo === 'true' || hasZalo === 'false' || hasZalo === 'unknown') {
         // hasIdentity = các nguồn suy ra "có Zalo" NGOÀI hasZalo (friend/uid/globalId/username)
         const hasIdentityShape = [
@@ -120,11 +114,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         if (dateFrom) where.lastActivity.gte = new Date(dateFrom);
         if (dateTo) where.lastActivity.lte = new Date(dateTo + 'T23:59:59.999Z');
       }
-      // 2026-06-03 fix: Loại = PHÂN LOẠI người vs nhóm (KHÔNG phải "có hội thoại mới lọc").
-      // Nhóm = contact đại diện 1 hội thoại group Zalo ("BTC Tuyển Sinh CEOSG11"): không SĐT
-      //        + có group conversation + không có user conversation.
-      // Cá nhân = người thật (có SĐT HOẶC user conv HOẶC không phải nhóm). KH no-Zalo/chưa chat
-      //        VẪN là cá nhân → hiện ra (trước đây 'user' bắt phải có conv nên ẩn hết no-Zalo).
+      // Loại là phân loại người với nhóm, không phải "có hội thoại mới lọc". KH chưa chat vẫn là cá
+      // nhân; trước đây bắt phải có conv nên ẩn hết KH không dùng Zalo.
       if (threadType === 'group') {
         where.AND = where.AND ?? [];
         where.AND.push({ conversations: { some: { threadType: 'group', orgId: user.orgId } } });
@@ -329,12 +320,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
       const sevenDaysAgo = new Date(now.getTime() - 7 * 86_400_000);
       const sevenDaysAhead = new Date(now.getTime() + 7 * 86_400_000);
 
-      // FIX 4 nick-ghost (2026-06-13, Codex #7): filter "Friend THẬT" (loại thẻ ma/đã ẩn +
-      // dòng ghost) dùng chung cho stat counter — để "có nick chăm" + "multi-claim ≥3 nick"
-      // không tính thẻ ma. Đồng bộ với AGGREGATE_INCLUDE.friends.where.
-      // NHÓM C YC2 (2026-06-20): GIỮ archivedAt:null — nick ĐÃ XÓA KHÔNG tính là "đang chăm"
-      // (tầng ĐẾM khác tầng "hiển thị hội thoại" của chat dùng DISPLAYABLE_NICK_WHERE). ĐỪNG
-      // đổi sang DISPLAYABLE ở đây → số liệu Contact sẽ phình (đếm nick đã ngừng làm việc).
+      // Giữ archivedAt:null vì nick đã xoá không tính là "đang chăm". Tầng đếm này khác tầng hiển thị
+      // hội thoại của chat, đổi sang DISPLAYABLE_NICK_WHERE sẽ làm số liệu phình lên.
       const REAL_FRIEND_SOME = { some: { zaloAccount: { archivedAt: null }, relationshipKind: { not: 'ghost' } } };
       const [
         total,
@@ -659,13 +646,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // POST /api/v1/contacts/quick-create : Wedge A KH-chặn-Zalo 2026-05-28
-  // Sale add KH no-Zalo nhanh (chỉ Họ tên + SĐT) từ Contacts FAB hoặc Chat FAB.
-  // Behavior:
-  //  - Normalize phone (84xxx canonical) + reject nếu format không hợp lệ
-  //  - Dedup check theo phoneNormalized + phone variants
-  //  - Trùng → return {exists:true, contact:{...meta}} status 200 (FE hiện warning inline)
-  //  - Chưa → create Contact với hasZalo=null, source='quick_add', ContactAccess primary cho creator
+  // Thêm nhanh KH không có Zalo, chỉ cần tên và SĐT. Trùng SĐT thì trả 200 kèm exists:true để FE
+  // cảnh báo tại chỗ chứ không tạo bản ghi mới.
   app.post('/api/v1/contacts/quick-create', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -802,15 +784,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // GET /api/v1/contacts/pos-link-candidates : KH POS khớp SĐT
-  // 2026-07-31 (anh chốt): modal "Liên kết khách hàng" tìm trong bảng PosCustomer
-  // (read model POS), KHÔNG phải trong Contact. KH POS nào đã có Contact mang
-  // posCustomerId đó thì trả linked=true → FE hiện "đã có", làm mờ, không cho bấm.
-  // Chỉ KH POS chưa liên kết mới chọn được.
-  //
-  // Cố ý KHÔNG lọc theo contact-scope khi dò linked: KH POS đã nằm trong CRM là
-  // sự thật cấp org, kể cả khi sale hiện tại không có quyền xem KH đó. Lọc theo
-  // scope sẽ khiến sale liên kết lại → tạo Contact trùng posCustomerId.
+  // Tìm trong PosCustomer chứ không trong Contact. KH POS nào đã có Contact mang posCustomerId thì
+  // trả linked=true để FE làm mờ, không cho bấm.
+  // Cố ý không lọc theo contact-scope khi dò linked: KH POS đã nằm trong CRM là sự thật cấp org,
+  // lọc theo scope sẽ khiến sale liên kết lại và tạo Contact trùng posCustomerId.
   app.get('/api/v1/contacts/pos-link-candidates', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -943,15 +920,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // POST /api/v1/contacts/link-pos : kéo 1 KH POS vào CRM
-  // 2026-07-31: thay quick-create ở modal "Liên kết khách hàng". Tạo Contact từ
-  // record POS, dùng đúng bộ field mapping của hisweetie-sync-cron để đêm sau
-  // cron match theo posCustomerId chứ không tạo bản ghi thứ hai.
-  //
-  // CỐ Ý KHÔNG gọi runAutomationRules('contact_created') như quick-create (anh
-  // chốt 2026-07-31): KH bên POS là khách CÓ TRƯỚC cả CRM, không phải lead mới.
-  // Bắn trigger sẽ gửi chuỗi chào mừng / auto-assign cho khách đã mua lâu năm.
-  // quick-create mới là đường của KH thật sự mới → nó giữ trigger.
+  // Tạo Contact từ record POS bằng đúng bộ field mapping của hisweetie-sync-cron, để cron đêm sau
+  // match theo posCustomerId thay vì đẻ bản ghi thứ hai.
+  // Cố ý KHÔNG bắn trigger contact_created: KH bên POS có trước cả CRM, gửi chuỗi chào mừng cho
+  // khách đã mua lâu năm là sai.
   app.post('/api/v1/contacts/link-pos', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -1275,11 +1247,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // Ngày 1 open issue: PUT contacts accept statusId
-      // body.statusId truyền string / null / undefined.
-      //   undefined → KHÔNG đụng statusId (giữ nguyên DB).
-      //   null      → clear statusId (đặt về null) — workflow "tháo trạng thái".
-      //   string    → verify Status row exists trong cùng orgId trước khi update.
+      // statusId: undefined thì giữ nguyên, null là tháo trạng thái, string thì phải verify Status
+      // thuộc cùng org trước khi ghi.
       let statusIdPatch: string | null | undefined;
       if (body.statusId !== undefined) {
         if (body.statusId === null) {
@@ -1364,11 +1333,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         },
       });
 
-      // Goal 2 (anh chốt 2026-07-15) — KH đã link POS + sửa field POS NHẬN được →
-      // debounce push ngược POS 2s (xem hisweetie-push-queue.ts).
-      // KHÔNG lắng nghe addressLine: POS `crm_update_customer` từ chối `addresses`
-      // (verify sandbox 2026-07-16) → sửa địa chỉ KHÔNG đẩy sang POS được, đừng
-      // xếp job push thừa. Chỉ tên/SĐT/email mới push.
+      // Sửa field mà POS nhận được thì đẩy ngược sang POS sau 2s debounce.
+      // KHÔNG lắng nghe addressLine vì API POS từ chối addresses, xếp job push địa chỉ chỉ tốn công.
       if (existing.posCustomerId != null && (
         body.fullName !== undefined || body.crmName !== undefined
         || body.phone !== undefined || body.email !== undefined
@@ -1683,13 +1649,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // Soft delete (Thùng rác) : 2026-06-30
-  // DELETE /api/v1/contacts/:id → set archivedAt = now() (ẩn khỏi list chính).
-  // 2026-07-31 (anh chốt): SIẾT còn owner-only. Trước đây là
-  // requireGrant('contact','delete') nên Admin / Trưởng phòng / Sale Senior đều
-  // archive được. Giờ mọi thao tác xoá KH (archive, restore, purge) đều chung
-  // một tầng quyền duy nhất: user.role === 'owner'. Không dùng grant nữa để
-  // không ai cấp lại quyền này qua nhóm quyền được.
+  // Mọi thao tác xoá KH (archive, restore, purge) đều siết về owner-only. Cố ý không dùng grant
+  // để không ai cấp lại quyền này qua nhóm quyền được.
   app.delete('/api/v1/contacts/:id', {
     config: { contentClass: 'mixed' },
   }, async (request: FastifyRequest, reply: FastifyReply) => {
@@ -2180,11 +2141,8 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             details: { old: friend.aliasInNick, new: body.aliasInNick, friendId: friend.id, trigger: 'crm_edit' },
           });
 
-          // CRM → Zalo Real: push alias via SDK. Fire-and-forget — không block PUT
-          // response. Nếu SDK fail (account offline / network), log warn; lần sync
-          // alias periodic sẽ thấy mismatch và reconcile (CRM là source of truth ở
-          // moment user edit, nhưng nếu Zalo Real bị thay đổi parallel → race lần
-          // touch sau resolve).
+          // Fire-and-forget để không chặn response PUT. SDK lỗi thì lần sync alias định kỳ sẽ thấy lệch
+          // và tự reconcile.
           const newAlias = body.aliasInNick;
           const uidToTarget = friend.zaloUidInNick;
           const accountIdToCall = friend.zaloAccountId;
@@ -2558,15 +2516,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           if (!c) return reply.status(400).send({ error: 'attach contact not found' });
           linkedContactId = cid;
         } else if (body.contactMode === 'create' || (!linkedContactId && body.phone)) {
-          // Tạo Contact mới khi không match, hoặc khi user explicit chọn 'create'.
-          // 2026-06-12 (anh báo lỗi "Ensure conversation failed" 500): trước khi tạo,
-          // tìm Contact trùng unique key KỂ CẢ ĐÃ MERGE. Lý do: unique index
-          // contacts_org_id_zalo_global_id_key KHÔNG có WHERE merged_into IS NULL (khác
-          // index phone), nên 1 KH cùng zaloGlobalId đã bị gộp (merged_into != null) vẫn
-          // chiếm unique → contact.create đụng P2002 → 500. Bước tìm trùng ở trên lọc
-          // mergedInto:null nên KHÔNG thấy KH đã gộp → rơi vào create → crash. Có 342 KH
-          // đã gộp còn giữ zaloGlobalId trong 1 org → lỗi diện rộng. Giải: tìm trùng
-          // (không lọc merged) → đi theo mergedInto tới KH ĐÍCH còn sống → dùng lại.
+          // Phải tìm trùng KỂ CẢ Contact đã gộp: unique index theo zaloGlobalId không kèm điều kiện
+          // merged_into IS NULL, nên KH đã gộp vẫn chiếm unique và contact.create sẽ ném P2002.
+          // Tìm thấy thì đi theo mergedInto tới KH đích còn sống mà dùng lại.
           const dupId = await resolveExistingContactId(user.orgId, body.uid, body.zaloGlobalId, body.zaloUsername, body.phone);
           if (dupId) {
             linkedContactId = dupId;

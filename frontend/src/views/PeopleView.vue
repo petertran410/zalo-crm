@@ -647,16 +647,11 @@
 
 <script setup lang="ts">
 /**
- * PeopleView.vue — màn gộp "Bạn bè" + "Khách hàng" (2026-07-29).
+ * Màn gộp "Bạn bè" và "Khách hàng".
  *
- * Thiết kế: CRM Atlas No-Blur (claude.ai/design). Giữ nguyên hệ thống thị giác
- * (token màu, bo góc, typography, drawer 566px), nhãn dịch sang tiếng Việt cho khớp app.
- *
- * Ràng buộc backend đã kiểm chứng (contact-routes.ts):
- *   - relationshipKindAny nhận CSV → lọc quan hệ Zalo đa chọn chạy server-side.
- *   - dateFrom/dateTo lọc theo lastActivity → mốc "ngày tạo"/"nhắn cuối" chỉ đổi cột sắp xếp.
- *   - sort chỉ có 'score' | mặc định → sắp xếp theo cột + giờ trong ngày làm client-side
- *     trên các dòng đã tải (đã ghi chú ngay trong menu cho sale biết).
+ * Ràng buộc backend: relationshipKindAny lọc được server-side, dateFrom/dateTo chỉ lọc theo
+ * lastActivity, và sort chỉ nhận "score" nên sắp xếp theo cột khác phải làm client-side trên
+ * các dòng đã tải.
  */
 import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
@@ -832,12 +827,9 @@ const activeCount = computed(() => {
 
 // Tải dữ liệu
 /**
- * dateFrom/dateTo PHẢI là 'YYYY-MM-DD' (fix 500, 2026-07-29).
- * Backend tự nối chuỗi cho mốc cuối ngày: `new Date(dateTo + 'T23:59:59.999Z')`
- * (contact-routes.ts:121). Gửi ISO đầy đủ → '…999ZT23:59:59.999Z' → Invalid Date
- * → Prisma từ chối `lte` → 500.
- * Cắt theo giờ ĐỊA PHƯƠNG, không dùng toISOString(): f.from là local midnight nên
- * ở UTC+7 toISOString() lùi về 17:00 ngày hôm trước → lọc lệch 1 ngày.
+ * dateFrom/dateTo phải là YYYY-MM-DD: backend tự nối "T23:59:59.999Z" cho mốc cuối ngày, gửi
+ * ISO đầy đủ sẽ thành chuỗi hỏng và Prisma ném 500.
+ * Cắt theo giờ địa phương chứ không toISOString(): ở UTC+7 nó lùi về 17:00 ngày hôm trước.
  */
 function toDayParam(d: Date): string {
   const y = d.getFullYear();
@@ -897,13 +889,9 @@ async function fetchPage(reset: boolean) {
 }
 
 /**
- * Cột ↔ field thật (anh xác nhận nghĩa 2026-07-29):
- *   sent    "Nhắn cuối"     = tin CUỐI CÙNG DO MÌNH gửi   → lastOutboundAt
- *   inter   "Tương tác cuối" = tin cuối của BẤT KỲ bên nào → lastActivity
- *           (lastActivity = MAX(inbound|outbound|interaction), xem scoring/types.ts:210.
- *            Trước đây dùng lastInteractionAt — đó là mốc "sự kiện tương tác" riêng,
- *            chỉ 1-1, và KHÔNG phải field backend lọc/sắp xếp mặc định → lệch.)
- *   created "Ngày tạo"      = createdAt
+ * Cột ánh xạ sang field thật: "Nhắn cuối" là lastOutboundAt (tin cuối do mình gửi), "Tương tác
+ * cuối" là lastActivity (tin cuối của bất kỳ bên nào), "Ngày tạo" là createdAt.
+ * Đừng dùng lastInteractionAt: đó là mốc sự kiện riêng, không phải field backend lọc mặc định.
  */
 const FIELD_MAP: Record<FieldKey, keyof Contact> = {
   inter: 'lastActivity',
@@ -1175,9 +1163,8 @@ function pickPreset(p: { days: number | null }) {
 }
 
 /**
- * Bấm "Áp dụng" khi mới chọn 1 đầu ngày → cảnh báo thay vì đóng im lặng
- * (anh chốt 2026-07-29). Trước đây khoảng hở này bị bỏ qua: pickDay chỉ fetch ở
- * click thứ 2, nên chọn 1 ngày rồi Áp dụng = không có bộ lọc nào chạy.
+ * Chọn mới một đầu ngày rồi bấm Áp dụng thì cảnh báo thay vì đóng im lặng, vì pickDay chỉ fetch
+ * ở click thứ hai nên lúc đó chưa có bộ lọc nào chạy.
  */
 const warnNoEndDate = ref(false);
 function onApplySort() {

@@ -430,12 +430,8 @@ function parseContent(content: string | null): unknown {
 }
 
 /**
- * P5 2026-05-21: contact_card polymorphic theo action. Map sang type cụ thể để
- * special-message-renderer render UI khác nhau:
- *   show.profile      → 'contact_card_profile' (danh thiếp thật, avatar + name + phone + Mở chat)
- *   recommened.user   → 'user_suggest'         (gợi ý kết bạn — chip Gợi ý + Xem thông tin)
- *   recommened.link   → 'link'                 (share link có preview)
- *   khác (incl recall)→ giữ nguyên contentType (rich fallback)
+ * contact_card là polymorphic theo action nên phải map sang type cụ thể, để renderer hiện đúng
+ * danh thiếp, gợi ý kết bạn hay link có preview.
  */
 function resolveSpecialType(msg: Message): string {
   if (msg.contentType !== 'contact_card') return msg.contentType;
@@ -597,9 +593,8 @@ function highlightText(raw: string): string {
 }
 
 /**
- * Anh chốt 2026-06-03: click vào mention span → load info user (giống avatar click).
- * Event delegation: bắt click trên div container, check target có class .mention + data-uid.
- * Stop propagation để không trigger sender-click của bubble cha.
+ * Event delegation trên container thay vì gắn listener từng span.
+ * Stop propagation để không kích hoạt sender-click của bubble cha.
  */
 function onMentionClick(ev: MouseEvent): void {
   const target = ev.target as HTMLElement | null;
@@ -633,11 +628,8 @@ const formattedText = computed(() => {
 });
 
 /**
- * Wave 1+2 (2026-05-21) — Read-receipt state cho tin OUTGOING (isSelf=true).
- *   seen      — KH đã mở conversation đọc tin (2 tick xanh primary)
- *   delivered — Zalo confirm device KH nhận packet, chưa đọc (1 tick xám)
- *   sending   — chưa có deliveredAt VÀ tin > 3s tuổi (clock outline)
- *   sent      — < 3s (vừa gửi, chưa có confirm) — hiện không icon (giảm noise)
+ * Trạng thái tin gửi đi: seen, delivered, và sending khi quá 3s chưa có deliveredAt.
+ * Dưới 3s cố tình không hiện icon để bớt nhiễu.
  */
 const receiptState = computed<'sending' | 'delivered' | 'seen' | 'sent'>(() => {
   const m = props.message;
@@ -679,9 +671,8 @@ const receiptLabel = computed<string>(() => {
 });
 
 /**
- * Caption text khi message vừa có media (image/video/sticker/gif/file) vừa có text.
- * Zalo gửi message kèm caption thường lưu trong content.title hoặc content.description.
- * Đặc biệt: bỏ qua nếu title trông giống URL/filename/path (vd ".jpg", "/photos/...").
+ * Caption của tin vừa có media vừa có text nằm ở content.title hoặc description.
+ * Bỏ qua nếu title trông như URL hay tên tệp.
  */
 const messageCaption = computed<string>(() => {
   const ct = props.message.contentType;
@@ -920,12 +911,9 @@ function onPickerReact(key: string) {
   emit('toggle-reaction', key);
 }
 
-// 2026-06-13 (anh báo tải file mất tên): kho lưu media/{hash}.ext nên mở thẳng URL → tải về
-// tên-hash. Tải QUA cổng CRM /media/download (cùng origin, gắn Content-Disposition tên thật) →
-// trình duyệt giữ đúng tên. Dùng axios api (kèm auth) → blob → <a download="tên thật">.
-// 2026-06-13 (anh báo 1 file tải ra tên hash + Chrome hỏi popup): lỗi cổng tải lúc đó là
-// TIMEOUT tạm thời → trước đây fallback window.open(href) = tải tên-hash (sai). Giờ: RETRY 1
-// lần (timeout 60s cho file lớn), nếu vẫn lỗi thì BÁO toast (KHÔNG window.open để tránh tên-hash).
+// Kho lưu media theo tên băm nên mở thẳng URL sẽ tải về tên băm, phải đi qua /media/download
+// để có Content-Disposition mang tên thật.
+// Lỗi thì retry một lần rồi báo toast, KHÔNG fallback window.open vì lại ra tên băm.
 const downloadingFiles = new Set<string>();
 async function openFile(href: string, name?: string) {
   if (downloadingFiles.has(href)) return; // chống double-click → tránh Chrome hỏi popup "tải nhiều"
