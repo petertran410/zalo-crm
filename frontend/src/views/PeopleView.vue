@@ -690,7 +690,7 @@ const {
 // theo user.role === 'owner' nên đây chỉ là lớp ẩn UI, không phải lớp chặn.
 const canArchive = computed(() => authStore.isOwner);
 
-// ─────────────────────── Hằng số UI ───────────────────────
+// Hằng số UI
 const PAGE_SIZE = 20;
 const DOW = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7'];
 const SKEL = [
@@ -729,7 +729,7 @@ const TABS = [
 
 type FieldKey = 'inter' | 'created' | 'sent';
 
-// ─────────────────────── Theme (scoped, không đụng global) ───────────────────────
+// Theme (scoped, không đụng global)
 const LS_THEME = 'peopleview.theme.v1';
 const theme = ref<'light' | 'dark'>(
   (localStorage.getItem(LS_THEME) as 'light' | 'dark') || 'light',
@@ -739,7 +739,7 @@ function toggleTheme() {
   try { localStorage.setItem(LS_THEME, theme.value); } catch { /* ignore */ }
 }
 
-// ─────────────────────── State danh sách ───────────────────────
+// State danh sách
 /** Dữ liệu thô từ server. KHÔNG lọc/sắp xếp trực tiếp trên ref này. */
 const rawRows = ref<Contact[]>([]);
 const total = ref(0);
@@ -753,7 +753,7 @@ const q = ref('');
 const menu = ref<'filters' | 'sort' | null>(null);
 const fetchError = ref<string | null>(null);
 
-// ─── Chọn nhiều để chuyển vào thùng rác (owner-only từ 2026-07-31) ───
+// Chọn nhiều để chuyển vào thùng rác (owner-only từ 2026-07-31)
 // Không còn chế độ "xem thùng rác" tại đây; khôi phục ở Cài đặt › Thùng rác.
 const selected = ref<Set<string>>(new Set());
 const bulkWorking = ref(false);
@@ -830,7 +830,7 @@ const activeCount = computed(() => {
   return n;
 });
 
-// ─────────────────────── Tải dữ liệu ───────────────────────
+// Tải dữ liệu
 /**
  * dateFrom/dateTo PHẢI là 'YYYY-MM-DD' (fix 500, 2026-07-29).
  * Backend tự nối chuỗi cho mốc cuối ngày: `new Date(dateTo + 'T23:59:59.999Z')`
@@ -912,14 +912,11 @@ const FIELD_MAP: Record<FieldKey, keyof Contact> = {
 };
 
 /**
- * rows = rawRows + lọc/sắp xếp client-side. Là computed nên bật/tắt bộ lọc không
- * phá dữ liệu đã tải (trước đây applyClientSort ghi đè rows.value → tắt lọc giờ
- * là mất luôn các dòng bị loại cho tới khi refetch).
+ * Là computed chứ không ghi đè rows.value, nếu không thì tắt bộ lọc sẽ mất luôn các dòng
+ * đã bị loại cho tới lần refetch sau.
  *
- * Vì sao phải lọc thêm ở client: backend CHỈ lọc dateFrom/dateTo theo lastActivity
- * (contact-routes.ts:118). Nên khi anh chọn mốc "Nhắn cuối" + khoảng ngày, server
- * vẫn trả KH khớp lastActivity nhưng lastOutboundAt rỗng/ngoài khoảng — đúng lỗi
- * anh gặp. Ở đây loại chúng ra để danh sách khớp đúng điều kiện đang hiển thị.
+ * Phải lọc thêm ở client vì backend chỉ lọc khoảng ngày theo lastActivity, nên chọn mốc
+ * "Nhắn cuối" vẫn trả về KH có lastOutboundAt rỗng hoặc ngoài khoảng.
  */
 const rows = computed<Contact[]>(() => {
   const list = rawRows.value;
@@ -1042,7 +1039,7 @@ function toggleMenu(m: 'filters' | 'sort') {
   menu.value = menu.value === m ? null : m;
 }
 
-// ─────────────────────── Bộ lọc đã lưu ───────────────────────
+// Bộ lọc đã lưu
 interface SavedSet {
   key: string;
   name: string;
@@ -1108,7 +1105,7 @@ function deleteSet(s: SavedSet) {
   if (f.set === s.key) f.set = null;
 }
 
-// ─────────────────────── Lịch (2 tháng) ───────────────────────
+// Lịch (2 tháng)
 const calMonth = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const pendingDay = ref<Date | null>(null);
 
@@ -1211,7 +1208,7 @@ const sortSummary = computed(() => {
   return s;
 });
 
-// ─────────────────────── Định dạng / hiển thị ───────────────────────
+// Định dạng / hiển thị
 function fmtDate(v: string | Date) {
   const d = typeof v === 'string' ? new Date(v) : v;
   return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
@@ -1337,7 +1334,7 @@ function relColor(kind: string) {
   return 'transparent';
 }
 
-// ─────────────────────── Drawer chi tiết ───────────────────────
+// Drawer chi tiết
 const drawerOpen = ref(false);
 const selectedId = ref<string | null>(null);
 const detail = ref<Contact | null>(null);
@@ -1560,7 +1557,7 @@ async function openChatForFriend(fr: { id: string }) {
   if (detail.value) router.push({ path: '/chat', query: { contactId: detail.value.id } });
 }
 
-// ── Biến cá nhân hoá: dùng đúng TEMPLATE_VARIABLES của app (36 biến) ──
+// Biến cá nhân hoá: dùng đúng TEMPLATE_VARIABLES của app (36 biến)
 const resolvedVars = computed(() => {
   const c = detail.value;
   if (!c) return [];
@@ -1624,7 +1621,7 @@ function copyVar(code: string) {
   setTimeout(() => { if (copiedCode.value === code) copiedCode.value = null; }, 1400);
 }
 
-// ── Lịch sử + ghi chú (lazy theo tab) ──
+// Lịch sử + ghi chú (lazy theo tab)
 watch([tab, selectedId], async ([t, id]) => {
   if (!id) return;
   if (t === 'hist' && !timeline.value.length) {
@@ -1688,7 +1685,7 @@ async function saveNote() {
   }
 }
 
-// ─────────────────────── Liên kết KH POS theo SĐT (2026-07-31) ───────────────
+// Liên kết KH POS theo SĐT (2026-07-31)
 // Bỏ tạo KH trắng ở màn này — tìm KH bên POS theo SĐT rồi kéo vào CRM. KH POS
 // đã có Contact (linked) bị disable ở template nên không chọn được; nút "Liên
 // kết" cũng disable tới khi có linkPicked, không thể bỏ qua bước chọn.
@@ -1712,7 +1709,7 @@ function onAddPhoneInput() {
   runLinkSearch(addPhone.value);
 }
 
-// ── Tạo KH mới (Zalo/Facebook, chưa có ở POS) ───────────────────────────────
+// Tạo KH mới (Zalo/Facebook, chưa có ở POS)
 // 2026-07-31: KH thật sự mới thì không có record POS để liên kết. Cho tạo mới,
 // nhưng CHẶN khi SĐT đã thuộc về một Contact đang có (dòng linked) — đó mới là
 // case trùng. Có record POS trùng số thì vẫn cho tạo: KH buôn hay dùng chung số.
@@ -1808,7 +1805,7 @@ async function submitLink() {
     linkSaving.value = false;
   }
 }
-// ─────────────────────── Toast cục bộ (khớp design) ───────────────────────
+// Toast cục bộ (khớp design)
 const toastMsg = ref<string | null>(null);
 let toastTimer: ReturnType<typeof setTimeout>;
 function showToast(msg: string) {
@@ -1817,7 +1814,7 @@ function showToast(msg: string) {
   toastTimer = setTimeout(() => { toastMsg.value = null; }, 2200);
 }
 
-// ─────────────────────── Realtime ───────────────────────
+// Realtime
 // Dùng lại use-friend-socket (contract friend:updated đang có 7 nơi tiêu thụ — không đổi shape).
 useFriendSocket((payload: FriendUpdatedPayload) => {
   const row = rawRows.value.find((r) => r.id === payload.contactId);
@@ -1827,7 +1824,7 @@ useFriendSocket((payload: FriendUpdatedPayload) => {
   setTimeout(() => { if (flashId.value === row.id) flashId.value = null; }, 2000);
 });
 
-// ─────────────────────── Lifecycle ───────────────────────
+// Lifecycle
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return;
   if (warnNoEndDate.value) { warnNoEndDate.value = false; return; }

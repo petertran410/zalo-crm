@@ -544,19 +544,10 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Apply mentions theo pos+len từ Zalo SDK (Anh chốt 2026-06-03 Lớp 2).
- * Pos là vị trí byte (UTF-8) trong raw text; len là độ dài full mention bao
- * gồm cả ký tự @ + tên đầy đủ (vd "@Trung Trường - Công Ty" = len 23).
+ * Escape HTML theo TỪNG segment chứ không escape cả chuỗi rồi mới cắt: escape làm chuỗi dài
+ * ra nên mọi vị trí mention phía sau đều lệch.
  *
- * Algorithm:
- *  1. Sort mentions theo pos tăng dần để xử lý từ đầu chuỗi.
- *  2. Cắt text thành các segment: [plain trước mention][mention][plain sau].
- *  3. Escape HTML từng segment riêng (KHÔNG escape cả chuỗi rồi cắt vì
- *     escape làm dài chuỗi → pos shift sai).
- *
- * Lưu ý UTF-8: Zalo dùng byte position, Js string là UTF-16. Với tin tiếng
- * Việt + emoji có thể lệch. Thử dùng string.substring trước, nếu sai shift
- * sẽ fix lần sau bằng TextEncoder/Decoder.
+ * Zalo đánh vị trí theo byte UTF-8 còn chuỗi JS là UTF-16, nên tin có emoji vẫn có thể lệch.
  */
 function applyMentionsFormat(
   raw: string,
@@ -728,7 +719,7 @@ const isSendPending = computed<boolean>(() => {
   return m?.sendStatus === 'pending';
 });
 
-// ── Sticker — fetch metadata + CSS sprite animation cho animated stickers ──
+// Sticker : fetch metadata + CSS sprite animation cho animated stickers
 interface StickerMeta {
   type: number;
   staticUrl: string;
@@ -850,7 +841,7 @@ function isReminderMessage(msg: Message): boolean {
   } catch { return false; }
 }
 
-// ── Call message detection (Zalo lưu dưới content_type contact_card với action recommened.*) ─
+// Call message detection (Zalo lưu dưới content_type contact_card với action recommened.*)
 const isCallMessage = computed(() => {
   const p = safeParse(props.message.content);
   if (!p) return false;
@@ -872,7 +863,7 @@ const callContent = computed(() => {
   };
 });
 
-// ── Reply preview helpers ───────────────────────────────────────────────────
+// Reply preview helpers
 const replySenderLabel = computed(() => {
   const r = props.reply;
   if (!r) return '';

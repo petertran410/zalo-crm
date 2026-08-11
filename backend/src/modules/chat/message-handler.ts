@@ -90,7 +90,7 @@ export interface HandleMessageResult {
   contactId: string | null;
 }
 
-// ── v3.3 mirror inbound media — copy Zalo CDN URL về MinIO/S3/R2 ───────────
+// v3.3 mirror inbound media : copy Zalo CDN URL về MinIO/S3/R2
 // Inbound image/video/voice/file/gif: tin từ Zalo có URL CDN expire ngắn.
 // Mirror sang storage để bubble preview luôn-luôn-hiển-thị, không phụ thuộc CDN.
 
@@ -379,7 +379,7 @@ export async function handleIncomingMessage(
       const zaloMsgIdNum = msg.msgId && /^\d+$/.test(msg.msgId) ? BigInt(msg.msgId) : null;
       // v3.3 mirror Zalo CDN → object storage (image/video/voice/file/gif)
       const storedContent = await mirrorInboundMediaContent(msg);
-      // ── M11 Source Badge writer (Anh chốt 2026-06-02) ──
+      // M11 Source Badge writer (Anh chốt 2026-06-02)
       // Tin sale gõ trên app Zalo (mobile/web) → SDK echo về CRM ở đây.
       // Set sentVia='user_native' + metadata.sender.syncedFromNative=true
       // để FE MessageSourceBadge.vue hiển thị "👤 Sale CRM · {tên} 🔄".
@@ -652,17 +652,11 @@ export async function handleIncomingMessage(
         message: { id: message.id, content: message.content, contentType: message.contentType, senderType: message.senderType },
       });
 
-      // Wave 3 Event Log — customer_reply (KH trả lời, Mục tiêu dừng chuỗi).
-      // Hook sau runAutomationRules để KHÔNG block phase chính. Filter 1-1 theo memory
-      // feedback_crm_filter_1to1_not_group — bỏ qua group threads.
+      // Phải dùng contactId CỦA CONVERSATION, không phải của upsertContact: cùng một người
+      // Zalo có thể tồn tại thành nhiều Contact do uid lệch theo từng nick.
       //
-      // BUG FIX 2026-06-08: dùng contactId CỦA CONVERSATION (nơi tin thật sự lưu), KHÔNG
-      // dùng contactId từ upsertContact. Lý do: cùng 1 người Zalo có thể bị trùng thành
-      // nhiều Contact (per-account UID / global_id lệch — xem memory reference_zalo_per_account_uid).
-      // upsertContact resolve theo global_id → ra Contact A; nhưng findOrCreateConversation tìm
-      // theo (nick, externalThreadId) → trả conversation cũ gắn Contact B, và tin nhắn lưu vào B.
-      // CareSession gắn theo Contact của conversation (B). Nếu listener dùng A → tìm phiên cho A
-      // → found=0 → không báo. Phải khớp với Contact mà tin nhắn + phiên thật sự thuộc về.
+      // upsertContact resolve ra Contact A, còn conversation lại gắn Contact B và tin nhắn
+      // lưu vào B. Lấy A thì tìm phiên chăm sóc luôn ra rỗng.
       const careContactId = conversationDetails?.contactId ?? contactId;
       if (
         careContactId &&
@@ -750,7 +744,7 @@ export async function handleIncomingMessage(
       })();
     }
 
-    // ── Fix 2026-06-03 (Anh báo): socket realtime thiếu senderResolved ──
+    // Fix 2026-06-03 (Anh báo): socket realtime thiếu senderResolved
     // Trước fix: socket emit chỉ có message raw (senderName, senderUid) →
     // FE pill tím KHÔNG render → đợi reload page mới gọi GET /messages có
     // resolver mới có pill. Giờ resolve ngay khi handle inbound message.
@@ -992,14 +986,11 @@ async function findOrCreateConversation(
 
   if (existing) {
     const updates: { groupName?: string; groupAvatarUrl?: string; groupMembersCount?: number; deletedAt?: null } = {};
-    // BUG-FIX 2026-07-17 (anh báo): "Xóa đoạn hội thoại" = soft-delete (deletedAt set,
-    // hội thoại ẩn khỏi list). Zalo app: xoá chat rồi có tin MỚI → chat hiện lại.
-    // Resurface khi tin nhắn ĐẾN SAU thời điểm xoá — tức tin thật sự mới (kể cả khi
-    // về qua reconnect catch-up dưới dạng backfill: tin gửi lúc downtime VẪN là tin mới,
-    // phải bới hội thoại lên). KHÔNG resurface tin CŨ hơn deletedAt (backfill lịch sử xa
-    // không được tự bới hội thoại người dùng đã chủ động ẩn).
-    // Refinement #2 2026-07-17 (anh báo ca Đăng Khoa): dùng mốc thời gian thay vì
-    // cờ isBackfill — cờ đó chặn nhầm cả tin downtime hợp lệ.
+    // Hội thoại đã xoá phải hiện lại khi có tin mới, giống app Zalo. So theo MỐC THỜI GIAN
+    // chứ không theo cờ isBackfill: cờ đó chặn nhầm cả tin gửi lúc nick mất kết nối.
+    //
+    // Tin cũ hơn deletedAt thì không bới lên, vì backfill lịch sử xa không được tự mở lại
+    // hội thoại người dùng đã chủ động ẩn.
     if (existing.deletedAt && msg.timestamp > existing.deletedAt.getTime()) {
       updates.deletedAt = null;
     }

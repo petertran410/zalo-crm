@@ -75,7 +75,7 @@ const PROFILE_TOUCH_COOLDOWN_MS = 5 * 60_000;
 export async function chatRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
 
-  // ── Conversation filter counts (unread, unreplied, total) ───────────────
+  // Conversation filter counts (unread, unreplied, total)
   // NOTE: Must be registered BEFORE /api/v1/conversations/:id to avoid route conflict
   app.get('/api/v1/conversations/counts', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
@@ -123,7 +123,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { unread, unreplied, total, otherUnread };
   });
 
-  // ── Event counts cho badge cột 1 (sinh nhật 7d / hẹn 24h / quá hạn) ──────
+  // Event counts cho badge cột 1 (sinh nhật 7d / hẹn 24h / quá hạn)
   // 2026-06-08 (anh chốt) — badge đếm THẬT thay hardcode 0. Đếm số KH (Contact)
   // distinct, scope org + zalo access. Phải đăng ký TRƯỚC /conversations/:id.
   app.get('/api/v1/conversations/event-counts', async (request: FastifyRequest, _reply: FastifyReply) => {
@@ -279,7 +279,7 @@ export async function chatRoutes(app: FastifyInstance) {
     };
   });
 
-  // ── Sidebar tags theo Phạm vi xem (anh chốt 2026-06-09) ─────────────────
+  // Sidebar tags theo Phạm vi xem (anh chốt 2026-06-09)
   // crmTags = tag CRM đang DÙNG THẬT ở Friend.crmTagsPerNick (per-nick), distinct.
   // zaloTags = ZaloLabel của các nick trong scope (ALL / folder / 1 nick).
   // Scope nick: folderId → members; accountId → 1 nick; else → mọi nick accessible.
@@ -364,7 +364,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { crmTags, zaloTags };
   });
 
-  // ── List conversations (paginated, filterable) ──────────────────────────
+  // List conversations (paginated, filterable)
   app.get('/api/v1/conversations', { preHandler: requireGrant('conversation', 'access') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const {
@@ -593,9 +593,9 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // ════════════ 2026-06-08 — Cột 1 sidebar deep filter (nút trước đây "chết") ════════════
+    // 2026-06-08 : Cột 1 sidebar deep filter (nút trước đây "chết")
 
-    // ── Stage pipeline → Trạng thái KH thật (Status table, anh chốt 2026-06-08) ──
+    // Stage pipeline → Trạng thái KH thật (Status table, anh chốt 2026-06-08)
     // FE gửi CSV statusId (không phải nhãn cứng Nóng/Ấm/Lạnh). Lọc Contact.statusId.
     if (stages) {
       const statusIds = stages.split(',').map((s) => s.trim()).filter(Boolean);
@@ -603,7 +603,7 @@ export async function chatRoutes(app: FastifyInstance) {
       else if (statusIds.length > 1) contactWhere.statusId = { in: statusIds };
     }
 
-    // ── Stuck duration → Friend.stuckSince cũ hơn ngưỡng N ngày ──
+    // Stuck duration → Friend.stuckSince cũ hơn ngưỡng N ngày
     if (stuckDuration) {
       const days = stuckDuration === '>3d' ? 3 : stuckDuration === '>7d' ? 7
         : stuckDuration === '>14d' ? 14 : stuckDuration === '>30d' ? 30 : 0;
@@ -617,7 +617,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Cờ chờ-reply: dùng Conversation.isReplied làm proxy chuẩn ──
+    // Cờ chờ-reply: dùng Conversation.isReplied làm proxy chuẩn
     // isReplied=false = tin cuối là của KH, sale chưa rep → "KH chờ sale reply".
     // isReplied=true  = tin cuối là của sale, đang đợi KH    → "Sale chờ KH reply".
     // (Prisma không so trực tiếp 2 cột lastInboundAt/lastOutboundAt; isReplied đã
@@ -629,7 +629,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
     // Cả hai cùng bật = không lọc (mọi hội thoại đều thuộc 1 trong 2) → bỏ qua.
 
-    // ── Sinh nhật 7 ngày tới (so ngày/tháng, bỏ năm, wrap qua năm mới) ──
+    // Sinh nhật 7 ngày tới (so ngày/tháng, bỏ năm, wrap qua năm mới)
     // Prisma where thuần không so ngày-tháng bỏ năm → raw query lấy contactId.
     if (birthdayWithin7d === 'true') {
       const rows = await prisma.$queryRaw<Array<{ id: string }>>`
@@ -646,7 +646,7 @@ export async function chatRoutes(app: FastifyInstance) {
       contactWhere.id = ids.length > 0 ? { in: ids } : { in: ['__NO_BIRTHDAY_MATCH__'] };
     }
 
-    // ── Lịch hẹn 24h tới / quá hạn → Appointment scheduled (relation some) ──
+    // Lịch hẹn 24h tới / quá hạn → Appointment scheduled (relation some)
     if (appointmentWithin24h === 'true') {
       const now = new Date();
       const in24h = new Date(now.getTime() + 24 * 60 * 60 * 1000);
@@ -668,7 +668,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // Re-apply contactWhere nếu đã modify trên (stuck/ready/tags)
     if (Object.keys(contactWhere).length > 0) where.contact = contactWhere;
 
-    // ── 2026-06-09 (anh chốt) — Nhóm lọc "Tin nhắn" (user vs bot), radio 1-of-3 ──
+    // 2026-06-09 (anh chốt) : Nhóm lọc "Tin nhắn" (user vs bot), radio 1-of-3
     // Xét mốc KHÁCH NHẮN CUỐI CỦA CHÍNH CONVERSATION này (KHÔNG dùng Contact.lastInboundAt
     // vì đó là aggregate cross-nick — 1 KH nhiều nick thì mốc đó thuộc nick khác → sai).
     // Mốc = MAX(sent_at WHERE sender_type='contact') trong conv. Sale thật = self +
@@ -708,7 +708,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Tin nhắn cuối (lastMessageWithin) → Conversation.lastMessageAt gte mốc ──
+    // Tin nhắn cuối (lastMessageWithin) → Conversation.lastMessageAt gte mốc
     // Ghép cùng where.lastMessageAt với date range bên dưới (cùng field).
     if (lastMessageWithin) {
       const ms = lastMessageWithin === '24h' ? 24 * 3600e3
@@ -879,7 +879,7 @@ export async function chatRoutes(app: FastifyInstance) {
           zaloLabels: true,                    // 2026-06-06: tag Zalo Real native {id,name,color} —
                                                // cột 2 render tag Zalo từ đây (màu CHUẨN = zalo_labels.color)
           aliasInNick: true,                   // "Tên gợi nhớ" Zalo, sync 2-way (ui-phase5)
-          // ── Per-pair counter ─────────────────────────────────────────────
+          // Per-pair counter
           // KHÔNG include trước đây gây bug: header MessageThread cột 3 đọc
           // friendship.totalInbound/Outbound → list refresh override conv →
           // counter rớt về 0/0 (vì ?? 0 fallback). Detail endpoint /:id có,
@@ -952,7 +952,7 @@ export async function chatRoutes(app: FastifyInstance) {
     };
   });
 
-  // ── Get single conversation ──────────────────────────────────────────────
+  // Get single conversation
   app.get('/api/v1/conversations/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
@@ -1068,7 +1068,7 @@ export async function chatRoutes(app: FastifyInstance) {
     };
   });
 
-  // ── POST /conversations/:id/touch-profile — pull profile từ Zalo SDK on conv click.
+  // POST /conversations/:id/touch-profile : pull profile từ Zalo SDK on conv click.
   //    Lý do: upsertContact lúc msg đầu chỉ set fullName + zaloUid, KHÔNG fill gender /
   //    phone / birthday. Khi user click conv, gọi getUserInfo() lấy fresh profile và
   //    upsert những field còn NULL trong DB (KHÔNG ghi đè giá trị sale đã chỉnh).
@@ -1183,7 +1183,7 @@ export async function chatRoutes(app: FastifyInstance) {
         });
       }
 
-      // ── Counter integrity reconcile — recount totalInbound / totalOutbound từ Message table
+      // Counter integrity reconcile : recount totalInbound / totalOutbound từ Message table
       //    nếu drift với counter hiện tại. applyContactAggregate đôi khi miss (race / dedup
       //    edge case / silent error). Cheap query với index conversation_id → ~10-50ms.
       const counterRows = await prisma.$queryRaw<Array<{ actual_in: bigint; actual_out: bigint; stored_in: number; stored_out: number }>>`
@@ -1228,7 +1228,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   });
 
-  // ── List messages for a conversation (paginated, newest first) ──────────
+  // List messages for a conversation (paginated, newest first)
   app.get('/api/v1/conversations/:id/messages', {
     preHandler: requireZaloAccess('read'),
     // Privacy phase integration: main-nick conv content sẽ bị redact ▒▒▒▒ ở middleware Privacy
@@ -1310,7 +1310,7 @@ export async function chatRoutes(app: FastifyInstance) {
 
     const ordered = messages.reverse();
 
-    // ── INBOUND sender name resolver (Anh chốt 2026-06-03) ─────────────────
+    // INBOUND sender name resolver (Anh chốt 2026-06-03)
     // 3 case Anh chốt:
     //   A. Nick lẻ ngoài hệ thống:
     //      - Có Contact.crmName → hiện "Chị Lan · Lan Nguyen" (crmName + zalo)
@@ -1462,7 +1462,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { messages: redacted, total, page: parseInt(page), limit: parseInt(limit) };
   });
 
-  // ── Media gallery trong hội thoại (giống panel Media Zalo) ────────────────
+  // Media gallery trong hội thoại (giống panel Media Zalo)
   // Dùng khi tạo task/ticket từ chat: "Thêm" → mở gallery Ảnh/Video/Tệp của
   // CHÍNH conversation này (tin đã có trong chat), KHÔNG phải kho Media CRM.
   app.get('/api/v1/conversations/:id/media', {
@@ -1567,7 +1567,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { items, total, page, limit };
   });
 
-  // ── Send message ─────────────────────────────────────────────────────────
+  // Send message
   app.post('/api/v1/conversations/:id/messages', { preHandler: requireZaloAccess('chat') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
@@ -1641,7 +1641,7 @@ export async function chatRoutes(app: FastifyInstance) {
     // "Sale CRM · {tên}" đúng ngay, KHÔNG đợi reload page. Cache 5 phút.
     const userFullName = await getUserFullName(user.id);
 
-    // ── M53 2026-05-30: Virtual conversation gate ──────────────────────────
+    // M53 2026-05-30: Virtual conversation gate
     // KH no-Zalo có conversation ảo trong /chat. Tin nhắn lưu thẳng DB, KHÔNG qua Zalo SDK.
     // Skip rate-limit + privacy check + SDK send. Anh chốt Approach A — sale dùng làm nhật ký.
     if (conversation.isVirtual) {
@@ -1714,7 +1714,7 @@ export async function chatRoutes(app: FastifyInstance) {
         return reply.status(500).send({ error: 'Failed to save virtual message' });
       }
     }
-    // ── END M53 Virtual gate ───────────────────────────────────────────────
+    // END M53 Virtual gate
 
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
 
@@ -1768,7 +1768,7 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── OFFLINE QUEUE 2026-07-27 ────────────────────────────────────────────────
+    // OFFLINE QUEUE 2026-07-27
     // Nick mất kết nối Zalo (session zca-js drop, KHÔNG phải CRM server down) — trước
     // đây 400 cứng "not connected", tin nhắn mất luôn (sale phải tự copy lại nội dung
     // gửi lần sau). Nay LƯU NGAY dạng 'pending' (giống pattern sendFail 2026-06-24: tin
@@ -1845,7 +1845,7 @@ export async function chatRoutes(app: FastifyInstance) {
         return reply.status(500).send({ error: 'Không lưu được tin nhắn' });
       }
     }
-    // ── END OFFLINE QUEUE ────────────────────────────────────────────────────────
+    // END OFFLINE QUEUE
 
     // Rate limit check — prevent account blocking
     const limits = await zaloRateLimiter.checkLimits(conversation.zaloAccountId);
@@ -1912,7 +1912,7 @@ export async function chatRoutes(app: FastifyInstance) {
         : content;
       const persistedContentType = hasStyles ? 'rich' : 'text';
 
-      // ── Fix 2026-06-03 (Anh báo bug optimistic Sale CRM · Staff) ──
+      // Fix 2026-06-03 (Anh báo bug optimistic Sale CRM · Staff)
       // Set metadata.sender.name = user.fullName (M11 explicit) để socket
       // emit có đủ data → FE render badge "Sale CRM · {tên}" đúng ngay
       // optimistic, KHÔNG cần đợi reload page.
@@ -2031,7 +2031,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   });
 
-  // ── Gửi cả 1 Khối Marketing vào hội thoại (cột 4 tab Automation) 2026-06-07 ──
+  // Gửi cả 1 Khối Marketing vào hội thoại (cột 4 tab Automation) 2026-06-07
   // Sale chọn Khối → gửi ĐỦ MỌI THÀNH PHẦN (text/image/album/file/video) theo ĐÚNG
   // THỨ TỰ, giữ rich-text styles, render {gender}/{name}/{sale}, có delay 0.8–2.5s
   // giữa các tin (chống Zalo coi spam). Tái dùng đường media đã chứng minh ở forward:
@@ -2048,7 +2048,7 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'blockId required' });
     }
 
-    // ── Gate 1: load conversation ──────────────────────────────────────────
+    // Gate 1: load conversation
     const conversation = await prisma.conversation.findFirst({
       where: { id, orgId: user.orgId },
       include: { zaloAccount: true },
@@ -2059,16 +2059,16 @@ export async function chatRoutes(app: FastifyInstance) {
       return reply.status(400).send({ error: 'Gửi block chỉ hỗ trợ hội thoại Zalo.', code: 'NOT_ZALO_CHANNEL' });
     }
 
-    // ── Gate 2: virtual conv = KH no-Zalo → không dispatch SDK được ────────
+    // Gate 2: virtual conv = KH no-Zalo → không dispatch SDK được
     if (conversation.isVirtual) {
       return reply.status(400).send({ error: 'Không thể gửi Khối vào hội thoại ảo (KH chưa có Zalo)' });
     }
 
-    // ── Gate 3: nick đã kết nối ────────────────────────────────────────────
+    // Gate 3: nick đã kết nối
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
     if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
 
-    // ── Gate 4: privacy (nick 'main' chỉ chính chủ gửi) ────────────────────
+    // Gate 4: privacy (nick 'main' chỉ chính chủ gửi)
     if (conversation.zaloAccount.privacyMode === 'main') {
       const senderUserId = (user as any).userId ?? user.id;
       if (conversation.zaloAccount.ownerUserId !== senderUserId) {
@@ -2079,13 +2079,13 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     }
 
-    // ── Gate 5: rate-limit up-front (per-tin vẫn check trong zaloOps.exec) ──
+    // Gate 5: rate-limit up-front (per-tin vẫn check trong zaloOps.exec)
     const limits = await zaloRateLimiter.checkLimits(conversation.zaloAccountId);
     if (!limits.allowed) {
       return reply.status(429).send({ error: limits.reason });
     }
 
-    // ── Gate 6: load + authorize block (owner-scope như block-list) ────────
+    // Gate 6: load + authorize block (owner-scope như block-list)
     const ownerScope = await getOwnerScope({
       userId: user.id, orgId: user.orgId, legacyRole: user.role, resource: 'block',
     });
@@ -2103,7 +2103,7 @@ export async function chatRoutes(app: FastifyInstance) {
       });
     }
 
-    // ── Resolve Khối → danh sách tin theo ĐÚNG THỨ TỰ (module dùng chung) ──
+    // Resolve Khối → danh sách tin theo ĐÚNG THỨ TỰ (module dùng chung)
     const resolveResult = resolveBlockContent('send_message', block.content as Record<string, unknown>);
     if (!resolveResult.ok || resolveResult.resolved.length === 0) {
       return reply.status(422).send({ error: resolveResult.error ?? 'BLOCK_EMPTY', detail: resolveResult.detail });
@@ -2124,7 +2124,7 @@ export async function chatRoutes(app: FastifyInstance) {
       sender: { kind: 'user_crm' as const, name: userFullName, detail: `Khối: ${block.name}`, blockId: block.id },
     };
 
-    // ── STUB QA: không chạm Zalo, log chuỗi resolved đã render ─────────────
+    // STUB QA: không chạm Zalo, log chuỗi resolved đã render
     if (process.env.AUTOMATION_STUB_MODE === 'true') {
       const seq = resolved.map((m) => m.messageType).join(' → ');
       logger.info(`[send-block STUB] would send ${resolved.length} tin (${seq}) từ nick=${zaloAccountId} → conv=${id} block="${block.name}"`);
@@ -2364,7 +2364,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { ok: true, accepted: true, totalMessages: resolved.length };
   });
 
-  // ── Upload image(s) and send qua Zalo (paste image / nút Gửi ảnh) ────────
+  // Upload image(s) and send qua Zalo (paste image / nút Gửi ảnh)
   app.post('/api/v1/conversations/:id/upload-image', { preHandler: requireZaloAccess('chat') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
@@ -2510,7 +2510,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   });
 
-  // ── Mark conversation as read ────────────────────────────────────────────
+  // Mark conversation as read
   app.post('/api/v1/conversations/:id/mark-read', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
@@ -2523,25 +2523,11 @@ export async function chatRoutes(app: FastifyInstance) {
     return { success: true };
   });
 
-  // ── POST /chat/send-handoff ─ gửi tin nội bộ giữa 2 nick CRM (sale-to-sale). 2026-05-22 ─
-  // Dùng cho tab "🎯 CRM" widget "Đồng đội cùng chăm KH": sale A (đang online nick X)
-  // nhắn nick chính (target nick) của sale B đang cùng chăm KH này.
+  // Gửi tin nội bộ giữa hai nick CRM, dùng cho widget "Đồng đội cùng chăm KH".
   //
-  // Body: { senderZaloAccountId, targetUserId, content }
-  // Response: { success: true, zaloMsgId, targetNickName, targetZaloUidInSenderView }
-  //
-  // CỐT LÕI per-nick UID trap (memory ref):
-  //   Zalo UID là per-account perspective. ZaloAccount.zaloUid của Evo Sport là UID
-  //   Evo Sport tự xưng. Khi Thành Phạm gọi sendMessage(threadId=Evo-Sport-uid),
-  //   Zalo trả "Tham số không hợp lệ" vì sender không nhìn thấy threadId ấy.
-  //   Phải dùng Friend.zaloUidInNick (perspective sender → target identity).
-  //
-  // Lookup chain:
-  //   1. targetUserId → các ZaloAccount của user (ưu tiên main)
-  //   2. Mỗi target nick lấy phone → normalize
-  //   3. Tìm Contact phoneNormalized match trong org → Friend per (sender, contact)
-  //   4. Dùng Friend.zaloUidInNick làm threadId → sendMessage
-  //   5. Nếu không có match → báo lỗi rõ "sender chưa kết bạn nick target"
+  // Bẫy ở đây: UID Zalo là theo góc nhìn từng tài khoản, nên không thể lấy thẳng
+  // ZaloAccount.zaloUid của người nhận làm threadId, Zalo sẽ trả "Tham số không hợp lệ" vì
+  // sender không nhìn thấy uid đó. Phải tra Friend.zaloUidInNick theo góc nhìn của sender.
   app.post('/api/v1/chat/send-handoff', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const body = request.body as { senderZaloAccountId?: string; targetUserId?: string; content?: string };
@@ -2657,7 +2643,7 @@ export async function chatRoutes(app: FastifyInstance) {
     }
   });
 
-  // ── Move conversation to a different tab (main / other) ────────────────
+  // Move conversation to a different tab (main / other)
   app.patch('/api/v1/conversations/:id/tab', { preHandler: requireZaloAccess('chat') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const { id } = request.params as { id: string };
@@ -2676,7 +2662,7 @@ export async function chatRoutes(app: FastifyInstance) {
     return { success: true, tab };
   });
 
-  // ── Soft-delete (ẩn) đoạn hội thoại từ cột 2 ───────────────────────────────
+  // Soft-delete (ẩn) đoạn hội thoại từ cột 2
   // 2026-06-11 (anh chốt) — xóa MỀM: set deletedAt, KHÔNG xóa Message vật lý.
   // Hội thoại biến mất khỏi list/count nhưng có thể khôi phục (POST .../restore).
   // Scope orgId + requireZaloAccess('chat') để tránh xóa chéo tenant/nick (privacy).

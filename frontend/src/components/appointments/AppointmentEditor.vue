@@ -433,7 +433,7 @@ function computePopupPosition(
 
 const isEdit = computed(() => !!props.appointment);
 
-// ───────── Contact state ─────────
+// Contact state
 const selectedContact = ref<ContactLite | null>(null);
 const custSuggestOpen = ref(false);
 // 2026-08-04: tìm KH chuyển sang composable dùng chung với AppointmentQuickCreate.
@@ -474,7 +474,7 @@ function clearContact() {
   selectedContact.value = null;
 }
 
-// ───────── Form state ─────────
+// Form state
 const form = reactive({
   title: '',
   date: '',
@@ -532,7 +532,7 @@ const titleIcon = 'mdi-calendar-check-outline';
 // Tiêu đề KHÔNG còn bắt buộc (bỏ trống → hiển thị theo tên KH). Chỉ cần ngày+giờ.
 const canSubmit = computed(() => !!form.date && !!form.time);
 
-// ───────── Init / reset state khi mở ─────────
+// Init / reset state khi mở
 watch(() => props.modelValue, (open) => {
   if (!open) return;
   error.value = '';
@@ -647,7 +647,7 @@ function roundToNextSlot(d: Date): Date {
   return out;
 }
 
-// ───────── Date label ─────────
+// Date label
 const VN_DOWS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const dateLabel = computed(() => {
   if (!form.date) return 'Chọn ngày...';
@@ -655,7 +655,7 @@ const dateLabel = computed(() => {
   return `${VN_DOWS[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 });
 
-// ───────── Date picker ─────────
+// Date picker
 const openDatePicker = ref(false);
 const calMonth = ref(new Date());
 
@@ -767,7 +767,7 @@ const dateTips = [
   { label: '+1 tháng',   offset: 30 },
 ];
 
-// ───────── Time picker (iOS wheel) ─────────
+// Time picker (iOS wheel)
 const openTimePicker = ref(false);
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
 const MINUTES = [0, 10, 15, 30, 45, 50];
@@ -827,7 +827,7 @@ function randomTime(period: 'morning' | 'noon' | 'afternoon' | 'evening') {
   form.time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// ───────── Duration ─────────
+// Duration
 // 2026-05-21 chốt: bỏ "3 ngày" — chỉ tới "1 ngày" là đủ cho domain BĐS sale.
 /**
  * 2026-08-04: rút từ 10 lựa chọn (5p → 1 ngày) còn 4 + "Khác".
@@ -1053,7 +1053,7 @@ function removeSavedLocation(loc: string) {
   persistSavedLocations();
 }
 
-// ───────── Submit / close ─────────
+// Submit / close
 async function submit() {
   if (!canSubmit.value) {
     error.value = 'Chọn ngày và giờ trước khi tạo nhắc hẹn';
