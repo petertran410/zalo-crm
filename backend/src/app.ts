@@ -258,7 +258,7 @@ async function bootstrap() {
   // Pass io to zalo pool for real-time event emission
   zaloPool.setIO(io);
 
-  // Phase 1b 2026-06-07 — Socket.IO auth PHẢI đăng ký TRƯỚC mọi handler:
+  // Socket.IO auth PHẢI đăng ký trước mọi handler:
   // io.use() verify JWT + auto-join org room từ token (vá P0 IDOR cross-tenant WS).
   registerSocketAuth(io, app);
 

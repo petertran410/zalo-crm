@@ -759,9 +759,8 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
   --ink:#181d26; --body:#333840; --muted:#41454d; --hairline:#dddddd;
   --canvas:#fff; --soft:#f8fafc; --strong:#e0e2e6; --coral:#aa2d00; --success:#006400;
   --r-sm:6px; --r-md:10px; --pill:9999px;
-  /* Chiều cao CỐ ĐỊNH theo viewport (trừ topnav 48px) — v-main chỉ có min-height nên
-     height:100% không phân giải → flex chain hỏng, cột 3 detail không cuộn được, accordion
-     mở ra tràn khỏi màn (anh báo 2026-06-16). Cố định height → .p-body cuộn đúng. */
+  /* Phải cố định chiều cao theo viewport vì v-main chỉ có min-height, nên height:100%
+     không phân giải được và cả chuỗi flex hỏng theo: cột chi tiết hết cuộn được. */
   display:flex; flex-direction:column; height:calc(100vh - var(--smax-topnav-h)); min-height:0; overflow:hidden;
   background:var(--canvas); color:var(--body); font-size:14px;
 }

@@ -1,5 +1,5 @@
 /**
- * permission-meta.ts — Single source of truth cho label + icon của
+ * Nguồn duy nhất cho label và icon của
  * RBAC resource × action matrix.
  *
  * Dùng chung bởi:
@@ -11,7 +11,7 @@
  * là DOMAIN KHÁC, KHÔNG gộp vào đây.
  *
  * ĐỒNG BỘ: Khi thêm resource mới vào backend permission-types.ts, phải
- * thêm vào RESOURCE_META bên dưới — nếu không UI sẽ hiển thị raw key.
+ * thêm vào RESOURCE_META bên dưới, nếu không UI sẽ hiển thị raw key.
  */
 export interface ResourceMeta {
   icon: string;
@@ -59,11 +59,11 @@ export const ACTION_META: Record<string, ActionMeta> = {
 };
 
 /**
- * Nhóm quyền NGỪNG DÙNG — chốt 2026-08-06.
+ * Nhóm quyền ngừng dùng.
  *
  * Kế hoạch chỉ dùng 4 vai trò: Admin · CEO · Sale · Chăm sóc khách hàng.
  * 4 tên dưới đây giữ lại phòng khi cần, nhưng không seed cho org mới và UI ẩn
- * mặc định. PHẢI khớp DEPRECATED_GROUP_NAMES ở backend permission-types.ts —
+ * mặc định. PHẢI khớp DEPRECATED_GROUP_NAMES ở backend permission-types.ts,
  * lệch nhau thì màn này ẩn một đằng, backend seed một nẻo.
  */
 export const DEPRECATED_GROUP_NAMES: readonly string[] = [
@@ -78,7 +78,7 @@ export function isDeprecatedGroup(name: string | null | undefined): boolean {
 }
 
 /**
- * Icon cho từng hành động — 2026-08-06.
+ * Icon cho từng hành động.
  *
  * Vì sao KHÔNG dùng chữ cái: bảng so sánh cũ hiện A/C/E/D/V = chữ đầu tiếng ANH
  * (Access, Create, Edit, Delete, View all) → người Việt phải học thuộc mới đọc
@@ -101,11 +101,11 @@ export function actionIcon(a: string): string {
 
 /**
  * Gộp danh sách hành động đã cấp thành MỘT nhãn tiếng Việt đọc phát hiểu ngay.
- * Dùng cho chế độ "Rút gọn" của bảng So sánh nhóm quyền — admin cần trả lời
+ * Dùng cho chế độ "Rút gọn" của bảng So sánh nhóm quyền: admin cần trả lời
  * "nhóm này làm được gì với Khách hàng?" chứ không cần đọc từng ô tick.
  *
  * `validActions` = các hành động resource đó HỖ TRỢ (RESOURCE_ACTIONS), để phân
- * biệt "toàn quyền" thật với "được hết những gì có thể" — vd Engagement chỉ có
+ * biệt "toàn quyền" thật với "được hết những gì có thể". Ví dụ Engagement chỉ có
  * access + view_all thì cấp cả 2 đã là toàn quyền.
  */
 export interface GrantSummary {

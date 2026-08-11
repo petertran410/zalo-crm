@@ -22,14 +22,14 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/SetupView.vue"),
     meta: { layout: "auth" },
   },
-  // Phase Onboarding v1 2026-05-24 — force change password lần đầu
+  // Ép đổi mật khẩu lần đầu đăng nhập
   {
     path: "/setup-password",
     name: "SetupPassword",
     component: () => import("@/views/ForcePasswordChangeView.vue"),
     meta: { layout: "auth", requiresAuth: true, allowUnchangedPassword: true },
   },
-  // Trang CÔNG KHAI (không cần đăng nhập) — sale bấm link trong tin Zalo để
+  // Trang công khai không cần đăng nhập: sale bấm link trong tin Zalo để
   // đánh dấu Lịch hẹn Hoàn thành / Huỷ. Xác thực bằng token ?t= (2026-06-16).
   {
     path: "/appointments/action",
@@ -58,7 +58,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
-    // Multi-channel Phase 2 (2026-07-21) — inbox Facebook tối giản (test kết nối).
+    // Inbox Facebook tối giản, dùng để test kết nối.
     // 2026-07-31: route này TỪNG bị dính chung object với /sales-chat (thiếu dấu
     // đóng `},` khi merge) → key trùng, key sau đè key trước nên /fb-inbox biến
     // thành /sales-chat và FacebookInboxView không mở được. Tách lại làm 2 route.
@@ -99,7 +99,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "media" },
   },
   {
-    // Legacy redirect — now nested under /settings
+    // Legacy redirect, giờ nằm dưới /settings
     path: "/zalo-accounts",
     redirect: "/settings/channels/zalo",
   },
@@ -121,7 +121,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/TasksView.vue"),
     meta: { requiresAuth: true },
   },
-  // ════════ Module Báo cáo — shell + 7 màn (2026-06-17) ════════
+  // Module Báo cáo: shell và 7 màn
   {
     path: "/reports",
     component: () => import("@/views/reports/ReportsShell.vue"),
@@ -167,7 +167,7 @@ const routes: RouteRecordRaw[] = [
       ...eeReportsChildren,
     ],
   },
-  // Báo cáo cơ bản cũ — giữ deep-link không gãy.
+  // Báo cáo cơ bản cũ, giữ để deep-link không gãy.
   {
     path: "/reports-co-ban",
     name: "Reports",
@@ -180,7 +180,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/AnalyticsView.vue"),
     meta: { requiresAuth: true, resource: "engagement_score" },
   },
-  // ════════ NEW Settings — 6-group sidebar layout ════════
+  // Settings mới: sidebar 6 nhóm
   {
     path: "/settings",
     component: () => import("@/views/settings/SettingsLayout.vue"),
@@ -193,7 +193,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/settings/PersonalAccountPage.vue"),
       },
 
-      // 👤 Personal — Module Cá nhân gom 2026-06-13: 1 trang "Tài khoản của tôi".
+      // Personal: gom thành một trang "Tài khoản của tôi".
       {
         path: "personal/profile",
         name: "Settings.Profile",
@@ -251,7 +251,7 @@ const routes: RouteRecordRaw[] = [
         meta: { resource: "audit_log" },
       },
 
-      // 👥 Team — Variant C menu reorg 2026-05-22: legacy team/* redirect → rbac/*
+      // Team: legacy team/* redirect sang rbac/*
       // Em giữ 3 route legacy nhưng redirect sang RBAC pages mới để không break deep link.
       { path: "team/users", redirect: "/settings/rbac/users" },
       { path: "team/teams", redirect: "/settings/rbac/departments" },
@@ -289,7 +289,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/rbac/PermissionComparePage.vue"),
         meta: { resource: "permission_group" },
       },
-      // Lưới người × chức năng — admin tick/bỏ tick quyền lẻ cho từng nhân viên.
+      // Lưới người và chức năng để admin tick quyền lẻ cho từng nhân viên.
       // Cần user.edit (chính là quyền mà PATCH /rbac/users/:id/overrides đòi) để
       // menu và route khớp nhau, tránh vào được màn rồi mọi thao tác đều 403.
       {
@@ -301,7 +301,7 @@ const routes: RouteRecordRaw[] = [
       // Phase Riêng Tư: trang /settings/privacy GỠ 2026-06-06 (trùng với tab Privacy
       // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 
-      // ⚙ CRM Config — toàn bộ là cấu hình admin-level → resource 'settings'
+      // CRM Config: toàn bộ là cấu hình admin-level nên dùng resource settings
       {
         path: "crm/statuses",
         name: "Settings.Statuses",
@@ -329,7 +329,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/components/settings/CrmTagManagement.vue"),
         meta: { resource: "settings" },
       },
-      // Tag Taxonomy v2 — M57 /plan-eng-review 2026-05-31 (Wave 4a dual-write window).
+      // Tag Taxonomy v2 (cửa sổ dual-write Wave 4a).
       // Khi Wave 5 ship, route /crm/tags này sẽ thành alias của tags-v2.
       {
         path: "crm/tags-v2",
@@ -350,7 +350,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/ScoringSettingsView.vue"),
         meta: { resource: "settings" },
       },
-      // Lịch hẹn → nhắc hẹn Zalo (2026-06-16) — bật/tắt + delay phút gửi link đánh dấu.
+      // Nhắc hẹn Zalo: bật tắt và số phút delay gửi link đánh dấu.
       {
         path: "crm/appointments",
         name: "Settings.Appointments",
@@ -379,7 +379,7 @@ const routes: RouteRecordRaw[] = [
         meta: { resource: "settings" },
       },
       // Lead Pool routes → extension bundle (eeSettingsChildren).
-      // M53 2026-05-30 — Trợ Lý AI Virtual Chat
+      // Trợ Lý AI Virtual Chat
       {
         path: "crm/ai-assistant",
         name: "Settings.AiAssistant",
@@ -393,7 +393,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/ZaloAccountsView.vue"),
         meta: { resource: "zalo_account" },
       },
-      // 2026-06-18 — Trần SDK dời sang Cài đặt (gate 'settings', KHÔNG 'zalo_account') → sale ko đổi được.
+      // Trần SDK dời sang Cài đặt và gate bằng settings chứ không zalo_account, để sale
       {
         path: "channels/sdk-limits",
         name: "Settings.SdkLimits",
@@ -468,7 +468,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     // "Hồ sơ KH tổng hợp" (ContactProfileView) là skeleton chạy data mock, backend
-    // stub không bao giờ implement — xoá 2026-07-31. Drawer của PeopleView đã là
+  // stub không bao giờ implement nên đã xoá. Drawer của PeopleView đã là
     // surface chi tiết thật, nên redirect ?focus= để link/bookmark cũ vẫn mở đúng KH.
     path: "/contacts/:id/profile",
     redirect: (to) => ({ path: "/contacts", query: { focus: to.params.id } }),
@@ -479,7 +479,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/StuckLeadsView.vue"),
     meta: { requiresAuth: true, resource: "contact" },
   },
-  // Legacy redirects — old routes moved under /settings/*
+  // Legacy redirects: route cũ đã chuyển xuống /settings/*
   { path: "/settings/scoring", redirect: "/settings/crm/scoring" },
   { path: "/api-settings", redirect: "/settings/dev/api" },
   { path: "/integrations", redirect: "/settings/channels/integrations" },
@@ -489,7 +489,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/GroupsView.vue"),
     meta: { requiresAuth: true },
   },
-  // Open-core: menu Marketing cho bản COMMUNITY — chỉ Quét nhóm + Tệp khách hàng.
+  // Open-core: menu Marketing bản Community chỉ có Quét nhóm và Tệp khách hàng.
   // Gate !isExtension → KHÔNG đăng ký khi là EE (EE đã có /marketing riêng trong eeTopRoutes).
   ...(!isExtension
     ? [
@@ -500,14 +500,14 @@ const routes: RouteRecordRaw[] = [
           meta: { requiresAuth: true },
           children: [
             { path: "", redirect: "/marketing/group-scan" },
-            // E1 — Quét nhóm & thành viên (group scan).
+            // Quét nhóm và thành viên.
             {
               path: "group-scan",
               name: "CE.GroupScan",
               component: () => import("@/views/GroupScanView.vue"),
               meta: { requiresAuth: true },
             },
-            // Tệp khách hàng (Customer Lists) — open-core, dùng được ở Community.
+            // Tệp khách hàng, open-core nên Community dùng được.
             {
               path: "lists",
               name: "CE.Lists",
@@ -622,7 +622,7 @@ router.beforeEach(async (to, _from, next) => {
         return next("/sales-chat");
       }
     }
-    // Phase Onboarding v1 2026-05-24 — force change password lần đầu.
+    // Ép đổi mật khẩu lần đầu đăng nhập.
     // passwordChangedAt = null → block tất cả route khác, ép sale qua /setup-password.
     // allowUnchangedPassword cho phép /setup-password route bypass (chính nó).
     if (
@@ -639,7 +639,7 @@ router.beforeEach(async (to, _from, next) => {
       return next("/");
     }
 
-    // RBAC page-level guard 2026-06-08 — chặn theo nhóm quyền (grants).
+    // RBAC page-level guard: chặn theo nhóm quyền.
     // Route khai báo meta.resource → user phải canAccess(resource, action) mới vào.
     // owner/admin = full (canAccess tự bypass). Default action = 'access'.
     const required = to.meta.resource as string | undefined;
