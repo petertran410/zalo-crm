@@ -1,20 +1,9 @@
 /**
- * media-service.ts — Phase Media Library 2026-06-11.
+ * Tầng service của kho: gọi xuống storage (đã dedup theo sha256) rồi upsert Asset và Blob.
+ * Storage không biết gì về DB, mọi thứ liên quan Prisma và orgId nằm ở đây.
  *
- * Tầng SERVICE của kho phương tiện. Biết Prisma + orgId; gọi xuống storage
- * (uploadBuffer đã dedup theo sha256) rồi upsert MediaAsset/MediaBlob.
- *
- * Kiến trúc 2 tầng (eng review E2):
- *   storage (minio-client) → trả {contentHash, deduped, url, ...}  ← KHÔNG biết DB
- *   service (file này)     → upsert MediaAsset (danh tính) + MediaBlob (variant)
- *
- * COUPLING bắt buộc (eng review D9): kể cả khi storage dedup-hit (deduped=true),
- * service VẪN upsert MediaBlob theo [orgId,contentHash] + tăng usageCount asset,
- * nếu không các lần dedup-hit (đặc biệt mirror tin khách) sẽ không vào catalog.
- *
- * Xử lý lỗi (eng review D10):
- *   • P2002 (2 sale upload cùng bytes đồng thời) → coi như dedup-hit, đọc lại bản có sẵn.
- *   • sharp lỗi (ảnh hỏng/format lạ) → fallback lưu ảnh GỐC + log warn (compressImage).
+ * Kể cả khi storage báo dedup-hit thì vẫn PHẢI upsert MediaBlob và tăng usageCount, nếu
+ * không các lần dedup-hit sẽ không bao giờ vào được danh mục.
  */
 import sharp from 'sharp';
 import { imageSize } from 'image-size';
@@ -25,33 +14,36 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
 import { candidateDownloadUrls } from '../chat/chat-media-helpers.js';
 import { generateThumbnail, probeVideoFile } from '../../shared/video-processor.js';
+import { sanitizeSvg } from '../../shared/svg-sanitizer.js';
 import { logger } from '../../shared/utils/logger.js';
 import type { MediaAsset, MediaBlob } from '@prisma/client';
 
 const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
-// Ngưỡng nén: cạnh dài tối đa + chất lượng webp. Ảnh bảng giá/mặt bằng giữ rõ chữ.
-const MAX_EDGE = 2000;
-// 2026-07-22 (anh chốt "nén 80%"): hạ 82 → 80. Ảnh chụp điện thoại thường còn ~10-20%
-// dung lượng gốc; bảng giá/mặt bằng vẫn đọc rõ chữ ở mức này.
-const WEBP_QUALITY = 80;
-// GIF (ảnh động) KHÔNG nén qua sharp (mất animation) — giữ nguyên.
+
+/**
+ * Thang chất lượng của bộ mã hoá, KHÔNG phải mục tiêu dung lượng: không phải "còn 80%"
+ * cũng không phải "giảm 80%". Đo thực tế cùng mức này: JPEG còn ~38%, WebP ~53%, PNG ~100%.
+ */
+const QUALITY = 80;
+
+/**
+ * PNG là định dạng không mất dữ liệu nên chỉ ép được mức nén lossless, gần như không nhỏ đi.
+ * Muốn nhỏ thật phải palette hoá, mà ảnh chụp và gradient sẽ nổi vệt màu.
+ */
+const PNG_COMPRESSION_LEVEL = 9;
+
+// GIF không đi qua sharp vì sẽ mất animation.
 const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export type MediaKind = 'image' | 'video' | 'file';
 export type MediaSource = 'upload' | 'saved_from_chat';
 /**
- * Phạm vi lưu trữ (2026-07-22, anh chốt):
- *   'catalog'        — kho phương tiện CŨ. media.view_all bypass được (admin/marketing thấy hết).
- *   'private_upload' — tệp tải lên từ tab Kho. CHỈ người tải lên + Chủ tài khoản (role='owner')
- *                      + người được chia sẻ liên kết. view_all KHÔNG bypass.
+ * catalog là kho cũ, media.view_all xem được hết. private_upload là tệp tải lên từ tab Kho,
+ * view_all KHÔNG bypass được, chỉ chủ tệp, chủ tài khoản và người được chia sẻ mới thấy.
  */
 export type MediaStorageScope = 'catalog' | 'private_upload';
 
-/**
- * Chuẩn hóa tag/dự án (anh chốt 2026-06-15): gộp tag+dự án làm 1, KHÔNG phân biệt hoa/thường.
- * 'EGV' / 'egv' / ' Egv ' → 'egv'. Dùng CHUNG ở MỌI chỗ ghi tagIds (registerAsset, PATCH /:id,
- * PATCH /bulk, addTags lúc gửi) để lọc/đếm gộp đúng 1 nhóm. trim → lowercase → bỏ rỗng → dedup.
- */
+/** Mọi chỗ ghi tagIds phải đi qua đây, nếu không "EGV" và "egv" sẽ đếm thành hai nhóm. */
 export function normalizeTags(tags: string[] | null | undefined): string[] {
   if (!Array.isArray(tags)) return [];
   const out: string[] = [];
@@ -77,9 +69,9 @@ export interface RegisterAssetInput {
   /** 'private' (mặc định, fail-closed) | 'public'. */
   visibility?: 'private' | 'public';
   source?: MediaSource;
-  /** Nick Zalo nguồn (HIỂN THỊ "ảnh từ nick nào") — mọi ảnh lưu từ chat, cả nick thường. */
+  /** Chỉ để hiển thị "ảnh từ nick nào", ghi cho mọi ảnh lưu từ chat. */
   sourceZaloAccountId?: string | null;
-  /** Cờ ENFORCE privacy — true CHỈ khi nick nguồn là Riêng tư (privacyMode='main'). */
+  /** Cờ enforce privacy, chỉ true khi nick nguồn là Riêng tư. */
   sourceIsPrivateNick?: boolean;
   tagIds?: string[];
   folderId?: string | null;
@@ -90,23 +82,33 @@ export interface RegisterAssetInput {
 export interface RegisterAssetResult {
   asset: MediaAsset;
   blob: MediaBlob;
-  /** true nếu bytes đã tồn tại từ trước (không tốn thêm ô lưu trữ MinIO). */
+  /** true khi bytes đã có sẵn nên không tốn thêm chỗ lưu. */
   deduped: boolean;
 }
 
 /**
- * Nén ảnh (sharp): resize cạnh dài về MAX_EDGE, encode webp chất lượng cao.
- * D10(2): sharp lỗi (ảnh hỏng/format lạ) → fallback trả buffer GỐC + log warn.
- * GIF/video/file → trả nguyên bytes (không nén qua sharp).
- *
- * @returns { buffer, mimeType, width?, height?, compressed }
+ * Nén ảnh nhưng GIỮ NGUYÊN định dạng và kích thước: png ra png, jpg ra jpg, webp ra webp.
+ * Trước đây ép hết sang WebP và thu về 2000px, khiến tải lên .png mà tải về là ruột WebP.
  */
 export async function compressImage(
   buffer: Buffer,
   mimeType: string,
 ): Promise<{ buffer: Buffer; mimeType: string; width?: number; height?: number; compressed: boolean }> {
+  // Phải đứng trước mọi nhánh khác để không rơi xuống fallback "lỗi thì lưu bản gốc" ở
+  // cuối hàm, vì với SVG thì lưu bản gốc đúng bằng lưu thứ đang cố chặn.
+  if (mimeType === 'image/svg+xml') {
+    const clean = sanitizeSvg(buffer);
+    let w: number | undefined;
+    let h: number | undefined;
+    try {
+      const meta = await sharp(clean).metadata();
+      w = meta.width;
+      h = meta.height;
+    } catch { /* thiếu kích thước không ảnh hưởng gì, vẫn lưu bản đã sạch */ }
+    return { buffer: clean, mimeType, width: w, height: h, compressed: false };
+  }
+
   if (!COMPRESSIBLE.has(mimeType)) {
-    // GIF / non-image → giữ nguyên, chỉ đọc kích thước nếu là ảnh.
     let w: number | undefined;
     let h: number | undefined;
     if (IMAGE_MIMES.has(mimeType)) {
@@ -114,46 +116,52 @@ export async function compressImage(
         const dim = imageSize(buffer);
         w = dim.width;
         h = dim.height;
-      } catch { /* ảnh không đọc được dimension — bỏ qua */ }
+      } catch { /* bỏ qua */ }
     }
     return { buffer, mimeType, width: w, height: h, compressed: false };
   }
   try {
-    const img = sharp(buffer, { failOn: 'error' });
-    const meta = await img.metadata();
-    const needResize = (meta.width ?? 0) > MAX_EDGE || (meta.height ?? 0) > MAX_EDGE;
-    let pipeline = img.rotate(); // tôn trọng EXIF orientation
-    if (needResize) {
-      pipeline = pipeline.resize(MAX_EDGE, MAX_EDGE, { fit: 'inside', withoutEnlargement: true });
+    // rotate() áp EXIF orientation vào pixel, nếu không ảnh chụp dọc sẽ nằm ngang ở chỗ
+    // không đọc EXIF. keepIccProfile() giữ hồ sơ màu, bỏ đi thì ảnh hiệu chỉnh màu lệch tông.
+    const pipeline = sharp(buffer, { failOn: 'error' }).rotate().keepIccProfile();
+
+    const encoded =
+      mimeType === 'image/png'
+        ? pipeline.png({ compressionLevel: PNG_COMPRESSION_LEVEL })
+        : mimeType === 'image/webp'
+          ? pipeline.webp({ quality: QUALITY })
+          : pipeline.jpeg({ quality: QUALITY, mozjpeg: true });
+
+    const out = await encoded.toBuffer({ resolveWithObject: true });
+
+    // PNG đã tối ưu sẵn và JPEG chất lượng thấp hay phình ra khi mã hoá lại.
+    if (out.data.length >= buffer.length) {
+      const dim = (() => { try { return imageSize(buffer); } catch { return undefined; } })();
+      return {
+        buffer,
+        mimeType,
+        width: dim?.width ?? out.info.width,
+        height: dim?.height ?? out.info.height,
+        compressed: false,
+      };
     }
-    const out = await pipeline.webp({ quality: WEBP_QUALITY }).toBuffer({ resolveWithObject: true });
+
     return {
       buffer: out.data,
-      mimeType: 'image/webp',
+      mimeType,
       width: out.info.width,
       height: out.info.height,
       compressed: true,
     };
   } catch (err) {
-    // D10(2): không để mất ảnh — fallback bản gốc.
+    // D10(2): không để mất ảnh. Fallback này FAIL-OPEN nên chỉ an toàn với ảnh raster;
+    // định dạng mang được mã như SVG phải chặn ở nhánh riêng bên trên, không rơi xuống đây.
     logger.warn('[media] compressImage failed, fallback to original:', (err as Error)?.message ?? err);
     return { buffer, mimeType, compressed: false };
   }
 }
 
-/**
- * Đăng ký 1 media vào kho: nén (nếu ảnh) → upload dedup → upsert Asset+Blob.
- *
- * Dedup ở 2 tầng:
- *   1. Storage: uploadBuffer skip putObject nếu object đã tồn tại (deduped).
- *   2. DB: upsert MediaBlob theo [orgId,contentHash]; nếu trùng → đọc lại,
- *      tăng usageCount của asset đang trỏ tới (KHÔNG tạo asset mới).
- */
-/**
- * Sinh thumbnail + metadata (duration/width/height) cho VIDEO upload vào kho (ffmpeg).
- * Trả thumbnailUrl (đã mirror lên MinIO) + durationSec/width/height. Lỗi ffmpeg → trả rỗng
- * (không chặn upload — video vẫn lưu, chỉ thiếu ảnh đại diện). KHÔNG throw.
- */
+/** Lỗi ffmpeg trả về rỗng chứ không throw: thiếu ảnh đại diện không đáng để hỏng cả lần lưu. */
 async function extractVideoMeta(buffer: Buffer): Promise<{
   thumbnailUrl: string | null; durationSec: number | null; width: number | null; height: number | null;
 }> {
@@ -163,9 +171,7 @@ async function extractVideoMeta(buffer: Buffer): Promise<{
     dir = await mkdtemp(joinPath(tmpdir(), 'zalocrm-media-vid-'));
     const vidPath = joinPath(dir, 'video.mp4');
     await writeFile(vidPath, buffer);
-    // Probe metadata (ffprobe) — không chặn nếu lỗi.
     const meta = await probeVideoFile(vidPath).catch(() => ({} as any));
-    // Thumbnail (ffmpeg) → mirror lên MinIO.
     let thumbnailUrl: string | null = null;
     try {
       const gen = await generateThumbnail(vidPath);
@@ -204,10 +210,10 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
     folderId = null,
     storageScope = 'catalog',
   } = input;
-  // Chuẩn hóa tag NGAY tại tầng service — mọi nguồn ghi tag (upload/save-from-chat) đi qua đây.
+  // Chuẩn hoá ở tầng service để mọi nguồn ghi tag đều đi qua một chỗ.
   const tagIds = normalizeTags(input.tagIds ?? []);
 
-  // 1. Nén (chỉ ảnh) — variant 'original' đã-nén là bytes thật lưu.
+  // Variant 'original' chính là bytes sau nén, không phải bytes người dùng gửi lên.
   const processed = kind === 'image'
     ? await compressImage(input.buffer, mimeType)
     : { buffer: input.buffer, mimeType, width: undefined, height: undefined, compressed: false };
@@ -223,12 +229,8 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
   // 2. Upload dedup → contentHash của bytes THẬT LƯU.
   const up = await uploadBuffer(processed.buffer, processed.mimeType, originalFilename ?? undefined);
 
-  // 3. Đã có blob với contentHash này trong org? → dedup-hit ở tầng DB.
-  //
-  // 2026-07-22 (Phase Kho Lưu Trữ) — dedup phải BIẾT CHỦ. Trước đây chỉ tra theo bytes:
-  // người B tải lên đúng tệp người A đã có → trả về asset CỦA A. Với kho riêng tư điều đó
-  // vừa sai (B không sở hữu gì cả) vừa rò rỉ (B biết tệp đó tồn tại, và cầm được id của nó).
-  // Quy tắc: chỉ tái dùng asset khi nó KHÔNG riêng tư, hoặc riêng tư nhưng CÙNG CHỦ.
+  // Dedup phải biết chủ: tra theo bytes không thôi thì người B tải lên đúng tệp người A đã
+  // có sẽ nhận về asset của A, vừa sai chủ sở hữu vừa lộ ra là tệp đó tồn tại.
   const blobCandidates = await prisma.mediaBlob.findMany({
     where: { orgId, contentHash: up.contentHash },
     include: { asset: true },
@@ -243,7 +245,6 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
     return assetIsPrivate && isPrivateUpload && a.ownerUserId === ownerUserId; // riêng tư: phải cùng chủ
   }) ?? null;
   if (existingBlob) {
-    // S8 observability: log dedup-hit (đo tiết kiệm thật — bao nhiêu ô lưu trữ né được).
     logger.info(`[media][dedup] hit org=${orgId} hash=${up.contentHash.slice(0, 12)} reusedAsset=${existingBlob.assetId} source=${source}`);
     // FIX 2026-06-12 (anh báo file .doc/.xlsx lưu cũ kẹt tên "Lưu từ chat"): khi dedup-hit,
     // asset cũ có thể được lưu TỪ TRƯỚC lúc code chưa biết đọc tên thật → name placeholder +
@@ -311,7 +312,7 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
     }
     return { asset, blob: existingBlob, deduped: true };
   }
-  // S8: log MISS (bytes mới hoàn toàn) — để tính hit-rate = hit/(hit+miss).
+  // Cặp với log hit ở trên để tính được hit-rate.
   logger.info(`[media][dedup] miss org=${orgId} hash=${up.contentHash.slice(0, 12)} source=${source}`);
 
   // 4. Tạo Asset (danh tính) + Blob (variant original) trong 1 transaction.
@@ -378,7 +379,7 @@ export async function registerAsset(input: RegisterAssetInput): Promise<Register
 
 /**
  * Quyết định visibility + có chặn không khi "Lưu vào Media" từ chat (privacy guard).
- * Hàm THUẦN (không DB) để test được rule bảo mật — khu vực đã từng lộ.
+ * Tách thành hàm thuần để test được rule bảo mật này, khu vực đã từng bị lộ dữ liệu.
  *
  * Rule (eng review D11 + checklist điều 4):
  *  • Nick Riêng tư (privacyMode='main'):
@@ -417,7 +418,7 @@ export type MediaUsageEventType =
 
 /**
  * Ghi 1 sự kiện dùng media (S8 observability + tách event type usageCount).
- * KHÔNG throw — log lỗi là phụ trợ, không được làm hỏng luồng gửi/lưu chính.
+ * Không throw vì log chỉ là phụ trợ, không được làm hỏng luồng gửi và lưu chính.
  */
 export async function logMediaUsage(args: {
   orgId: string;
@@ -443,7 +444,7 @@ export async function logMediaUsage(args: {
   }
 }
 
-// ── Watermark (GĐ2) — sinh blob variant 'watermarked' từ blob gốc ─────────────
+// Watermark (GĐ2) : sinh blob variant 'watermarked' từ blob gốc
 // Logo HS đặt ở static/brand. Cache buffer 1 lần (không đọc đĩa mỗi lần watermark).
 let _logoCache: Buffer | null = null;
 async function loadLogo(): Promise<Buffer> {
@@ -477,7 +478,7 @@ export async function generateWatermarkVariant(args: {
   if (asset.kind !== 'image') throw new Error('Chỉ ảnh mới đóng được watermark');
 
   // BẬT/đổi góc-độ-mờ: nếu đã có variant watermark cũ → XÓA để sinh lại theo cấu hình mới.
-  // (Trước đây trả luôn bản cũ → đổi góc/opacity không có tác dụng — đã sửa 2026-06-12.)
+  // Trước đây trả luôn bản cũ nên đổi góc hay độ mờ không có tác dụng gì.
   const existed = asset.blobs.find((b) => b.variantType === 'watermarked');
   if (existed) {
     await prisma.mediaBlob.delete({ where: { id: existed.id } }).catch(() => { /* đã xóa */ });
@@ -486,8 +487,8 @@ export async function generateWatermarkVariant(args: {
   const original = asset.blobs.find((b) => b.variantType === 'original');
   if (!original) throw new Error('Asset chưa có dữ liệu gốc');
 
-  // Tải bytes gốc về — thử URL public rồi fallback host nội bộ s3Endpoint
-  // (từ trong container, URL public có thể không resolve được — như forward media).
+  // Thử URL public trước rồi mới tới host nội bộ, vì từ trong container URL public có thể
+  // không resolve được.
   let srcBuf: Buffer | null = null;
   for (const u of candidateDownloadUrls(original.publicUrl)) {
     try {

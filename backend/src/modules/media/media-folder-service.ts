@@ -1,34 +1,117 @@
 /**
- * media-folder-service.ts — Phase Kho Lưu Trữ (Storage) 2026-07-22.
- *
- * Cầu nối DB ↔ thư mục THẬT trên đĩa (shared/storage/folder-mirror.ts).
- * Anh chốt: người dùng tạo thư mục trong tab Kho → hệ thống tạo LUÔN thư mục cùng tên
- * đã bỏ dấu trên đĩa ("việt nam" → "viet_nam"), và tệp trong thư mục đó xuất hiện thật
- * bên trong (liên kết cứng, không tốn thêm đĩa).
- *
- * MỌI hàm ở đây fire-and-forget được: không throw, chỉ log. Thư mục đĩa là TIỆN ÍCH
- * soi bằng tay — nó hỏng thì kho vẫn chạy bình thường (nguồn sự thật là DB).
+ * Cầu nối giữa DB và thư mục thật trên đĩa (shared/storage/folder-mirror.ts).
+ * Mọi hàm ở đây fire-and-forget được: nguồn sự thật là DB, thư mục đĩa hỏng thì kho vẫn chạy.
  */
 import { prisma } from '../../shared/database/prisma-client.js';
 import { keyFromPublicUrl } from '../../shared/storage/minio-client.js';
 import {
-  ensureFolderDir,
+  ensureFolderDirExact,
   linkIntoFolder,
   unlinkFromFolder,
   renameFolderDir,
   removeFolderDir,
   isFolderMirrorEnabled,
+  joinFolderSlug,
 } from '../../shared/storage/folder-mirror.js';
+import { safeFolderSlug, slugifyFolderName } from '../../shared/folder-slug.js';
 import { logger } from '../../shared/utils/logger.js';
 
 /**
- * Tạo thư mục đĩa cho 1 MediaAlbum và ghi lại slug đã dùng vào DB.
- * Gọi ngay sau khi tạo thư mục trong kho.
+ * So bằng chuỗi đã bỏ dấu, đúng bằng lớp tương đương gây đụng thư mục đĩa: "Việt Nam",
+ * "việt nam", "viet-nam" đều ra "viet_nam" nên với người dùng chúng là một tên.
  */
-export async function createFolderOnDisk(folderId: string, name: string): Promise<string | null> {
+export function isSameFolderName(a: string, b: string): boolean {
+  const sa = slugifyFolderName(a);
+  const sb = slugifyFolderName(b);
+  // Tên toàn emoji slug ra rỗng, coi như khác nhau để không chặn oan mọi tên lạ.
+  if (!sa || !sb) return false;
+  return sa === sb;
+}
+
+/** `excludeId` để lúc đổi tên không tự so với chính mình. */
+export async function findSiblingWithSameName(
+  orgId: string,
+  parentId: string | null,
+  name: string,
+  excludeId?: string,
+): Promise<{ id: string; name: string } | null> {
+  const siblings = await prisma.mediaAlbum.findMany({
+    where: {
+      orgId,
+      parentId: parentId ?? null,
+      kind: 'folder',
+      ...(excludeId ? { NOT: { id: excludeId } } : {}),
+    },
+    select: { id: true, name: true },
+  });
+  return siblings.find((s) => isSameFolderName(s.name, name)) ?? null;
+}
+
+/** Vừa chặn dựng cây vô hạn, vừa là lưới an toàn nếu dữ liệu cũ lỡ có vòng lặp cha con. */
+export const MAX_FOLDER_DEPTH = 10;
+
+/**
+ * Lưới an toàn cho dữ liệu cũ đã trùng slug từ trước khi có luật chặn trùng tên: hai thư
+ * mục dùng chung một thư mục đĩa thì xoá cái này sẽ cuốn luôn liên kết của cái kia.
+ */
+async function uniqueFolderSlug(
+  orgId: string,
+  folderId: string,
+  name: string,
+  parentSlug: string | null,
+): Promise<string> {
+  return pickFreeFolderSlug(name, folderId, parentSlug, async (slug) => {
+    const taken = await prisma.mediaAlbum.findFirst({
+      where: { orgId, diskSlug: slug, NOT: { id: folderId } },
+      select: { id: true },
+    });
+    return !!taken;
+  });
+}
+
+/**
+ * Phần thuần của uniqueFolderSlug, tách ra để thử được mà không cần DB.
+ * `isTaken` trả true nếu đường dẫn slug đó đã có thư mục khác chiếm.
+ */
+export async function pickFreeFolderSlug(
+  name: string,
+  folderId: string,
+  parentSlug: string | null,
+  isTaken: (slug: string) => Promise<boolean>,
+): Promise<string> {
+  const base = safeFolderSlug(name, folderId);
+  for (let i = 1; i <= 50; i++) {
+    const candidate = joinFolderSlug(parentSlug, i === 1 ? base : `${base}_${i}`);
+    if (!(await isTaken(candidate))) return candidate;
+  }
+  // 50 thư mục cùng tên một cấp là cực hiếm, rơi về id cho chắc chắn không đụng.
+  return joinFolderSlug(parentSlug, `${base}_${folderId.replace(/[^a-z0-9]/gi, '').slice(0, 8).toLowerCase()}`);
+}
+
+/** Thư mục tạo trước khi có tính năng mirror thì chưa có slug, tạo bù để cây con khỏi treo ở gốc. */
+async function parentSlugOf(parentId: string | null | undefined): Promise<string | null> {
+  if (!parentId) return null;
+  const parent = await prisma.mediaAlbum.findUnique({
+    where: { id: parentId },
+    select: { id: true, name: true, diskSlug: true, parentId: true },
+  });
+  if (!parent) return null;
+  if (parent.diskSlug) return parent.diskSlug;
+  return createFolderOnDisk(parent.id, parent.name, parent.parentId);
+}
+
+/** slug là đường dẫn tương đối nhiều cấp ("viet_nam/bao_gia"), dựng bằng cách nối slug của cha. */
+export async function createFolderOnDisk(
+  folderId: string,
+  name: string,
+  parentId?: string | null,
+): Promise<string | null> {
   if (!isFolderMirrorEnabled()) return null;
   try {
-    const slug = await ensureFolderDir(folderId, name);
+    const folder = await prisma.mediaAlbum.findUnique({ where: { id: folderId }, select: { orgId: true } });
+    if (!folder) return null;
+    const unique = await uniqueFolderSlug(folder.orgId, folderId, name, await parentSlugOf(parentId));
+    const slug = await ensureFolderDirExact(unique, folderId);
     if (!slug) return null;
     await prisma.mediaAlbum.update({ where: { id: folderId }, data: { diskSlug: slug } });
     logger.info(`[media-folder] đã tạo thư mục đĩa "${slug}" cho thư mục kho "${name}"`);
@@ -59,12 +142,14 @@ export async function mirrorAssetIntoFolder(
           blobs: { where: { variantType: 'original' }, select: { minioKey: true, publicUrl: true }, take: 1 },
         },
       }),
-      prisma.mediaAlbum.findFirst({ where: { id: folderId, orgId }, select: { id: true, name: true, diskSlug: true } }),
+      prisma.mediaAlbum.findFirst({
+        where: { id: folderId, orgId },
+        select: { id: true, name: true, diskSlug: true, parentId: true },
+      }),
     ]);
     if (!asset || !folder) return;
 
-    // Thư mục tạo trước khi có tính năng này → chưa có slug, tạo bù bây giờ.
-    const slug = folder.diskSlug ?? (await createFolderOnDisk(folder.id, folder.name));
+    const slug = folder.diskSlug ?? (await createFolderOnDisk(folder.id, folder.name, folder.parentId));
     if (!slug) return;
 
     const blob = asset.blobs[0];
@@ -83,7 +168,7 @@ export async function mirrorAssetIntoFolder(
 
 /**
  * Gỡ tên tệp khỏi thư mục đĩa (bỏ vào thùng rác / chuyển sang thư mục khác).
- * CHỈ gỡ TÊN — byte trong kho phẳng giữ nguyên, nên tệp không hề mất.
+ * Chỉ gỡ tên, byte trong kho phẳng giữ nguyên nên tệp không hề mất.
  */
 export async function unmirrorAssetFromFolder(orgId: string, assetId: string): Promise<void> {
   if (!isFolderMirrorEnabled()) return;
@@ -100,26 +185,78 @@ export async function unmirrorAssetFromFolder(orgId: string, assetId: string): P
   }
 }
 
-/** Đổi tên thư mục kho → đổi tên thư mục đĩa + cập nhật slug trong DB. */
+/**
+ * Rename trên đĩa kéo theo cả cây con trong một lệnh, nhưng diskSlug của con cháu trong DB
+ * là chuỗi đường dẫn nên trỏ sai và phải viết lại tiền tố, nếu không lần tải tệp kế tiếp
+ * vào thư mục con sẽ mkdir lại cây cũ ở chỗ cũ.
+ */
 export async function renameFolderOnDisk(orgId: string, folderId: string, newName: string): Promise<void> {
   if (!isFolderMirrorEnabled()) return;
   try {
     const folder = await prisma.mediaAlbum.findFirst({
-      where: { id: folderId, orgId }, select: { id: true, diskSlug: true },
+      where: { id: folderId, orgId }, select: { id: true, diskSlug: true, parentId: true },
     });
     if (!folder) return;
-    const slug = await renameFolderDir(folder.id, folder.diskSlug, newName);
-    if (slug && slug !== folder.diskSlug) {
-      await prisma.mediaAlbum.update({ where: { id: folder.id }, data: { diskSlug: slug } });
+    const oldSlug = folder.diskSlug;
+    const target = await uniqueFolderSlug(orgId, folder.id, newName, await parentSlugOf(folder.parentId));
+    const slug = await renameFolderDir(folder.id, oldSlug, target);
+    if (!slug || slug === oldSlug) return;
+
+    await prisma.mediaAlbum.update({ where: { id: folder.id }, data: { diskSlug: slug } });
+
+    if (oldSlug) {
+      const descendants = await collectDescendantIds(orgId, folder.id);
+      if (descendants.length) {
+        const rows = await prisma.mediaAlbum.findMany({
+          where: { id: { in: descendants }, diskSlug: { startsWith: `${oldSlug}/` } },
+          select: { id: true, diskSlug: true },
+        });
+        for (const r of rows) {
+          await prisma.mediaAlbum.update({
+            where: { id: r.id },
+            data: { diskSlug: `${slug}${r.diskSlug!.slice(oldSlug.length)}` },
+          });
+        }
+      }
     }
   } catch (err) {
     logger.warn(`[media-folder] đổi tên thư mục đĩa lỗi (${folderId}):`, (err as Error)?.message ?? err);
   }
 }
 
+/** Mọi id thư mục con cháu của `rootId`, không gồm chính nó. */
+export async function collectDescendantIds(orgId: string, rootId: string): Promise<string[]> {
+  const out: string[] = [];
+  let frontier = [rootId];
+  for (let depth = 0; depth < MAX_FOLDER_DEPTH && frontier.length; depth++) {
+    const kids = await prisma.mediaAlbum.findMany({
+      where: { orgId, parentId: { in: frontier } },
+      select: { id: true },
+    });
+    frontier = kids.map((k) => k.id).filter((id) => !out.includes(id) && id !== rootId);
+    out.push(...frontier);
+  }
+  return out;
+}
+
+/** Số tầng từ gốc tới thư mục này, gốc = 0. */
+export async function folderDepth(orgId: string, folderId: string | null): Promise<number> {
+  let depth = 0;
+  let cur = folderId;
+  while (cur && depth < MAX_FOLDER_DEPTH) {
+    const row = await prisma.mediaAlbum.findFirst({
+      where: { id: cur, orgId }, select: { parentId: true },
+    });
+    if (!row) break;
+    cur = row.parentId;
+    depth++;
+  }
+  return depth;
+}
+
 /**
  * Xoá thư mục đĩa khi xoá thư mục kho. force=true gỡ cả liên kết bên trong
- * (byte kho phẳng VẪN GIỮ — xem folder-mirror).
+ * Byte trong kho phẳng vẫn giữ nguyên.
  */
 export async function deleteFolderOnDisk(orgId: string, folderId: string, force = false): Promise<void> {
   if (!isFolderMirrorEnabled()) return;

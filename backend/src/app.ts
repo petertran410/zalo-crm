@@ -1,7 +1,7 @@
 /**
  * Main application entry point.
  * Bootstraps Fastify server with all plugins, Socket.IO, and route handlers.
- * The process never exits — all errors are caught and logged.
+ * The process never exits: all errors are caught and logged.
  */
 
 // BigInt → string khi JSON.stringify (Fastify response serializer).
@@ -98,9 +98,9 @@ import { startPosInventoryAuditCron } from './jobs/pos-inventory-audit.cron.js';
 import { startPosSummaryReportCron } from './jobs/pos-summary-report.cron.js';
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
-// Telegram bridge (Zalo↔Telegram) is core — stays outside _ee.
+// Telegram bridge (Zalo/Telegram) is core, stays outside _ee.
 import { initTelegramBridge } from "./modules/integrations/providers/telegram-bridge/index.js";
-// Telegram bridge routes (Zalo↔Telegram /link + provisioner) — core, stays outside _ee.
+// Telegram bridge routes are core too, stays outside _ee.
 import { telegramBridgeRoutes } from './modules/integrations/providers/telegram-bridge/telegram-bridge-routes.js';
 import { aiRoutes } from './modules/ai/ai-routes.js';
 import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat/chat-operations-routes.js';
@@ -121,7 +121,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Open-core loader. Loads the extension bundle (`./_ee/index.js`) if present.
  * The specifier is a non-literal string so TypeScript does NOT statically
- * resolve it — in the Community edition the whole `_ee/` directory is stripped,
+ * resolve it. In the Community edition the whole `_ee/` directory is stripped,
  * the import throws, and we fall back to a null bundle (every extension hook
  * becomes a no-op). Loaded once and cached for the lifetime of the process.
  */
@@ -148,14 +148,14 @@ async function loadExtension(): Promise<ExtensionBundle | null> {
 }
 
 async function bootstrap() {
-  // trustProxy 2026-06-11 — app chạy sau Cloudflare + reverse proxy (nginx/Caddy).
+  // App chạy sau Cloudflare và reverse proxy nên cần trustProxy.
   // KHÔNG bật → Fastify thấy request.ip = IP proxy DUY NHẤT cho mọi user → rate-limit
   // theo IP biến thành GLOBAL (500/phút CHUNG cho cả công ty) → 20-25 sale thao tác
   // cùng lúc chạm trần ngay → 429 hàng loạt + chat lag. Bật để đọc X-Forwarded-For
   // (IP thật) làm fallback khi request không có token.
   const app = Fastify({ logger: false, trustProxy: true });
 
-  // ── Plugins ──────────────────────────────────────────────────────────────
+  // Plugins
 
   await app.register(cors, {
     origin: config.isProduction ? config.appUrl : true,
@@ -166,12 +166,12 @@ async function bootstrap() {
     secret: config.jwtSecret,
   });
 
-  // Phase 3 2026-06-08 — security headers (CSP report-only mặc định) cho mọi response.
+  // Security headers (CSP report-only mặc định) cho mọi response.
   registerSecurityHeaders(app);
 
-  // Rate-limit 2026-06-11 — SỬA GỐC: đếm theo TỪNG USER CRM (id trong JWT) thay vì
-  // theo IP. Lý do: sau Cloudflare/proxy mọi user chung 1 IP → rate-limit theo IP =
-  // GLOBAL (500/phút chia chung cả công ty) → 20-25 sale chạm trần → 429 + chat lag.
+  // Đếm theo TỪNG USER CRM chứ không theo IP, vì sau Cloudflare mọi user chung một IP
+  // nên rate-limit theo IP hoá ra là giới hạn dùng chung cho cả công ty, 20-25 sale là
+  // chạm trần rồi ăn 429 và chat lag.
   // Mỗi lần mở 1 hội thoại UI bắn ~9-13 request (tin nhắn + nhãn + lead-pool + AI +
   // hồ sơ KH + quan hệ + tags). Đếm PER-USER → mỗi sale có hạn mức riêng, không ảnh
   // hưởng nhau. Token decode rẻ (không +DB). Fallback IP cho request không có token.
@@ -194,20 +194,22 @@ async function bootstrap() {
       }
       return `ip:${request.ip}`;
     },
-    // Skip rate limiting for static assets — only limit API routes
+      // Skip rate limiting for static assets, only limit API routes
     allowList: (request: { url: string }) => !request.url.startsWith("/api/"),
   });
 
   await app.register(fastifyMultipart, {
     limits: {
-      fileSize: 500 * 1024 * 1024, // 500 MB — video cap; per-kind size enforced in route
-      files: 10,
+      // Trần chung phải rộng vì gửi tệp trong chat cần tới 500MB. Route nào cần chặt hơn
+      // thì tự đặt limits riêng qua request.parts(), như kho lưu trữ đang làm.
+      fileSize: 500 * 1024 * 1024,
+      files: 25,
     },
   });
 
   await app.register(fastifyFormbody);
 
-  // STORAGE 2026-06-20 — driver 'local': serve file đã upload từ UPLOAD_DIR tại /files.
+  // Driver local: serve file đã upload từ UPLOAD_DIR tại /files.
   // Zalo CDN + trình duyệt tải ảnh qua URL {localPublicUrl}/{key} = {host}/files/media/...
   // decorateReply:false để KHÔNG đụng decorator của static frontend (đăng ký bên dưới).
   if (config.storageDriver === "local") {
@@ -220,6 +222,16 @@ async function bootstrap() {
       cacheControl: true,
       maxAge: "365d",
       immutable: true,
+      // SVG đã được làm sạch lúc tải lên, nhưng /files phục vụ không cần đăng nhập nên nếu
+      // bộ lọc có ngày bị né thì đừng để trình duyệt render tệp đó trong origin của mình.
+      setHeaders(res: any, filePath: string) {
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        if (/\.svgz?$/i.test(filePath)) {
+          res.setHeader("Content-Type", "application/octet-stream");
+          res.setHeader("Content-Disposition", "attachment");
+          res.setHeader("Content-Security-Policy", "default-src 'none'; sandbox");
+        }
+      },
     });
   }
 
@@ -231,7 +243,7 @@ async function bootstrap() {
     });
   }
 
-  // ── Socket.IO ─────────────────────────────────────────────────────────────
+  // Socket.IO
 
   const io = new Server(app.server, {
     cors: {
@@ -263,8 +275,8 @@ async function bootstrap() {
   // Register chat Socket.IO event handlers
   registerChatSocketHandlers(io);
 
-  // PRIVACY 2026-06-11 (Đợt 3.1) — guard giám sát rò rỉ: onSend toàn cục, quét
-  // response route content/mixed, CẢNH BÁO (không tự sửa) nếu nick main chưa redact.
+  // Guard giám sát rò rỉ: onSend toàn cục quét response của route content và mixed,
+  // chỉ CẢNH BÁO chứ không tự sửa nếu nick main chưa redact.
   // Đăng ký TRƯỚC routes để áp cho mọi route đăng ký sau.
   registerPrivacyLeakGuard(app);
 
@@ -272,7 +284,7 @@ async function bootstrap() {
   const ee = await loadExtension();
   await ee?.registerExtensionEarly?.(app);
 
-  // ── Routes ────────────────────────────────────────────────────────────────
+  // Routes
 
   await app.register(authRoutes);
   await app.register(orgBrandingRoutes); // public org branding cho trang /login (pre-auth)
@@ -298,7 +310,7 @@ async function bootstrap() {
   await app.register(facebookChannelRoutes); // Multi-channel Phase 2 — FB config/pages (authed)
   await app.register(crmTagRoutes);
   await app.register(crmTagGroupRoutes);
-  // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 2026-05-31
+  // Tag Taxonomy v2
   // Mount 3 prefix: /api/v1/tags (definitions), /api/v1/friends/:id/tags, /api/v1/contacts/:id/crm-tags
   const {
     registerTagRoutes,
@@ -313,11 +325,11 @@ async function bootstrap() {
   await app.register(userPreferenceRoutes);
   await app.register(timelineRoutes);
   await app.register(scoringRoutes);
-  // Phase 8 — Engagement heatmap timeline + admin recompute/backfill
+  // Engagement heatmap timeline + admin recompute/backfill
   const { registerEngagementRoutes } =
     await import("./modules/engagement/engagement-routes.js");
   await registerEngagementRoutes(app);
-  // RBAC Phase Phân Quyền 2026-05-21 — Department + PermissionGroup (M2 Getfly Clone)
+  // RBAC: Department + PermissionGroup
   const { registerDepartmentRoutes } =
     await import("./modules/rbac/department-routes.js");
   await registerDepartmentRoutes(app);
@@ -327,7 +339,7 @@ async function bootstrap() {
   const { registerUserAssignmentRoutes } =
     await import("./modules/rbac/user-assignment-routes.js");
   await registerUserAssignmentRoutes(app);
-  // Phase Riêng Tư 2026-05-22 — PIN-gated visual privacy
+  // PIN-gated visual privacy
   const { registerPrivacyRoutes } =
     await import("./modules/privacy/privacy-routes.js");
   await registerPrivacyRoutes(app);
@@ -378,7 +390,7 @@ async function bootstrap() {
   // Open-core: extension route registrations (no-op in Community edition).
   await ee?.registerExtensionRoutes?.(app);
 
-  // Liveness/readiness probe — also checks DB connectivity
+  // Liveness/readiness probe, also checks DB connectivity
   app.get("/health", async () => {
     try {
       await prisma.$queryRaw`SELECT 1`;
@@ -401,7 +413,7 @@ async function bootstrap() {
     return { version: "1.0.0", name: "Hi-CRM" };
   });
 
-  // SPA fallback — serve index.html for non-API routes in production
+  // SPA fallback: serve index.html for non-API routes in production
   if (config.isProduction) {
     app.setNotFoundHandler(async (request, reply) => {
       if (request.url.startsWith("/api/")) {
@@ -411,7 +423,7 @@ async function bootstrap() {
     });
   }
 
-  // ── Error handler ─────────────────────────────────────────────────────────
+  // Error handler
 
   app.setErrorHandler(
     (error: Error & { statusCode?: number }, _request, reply) => {
@@ -422,7 +434,7 @@ async function bootstrap() {
     }
   );
 
-  // ── Start ─────────────────────────────────────────────────────────────────
+  // Start
 
   try {
     await app.listen({ port: config.port, host: config.host });
@@ -433,21 +445,21 @@ async function bootstrap() {
     startContactIntelligence();
     startLabelsBackgroundSync(60_000); // realtime-ish 2-way pull every 60s
     startInteractionCron(); // daily silent_30d detection (02:00 VN)
-    // Phase 8 — Engagement heatmap classification (02:30 VN daily)
+    // Engagement heatmap classification (02:30 VN daily)
     const { startEngagementCron } =
       await import("./modules/engagement/engagement-cron.js");
     startEngagementCron();
-    // Phase A — Real-time Zalo presence cache + bulk refresh 60s + socket emit
+    // Real-time Zalo presence cache + bulk refresh 60s + socket emit
     const { startPresenceCron } =
       await import("./modules/zalo/presence-service.js");
     startPresenceCron(io);
-    // Friend full-sync periodic (*/15 min) — catch alias/name/avatar drift từ Zalo
+    // Friend full-sync định kỳ để bắt alias/tên/avatar bị lệch so với Zalo.
     // native app mà friend_event listener không bắt được (xem friend-sync-cron.ts)
     const { startFriendSyncCron } =
       await import("./modules/zalo/friend-sync-cron.js");
     startFriendSyncCron(io);
-    // Group info refresh periodic (mỗi 6h) — làm tươi avatar/tên/sĩ số nhóm chống
-    // URL Zalo CDN hết hạn (nhóm im lặng lâu không có message để cập nhật thụ động).
+    // Làm tươi avatar, tên, sĩ số nhóm mỗi 6h để chống URL Zalo CDN hết hạn ở nhóm im
+    // lặng lâu, vì nhóm đó không có message nào để cập nhật thụ động.
     const { startGroupInfoSyncCron } =
       await import("./modules/zalo/group-info-sync-cron.js");
     startGroupInfoSyncCron();
@@ -456,16 +468,15 @@ async function bootstrap() {
       const { registerCustomerListEventHandlers } = await import('./modules/lists/list-event-handlers.js');
       registerCustomerListEventHandlers();
     }
-    // Contact profile enrichment (3am daily) — kéo gender + ngày sinh KH từ Zalo getUserInfo
+    // Kéo giới tính và ngày sinh khách từ Zalo getUserInfo (3am daily)
     // cho KH đang trống. 24h/lần để tránh rate-limit (Anh chốt 2026-06-06).
     if (config.nodeEnv !== "test") {
       const { startContactProfileSyncCron } =
         await import("./modules/contacts/contact-profile-sync-cron.js");
       startContactProfileSyncCron();
     }
-    // Hisweetie POS customer sync (01:00 VN daily) — pull POS → Contact (goal 1),
-    // + debounced push worker CRM edit → POS (goal 2). Poll-based, KHÔNG webhook
-    // (goal 3, anh chốt 2026-07-15 — xem hisweetie-sync-cron.ts).
+    // Đồng bộ khách POS: pull POS sang Contact, kèm worker debounce đẩy ngược CRM sang
+    // POS. Dùng poll chứ không webhook, xem hisweetie-sync-cron.ts.
     if (config.nodeEnv !== "test") {
       const { startHisweetieSyncCron } =
         await import("./modules/integrations/hisweetie-sync-cron.js");
@@ -474,16 +485,15 @@ async function bootstrap() {
         await import("./modules/integrations/hisweetie-push-queue.js");
       startHisweetiePushWorker();
     }
-    // Offline-send flush (2026-07-27) — gửi thật tin nhắn 'pending' (soạn lúc nick
-    // mất kết nối Zalo) khi zalo-pool.ts báo kết nối lại. Xem zalo-pending-send-queue.ts.
+    // Gửi thật những tin soạn lúc nick mất kết nối, kích hoạt khi zalo-pool báo nối lại.
+    // Xem zalo-pending-send-queue.ts.
     if (config.nodeEnv !== "test") {
       const { startPendingSendWorker } =
         await import("./modules/zalo/zalo-pending-send-queue.js");
       startPendingSendWorker();
     }
-    // Phase ZaloAccounts redesign 2026-05-22 — status log: backfill open records 1
-    // lần lúc startup (idempotent), rồi start checkpoint cron (*/5 min) reconcile
-    // orphan records sau crash. Uptime accuracy = 5p resolution.
+    // Backfill open records một lần lúc startup (idempotent) rồi chạy checkpoint cron 5
+    // phút để reconcile orphan records sau crash. Độ chính xác uptime vì thế là 5 phút.
     const { backfillStatusLog } =
       await import("./modules/zalo/status-log-backfill.js");
     backfillStatusLog().catch((err) =>
@@ -492,11 +502,11 @@ async function bootstrap() {
     const { startStatusLogCheckpointCron } =
       await import("./modules/zalo/status-log-checkpoint-cron.js");
     startStatusLogCheckpointCron();
-    // Phase 6 — Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
+    // Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
     const { startScoringScheduler } =
       await import("./modules/scoring/scoring-scheduler.js");
     startScoringScheduler({ enabled: config.nodeEnv !== "test" });
-    // Tag Taxonomy v2 — Wave 3 /plan-eng-review M57 (Issue 6A)
+    // Tag Taxonomy v2 (Issue 6A)
     // Cron 5 phút batch UPDATE Contact.autoTags từ Redis dirty set.
     // Wave 5 Slim drop Contact.autoTags → bỏ luôn cron.
     if (config.nodeEnv !== "test") {
@@ -504,11 +514,11 @@ async function bootstrap() {
         await import("./modules/tags/contact-autotags-dirty.js");
       startAutoTagsAggregateCron();
     }
-    // XÓA 2026-06-10 (CEO-review): cron cleanup handshake pending — cơ chế setup nick
-    // nội bộ thủ công đã gỡ bỏ (gây bug gửi nhầm UID). Không còn handshake pending để dọn.
+    // Đã gỡ cron cleanup handshake pending: cơ chế setup nick nội bộ thủ công gây bug gửi
+    // nhầm UID nên đã bỏ, không còn handshake pending để dọn.
     // Lead Pool auto-return cron → started by extension bundle (startExtensionJobs).
-    // GĐ13a 2026-06-13 — tự dọn thùng rác Media sau 30 ngày (03:30 VN). Chỉ xóa hàng DB,
-    // KHÔNG đụng byte MinIO. DRY-RUN mặc định BẬT (env MEDIA_TRASH_GC_DRYRUN='0' để bật xóa thật).
+    // Tự dọn thùng rác Media sau 30 ngày (03:30 VN). Chỉ xoá hàng DB, KHÔNG đụng byte kho.
+    // DRY-RUN mặc định BẬT, đặt MEDIA_TRASH_GC_DRYRUN='0' để xoá thật.
     if (config.nodeEnv !== "test") {
       const { startMediaTrashGcCron } =
         await import("./modules/media/media-trash-gc-cron.js");
@@ -525,8 +535,8 @@ async function bootstrap() {
     // Open-core: extension cron/worker startups (no-op in Community edition).
     await ee?.startExtensionJobs?.(app, io);
 
-    // 2026-06-19 — Cầu Telegram (Phase 1): subscribe bridge-bus, mirror tin Zalo→Telegram.
-    // Core feature (outside _ee) — chạy ở cả Extension lẫn Community.
+  // Cầu Telegram: subscribe bridge-bus, mirror tin Zalo sang Telegram.
+  // Core feature ngoài _ee, chạy ở cả Extension lẫn Community.
     if (config.nodeEnv !== "test") {
       try {
         initTelegramBridge();
@@ -594,7 +604,7 @@ async function bootstrap() {
   }
 }
 
-// Keep process alive — log but never crash on unhandled errors
+  // Keep process alive: log but never crash on unhandled errors
 process.on("uncaughtException", (err) => {
   logger.error("Uncaught Exception:", err);
 });

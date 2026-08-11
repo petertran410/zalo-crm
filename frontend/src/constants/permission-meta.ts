@@ -44,7 +44,7 @@ export const RESOURCE_META: Record<string, ResourceMeta> = {
   care_session:     { icon: '🩺', label: 'Phiên chăm sóc' },
   // ── Kênh & tài nguyên ──
   zalo_account:     { icon: '🟢', label: 'Nick Zalo' },
-  media:            { icon: '🖼', label: 'Kho phương tiện' },
+  media:            { icon: '🖼', label: 'Kho lưu trữ' },
   webhook:          { icon: '🔌', label: 'Webhook' },
   // ── Báo cáo ──
   engagement_score: { icon: '📊', label: 'Engagement / Score' },

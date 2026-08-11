@@ -1,5 +1,5 @@
 /**
- * media.ts — API client cho Kho phương tiện (Phase Media Library 2026-06-11).
+ * API client cho Kho lưu trữ.
  */
 import { api } from './index';
 
@@ -16,7 +16,7 @@ export interface MediaAssetItem {
   sizeBytes: number | null;
   durationSec?: number | null;
   createdAt: string;
-  // Watermark per-ảnh (GĐ2) — backend trả khi list/detail.
+  // Watermark per-ảnh, backend trả khi list hoặc detail.
   watermarkEnabled?: boolean;
   watermarkPosition?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left' | 'center';
   watermarkOpacity?: number;
@@ -39,7 +39,7 @@ export interface ListMediaParams {
   visibility?: string;
   q?: string;
   limit?: number;
-  // Lever 2 (lọc sâu) — anh chốt 2026-06-12.
+  // Lọc sâu.
   since?: '7d' | '30d' | '90d';
   sizeMin?: number;
   sizeMax?: number;
@@ -63,7 +63,7 @@ export async function listMediaPaged(
   return { items: data.items as MediaAssetItem[], total: (data.total as number) ?? 0 };
 }
 
-/** Danh sách người tải lên (có ảnh trong scope) + số lượng — đổ vào dropdown lọc người upload. */
+/** Danh sách người tải lên kèm số lượng, đổ vào dropdown lọc. */
 export async function listMediaUploaders(
   params: { kind?: string; visibility?: string } = {},
 ): Promise<Array<{ id: string; name: string; count: number }>> {
@@ -121,6 +121,10 @@ export interface MediaFolder {
   kind: string;
   visibility: 'private' | 'public';
   ownerUserId: string | null;
+  /** null nghĩa là thư mục gốc. */
+  parentId?: string | null;
+  /** Đường dẫn thư mục thật trên đĩa máy chủ. */
+  diskSlug?: string | null;
 }
 
 /** Sửa quyền/tên/tag/thư mục của 1 asset. confirmShare=true: xác nhận chia sẻ ảnh nick Riêng tư (D11). */
@@ -145,7 +149,7 @@ export interface TrashItem extends MediaAssetItem {
   daysUntilPurge: number; // còn N ngày trước khi cron tự dọn khỏi danh sách
 }
 
-/** Danh sách asset trong thùng rác (archivedAt != null) — có phân trang cursor. */
+/** Danh sách asset trong thùng rác, phân trang bằng cursor. */
 export async function listTrash(
   params: { kind?: string; limit?: number; cursor?: string } = {},
 ): Promise<{ items: TrashItem[]; nextCursor: string | null }> {
@@ -189,7 +193,7 @@ export async function watermarkMedia(
   return data;
 }
 
-/** TẮT watermark per-ảnh — gửi lại ảnh gốc (giữ bản watermark variant nếu cần bật lại). */
+/** Tắt watermark và gửi lại ảnh gốc, vẫn giữ bản watermark phòng khi bật lại. */
 export async function removeWatermark(id: string): Promise<{ ok: boolean }> {
   const { data } = await api.delete(`/media/${id}/watermark`);
   return data;
@@ -232,7 +236,7 @@ export async function mediaStats(): Promise<{
 }
 
 /** Gợi ý ảnh theo ngữ cảnh hội thoại (match tag khách). contactTags = TOÀN BỘ tag khách
- *  (cho chip gợi ý lúc gửi — eng-review #C); matchedTags chỉ là tag GIAO với ảnh-kho. */
+ *  matchedTags chỉ là tag giao với ảnh trong kho. */
 export async function suggestMedia(
   conversationId: string,
 ): Promise<{ items: MediaAssetItem[]; matchedTags: string[]; contactTags: string[] }> {
@@ -248,11 +252,38 @@ export async function listMediaTags(
   return data.tags as Array<{ tag: string; count: number }>;
 }
 
-/** Tạo thư mục. */
+/** Trùng tên với thư mục anh em thì BE trả 409 FOLDER_NAME_TAKEN. */
 export async function createMediaFolder(
   name: string,
   visibility: 'private' | 'public' = 'private',
-): Promise<{ folder: { id: string; name: string } }> {
-  const { data } = await api.post('/media/folders', { name, visibility });
+  parentId: string | null = null,
+): Promise<{ folder: { id: string; name: string; parentId: string | null; diskSlug: string | null } }> {
+  const { data } = await api.post('/media/folders', { name, visibility, parentId });
   return data;
+}
+
+/** Tệp bên trong không mất, chỉ bị bỏ ra khỏi thư mục. Xoá cha kéo theo cả cây con. */
+export async function deleteMediaFolder(id: string): Promise<{ ok: boolean }> {
+  const { data } = await api.delete(`/media/folders/${id}`);
+  return data;
+}
+
+/**
+ * Trùng tên thì dùng lại thư mục sẵn có thay vì ném lỗi, để tải lại đúng cây đó lần hai
+ * vẫn chạy tiếp được. BE trả kèm thư mục đang chiếm tên trong thân lỗi 409.
+ */
+export async function createOrReuseMediaFolder(
+  name: string,
+  parentId: string | null = null,
+): Promise<{ id: string; reused: boolean }> {
+  try {
+    const res = await createMediaFolder(name, 'private', parentId);
+    return { id: res.folder.id, reused: false };
+  } catch (e: any) {
+    const d = e?.response?.data;
+    if (e?.response?.status === 409 && d?.code === 'FOLDER_NAME_TAKEN' && d?.folder?.id) {
+      return { id: d.folder.id, reused: true };
+    }
+    throw e;
+  }
 }

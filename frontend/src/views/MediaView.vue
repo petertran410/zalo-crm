@@ -2,14 +2,16 @@
   <div class="media-page">
     <!-- Top bar -->
     <header class="m-top">
-      <h1 class="m-title">Kho phương tiện</h1>
+      <h1 class="m-title">Kho lưu trữ</h1>
       <div class="m-tools">
         <div class="m-search">
           <span class="material-symbols-outlined i">search</span>
           <input v-model="search" placeholder="Tìm ảnh, tag dự án…" @input="debouncedReload" />
         </div>
-        <button class="btn-dark" @click="triggerUpload">
-          <span class="material-symbols-outlined btn-ic">upload</span> Tải lên
+        <button class="btn-dark" @click="triggerUpload">+ Tải lên</button>
+        <!-- Trình duyệt trả mọi tệp bên trong kèm đường dẫn tương đối, đủ để dựng lại cây. -->
+        <button class="btn-folder" :disabled="folderUploading" title="Tải lên cả một thư mục (giữ nguyên thư mục con)" @click="triggerFolderUpload">
+          <FolderUpIcon :size="15" :stroke-width="1.9" /> Tải thư mục
         </button>
         <button v-if="!trashMode" class="btn-multi" :class="{ on: multiMode }" :title="multiMode ? 'Tắt chọn nhiều' : 'Chọn nhiều ảnh'" @click="toggleMultiMode">
           <CheckSquareIcon :size="15" :stroke-width="1.9" /> Chọn nhiều
@@ -18,6 +20,15 @@
           <Trash2Icon :size="15" :stroke-width="1.9" /> Thùng rác
         </button>
         <input ref="fileInput" type="file" multiple accept="image/*,video/*,.pdf,.xlsx,.docx,.zip" hidden @change="onFilesPicked" />
+        <!-- Vue cần :webkitdirectory="true" vì đây không phải attribute HTML hợp lệ. -->
+        <input
+          ref="folderInput"
+          type="file"
+          multiple
+          :webkitdirectory="true"
+          hidden
+          @change="onFolderPicked"
+        />
       </div>
     </header>
 
@@ -60,7 +71,7 @@
       </div>
     </section>
 
-    <!-- Filter row — LEVER 1: Quyền (Loại = tabs ở trên) + nút Lọc sâu -->
+    <!-- Lọc theo quyền, loại nằm ở tabs phía trên -->
     <div v-if="!trashMode" class="m-filter">
       <span class="crumb">Tất cả<template v-if="activeFolder"> ▸ <b>{{ activeFolderName }}</b></template></span>
       <span v-for="tag in activeTags" :key="tag" class="chip coral" @click="toggleTag(tag)">#{{ tag }} <XIcon :size="11" :stroke-width="2.2" /></span>
@@ -100,14 +111,31 @@
     </div>
 
     <div v-if="!trashMode" class="m-work">
-      <!-- Folder tree -->
+      <!-- BE trả danh sách phẳng kèm parentId, FE tự dựng cây. -->
       <aside class="m-tree">
         <div class="tree-ttl">Thư mục
-          <button class="addf" title="Tạo thư mục" @click="onCreateFolder">＋</button>
+          <button class="addf" title="Tạo thư mục gốc" @click="onCreateFolder(null)">＋</button>
         </div>
         <div class="f" :class="{ on: !activeFolder }" @click="setFolder(null)"><FolderIcon :size="13" :stroke-width="1.9" /> Tất cả</div>
-        <div v-for="f in folders" :key="f.id" class="f" :class="{ on: activeFolder === f.id }" @click="setFolder(f.id)">
-          <FolderIcon :size="13" :stroke-width="1.9" /> {{ f.name }} <LockIcon v-if="f.visibility === 'private'" class="lk" :size="11" :stroke-width="2" />
+        <div
+          v-for="row in visibleFolderRows"
+          :key="row.folder.id"
+          class="f"
+          :class="{ on: activeFolder === row.folder.id }"
+          :style="{ paddingLeft: `${8 + row.depth * 13}px` }"
+          @click="setFolder(row.folder.id)"
+        >
+          <!-- click.stop để bấm mũi tên chỉ mở gập, không đổi luôn thư mục đang xem. -->
+          <button
+            v-if="row.hasChildren"
+            class="tw"
+            :title="expanded.has(row.folder.id) ? 'Thu gọn' : 'Mở rộng'"
+            @click.stop="toggleExpand(row.folder.id)"
+          >{{ expanded.has(row.folder.id) ? '▾' : '▸' }}</button>
+          <span v-else class="tw tw-empty"></span>
+          <FolderIcon :size="13" :stroke-width="1.9" /> {{ row.folder.name }}
+          <LockIcon v-if="row.folder.visibility === 'private'" class="lk" :size="11" :stroke-width="2" />
+          <button class="addsub" title="Tạo thư mục con" @click.stop="onCreateFolder(row.folder.id)">＋</button>
         </div>
       </aside>
 
@@ -126,19 +154,19 @@
           <button class="bulk-clear" @click="clearPicked">Bỏ chọn</button>
         </div>
 
-        <!-- Dải "Hay dùng nhất" đã GỠ 2026-06-15 (Anh chốt) — sẽ build module báo cáo riêng. -->
+        <!-- Đã gỡ dải "Hay dùng nhất", sẽ build module báo cáo riêng. -->
 
         <div v-if="loading" class="m-empty"><div class="spin"></div> Đang tải…</div>
 
         <div v-else-if="items.length === 0" class="m-empty">
           <div class="empty-ic"><ImageIcon :size="44" :stroke-width="1.4" /></div>
-          <div class="empty-ttl">Kho ảnh của bạn đang trống</div>
+          <div class="empty-ttl">Kho lưu trữ của bạn đang trống</div>
           <div class="empty-sub">Tải ảnh hay dùng (bảng giá, mặt bằng, brochure) để gửi khách 1 chạm.</div>
-          <button class="btn-dark" @click="triggerUpload">+ Tải ảnh đầu tiên</button>
+          <button class="btn-dark" @click="triggerUpload">+ Tải tệp đầu tiên</button>
           <div class="empty-hint"><LightbulbIcon :size="13" :stroke-width="1.9" /> Hoặc chuột phải ảnh trong chat → <b>Lưu vào Media</b></div>
         </div>
 
-        <!-- TỆP: list detail theo dòng (sale phân biệt được tệp nào — anh chốt 2026-06-12) -->
+        <!-- Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào. -->
         <div v-else-if="activeKind === 'file'" class="m-flist">
           <div v-for="a in items" :key="a.id" class="frow" :class="{ sel: selected?.id === a.id }" @click="select(a)">
             <span class="ficon" :style="{ background: fileIcon(a.name).bg, color: fileIcon(a.name).fg }">{{ fileIcon(a.name).label }}</span>
@@ -205,6 +233,7 @@
 import { ref, computed, onMounted } from 'vue';
 import {
   listMediaPaged, listMediaUploaders, uploadMedia, listMediaFolders, createMediaFolder,
+  createOrReuseMediaFolder, deleteMediaFolder,
   listTrash, restoreMedia, permanentDeleteMedia, emptyTrash,
   archiveMedia, bulkUpdateMedia,
   type MediaAssetItem, type MediaFolder, type TrashItem,
@@ -215,10 +244,10 @@ import {
   Trash2 as Trash2Icon, RotateCcw as RotateCcwIcon, X as XIcon, CheckSquare as CheckSquareIcon,
   Globe as GlobeIcon, Lock as LockIcon, Smartphone as NickIcon, Upload as UploadIcon,
   Image as ImageIcon, FileText as FileIcon, Video as VideoIcon, Folder as FolderIcon,
-  Lightbulb as LightbulbIcon,
+  Lightbulb as LightbulbIcon, FolderUp as FolderUpIcon,
 } from 'lucide-vue-next';
 
-// Icon placeholder theo loại media (thay emoji 🎬📄🖼 — Lucide, thống nhất 2026-06-15).
+// Icon placeholder theo loại media.
 function kindIcon(kind: string) {
   return kind === 'video' ? VideoIcon : kind === 'file' ? FileIcon : ImageIcon;
 }
@@ -252,8 +281,11 @@ const activeFolder = ref<string | null>(null);
 const activeTags = ref<string[]>([]);
 const selected = ref<MediaAssetItem | null>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
+const folderInput = ref<HTMLInputElement | null>(null);
+/** Khoá nút để không bấm chồng lên nhau khi đang dựng cây và tải thư mục. */
+const folderUploading = ref(false);
 
-// LEVER 2 (lọc sâu — anh chốt 2026-06-12).
+// Lọc sâu.
 const showLever2 = ref(false);
 const sortBy = ref<'recent' | 'newest' | 'most_used' | 'name'>('recent');
 const sinceBy = ref<'' | '7d' | '30d' | '90d'>('');
@@ -270,6 +302,42 @@ const total = ref(0);
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
 const activeFolderName = computed(() => folders.value.find((f) => f.id === activeFolder.value)?.name ?? '');
+
+// Dựng cây ở FE để một request là đủ, và để lọc theo quyền vẫn nằm gọn một chỗ ở BE.
+const expanded = ref<Set<string>>(new Set());
+function toggleExpand(id: string) {
+  const next = new Set(expanded.value);
+  if (next.has(id)) next.delete(id); else next.add(id);
+  expanded.value = next;
+}
+
+/** Thư mục có cha đã bị lọc mất vì thiếu quyền thì coi như thư mục gốc. */
+const childrenByParent = computed(() => {
+  const ids = new Set(folders.value.map((f) => f.id));
+  const map = new Map<string | null, MediaFolder[]>();
+  for (const f of folders.value) {
+    const key = f.parentId && ids.has(f.parentId) ? f.parentId : null;
+    const arr = map.get(key) ?? [];
+    arr.push(f);
+    map.set(key, arr);
+  }
+  for (const arr of map.values()) arr.sort((a, b) => a.name.localeCompare(b.name, 'vi'));
+  return map;
+});
+
+/** Làm phẳng thành các dòng để v-for, chỉ gồm nhánh đang mở. */
+const visibleFolderRows = computed(() => {
+  const rows: Array<{ folder: MediaFolder; depth: number; hasChildren: boolean }> = [];
+  const walk = (parentId: string | null, depth: number) => {
+    for (const f of childrenByParent.value.get(parentId) ?? []) {
+      const hasChildren = (childrenByParent.value.get(f.id)?.length ?? 0) > 0;
+      rows.push({ folder: f, depth, hasChildren });
+      if (hasChildren && expanded.value.has(f.id)) walk(f.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return rows;
+});
 
 function sizeRange(): { sizeMin?: number; sizeMax?: number } {
   const MB = 1024 * 1024;
@@ -328,7 +396,7 @@ async function reload() {
   }
 }
 
-// Danh sách người sở hữu ảnh (đổ vào dropdown lọc) — khớp kind + visibility đang xem.
+// Đổ vào dropdown lọc, khớp kind và visibility đang xem.
 async function loadUploaders() {
   try {
     uploaders.value = await listMediaUploaders({
@@ -391,7 +459,7 @@ async function onBulkTrash() {
   if (ids.length === 0) return;
   if (!window.confirm(`Chuyển ${ids.length} mục vào Thùng rác?\n(Khôi phục được trong 30 ngày. Lịch sử chat đã gửi không bị ảnh hưởng.)`)) return;
   try {
-    // Tái dùng archiveMedia (DELETE /media/:id = vào thùng rác) — chạy tuần tự cho an toàn.
+    // Chạy tuần tự cho an toàn.
     let ok = 0;
     for (const id of ids) { try { await archiveMedia(id); ok++; } catch { /* skip lỗi lẻ */ } }
     toast.success(`Đã chuyển ${ok}/${ids.length} mục vào Thùng rác`);
@@ -422,13 +490,58 @@ function fmtSize(bytes: number | null | undefined): string {
   return bytes >= MB ? `${(bytes / MB).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 }
 
+/** Phải khớp hạn mức ở media-routes.ts, lệch là người dùng ăn 413 giữa chừng. */
+const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const UPLOAD_BATCH = 25;
+
+/** Chỉ đếm số tệp là chưa đủ vì 25 tệp x 10MB = 250MB, vượt trần 100MB mỗi lượt. */
+function batchFiles(files: File[]): File[][] {
+  const out: File[][] = [];
+  let cur: File[] = [];
+  let bytes = 0;
+  for (const f of files) {
+    if (cur.length >= UPLOAD_BATCH || (cur.length > 0 && bytes + f.size > MAX_BATCH_BYTES)) {
+      out.push(cur);
+      cur = [];
+      bytes = 0;
+    }
+    cur.push(f);
+    bytes += f.size;
+  }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+/** Báo ngay tại máy người dùng còn hơn để server trả 413 giữa chừng. */
+function splitOversize(files: File[]): { ok: File[]; tooBig: File[] } {
+  const ok: File[] = [];
+  const tooBig: File[] = [];
+  for (const f of files) (f.size > MAX_FILE_BYTES ? tooBig : ok).push(f);
+  return { ok, tooBig };
+}
+
 function triggerUpload() { fileInput.value?.click(); }
 async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
   if (!files.length) return;
+  const { ok: sendable, tooBig } = splitOversize(files);
+  if (tooBig.length) {
+    const names = tooBig.slice(0, 3).map((f) => `"${f.name}" (${fmtSize(f.size)})`).join(', ');
+    toast.warning(
+      `Bỏ qua ${tooBig.length} tệp quá 10MB: ${names}${tooBig.length > 3 ? '…' : ''}`,
+    );
+  }
+  if (!sendable.length) { input.value = ''; return; }
+
   try {
-    const res = await uploadMedia(files, { visibility: 'private', folderId: activeFolder.value ?? undefined });
+    const assets: Array<{ id: string; name: string; deduped: boolean }> = [];
+    for (const b of batchFiles(sendable)) {
+      const part = await uploadMedia(b, { visibility: 'private', folderId: activeFolder.value ?? undefined });
+      assets.push(...part.assets);
+    }
+    const res = { assets };
     const dup = res.assets.filter((a) => a.deduped).length;
     toast.success(dup > 0 ? `Đã tải ${res.assets.length} tệp (${dup} đã có sẵn, không tốn thêm dung lượng)` : `Đã tải ${res.assets.length} tệp lên kho`);
     reload();
@@ -439,16 +552,138 @@ async function onFilesPicked(e: Event) {
   }
 }
 
-async function onCreateFolder() {
-  const name = window.prompt('Tên thư mục mới:');
+async function onCreateFolder(parentId: string | null = null) {
+  const parentName = parentId ? folders.value.find((f) => f.id === parentId)?.name : null;
+  const name = window.prompt(parentName ? `Tên thư mục con trong "${parentName}":` : 'Tên thư mục mới:');
   if (!name?.trim()) return;
   try {
-    await createMediaFolder(name.trim(), 'private');
+    await createMediaFolder(name.trim(), 'private', parentId);
     toast.success('Đã tạo thư mục');
+    if (parentId) expanded.value = new Set(expanded.value).add(parentId); // mở cha để thấy con vừa tạo
     loadFolders();
   } catch (e: any) {
     toast.warning(e?.response?.data?.error || 'Không tạo được thư mục');
   }
+}
+
+// Cây thư mục được dựng lại từ webkitRelativePath của từng tệp, dạng "bao_gia/2026/q4.pdf".
+// Thư mục được chọn nằm dưới thư mục đang mở, nên tải vào "Tất cả" thì nó thành thư mục gốc.
+function triggerFolderUpload() { folderInput.value?.click(); }
+
+async function onFolderPicked(e: Event) {
+  const input = e.target as HTMLInputElement;
+  const files = Array.from(input.files ?? []);
+  input.value = '';
+  if (!files.length) return;
+
+  // Loại tệp quá cỡ trước khi dựng cây, để thư mục toàn tệp quá cỡ không bị tạo ra.
+  const { ok: usable, tooBig } = splitOversize(files);
+  if (tooBig.length) {
+    toast.warning(`Bỏ qua ${tooBig.length}/${files.length} tệp quá 10MB trong thư mục này`);
+  }
+  if (!usable.length) {
+    toast.warning('Mọi tệp trong thư mục đều quá 10MB, không tạo thư mục nào');
+    return;
+  }
+
+  // Khoá rỗng nghĩa là tệp nằm ngay trong thư mục gốc được chọn.
+  const byDir = new Map<string, File[]>();
+  for (const f of usable) {
+    const rel = (f as any).webkitRelativePath as string | undefined;
+    const dir = rel ? rel.split('/').slice(0, -1).join('/') : '';
+    const arr = byDir.get(dir) ?? [];
+    arr.push(f);
+    byDir.set(dir, arr);
+  }
+
+  folderUploading.value = true;
+  try {
+    // Sắp nông trước sâu sau để thư mục cha luôn tồn tại trước con.
+    const made = new Map<string, string>(); // đường dẫn tương đối sang id thư mục kho
+    const allDirs = [...new Set([...byDir.keys()].flatMap(dirAndAncestors))]
+      .filter(Boolean)
+      .sort((a, b) => a.split('/').length - b.split('/').length);
+
+    let reusedCount = 0;
+    // Chỉ thư mục do lần này tạo mới được phép dọn, thư mục có sẵn tuyệt đối không đụng tới.
+    const createdHere: string[] = [];
+    for (const dir of allDirs) {
+      const segs = dir.split('/');
+      const parentPath = segs.slice(0, -1).join('/');
+      const parentId = parentPath ? made.get(parentPath) ?? null : activeFolder.value;
+      const leaf = segs[segs.length - 1];
+
+      // BE chặn trùng tên bằng 409, bắt lấy và dùng lại để tải bổ sung vào cây có sẵn vẫn chạy.
+      const { id, reused } = await createOrReuseMediaFolder(leaf, parentId);
+      if (reused) reusedCount++;
+      else createdHere.push(id);
+      made.set(dir, id);
+    }
+
+    // gotFiles ghi lại thư mục nhận được ít nhất một tệp, để biết cái nào rỗng mà dọn.
+    let ok = 0;
+    let failed = 0;
+    const gotFiles = new Set<string>();
+    for (const [dir, group] of byDir) {
+      const folderId = dir ? made.get(dir) : (activeFolder.value ?? undefined);
+      // Vượt trần số tệp hay trần dung lượng đều làm hỏng cả thư mục đó, nên cắt mẻ theo cả hai.
+      for (const b of batchFiles(group)) {
+        try {
+          const res = await uploadMedia(b, { visibility: 'private', folderId: folderId ?? undefined });
+          ok += res.assets.length;
+          if (folderId && res.assets.length) gotFiles.add(folderId);
+        } catch {
+          failed += b.length;
+        }
+      }
+    }
+
+    // Thư mục tạo trước khi tải tệp, nên khi mọi tệp bị từ chối sẽ còn lại cả cây trống trơn.
+    // Xoá từ sâu lên nông để thư mục cha rỗng đi sau khi mất con cũng được dọn theo.
+    const survivors = new Set(gotFiles);
+    const deepestFirst = allDirs
+      .filter((d) => createdHere.includes(made.get(d)!))
+      .sort((a, b) => b.split('/').length - a.split('/').length);
+    let cleaned = 0;
+    for (const dir of deepestFirst) {
+      const id = made.get(dir)!;
+      if (survivors.has(id)) continue;
+      // Không thể xoá cha của một thư mục còn tệp.
+      const hasLiveChild = allDirs.some((d) => d.startsWith(`${dir}/`) && survivors.has(made.get(d)!));
+      if (hasLiveChild) { survivors.add(id); continue; }
+      try { await deleteMediaFolder(id); cleaned++; } catch { survivors.add(id); }
+    }
+
+    const reusedNote = reusedCount > 0 ? `, ${reusedCount} thư mục đã có sẵn` : '';
+    const keptFolders = allDirs.length - cleaned;
+    if (ok === 0 && failed > 0) {
+      toast.warning(
+        `Không tải được tệp nào (${failed} tệp, nhiều khả năng định dạng không hỗ trợ). ` +
+        `Đã dọn ${cleaned} thư mục rỗng vừa tạo.`,
+      );
+    } else {
+      const cleanNote = cleaned > 0 ? `, dọn ${cleaned} thư mục rỗng` : '';
+      toast.success(
+        failed > 0
+          ? `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote} (${failed} tệp lỗi, có thể do định dạng không hỗ trợ)`
+          : `Đã tải ${ok} tệp vào ${keptFolders} thư mục${reusedNote}${cleanNote}`,
+      );
+    }
+    if (activeFolder.value) expanded.value = new Set(expanded.value).add(activeFolder.value);
+    loadFolders();
+    reload();
+  } catch (err: any) {
+    toast.warning(err?.response?.data?.error || 'Tải thư mục thất bại');
+  } finally {
+    folderUploading.value = false;
+  }
+}
+
+/** "a/b/c" thành ["a", "a/b", "a/b/c"], để tạo đủ cả thư mục trung gian không chứa tệp nào. */
+function dirAndAncestors(dir: string): string[] {
+  if (!dir) return [];
+  const segs = dir.split('/');
+  return segs.map((_, i) => segs.slice(0, i + 1).join('/'));
 }
 
 function onAssetUpdated(patch: Partial<MediaAssetItem>) {
@@ -514,7 +749,7 @@ async function onEmptyTrash() {
   }
 }
 
-// Dải "Hay dùng nhất" (mediaStats) đã GỠ 2026-06-15 — build module báo cáo riêng sau.
+
 
 onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 </script>
@@ -536,6 +771,10 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .m-search { display:flex; align-items:center; gap:7px; border:1px solid var(--hairline); border-radius:var(--r-sm); padding:6px 12px; width:240px; }
 .m-search input { border:none; outline:none; font-size:13px; width:100%; background:transparent; color:var(--body); }
 .btn-dark { background:var(--ink); color:#fff; border:none; border-radius:var(--r-md); padding:8px 16px; font-size:13.5px; font-weight:500; cursor:pointer; }
+/* Thứ yếu so với "+ Tải lên" nên để dạng viền, cùng khuôn .btn-trash và .btn-multi. */
+.btn-folder { display:inline-flex; align-items:center; gap:6px; background:#fff; color:var(--muted); border:1px solid var(--hairline); border-radius:var(--r-md); padding:7px 13px; font-size:13px; font-weight:500; cursor:pointer; }
+.btn-folder:hover:not(:disabled) { border-color:#1786be; color:#1786be; }
+.btn-folder:disabled { opacity:.5; cursor:default; }
 .m-tabs { display:flex; gap:2px; padding:0 24px; border-bottom:1px solid var(--hairline); }
 .tab { padding:11px 16px; font-size:14px; color:var(--muted); border:none; background:none; cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-1px; }
 .tab.on { color:var(--ink); font-weight:500; border-bottom-color:var(--ink); }
@@ -561,6 +800,15 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .f { display:flex; align-items:center; gap:8px; padding:6px 8px; border-radius:var(--r-sm); font-size:13px; color:var(--body); cursor:pointer; }
 .f.on { background:var(--soft); color:var(--ink); font-weight:500; }
 .f .lk { margin-left:auto; font-size:11px; }
+/* ── Cây thư mục lồng nhau (2026-08-07) ── */
+/* Mũi tên mở/gập. .tw-empty giữ đúng chỗ trống để nhãn các cấp thẳng hàng. */
+.tw { width:13px; flex-shrink:0; border:none; background:none; padding:0; cursor:pointer; color:var(--muted); font-size:10px; line-height:1; text-align:left; }
+.tw-empty { cursor:default; }
+/* Chỉ hiện khi rê chuột lên dòng, tránh rối cây. */
+.addsub { margin-left:auto; border:none; background:none; cursor:pointer; color:var(--muted); font-size:14px; line-height:1; padding:0 2px; opacity:0; }
+.f:hover .addsub { opacity:1; }
+.addsub:hover { color:var(--ink); }
+.f .lk + .addsub { margin-left:4px; }
 .m-grid-wrap { flex:1; padding:16px 24px; overflow:auto; min-width:0; }
 .m-pager { display:flex; align-items:center; justify-content:center; gap:14px; padding:16px 0 4px; }
 .pg-btn { border:1px solid var(--hairline); background:var(--canvas); border-radius:var(--r-sm,6px); padding:6px 14px; font-size:13px; cursor:pointer; color:var(--ink); }
@@ -571,7 +819,7 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .m-grid { display:grid; grid-template-columns:repeat(auto-fill, minmax(140px, 1fr)); gap:12px; }
 @media (min-width:1600px) { .m-grid { grid-template-columns:repeat(auto-fill, minmax(170px, 1fr)); gap:14px; } }
 @media (min-width:2200px) { .m-grid { grid-template-columns:repeat(auto-fill, minmax(200px, 1fr)); gap:16px; } }
-/* TỆP — list detail theo dòng (anh chốt: grid card không phân biệt được tệp nào). */
+/* Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào. */
 .m-flist { display:flex; flex-direction:column; border:1px solid var(--hairline); border-radius:var(--r-md); overflow:hidden; background:var(--canvas); }
 .frow { display:flex; align-items:center; gap:13px; padding:11px 14px; border-bottom:1px solid var(--hairline); cursor:pointer; }
 .frow:last-child { border-bottom:none; }
@@ -599,9 +847,9 @@ onMounted(() => { reload(); loadFolders(); loadUploaders(); });
 .empty-hint { margin-top:10px; background:#f5e9d4; border:1px solid #e6d3ad; color:#6b5520; padding:6px 16px; border-radius:var(--pill); font-size:12px; display:inline-flex; align-items:center; gap:6px; }
 .spin { width:18px; height:18px; border:2px solid var(--strong); border-top-color:var(--ink); border-radius:50%; animation:spin .7s linear infinite; }
 @keyframes spin { to { transform:rotate(360deg); } }
-/* Dải "Hay dùng nhất" đã GỠ 2026-06-15 — build module báo cáo riêng sau. */
 
-/* NGUỒN ảnh: nick nào / sale nào (2026-06-15) — Lucide icon, không emoji. */
+
+/* Nguồn ảnh: nick nào, sale nào. */
 .src { display:flex; align-items:center; gap:4px; font-size:11px; color:var(--muted); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .src span { overflow:hidden; text-overflow:ellipsis; }
 .src-row { display:flex; align-items:center; gap:4px; margin-top:2px; }

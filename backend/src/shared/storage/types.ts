@@ -36,6 +36,8 @@ export function mimeToExt(mime: string): string {
   if (mime === 'image/png') return '.png';
   if (mime === 'image/webp') return '.webp';
   if (mime === 'image/gif') return '.gif';
+  if (mime === 'image/svg+xml') return '.svg';
+  if (mime === 'image/x-icon' || mime === 'image/vnd.microsoft.icon') return '.ico';
   if (mime === 'video/mp4') return '.mp4';
   if (mime === 'video/quicktime') return '.mov';
   if (mime === 'video/webm') return '.webm';

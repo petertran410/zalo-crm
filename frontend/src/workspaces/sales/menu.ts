@@ -1,12 +1,6 @@
 /**
- * Sales Workspace — Menu Config
- * ──────────────────────────────
- * Giao diện TỐI GIẢN dành cho nhân viên kinh doanh.
- * Chỉ hiển thị các trang Sales cần hàng ngày:
- *   Hội thoại (Sales Chat) · Lịch hẹn · Khách hàng · Bạn bè · POS · Kho ảnh
- *
- * Ẩn hoàn toàn: Dashboard quản lý, Báo cáo 7 màn, Cài đặt hệ thống,
- *   Webhook, AI Assistant settings, Lead Pool rules, Phân quyền RBAC.
+ * Menu tối giản cho nhân viên kinh doanh, chỉ những trang cần dùng hàng ngày.
+ * Ẩn hoàn toàn Dashboard quản lý, Báo cáo, Cài đặt hệ thống, Webhook, Lead Pool và RBAC.
  */
 
 import type { MenuItemConfig } from '../types';
@@ -46,7 +40,7 @@ export const salesMenu: MenuItemConfig[] = [
   },
   {
     key: 'media',
-    title: 'Kho ảnh',
+    title: 'Kho lưu trữ',
     icon: 'mdi-image-multiple-outline',
     materialIcon: 'auto_awesome',
     to: '/media',
@@ -54,7 +48,7 @@ export const salesMenu: MenuItemConfig[] = [
   },
 ];
 
-/** Sales Workspace: dropdown Cài đặt cá nhân (rút gọn — chỉ Hồ sơ + Đăng xuất). */
+/** Sales Workspace: dropdown Cài đặt cá nhân, rút gọn còn Hồ sơ và Đăng xuất. */
 export const salesSettingsShortcuts: MenuItemConfig[] = [
   {
     key: 'personal-profile',
