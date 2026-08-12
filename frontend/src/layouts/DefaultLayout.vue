@@ -1,13 +1,13 @@
 <template>
   <v-app class="smax-app" :class="navMode === 'rail' ? 'nv-mode-rail' : 'nv-mode-bar'">
-    <!-- Nav có 2 chế độ theo bề rộng màn hình:
+    <!-- ════════ NAV — vỏ 2 chế độ (revamp 2026-08-05) ════════
          >=1440px  → thanh ngang đầy đủ (tab nằm ngay trong header này)
          < 1440px  → header thu thành dải tiện ích 44px, tab chuyển xuống rail dọc
          Ngưỡng 1440 đo thực tế: thanh ngang cũ cần 1523px nên bị cắt mất avatar +
          Đăng xuất ở mọi cỡ dưới ~1600px, mà body overflow-x:hidden nên KHÔNG cuộn
          tới được. Bỏ wordmark thu lại 73px là vừa khít 1440. -->
     <header class="smax-topnav">
-      <!-- Logo lấy theo hồ sơ tổ chức, đồng bộ với /login và /setup-password.
+      <!-- Brand — logo lấy theo hồ sơ tổ chức (đồng bộ /login, /setup-password).
            Wordmark đã bỏ; tên tổ chức chuyển sang thuộc tính title. -->
       <RouterLink to="/" class="hs-brand" :title="`${brandName} CRM`">
         <span class="hs-bbox"><img :src="brandLogo" :alt="brandName" @error="onLogoError" /></span>
@@ -31,7 +31,7 @@
         </RouterLink>
 
 
-        <!-- Dropdown gộp Phân tích và Báo cáo.
+        <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
              RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
              Đang tắt, xem SHOW_REPORTS_NAV. -->
         <NavReportsMenu
@@ -89,7 +89,7 @@
 
     <!-- ════════ THÂN: rail dọc (nếu có) + MAIN ════════ -->
     <div class="smax-body">
-      <!-- Rail dọc chỉ hiện dưới 1440px. Dùng chung visiblePrimaryTabs với thanh
+      <!-- Rail dọc — chỉ dưới 1440px. Cùng nguồn `visiblePrimaryTabs` với thanh
            ngang, nên thêm/bớt tab chỉ sửa một chỗ. Nhãn rút gọn qua tab.short vì
            ô rộng 62px không chứa nổi "Kênh Kết Nối" / "Cửa hàng POS". -->
       <nav v-if="navMode === 'rail'" class="nav-rail" aria-label="Điều hướng chính">
@@ -128,8 +128,11 @@
       </v-main>
     </div>
 
-    <!-- Đã gỡ MiniOnboardingIndicator vì badge 4/4 hiện đè lên mọi UI sau khi sale hoàn tất.
-         LeadFloatingButton cũng đã chuyển vào ConversationFilterSidebar, chỉ render ở /chat. -->
+    <!-- Đã gỡ MiniOnboardingIndicator: badge 4/4 hiện đè mọi UI sau khi sale hoàn tất.
+         mọi UI gây rối mắt sau khi sale hoàn tất. Sẽ code lại setup 4 bước. -->
+
+    <!-- 2026-06-01: LeadFloatingButton moved → ConversationFilterSidebar (chỉ render trong /chat).
+         Floating bottom-right bị bỏ. Sale thấy nút "Nhận khách" trong sidebar cột 1 (expanded card / collapsed icon hộp quà pulse). -->
 
     <!-- Global toast queue -->
     <ToastContainer />
@@ -362,7 +365,7 @@ const visiblePrimaryTabs = computed(() => {
   // Tab Marketing khác nhau giữa hai edition:
   //  - EE: menu Marketing đầy đủ (triggers/sequences/…); hiện khi có quyền ≥1 chức năng.
   //  - Community: menu Marketing RIÊNG, chỉ Quét nhóm + Tệp khách hàng (route /marketing
-  //    chỉ đăng ký khi !isExtension. Không dùng marketingEntry vì đó là resource EE.
+  //    chỉ đăng ký khi !isExtension — xem router). KHÔNG dùng marketingEntry (resource EE).
 
   if (!SHOW_MARKETING_NAV) {
     return tabs;

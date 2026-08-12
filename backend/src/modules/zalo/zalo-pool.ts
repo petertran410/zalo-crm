@@ -1,9 +1,10 @@
 /**
- * Singleton quản lý các instance Zalo SDK đang sống: đăng nhập QR, reconnect, vòng đời
- * listener và lưu credential xuống DB.
+ * ZaloAccountPool — singleton that manages live Zalo SDK instances.
+ * Handles QR login, session reconnect, message listener lifecycle,
+ * and credential persistence to the database.
  *
- * zca-js phải import qua createRequire vì khai báo TypeScript của nó không expose named
- * export ở chế độ ESM.
+ * Note: zca-js is imported via createRequire because its TypeScript
+ * declarations don't expose named exports in ESM mode.
  */
 import { createRequire } from 'module';
 import type { Server } from 'socket.io';
@@ -83,14 +84,14 @@ class ZaloAccountPool {
   // Circuit breaker: track disconnect timestamps per account
   private disconnectHistory = new Map<string, number[]>();
 
-  // Fix flap 2026-06-06
+  // ── Fix flap 2026-06-06 ──
   // epochCounter: nguồn epoch tăng dần toàn cục cho mọi connect/reconnect.
   private epochCounter = 0;
   // reconnecting: in-flight guard per account — chặn 2 luồng (autoReconnect 30s timer +
   // health-check cron) cùng vào reconnect() tạo WS chồng nhau.
   private reconnecting = new Set<string>();
 
-  // Sprint v3 (2026-06-03) : Sticky 24h Hold notification timers
+  // ── Sprint v3 (2026-06-03) — Sticky 24h Hold notification timers ──
   // Mỗi nick disconnect tạo 3 setTimeout (T+2 phút, T+6h, T+23h). Khi nick
   // reconnect, clear toàn bộ chain. Tránh notify "trễ" sau khi nick đã hồi.
   private stickyHoldNotificationTimers = new Map<string, NodeJS.Timeout[]>();
@@ -106,8 +107,16 @@ class ZaloAccountPool {
   }
 
   /**
-   * Emit vào room org thay vì io.emit trần. Bare emit bắn tới mọi org: FE đang treo QR của
-   * người khác tưởng đã kết nối thành công, và org A nhận được accountId của org B.
+   * FIX #A (2026-06-16): emit sự kiện account-level vào ĐÚNG room org thay vì `io.emit` BARE.
+   *
+   * Trước đây `zalo:connected`/`zalo:error`/`zalo:reconnect-failed` dùng `this.io.emit(...)`
+   * = broadcast TOÀN server (mọi org, mọi sale). Hệ quả:
+   *   1. Bất kỳ nick nào (kể cả cron tự reconnect) connect → bắn tới FE đang treo QR của
+   *      người KHÁC → FE tưởng "kết nối thành công" giả (gốc trigger bug báo-giả).
+   *   2. Lỗ cross-tenant: org A nhận {accountId, zaloUid} của org B.
+   * Sửa: gửi vào `org:${orgId}` (room đã auto-join từ token ở socket-auth.ts) → chỉ sale
+   * cùng org nhận. orgId cache trong instance để tránh query lặp. (qr/scanned/duplicate đã
+   * `.to(account:)` từ trước — đây gom connected/error/reconnect-failed cho nhất quán.)
    */
   private async emitAccountEventToOrg(accountId: string, event: string, payload: Record<string, unknown>): Promise<void> {
     if (!this.io) return;
@@ -127,10 +136,15 @@ class ZaloAccountPool {
   }
 
   /**
-   * Dọn instance, listener và message-sync cũ TRƯỚC khi tạo instance mới.
+   * Fix flap 2026-06-06: dọn instance + listener + message-sync CŨ của 1 account
+   * TRƯỚC khi tạo instance mới trong loginQR()/reconnect().
    *
-   * Không stop listener cũ thì WS cũ vẫn sống nhờ retryOnClose, Zalo thấy hai WS cùng một nick
-   * nên đóng bớt, sinh vòng lặp đứt nối vô hạn. Không xoá key Map vì caller set entry mới ngay sau.
+   * Root cause flap: reconnect() ghi đè instances Map nhưng KHÔNG stop listener cũ →
+   * WS cũ vẫn sống (retryOnClose) → Zalo thấy 2 WS cùng 1 nick → đóng bớt → 'closed' →
+   * onDisconnected → autoReconnect → lặp vô hạn (nick Thành Phạm: 30 đứt/30 phút).
+   *
+   * stop() = ws.close(1000) + reset listener — an toàn cho cả instance đã chết.
+   * Không xoá key Map ở đây vì caller set entry mới ngay sau đó.
    */
   private teardownExisting(accountId: string): void {
     const prev = this.instances.get(accountId);
@@ -321,9 +335,13 @@ class ZaloAccountPool {
 
   // Reconnect using previously saved session credentials
   async reconnect(accountId: string, credentials: ZaloCredentials, proxyUrl?: string | null): Promise<void> {
-    // Gom guard eligibility về một chỗ: mọi đường reconnect (boot, cron, route tay, autoReconnect)
-    // đều đi qua đây. Mở WS cho thẻ ma bằng session cũ sẽ tạo hai WS cùng một tài khoản, gây
-    // KICKOUT_BY_WORKER loop và "login treo".
+    // FIX 2 nick-ghost (Anh chốt 2026-06-13): GUARD eligibility GOM 1 CHỖ. Mọi đường
+    // reconnect (boot app.ts, health-check cron, route /reconnect tay, autoReconnect
+    // timer) đều đi qua đây → đặt điều kiện "thẻ ma KHÔNG reconnect" tại nguồn duy nhất.
+    //   • zaloUid=null  → chưa từng connect thật = thẻ ma (qr_pending/disconnected rỗng).
+    //   • archivedAt!=null → nick đã xoá mềm/ẩn.
+    // Mở WS cho thẻ ma bằng session cũ → 2 WS cùng tài khoản Zalo → KICKOUT_BY_WORKER
+    // loop → "login treo". Chặn TỪ GỐC ở đây thay vì vá từng đường (DRY, không sót).
     const eligibility = await runSystemQuery(() =>
       prisma.zaloAccount.findUnique({
         where: { id: accountId },
@@ -336,8 +354,11 @@ class ZaloAccountPool {
       );
       return;
     }
-    // Gom guard manual về một chỗ để chặn mọi đường reconnect ngầm làm sống lại nick sale đã ngắt
-    // thủ công. Muốn dùng lại thì phải quét QR, đường đó không đi qua hàm này.
+    // 2026-06-16 (Anh chốt: "Ngắt là ngắt thật"): GUARD MANUAL gom CHUNG 1 chỗ ở đây — chặn
+    // MỌI đường reconnect tự động/ngầm (boot app.ts, health-check cron×2, autoReconnect timer,
+    // route /reconnect, bulk-action, zalo-operations attemptReconnect) làm SỐNG LẠI nick sale
+    // đã NGẮT THỦ CÔNG. Muốn dùng lại → sale bấm "Kết nối lại" → quét QR (loginQR, KHÔNG qua
+    // hàm này). Bịt 1 chỗ thay vì vá từng đường (tránh sót như boot).
     if (eligibility.disconnectReason === 'manual') {
       logger.info(`[zalo:${accountId}] reconnect() skip — sale đã NGẮT THỦ CÔNG (manual), chỉ QR mới nối lại`);
       return;
@@ -408,9 +429,12 @@ class ZaloAccountPool {
         .then((rec) => rec && emitWebhook(rec.orgId, 'zalo.connected', { accountId }))
         .catch(() => {});
 
-      // Nick hồi thì clear chuỗi notification và ghi log.
-      // KHÔNG clear nick_hold_since ở đây: sequence-step-worker và welcome-probe-worker tự clear
-      // cho entry của chúng khi xử lý xong.
+      // ── Sprint v3 (2026-06-03) — Sticky 24h Hold reconnect hook ──
+      // Nick hồi: clear notification chain (T+2p/6h/23h) + log event.
+      // KHÔNG cần clear nick_hold_since ở đây — sequence-step-worker khi gửi
+      // step tiếp theo thành công sẽ tự clear cho entry của nó (per-entry).
+      // Welcome-probe-worker khi tick lại + gửi welcome thành công sẽ tự
+      // xoá welcomeLastError. Hold timestamp giữ tới khi worker xử xong KH.
       void this.handleStickyHoldReconnect(accountId).catch((err) =>
         logger.error(`[zalo:${accountId}] sticky-hold onConnected error:`, err),
       );
@@ -506,7 +530,7 @@ class ZaloAccountPool {
           .then((rec) => rec && emitWebhook(rec.orgId, 'zalo.disconnected', { accountId: id }))
           .catch(() => {});
 
-        // Sprint v3 (2026-06-03) : Sticky 24h Hold hook
+        // ── Sprint v3 (2026-06-03) — Sticky 24h Hold hook ──
         // Khi nick chết, tag tất cả entries + outbox đang giữ với nick_hold_since=NOW().
         // Sweeper sticky-hold sẽ reset KH về queue sau 24h nếu nick chưa hồi.
         // Notification 3 mốc: T+2 phút, T+6h, T+23h gửi cho Anh + chủ nick.
@@ -561,11 +585,19 @@ class ZaloAccountPool {
     reason?: StatusReason,
   ): Promise<void> {
     try {
-      // Nhả uid CHỈ khỏi nick đã archived. Nhả khỏi mọi nick như trước sẽ khiến quét QR
-      // trúng nick đang sống là cướp uid của nó, biến nick cũ thành thẻ ma thay vì báo trùng.
+      // 2026-06-11 FIX (gốc rễ DB status kẹt 'qr_pending' → offline sai khắp nơi: chat
+      // picker, labels, sticker, system-notify...). Hai nguyên nhân:
+      //  (a) zaloUid UNIQUE collision (P2002): nick re-QR cùng người → nick CŨ (đã archived)
+      //      vẫn giữ zaloUid → set lại trên nick mới ném P2002 → status KHÔNG ghi được.
+      //      → giải phóng uid khỏi nick ĐÃ ARCHIVED trước (nick đó đã bị xoá/ẩn, nhả uid OK).
+      //  (b) pool chạy NỀN (boot reconnect/cron) không có tenant ctx → bọc runSystemQuery.
       //
-      // Giữ nguyên uid của nick đang sống để prisma.update ném P2002, loginQR bắt được và
-      // emit zalo:duplicate. Bọc runSystemQuery vì pool chạy nền thì không có tenant context.
+      // FIX 0 nick-ghost (Anh chốt 2026-06-13): CHỈ nhả uid khỏi nick ĐÃ ARCHIVED.
+      // Trước: updateMany xoá uid khỏi MỌI nick khác (kể cả nick đang SỐNG) → quét QR
+      // trúng nick đã login ở record khác sẽ CƯỚP uid của nó (nick cũ mất uid → thành
+      // thẻ ma) thay vì báo trùng. Giờ: nếu nick KHÁC đang sống (archivedAt=null) giữ uid
+      // → KHÔNG đụng → prisma.update set uid sẽ ném P2002 → loginQR bắt DUPLICATE_ZALO_UID
+      // → emit zalo:duplicate (khôi phục báo trùng). Đây là chống một nguồn đẻ thẻ ma.
       const updated = await runSystemQuery(async () => {
         if (zaloUid !== null) {
           await prisma.zaloAccount.updateMany({
@@ -578,17 +610,25 @@ class ZaloAccountPool {
           data: {
             status,
             ...(zaloUid !== null ? { zaloUid } : {}),
-            // Clear cả archivedAt để nick đã xoá quét QR lại là sống dậy kèm hội thoại cũ. An toàn vì chỉ
-            // chạy khi status=connected, mà nick ma không bao giờ tới được trạng thái đó.
+            // 2026-06-16: nick connected lại → CLEAR trạng thái mất kết nối (manual/passive)
+            // để FE thôi hiện "đã ngắt/đã mất kết nối".
+            // T8 (YC2 2026-06-20): + CLEAR archivedAt → nick ĐÃ XÓA login lại (quét QR đúng
+            // tài khoản) tự SỐNG DẬY, hội thoại/tin nhắn cũ hiện lại. An toàn vì chỉ clear khi
+            // status='connected' (nick THẬT đã login WS thành công, api!=null). Nick-ma không
+            // bao giờ tới 'connected' (api=null) nên không bị clear nhầm.
             ...(status === 'connected' ? { lastConnectedAt: new Date(), disconnectReason: null, disconnectedAt: null, archivedAt: null } : {}),
           },
           select: { orgId: true, ownerUserId: true },
         });
       });
 
-      // Khi nick này connect thật thì ngắt mọi ghost cũ cùng owner còn lửng lơ để chúng ngừng tranh
-      // chấp session. Chỉ ngắt ghost chưa từng connect nên không đụng nick thật thứ hai của owner;
-      // xoá session_data chứ không xoá record để giữ bạn bè và hội thoại.
+      // FIX CORE nick trùng — tầng 2 (Anh chốt 2026-06-12). Khi nick này connect THẬT
+      // (có zaloUid), NGẮT mọi GHOST cũ cùng owner còn lửng lơ (qr_pending, chưa UID) để
+      // chúng NGỪNG tranh chấp session → hết KICKOUT_BY_WORKER + loop QR. Bắt cả ghost
+      // tạo TRƯỚC fix route (vd nick "Thanh Vỹ" baee7ba5). Chỉ ngắt ghost CHƯA connect
+      // (zaloUid=null) → KHÔNG đụng nick thật thứ 2 của owner. Xoá session_data để pool
+      // ngừng auto-reconnect; KHÔNG xoá record (giữ data bạn bè/hội thoại gắn vào — admin
+      // gộp sau). Fire-and-forget, bọc runSystemQuery (chạy nền không tenant ctx).
       if (status === 'connected' && zaloUid !== null) {
         void runSystemQuery(() =>
           prisma.zaloAccount.updateMany({
@@ -633,9 +673,11 @@ class ZaloAccountPool {
         }));
       }
 
-      // Respawn nick-worker ngay khi nick chuyển sang connected, không chờ sweeper 30s: bootstrap
-      // chạy lúc nick còn disconnected nên bỏ sót nick re-login sau restart. Import động để tránh
-      // vòng import giữa zalo-pool và nick-worker.
+      // FIX 2026-06-08 (Anh chốt): nick vừa chuyển 'connected' → respawn nick-worker NGAY
+      // (không chờ sweeper 30s). Cốt cho trường hợp nick re-login sau restart server: bootstrap
+      // đã chạy lúc nick còn disconnected → bỏ sót; hook này bắt ngay khi nick online lại.
+      // Import động tránh import vòng zalo-pool ↔ nick-worker. Fire-and-forget, idempotent
+      // (startNickWorker skip nếu đã có worker / chỉ spawn nếu nick gắn trigger active).
       if (status === 'connected') {
         void import('../../shared/ee-registry/automation.js')
           .then((m) => m.respawnNickWorkerIfActive(accountId, updated.orgId))
@@ -663,8 +705,11 @@ class ZaloAccountPool {
   }
 
   /**
-   * Tra nick đang sở hữu một zaloUid, để báo "nick đã thuộc ai" khi quét trùng.
-   * includeArchived=true thì tìm cả nick đã xoá, dùng khi cần báo nick đó của người khác.
+   * Tra nick đang SỞ HỮU một zaloUid (để báo "nick đã thuộc ai" khi quét trùng). Fix ②.
+   * T9 (YC2 2026-06-20): `includeArchived` — khi true, tìm cả nick ĐÃ XÓA (archived) giữ uid
+   * để báo "nick đã xóa của người khác". Mặc định false → giữ nguyên hành vi loginQR (chỉ nick
+   * sống). Lưu ý: chống đẻ record mồ côi nằm ở T8 (revive clear archivedAt) + T9b (check-phone
+   * cho FE login đúng id cũ), KHÔNG ở đây; updateMany nhả uid (FIX 0) giữ nguyên.
    */
   private async findOwnerOfZaloUid(
     zaloUid: string,
@@ -679,8 +724,9 @@ class ZaloAccountPool {
   }
 
   /**
-   * Dọn record qr_pending rác sinh ra khi quét trúng nick trùng. Chỉ xoá khi record vẫn
-   * qr_pending, chưa có zaloUid và chưa có hội thoại hay tin nhắn gắn vào.
+   * Dọn record qr_pending RÁC vừa tạo khi quét trúng nick trùng (Fix ②). An toàn:
+   * chỉ xoá nếu record vẫn qr_pending VÀ chưa có zaloUid (chưa từng connect thành công)
+   * VÀ không có dữ liệu thật gắn vào (conversation/message). Tránh xoá nhầm nick thật.
    */
   private async cleanupGhostAccount(accountId: string): Promise<void> {
     try {
@@ -814,12 +860,18 @@ class ZaloAccountPool {
     logger.info(`[zalo:${accountId}] Backfill complete: ${orphaned.length} conversation(s) linked`);
   }
 
+  // ──────────────────────────────────────────────────────────────────────
   // Sprint v3 (2026-06-03) — Sticky 24h Hold helpers
+  // ──────────────────────────────────────────────────────────────────────
 
   /**
-   * Khi nick disconnect: đánh dấu nick_hold_since cho entry đang xử lý, đánh dấu
-   * nick_first_offline_at cho outbox welcome chưa gửi, rồi lên lịch báo T+2p, T+6h, T+23h.
-   * Mốc cuối là 23h chứ không phải 24h để còn một tiếng xử lý trước khi reset.
+   * Khi nick disconnect:
+   * 1. Tag tất cả entries có claimed_by_nick_id=accountId + queueStatus in
+   *    (processing, processed) với nick_hold_since=NOW() (nếu NULL).
+   * 2. Tag outbox WELCOME_PROBE chưa gửi của nick này với
+   *    nick_first_offline_at=NOW() (nếu NULL).
+   * 3. Lên lịch 3 notification: T+2 phút, T+6h, T+23h.
+   *    Anh chốt T+23h (không phải 24h) để Anh có 1 tiếng xử lý trước reset.
    */
   private async handleStickyHoldDisconnect(accountId: string): Promise<void> {
     const now = new Date();
@@ -928,7 +980,10 @@ class ZaloAccountPool {
   }
 
   /**
-   * Gửi notification một trong ba mốc qua kênh Zalo nội bộ, tới cả quản trị lẫn chủ nick.
+   * Gửi notification 1 trong 3 mốc (T+2p / T+6h / T+23h) qua kênh Zalo nội bộ
+   * tới Anh (system notify nick) + chủ nick.
+   *
+   * Anh chốt câu 4: gửi cho cả 2 (Anh + chủ nick).
    */
   private async sendStickyHoldNotification(
     accountId: string,
@@ -986,7 +1041,7 @@ class ZaloAccountPool {
         },
       });
 
-      // Sprint v3 (2026-06-03) : Gửi tin Zalo nội bộ thật qua systemNotifyZaloAccount
+      // ── Sprint v3 (2026-06-03) — Gửi tin Zalo nội bộ thật qua systemNotifyZaloAccount ──
       // Anh chốt câu 4: gửi cho Anh (org owner) + chủ nick. Dùng helper
       // sendSystemNotificationToUser từ module system-notifications.
       try {
@@ -1035,11 +1090,24 @@ class ZaloAccountPool {
   }
 
   /**
-   * Dọn thẻ nick ma định kỳ. Cần cron riêng vì lớp dọn ở updateAccountDB chỉ chạy khi nick
-   * thật connect được, mà đúng tình huống login treo thì nó không bao giờ connect.
+   * FIX 3 nick-ghost (Anh chốt 2026-06-13): bộ dọn thẻ ma ĐỊNH KỲ.
    *
-   * lastConnectedAt=null là chốt phân biệt thẻ ma với nick thật cũ đã bị purge nhả uid.
-   * Ẩn bằng archivedAt chứ không hard-delete để Friend và Conversation còn nguyên.
+   * Vì sao cần: lớp dọn tầng-2 (updateAccountDB) chỉ ngắt ghost KHI nick thật connect.
+   * Nếu nick thật KHÔNG BAO GIỜ connect ổn định (đúng tình huống login treo), thẻ ma
+   * qr_pending nằm lại vĩnh viễn → vẫn hiện ở /contacts, vẫn đẻ Friend. Cron này dọn
+   * chủ động, không phụ thuộc nick thật.
+   *
+   * An toàn:
+   *   • CHỈ thẻ ma: zaloUid=null (chưa từng connect thật) + qr_pending/disconnected.
+   *   • Quá hạn: createdAt < now()-24h (T4b 2026-06-20: đổi 15ph→24h — nick-ma phải HIỆN
+   *     24h ở UI với badge "Đang chờ quét QR" trước khi ẩn; 15ph quá sớm, sale quét QR dở
+   *     để lâu sẽ thấy nick-ma biến mất giữa chừng).
+   *   • lastConnectedAt=null: chưa từng online → loại nick thật cũ (qua purge nhả uid
+   *     nhưng có lastConnectedAt) khỏi tầm xoá. Đây là chốt phân biệt thẻ-ma vs nick-thật-cũ.
+   *   • ẨN bằng archivedAt (xoá mềm), KHÔNG hard-delete → giữ lịch sử + Friend/Conversation
+   *     (cascade) còn nguyên, admin gộp sau.
+   *
+   * @returns số thẻ ma đã ẩn (để test + log).
    */
   async cleanupStaleGhosts(staleMinutes = 24 * 60): Promise<number> {
     const cutoff = new Date(Date.now() - staleMinutes * 60_000);

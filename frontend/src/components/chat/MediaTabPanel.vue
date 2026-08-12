@@ -36,7 +36,7 @@
 
     <!-- ════════ ẢNH / VIDEO / TỆP: kho media ════════ -->
     <template v-else>
-      <!-- Hàng 1: Tìm, Sắp xếp, Lọc. Vừa một hàng, không tràn -->
+      <!-- Hàng 1: Tìm (hẹp) + Sắp xếp (xoay vòng) + Lọc — vừa 1 hàng, không tràn -->
       <div class="mtp-search">
         <span class="mtp-inp">
           <SearchIcon :size="13" :stroke-width="1.9" />
@@ -51,7 +51,7 @@
         </button>
       </div>
 
-      <!-- Hàng 2: Quyền, một dòng riêng -->
+      <!-- Hàng 2: Quyền (Tất cả | Công khai | Riêng tư) — 1 dòng riêng -->
       <div class="mtp-row2">
         <span class="mtp-rlabel">Quyền</span>
         <div class="mtp-seg">
@@ -61,7 +61,7 @@
         </div>
       </div>
 
-      <!-- Hàng 3: Dự án và Tag, một dòng cuộn ngang -->
+      <!-- Hàng 3: Dự án (thư mục) | Tag — 1 dòng cuộn ngang -->
       <div v-if="folders.length || availableTags.length" class="mtp-row3">
         <template v-if="folders.length">
           <span class="mtp-rlabel">Dự án</span>
@@ -105,7 +105,7 @@
         </div>
       </div>
 
-    <!-- Thanh chọn album chỉ hiện khi đang xem ảnh, vì album Zalo là album ảnh -->
+      <!-- Thanh chọn album — CHỈ khi đang xem ẢNH (Zalo album = ảnh) -->
       <div v-if="subTab === 'image'" class="mtp-album">
         <label class="mtp-toggle">
           <input type="checkbox" :checked="multiMode" @change="toggleMultiMode" />
@@ -253,7 +253,7 @@ const reviewConvId = ref<string>('');
 function openReview(a: MediaAssetItem) { reviewAsset.value = a; reviewConvId.value = props.conversationId; }
 function closeReview() { reviewAsset.value = null; }
 function onReviewSent() {
-    // Bump usageCount và lastUsedAt ở local cho khớp, khỏi chờ reload.
+  // Bump usageCount/lastUsedAt local cho khớp (code-review #4) — khỏi chờ reload.
   if (reviewAsset.value) {
     const it = items.value.find((x) => x.id === reviewAsset.value!.id);
     if (it) it.usageCount = (it.usageCount ?? 0) + 1;
@@ -275,7 +275,7 @@ const counts = ref<Record<string, number | null>>({ image: null, video: null, fi
 const showFilter = ref(false);
 const visFilter = ref<'' | 'public' | 'private'>('');
 // Nút Sắp xếp xoay vòng (anh chốt 2026-06-12): Gửi nhiều → Gửi gần nhất → Mới upload.
-// Mặc định most_used để mục hay gửi cho khách luôn nằm trên, thứ tự ổn định và dễ lấy nhanh.
+// Mặc định 'most_used' (Gửi nhiều) — mục hay gửi cho khách luôn ở trên, ổn định, dễ lấy nhanh.
 type SortMode = 'most_used' | 'recent' | 'newest';
 const SORT_CYCLE: { mode: SortMode; label: string }[] = [
   { mode: 'most_used', label: 'Gửi nhiều' },
@@ -288,11 +288,11 @@ const sinceBy = ref<'' | '7d' | '30d' | '90d'>('');
 const sizeBy = ref<'' | 'small' | 'medium' | 'large'>('');
 const tagFilter = ref('');
 
-// Thư mục gom theo dự án, load một lần rồi lọc theo kind đang xem.
+// Thư mục (gom theo dự án) — load 1 lần, lọc theo kind đang xem.
 const allFolders = ref<MediaFolder[]>([]);
 const folderId = ref('');
 const folders = computed(() => allFolders.value.filter((f) => f.kind === subTab.value));
-// Tag dự án gom từ tagIds của các mục đang hiện, dùng làm chip lọc nhanh.
+// Tag dự án — gom từ tagIds của các mục đang hiện (chip lọc nhanh).
 const availableTags = computed(() => {
   const set = new Set<string>();
   for (const a of items.value) for (const t of a.tagIds || []) set.add(t);
@@ -307,7 +307,7 @@ const sendingAlbum = ref(false);
 const kindLabel = computed(() => ({ image: 'ảnh', video: 'video', file: 'tệp', block: 'khối' }[subTab.value]));
 const searchPlaceholder = computed(() => ({ image: 'Tìm ảnh…', video: 'Tìm video…', file: 'Tìm tệp…', block: '' }[subTab.value]));
 
-// Icon và màu theo định dạng tệp, giữ y hệt MediaPickerPopover.
+// Icon + màu theo định dạng tệp (sale nhận diện nhanh PDF/Excel/Word) — giữ y MediaPickerPopover.
 function fileIcon(name: string): { label: string; bg: string; fg: string } {
   const ext = (name.split('.').pop() || '').toLowerCase();
   if (ext === 'pdf') return { label: 'PDF', bg: '#fdeceb', fg: '#c0392b' };
@@ -422,7 +422,7 @@ function pickIndex(id: string): string {
   return idx >= 0 ? String(idx + 1) : '';
 }
 
-// Gửi đơn một mục giờ đi qua MediaReviewDialog, album vẫn gửi qua sendAlbum.
+// (Gửi đơn 1 mục giờ qua MediaReviewDialog — xem openReview. Album vẫn gửi qua sendAlbum.)
 
 async function sendAlbum() {
   if (sendingAlbum.value || picked.value.size === 0) return;
@@ -471,7 +471,7 @@ onMounted(async () => {
 }
 .mtp-st.active .mtp-cnt { background: var(--at-action-soft); color: var(--at-action); }
 
-/* Hàng 1: Tìm, Sắp xếp, Lọc. Không tràn cột 350px */
+/* Hàng 1: Tìm (hẹp) + Sắp xếp + Lọc — không tràn cột 350px */
 .mtp-search { display: flex; gap: 5px; align-items: center; padding: 9px 12px 7px; flex-shrink: 0; }
 .mtp-inp {
   flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 5px;
@@ -494,7 +494,7 @@ onMounted(async () => {
 .mtp-filtbtn:hover { border-color: var(--at-action); color: var(--at-action); }
 .mtp-filtbtn.on { background: var(--at-action); border-color: var(--at-action); color: #fff; }
 
-/* Hàng 2 và hàng 3 luôn hiện, mỗi nhóm một dòng cuộn ngang */
+/* Hàng 2 (Quyền) + Hàng 3 (Dự án | Tag) — luôn hiện, mỗi nhóm 1 dòng cuộn ngang */
 .mtp-row2, .mtp-row3 {
   display: flex; gap: 5px; align-items: center; padding: 0 12px 7px; flex-shrink: 0;
   overflow-x: auto; scrollbar-width: none;

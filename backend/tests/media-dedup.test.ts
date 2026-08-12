@@ -1,6 +1,12 @@
 /**
- * Kiểm compressImage và cách tính dedup key, cả hai đều không cần DB thật nên chạy nhanh
- * ở mọi máy. Phần privacy của save-from-chat cần mock prisma nên để integration test riêng.
+ * media-dedup.test.ts — Phase Media Library 2026-06-11.
+ *
+ * Kiểm 2 thứ KHÔNG cần DB thật:
+ *  1. compressImage (sharp thật): nén ảnh lớn về webp, fallback bản gốc khi ảnh hỏng.
+ *  2. Dedup key: cùng bytes → cùng sha256 → cùng minio key (1 object). Khác bytes → khác.
+ *
+ * (Test privacy save-from-chat cần DB/mock prisma → để integration test riêng;
+ *  ở đây test thuần logic dedup + nén để chạy nhanh ở mọi máy/CI.)
  */
 import { describe, it, expect } from 'vitest';
 import { createHash } from 'node:crypto';
@@ -83,7 +89,7 @@ describe('compressImage — nén + fallback (sharp)', () => {
   it('ảnh hỏng/không decode được → fallback bản gốc, không ném lỗi (D10)', async () => {
     const garbage = Buffer.from('đây không phải ảnh thật, sharp sẽ fail');
     const out = await compressImage(garbage, 'image/jpeg');
-    // Không mất dữ liệu: trả nguyên bản, compressed=false.
+    // D10(2): không mất dữ liệu — trả nguyên bản, compressed=false.
     expect(out.compressed).toBe(false);
     expect(out.buffer).toBe(garbage);
     expect(out.mimeType).toBe('image/jpeg');

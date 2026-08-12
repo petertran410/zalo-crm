@@ -45,7 +45,7 @@
         <input v-model="tagFilter" class="mp-tag-input" placeholder="🏷 tag" @input="debouncedReload" />
       </div>
 
-    <!-- Thanh chọn nhiều chỉ hiện khi đang lọc ảnh, vì album Zalo là album ảnh -->
+      <!-- Thanh chọn nhiều (album) — CHỈ khi đang lọc ẢNH (Zalo album = ảnh) -->
       <div v-if="kindFilter === 'image'" class="mp-multibar">
         <label class="mp-toggle">
           <input type="checkbox" :checked="multiMode" @change="toggleMultiMode" />
@@ -64,7 +64,7 @@
         Không có {{ kindLabel }} nào khớp. Tải lên ở trang <b>Kho lưu trữ</b> hoặc chuột phải tin nhắn → Lưu vào Media.
       </div>
 
-    <!-- Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào -->
+      <!-- TỆP: list theo dòng (sale phân biệt được tệp nào — anh chốt) -->
       <div v-else-if="kindFilter === 'file'" class="mp-list">
         <button
           v-for="a in items"
@@ -301,7 +301,7 @@ onMounted(reload);
 .mp-dur { position:absolute; bottom:22px; right:3px; background:rgba(0,0,0,.72); color:#fff; border-radius:3px; padding:0 4px; font-size:9.5px; font-variant-numeric:tabular-nums; pointer-events:none; }
 .mp-name { display:block; font-size:10px; padding:3px 4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--ink); }
 
-/* Tệp hiện dạng dòng vì grid card không cho phân biệt tệp nào với tệp nào. */
+/* TỆP — list theo dòng (anh chốt: grid card không phân biệt được tệp nào). */
 .mp-list { overflow:auto; display:flex; flex-direction:column; }
 .mp-fitem { display:flex; align-items:center; gap:10px; width:100%; padding:8px 8px; border:none; background:none; border-bottom:1px solid var(--hairline); cursor:pointer; text-align:left; }
 .mp-fitem:last-child { border-bottom:none; }
