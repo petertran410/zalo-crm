@@ -521,19 +521,41 @@ function splitOversize(files: File[]): { ok: File[]; tooBig: File[] } {
   return { ok, tooBig };
 }
 
+function totalBytes(files: File[]): number {
+  return files.reduce((sum, f) => sum + f.size, 0);
+}
+
+/**
+ * Tên tệp cho toast cảnh báo. withPath=true dùng webkitRelativePath (tải cả thư mục), vì
+ * nhiều thư mục con hay trùng tên tệp gốc (vd "file.pdf") — chỉ tên trần không phân biệt được.
+ * Cắt bớt ở `max` để toast không phình to khi cả trăm tệp cùng bị chặn.
+ */
+function listNames(files: File[], withPath: boolean, max = 8): string {
+  const label = (f: File) => `"${withPath ? ((f as any).webkitRelativePath || f.name) : f.name}" (${fmtSize(f.size)})`;
+  const shown = files.slice(0, max).map(label).join(', ');
+  return files.length > max ? `${shown} và ${files.length - max} tệp khác` : shown;
+}
+
 function triggerUpload() { fileInput.value?.click(); }
 async function onFilesPicked(e: Event) {
   const input = e.target as HTMLInputElement;
   const files = Array.from(input.files ?? []);
+  input.value = '';
   if (!files.length) return;
+
+  // Trần TOÀN BỘ lượt chọn (khớp REQUEST_TOTAL_MAX ở BE) — chặn cứng ngay tại đây thay vì
+  // để batchFiles âm thầm chia thành nhiều request vẫn thành công.
+  const total = totalBytes(files);
+  if (total > MAX_BATCH_BYTES) {
+    toast.warning(`${fmtSize(total)} vượt trần ${fmtSize(MAX_BATCH_BYTES)} mỗi lượt chọn — chọn ít tệp hơn rồi thử lại`, 6000);
+    return;
+  }
+
   const { ok: sendable, tooBig } = splitOversize(files);
   if (tooBig.length) {
-    const names = tooBig.slice(0, 3).map((f) => `"${f.name}" (${fmtSize(f.size)})`).join(', ');
-    toast.warning(
-      `Bỏ qua ${tooBig.length} tệp quá 10MB: ${names}${tooBig.length > 3 ? '…' : ''}`,
-    );
+    toast.warning(`Bỏ qua ${tooBig.length} tệp quá 10MB: ${listNames(tooBig, false)}`, 6000);
   }
-  if (!sendable.length) { input.value = ''; return; }
+  if (!sendable.length) return;
 
   try {
     const assets: Array<{ id: string; name: string; deduped: boolean }> = [];
@@ -541,14 +563,11 @@ async function onFilesPicked(e: Event) {
       const part = await uploadMedia(b, { visibility: 'private', folderId: activeFolder.value ?? undefined });
       assets.push(...part.assets);
     }
-    const res = { assets };
-    const dup = res.assets.filter((a) => a.deduped).length;
-    toast.success(dup > 0 ? `Đã tải ${res.assets.length} tệp (${dup} đã có sẵn, không tốn thêm dung lượng)` : `Đã tải ${res.assets.length} tệp lên kho`);
+    const dup = assets.filter((a) => a.deduped).length;
+    toast.success(dup > 0 ? `Đã tải ${assets.length} tệp (${dup} đã có sẵn, không tốn thêm dung lượng)` : `Đã tải ${assets.length} tệp lên kho`);
     reload();
   } catch (err: any) {
     toast.warning(err?.response?.data?.error || 'Tải lên thất bại');
-  } finally {
-    input.value = '';
   }
 }
 
@@ -576,10 +595,19 @@ async function onFolderPicked(e: Event) {
   input.value = '';
   if (!files.length) return;
 
+  // Trần TOÀN BỘ cây thư mục vừa chọn (mọi thư mục con cộng lại), KHÔNG phải mỗi request —
+  // tải lên thật vẫn chia theo từng thư mục con (mỗi thư mục 1 request riêng) nên tổng một
+  // cây > 100MB từng lọt qua trót lọt dù mỗi request tự nó không sao. Chặn cứng ngay ở đây.
+  const total = totalBytes(files);
+  if (total > MAX_BATCH_BYTES) {
+    toast.warning(`Cả thư mục ${fmtSize(total)} vượt trần ${fmtSize(MAX_BATCH_BYTES)} mỗi lượt tải — chia thư mục nhỏ hơn rồi thử lại`, 6000);
+    return;
+  }
+
   // Loại tệp quá cỡ trước khi dựng cây, để thư mục toàn tệp quá cỡ không bị tạo ra.
   const { ok: usable, tooBig } = splitOversize(files);
   if (tooBig.length) {
-    toast.warning(`Bỏ qua ${tooBig.length}/${files.length} tệp quá 10MB trong thư mục này`);
+    toast.warning(`Bỏ qua ${tooBig.length}/${files.length} tệp quá 10MB: ${listNames(tooBig, true)}`, 6000);
   }
   if (!usable.length) {
     toast.warning('Mọi tệp trong thư mục đều quá 10MB, không tạo thư mục nào');

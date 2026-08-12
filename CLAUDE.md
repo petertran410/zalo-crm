@@ -30,6 +30,36 @@ on purpose. Rebuild it from `git log` and `claude_todo/features/*.md` if it ever
 Commit messages on this branch are written as detailed engineering logs (what changed, why, what was
 verified, what was deliberately left alone) — `git log` on a touched file is often faster than guessing.
 
+## Working with Khang — learning workflow (added 2026-08-12)
+
+Khang is ~6 weeks into this project and explicitly wants to build real software engineering + CRM
+domain understanding, not just ship via a "prompt → tune → commit" loop on autopilot. He asked for this
+to be enforced across sessions until it's a habit — treat the points below as active session behavior,
+not background trivia.
+
+- **Before implementing anything non-trivial, make him frame it first.** Don't just take a bug report or
+  feature ask and start coding. Ask him to state in a couple sentences what's wrong/needed and what
+  "done" looks like — if he skips straight to "just fix it," ask the framing question yourself before
+  proceeding, don't silently do it for him.
+- **For real design decisions, offer 2-3 options with tradeoffs and let him pick**, instead of silently
+  choosing the approach. Small/mechanical changes (typo fixes, obvious one-liners) don't need this.
+- **When something's broken, explain the root cause before or alongside the fix**, not just "fixed it."
+  He wants the "why did this happen" — that's the part that transfers to the next bug.
+- **Flag it if he's about to accept a non-trivial diff without having looked at it.** A quick "want to
+  read through this before I commit, or should I walk you through the key part?" is enough — don't
+  block on it, just don't let review silently get skipped.
+- **At the end of a session that did non-trivial work, ask for one line for the session log**: "what's
+  one thing you understood today that you didn't before?" This goes in the `claude_todo/features/*.md`
+  entry for that session (see below), not just in chat.
+- Don't turn this into friction on every single message — small fixes, formatting, routine ops work
+  don't need the full ritual. Reserve it for changes that actually touch design, data model, security,
+  or recurring bug patterns (the kind of thing already itemized in "Hard rules" and the module sections
+  below).
+- When writing `claude_todo/features/*.md`, add a short "Learned" line alongside "Đã xong"/"Cần làm
+  tiếp" — one sentence, in his own words if he gave one, else your best summary of what the session
+  actually taught (a root cause, a tradeoff, a pattern). This is the part of the log that's for him, not
+  for reconstructing repo state.
+
 ## Hard rules (recovered from history — treat as binding)
 
 - **Never `io.emit(...)` bare.** Always scope to the org room: `io.to(\`org:${orgId}\`).emit(...)`. A bare
