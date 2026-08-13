@@ -1,5 +1,5 @@
 /**
- * types.ts — hợp đồng chung cho tầng storage (driver-agnostic).
+ * Hợp đồng chung cho tầng storage, không phụ thuộc driver nào.
  *
  * 2026-06-20: tách storage thành 2 driver (local đĩa VPS / R2 qua AWS SDK v3),
  * chọn bằng config.storageDriver. Mọi driver implement StorageDriver; file
@@ -11,9 +11,9 @@ export interface UploadResult {
   url: string;
   size: number;
   mimeType: string;
-  /** sha256 (hex) của bytes thật lưu — khóa dedup ở tầng service. */
+  /** sha256 của bytes thật lưu, là khoá dedup ở tầng service. */
   contentHash: string;
-  /** true nếu object đã tồn tại (đã skip ghi — không tốn thêm ô lưu trữ). */
+  /** true khi object đã tồn tại nên đã skip ghi. */
   deduped: boolean;
 }
 
@@ -45,7 +45,7 @@ export function mimeToExt(mime: string): string {
 }
 
 /**
- * Key an toàn để proxy-download — chấp nhận MỌI object thuộc storage của mình
+ * Key an toàn để proxy-download, chấp nhận mọi object thuộc storage của mình
  * (cả `media/{hash}.ext` LẪN `YYYY-MM-DD/{uuid}.ext` cũ). Chỉ chặn rỗng /
  * path-traversal (`..`) / key tuyệt đối (`/` đầu) / null byte.
  */

@@ -68,7 +68,7 @@ import { ref, computed, onMounted } from 'vue';
 import { listMediaPaged, listMediaUploaders, type MediaAssetItem, type ListMediaParams } from '@/api/media';
 
 // publicOnly: CHỈ hiện media CÔNG KHAI (visibility='public'). Dùng khi gắn media vào
-// Block/automation — tránh ảnh nick Riêng tư lọt ra broadcast (privacy, anh chốt 2026-06-12).
+// Tránh ảnh nick Riêng tư lọt ra broadcast.
 // Default false → các chỗ dùng khác (vd chèn vào chat) không bị lọc, hành vi cũ giữ nguyên.
 const props = defineProps<{ multiple?: boolean; kind?: string; publicOnly?: boolean }>();
 const emit = defineEmits<{ close: []; pick: [assets: MediaAssetItem[]] }>();
