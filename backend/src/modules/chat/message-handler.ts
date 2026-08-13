@@ -90,7 +90,7 @@ export interface HandleMessageResult {
   contactId: string | null;
 }
 
-// ── v3.3 mirror inbound media — copy Zalo CDN URL về MinIO/S3/R2 ───────────
+// v3.3 mirror inbound media : copy Zalo CDN URL về MinIO/S3/R2
 // Inbound image/video/voice/file/gif: tin từ Zalo có URL CDN expire ngắn.
 // Mirror sang storage để bubble preview luôn-luôn-hiển-thị, không phụ thuộc CDN.
 
@@ -303,12 +303,9 @@ export async function handleIncomingMessage(
       const dupNum = /^\d+$/.test(msg.msgId) ? BigInt(msg.msgId) : null;
 
       if (isAttachment) {
-        // FIX 2026-06-12 (album drop): echo ảnh album về N tin riêng (mỗi sibling 1 zaloMsgId).
-        // CRM gửi album chỉ tạo 1 placeholder (zaloMsgId=null). Bộ lọc cũ findFirst→update
-        // KHÔNG nguyên tử: nhiều echo cùng khớp 1 placeholder null (race) → bỏ nhầm sibling.
-        // Sửa: CLAIM placeholder NGUYÊN TỬ bằng updateMany (compare-and-swap trên zaloMsgId=null).
-        //   • Đúng 1 echo claim được (count=1) → suppress (đó là tin đã hiện sẵn cho sale).
-        //   • Các sibling còn lại claim trượt (count=0) → CHO QUA, insert như tin album bình thường.
+        // Claim placeholder NGUYÊN TỬ bằng updateMany: findFirst rồi update không nguyên tử nên
+        // nhiều echo cùng khớp một placeholder null sẽ bỏ nhầm sibling. Echo claim được thì suppress,
+        // echo trượt thì insert như tin album bình thường.
         const claimed = await prisma.message.updateMany({
           where: {
             conversationId: conversation.id,
@@ -379,12 +376,8 @@ export async function handleIncomingMessage(
       const zaloMsgIdNum = msg.msgId && /^\d+$/.test(msg.msgId) ? BigInt(msg.msgId) : null;
       // v3.3 mirror Zalo CDN → object storage (image/video/voice/file/gif)
       const storedContent = await mirrorInboundMediaContent(msg);
-      // ── M11 Source Badge writer (Anh chốt 2026-06-02) ──
-      // Tin sale gõ trên app Zalo (mobile/web) → SDK echo về CRM ở đây.
-      // Set sentVia='user_native' + metadata.sender.syncedFromNative=true
-      // để FE MessageSourceBadge.vue hiển thị "👤 Sale CRM · {tên} 🔄".
-      // Tên sale = owner.fullName (chủ nick), fallback displayName của nick.
-      // Tin từ KH (msg.isSelf=false) KHÔNG set sender — badge chỉ áp tin outbound.
+      // Tin sale gõ trên app Zalo echo về đây, đánh dấu sentVia=user_native để FE hiện badge nguồn.
+      // Tin từ khách không set sender vì badge chỉ áp cho tin gửi đi.
       const m11SenderMeta = msg.isSelf
         ? {
             kind: 'user_native' as const,
@@ -652,17 +645,11 @@ export async function handleIncomingMessage(
         message: { id: message.id, content: message.content, contentType: message.contentType, senderType: message.senderType },
       });
 
-      // Wave 3 Event Log — customer_reply (KH trả lời, Mục tiêu dừng chuỗi).
-      // Hook sau runAutomationRules để KHÔNG block phase chính. Filter 1-1 theo memory
-      // feedback_crm_filter_1to1_not_group — bỏ qua group threads.
+      // Phải dùng contactId CỦA CONVERSATION, không phải của upsertContact: cùng một người
+      // Zalo có thể tồn tại thành nhiều Contact do uid lệch theo từng nick.
       //
-      // BUG FIX 2026-06-08: dùng contactId CỦA CONVERSATION (nơi tin thật sự lưu), KHÔNG
-      // dùng contactId từ upsertContact. Lý do: cùng 1 người Zalo có thể bị trùng thành
-      // nhiều Contact (per-account UID / global_id lệch — xem memory reference_zalo_per_account_uid).
-      // upsertContact resolve theo global_id → ra Contact A; nhưng findOrCreateConversation tìm
-      // theo (nick, externalThreadId) → trả conversation cũ gắn Contact B, và tin nhắn lưu vào B.
-      // CareSession gắn theo Contact của conversation (B). Nếu listener dùng A → tìm phiên cho A
-      // → found=0 → không báo. Phải khớp với Contact mà tin nhắn + phiên thật sự thuộc về.
+      // upsertContact resolve ra Contact A, còn conversation lại gắn Contact B và tin nhắn
+      // lưu vào B. Lấy A thì tìm phiên chăm sóc luôn ra rỗng.
       const careContactId = conversationDetails?.contactId ?? contactId;
       if (
         careContactId &&
@@ -750,11 +737,8 @@ export async function handleIncomingMessage(
       })();
     }
 
-    // ── Fix 2026-06-03 (Anh báo): socket realtime thiếu senderResolved ──
-    // Trước fix: socket emit chỉ có message raw (senderName, senderUid) →
-    // FE pill tím KHÔNG render → đợi reload page mới gọi GET /messages có
-    // resolver mới có pill. Giờ resolve ngay khi handle inbound message.
-    // Chỉ resolve cho tin INBOUND (contact). Self-messages không cần pill.
+    // Resolve senderResolved ngay lúc nhận tin, nếu không FE phải đợi tải lại trang mới có pill.
+    // Chỉ resolve tin inbound, tin của mình không cần.
     let senderResolved: any = null;
     if (!msg.isSelf && msg.senderUid) {
       try {
@@ -846,13 +830,10 @@ async function upsertContact(msg: IncomingMessage, orgId: string): Promise<strin
   const globalId = msg.contactGlobalId || '';
   const username = msg.contactUsername || '';
 
-  // 2026-06-21 (Lớp 2 — CHẶN ĐẺ HỒ SƠ TRÙNG ở nguồn): nếu (nick, uid) ĐÃ có Friend row thì tin
-  // này thuộc đúng contact của Friend đó (thường là contact import có SĐT = "A"). Hàm chuẩn
-  // resolveOrCreateContact đã Friend-first; upsertContact trước đây globalId-first nên đẻ "Contact B"
-  // trùng (chỉ tên Zalo, no SĐT) → hội thoại lệch phiên/hồ sơ. Chèn Friend-lookup ở ĐẦU, ưu tiên
-  // hơn globalId/uid. CỐ Ý không swap cả hàm sang resolveOrCreateContact để TRÁNH kéo
-  // enrichViaGetUserInfo (gọi Zalo getUserInfo) vào hot-path mỗi tin. Cờ lùi nhanh:
-  // đặt env CONTACT_RESOLVE_FRIEND_FIRST=off để tắt. friends(zaloAccountId,zaloUidInNick) unique → rẻ.
+  // Cặp (nick, uid) đã có Friend row thì tin thuộc đúng contact của Friend đó. Trước đây ưu tiên
+  // globalId nên đẻ Contact trùng chỉ có tên Zalo, làm hội thoại lệch hồ sơ.
+  // Cố ý không chuyển hẳn sang resolveOrCreateContact để tránh kéo getUserInfo vào hot-path mỗi
+  // tin. Tắt nhanh bằng CONTACT_RESOLVE_FRIEND_FIRST=off.
   if (process.env.CONTACT_RESOLVE_FRIEND_FIRST !== 'off' && contactUid && msg.accountId) {
     const friend = await prisma.friend.findFirst({
       where: { orgId, zaloAccountId: msg.accountId, zaloUidInNick: contactUid },
@@ -891,11 +872,8 @@ async function upsertContact(msg: IncomingMessage, orgId: string): Promise<strin
     }
   }
 
-  // Lookup chain (theo policy hard-match anh chốt: globalId / username / phone / uid):
-  //  1. By zaloGlobalId — silver bullet, identical across viewer accounts
-  //  2. By zaloUsername — Zalo handle (t_xxx) cũng toàn cục
-  //  3. By zaloUid (per-account) — fallback khi global identifiers chưa resolve
-  //  4. Create new contact
+  // zaloGlobalId và zaloUsername là định danh toàn cục nên dò trước; zaloUid chỉ đúng theo từng
+  // nick nên để cuối cùng, không match thì tạo contact mới.
   let contact: { id: string; fullName: string | null; zaloGlobalId: string | null; zaloUid: string | null } | null = null;
   if (globalId) {
     contact = await prisma.contact.findFirst({
@@ -992,14 +970,11 @@ async function findOrCreateConversation(
 
   if (existing) {
     const updates: { groupName?: string; groupAvatarUrl?: string; groupMembersCount?: number; deletedAt?: null } = {};
-    // BUG-FIX 2026-07-17 (anh báo): "Xóa đoạn hội thoại" = soft-delete (deletedAt set,
-    // hội thoại ẩn khỏi list). Zalo app: xoá chat rồi có tin MỚI → chat hiện lại.
-    // Resurface khi tin nhắn ĐẾN SAU thời điểm xoá — tức tin thật sự mới (kể cả khi
-    // về qua reconnect catch-up dưới dạng backfill: tin gửi lúc downtime VẪN là tin mới,
-    // phải bới hội thoại lên). KHÔNG resurface tin CŨ hơn deletedAt (backfill lịch sử xa
-    // không được tự bới hội thoại người dùng đã chủ động ẩn).
-    // Refinement #2 2026-07-17 (anh báo ca Đăng Khoa): dùng mốc thời gian thay vì
-    // cờ isBackfill — cờ đó chặn nhầm cả tin downtime hợp lệ.
+    // Hội thoại đã xoá phải hiện lại khi có tin mới, giống app Zalo. So theo MỐC THỜI GIAN
+    // chứ không theo cờ isBackfill: cờ đó chặn nhầm cả tin gửi lúc nick mất kết nối.
+    //
+    // Tin cũ hơn deletedAt thì không bới lên, vì backfill lịch sử xa không được tự mở lại
+    // hội thoại người dùng đã chủ động ẩn.
     if (existing.deletedAt && msg.timestamp > existing.deletedAt.getTime()) {
       updates.deletedAt = null;
     }
@@ -1072,11 +1047,8 @@ async function updateConversationAfterMessage(
 }
 
 /**
- * Soft-delete a message by its Zalo references. Zalo undo event reference tin gốc qua
- * 2 id song song — match cái nào ra trước thì update.
- *   globalMsgIdNum: server-side Snowflake (match Message.zaloMsgIdNum BigInt)
- *   cliMsgIdNum:    client-side counter (match Message.zaloMsgId String hoặc zaloMsgIdNum)
- * Phải dùng `OR` vì Zalo có lúc chỉ trả 1 trong 2 (vd undo tin do nick khác gửi → chỉ globalMsgId).
+ * Zalo tham chiếu tin gốc qua hai id song song nên phải dùng OR: có lúc nó chỉ trả một trong
+ * hai, ví dụ undo tin do nick khác gửi thì chỉ có globalMsgId.
  */
 export async function handleMessageUndo(
   accountId: string,

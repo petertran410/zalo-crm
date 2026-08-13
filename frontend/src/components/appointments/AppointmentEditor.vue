@@ -433,7 +433,7 @@ function computePopupPosition(
 
 const isEdit = computed(() => !!props.appointment);
 
-// ───────── Contact state ─────────
+// Contact state
 const selectedContact = ref<ContactLite | null>(null);
 const custSuggestOpen = ref(false);
 // 2026-08-04: tìm KH chuyển sang composable dùng chung với AppointmentQuickCreate.
@@ -474,7 +474,7 @@ function clearContact() {
   selectedContact.value = null;
 }
 
-// ───────── Form state ─────────
+// Form state
 const form = reactive({
   title: '',
   date: '',
@@ -501,14 +501,9 @@ const titlePlaceholder = computed(() =>
 );
 
 /**
- * 2026-08-04: KHÔNG tự sinh tiêu đề nữa.
- *
- * Bản cũ điền sẵn "Gọi điện cho {tên KH}" rồi lúc lưu còn nối "📍 {địa điểm}".
- * Với tên KH thật (vd "Chuỗi Sunday Basic 560 Lê Quang Định, Gò Vấp, HCM") ra
- * chuỗi ~85 ký tự, bị cắt ở thẻ lịch, cắt ở agenda, kẹp 3 dòng ở popover — mà
- * tên KH và địa điểm vốn đã hiện riêng ở các chỗ đó.
- *
- * Giờ để trống; chỗ nào cần hiển thị thì tự lùi về tên KH (`a.title || customer`).
+ * Cố tình KHÔNG tự sinh tiêu đề nữa. Ghép "Gọi điện cho {tên KH}" với địa điểm ra chuỗi ~85
+ * ký tự, bị cắt ở thẻ lịch lẫn agenda, trong khi tên KH và địa điểm vốn đã hiện riêng.
+ * Để trống thì chỗ nào cần sẽ tự lùi về tên KH.
  */
 function buildDefaultTitle(): string {
   return '';
@@ -523,16 +518,15 @@ function focusTitleAtEnd() {
 }
 
 /**
- * Icon prefix ô tiêu đề — hằng số. Trước đây là computed bám theo loại đang
- * chọn; bỏ trường loại rồi thì không còn gì để bám, và giữ computed chỉ tạo
- * thêm việc cho mỗi lần re-render khi gõ tiêu đề.
+ * Hằng số chứ không computed: bỏ trường loại rồi thì không còn gì để bám, giữ computed chỉ
+ * tốn thêm việc mỗi lần gõ tiêu đề.
  */
 const titleIcon = 'mdi-calendar-check-outline';
 
 // Tiêu đề KHÔNG còn bắt buộc (bỏ trống → hiển thị theo tên KH). Chỉ cần ngày+giờ.
 const canSubmit = computed(() => !!form.date && !!form.time);
 
-// ───────── Init / reset state khi mở ─────────
+// Init / reset state khi mở
 watch(() => props.modelValue, (open) => {
   if (!open) return;
   error.value = '';
@@ -647,7 +641,7 @@ function roundToNextSlot(d: Date): Date {
   return out;
 }
 
-// ───────── Date label ─────────
+// Date label
 const VN_DOWS = ['Chủ nhật', 'Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7'];
 const dateLabel = computed(() => {
   if (!form.date) return 'Chọn ngày...';
@@ -655,7 +649,7 @@ const dateLabel = computed(() => {
   return `${VN_DOWS[d.getDay()]}, ${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
 });
 
-// ───────── Date picker ─────────
+// Date picker
 const openDatePicker = ref(false);
 const calMonth = ref(new Date());
 
@@ -767,7 +761,7 @@ const dateTips = [
   { label: '+1 tháng',   offset: 30 },
 ];
 
-// ───────── Time picker (iOS wheel) ─────────
+// Time picker (iOS wheel)
 const openTimePicker = ref(false);
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 6); // 6..23
 const MINUTES = [0, 10, 15, 30, 45, 50];
@@ -827,13 +821,8 @@ function randomTime(period: 'morning' | 'noon' | 'afternoon' | 'evening') {
   form.time = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-// ───────── Duration ─────────
-// 2026-05-21 chốt: bỏ "3 ngày" — chỉ tới "1 ngày" là đủ cho domain BĐS sale.
-/**
- * 2026-08-04: rút từ 10 lựa chọn (5p → 1 ngày) còn 4 + "Khác".
- * Dùng hằng ngày thì 15/30/60/120 phủ gần hết; các mốc dài (8/12 giờ, 1 ngày)
- * vừa hiếm vừa là thứ đẻ ra lịch tràn qua nửa đêm hiển thị sai.
- */
+// Rút còn 4 mốc và "Khác": 15/30/60/120 phủ gần hết nhu cầu hằng ngày, còn các mốc dài vừa
+// hiếm vừa đẻ ra lịch tràn qua nửa đêm hiển thị sai.
 const DURATIONS = [
   { label: '15 phút', value: 15 },
   { label: '30 phút', value: 30 },
@@ -843,13 +832,10 @@ const DURATIONS = [
 const CUSTOM_DURATION = -1;
 
 /**
- * Select giữ 1 trong 4 mốc, hoặc CUSTOM_DURATION để lộ ô nhập phút.
- * `form.durationMin` vẫn là nguồn sự thật duy nhất gửi lên BE.
- *
- * FIX 2026-08-05 (anh báo "chọn Khác không nhập được"): bản đầu suy trạng thái
- * "đang ở chế độ Khác" TỪ giá trị — chọn Khác thì setter không ghi gì, getter
- * thấy durationMin vẫn là 1 trong 4 mốc nên trả lại đúng mốc đó, select bật
- * ngược về và ô nhập không bao giờ hiện. Phải có cờ riêng, không suy từ giá trị.
+ * Select giữ một trong bốn mốc hoặc CUSTOM_DURATION để lộ ô nhập phút, form.durationMin vẫn là
+ * nguồn sự thật duy nhất gửi lên BE.
+ * Phải có cờ riêng chứ không suy trạng thái "đang ở chế độ Khác" từ giá trị: suy từ giá trị thì
+ * getter luôn trả lại đúng mốc cũ nên select bật ngược về và ô nhập không bao giờ hiện.
  */
 const customMode = ref(false);
 const customMinutes = ref(30);
@@ -871,12 +857,10 @@ const durationChoice = computed<number>({
 });
 
 /**
- * Gõ tới đâu cập nhật tới đó, nhưng KHÔNG kẹp — kẹp lúc gõ thì "45" thành "5"
- * ngay ở ký tự đầu. Kẹp để dành cho lúc rời ô (`commitCustom`).
- *
- * Dùng watch chứ KHÔNG dùng @input: v-model trên input native là directive, thứ
- * tự chạy so với listener @input không đảm bảo — handler đọc trúng giá trị cũ
- * nên số phút gõ vào không vào được form (giờ kết thúc đứng im).
+ * Gõ tới đâu cập nhật tới đó nhưng KHÔNG kẹp, kẹp lúc gõ thì "45" thành "5" ngay ký tự đầu.
+ * Kẹp để dành cho lúc rời ô.
+ * Dùng watch chứ không @input: v-model trên input native là directive, thứ tự chạy so với
+ * listener @input không đảm bảo nên handler đọc trúng giá trị cũ.
  */
 watch(customMinutes, (v) => {
   const n = Math.round(Number(v) || 0);
@@ -902,12 +886,9 @@ const crossesMidnight = computed(() => {
 });
 
 /**
- * Compute end label support multi-day.
- *   Trong ngày      → "HH:mm"
- *   Qua ngày khác   → "HH:mm DD/MM"
- *
- * Parse form.date (ISO "YYYY-MM-DD") theo LOCAL timezone (split + new Date(y, m-1, d))
- * thay vì new Date("YYYY-MM-DD") (UTC midnight → off by tz hours khi compute).
+ * Nhãn giờ kết thúc có kèm ngày khi lịch qua ngày khác.
+ * Parse form.date theo giờ địa phương chứ không new Date("YYYY-MM-DD"), vì cách sau ra UTC
+ * midnight và lệch mất mấy tiếng khi tính.
  */
 const computedEndLabel = computed(() => {
   if (!form.time || !form.durationMin || !form.date) return '--:--';
@@ -930,13 +911,10 @@ const computedEndLabel = computed(() => {
   return `${timeOnly} ${dd}/${mm}`;
 });
 
-/* ── Phân loại lịch hẹn (2026-08-04) ────────────────────────────────────────
- * Ghi vào chính cột `Appointment.type` (String?, BE không validate enum) nên
- * bộ lọc "Loại" + báo cáo cũ vẫn đọc được 4 preset gốc.
- *   - 4 preset gốc  → lưu MÃ chuẩn ('call'/'message'/'meeting'/'follow_up')
- *   - preset tự thêm → lưu nguyên văn chữ sale gõ
- * Danh sách tự thêm nằm ở localStorage theo user (giống địa điểm đã lưu) —
- * CHƯA có bảng BE nên không đồng bộ giữa máy hay giữa các sale trong org.
+/**
+ * Ghi vào chính cột Appointment.type nên bộ lọc và báo cáo cũ vẫn đọc được 4 preset gốc.
+ * Preset gốc lưu mã chuẩn, preset sale tự thêm lưu nguyên văn.
+ * Danh sách tự thêm nằm ở localStorage theo user, CHƯA có bảng BE nên không đồng bộ giữa máy.
  */
 const CATEGORY_MAX = 30;
 const customCategories = ref<string[]>([]);
@@ -1005,11 +983,9 @@ function removeCategory(c: string) {
   if (form.type === c) form.type = null;
 }
 
-/* ── Địa điểm đã lưu (2026-08-04) ────────────────────────────────────────────
- * Thay 5 preset cứng + nút "Auto" bằng bookmark do sale tự lưu.
- * LƯU Ý: chưa có endpoint BE cho danh sách này → lưu localStorage theo user,
- * nghĩa là KHÔNG đồng bộ giữa máy/trình duyệt. Muốn dùng chung cả org thì cần
- * thêm bảng + route riêng.
+/**
+ * Bookmark do sale tự lưu, thay cho 5 preset cứng.
+ * Chưa có endpoint BE nên lưu localStorage theo user, KHÔNG đồng bộ giữa máy hay giữa các sale.
  */
 const SAVED_LOC_MAX = 20;
 const savedLocations = ref<string[]>([]);
@@ -1053,7 +1029,7 @@ function removeSavedLocation(loc: string) {
   persistSavedLocations();
 }
 
-// ───────── Submit / close ─────────
+// Submit / close
 async function submit() {
   if (!canSubmit.value) {
     error.value = 'Chọn ngày và giờ trước khi tạo nhắc hẹn';
