@@ -4,12 +4,12 @@
 
     <!-- Slim mobile app bar -->
     <v-app-bar density="compact" flat>
-      <div class="d-flex align-center ml-3" style="gap: 8px;">
-        <div class="d-flex align-center justify-center" style="width: 28px; height: 28px; background: linear-gradient(135deg, #00F2FF, #0077B6); border-radius: 8px;">
-          <v-icon size="16" color="white">mdi-robot</v-icon>
-        </div>
-        <span class="font-weight-bold text-body-1"><span style="color: #00F2FF;">CRM</span></span>
-      </div>
+      <!-- Cùng brand lockup với DefaultLayout: logo theo hồ sơ tổ chức, không phải
+           mark riêng. Trước đây chỗ này hardcode gradient xanh + mdi-robot nên máy hẹp
+           hiện logo khác hẳn desktop. -->
+      <RouterLink to="/" class="ml-brand ml-3" :title="`${brandName} CRM`">
+        <span class="ml-bbox"><img :src="brandLogo" :alt="brandName" @error="onLogoError" /></span>
+      </RouterLink>
 
       <v-spacer />
 
@@ -41,14 +41,31 @@ import { useRouter } from 'vue-router';
 import NotificationBell from '@/components/NotificationBell.vue';
 import BottomNav from '@/components/BottomNav.vue';
 import OfflineIndicator from '@/components/OfflineIndicator.vue';
+import { fetchPublicBranding } from '@/api/public-branding';
 
 const theme = useTheme();
 const authStore = useAuthStore();
 const router = useRouter();
 const isDark = ref(localStorage.getItem('theme') !== 'light');
 
+// Giống DefaultLayout: logo/tên lấy từ hồ sơ tổ chức, fallback về monogram mặc định.
+const DEFAULT_LOGO = '/brand/hs-monogram.png';
+const brandLogo = ref(DEFAULT_LOGO);
+const brandName = ref('Hi-CRM');
+function onLogoError() {
+  if (brandLogo.value !== DEFAULT_LOGO) brandLogo.value = DEFAULT_LOGO;
+}
+
 onMounted(() => {
   theme.change(isDark.value ? 'dark' : 'light');
+
+  fetchPublicBranding()
+    .then((b) => {
+      if (!b) return;
+      brandLogo.value = b.logoUrl || DEFAULT_LOGO;
+      brandName.value = b.name || 'Hi-CRM';
+    })
+    .catch(() => {});
 });
 
 function toggleTheme() {
@@ -62,3 +79,31 @@ function logout() {
   router.push('/login');
 }
 </script>
+
+<style scoped>
+/* Khớp .hs-bbox trong nav-shell.css — style đó bị khoá dưới .smax-topnav nên
+   MobileLayout không dùng lại được, phải lặp giá trị. Sửa một bên thì sửa cả hai. */
+.ml-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-decoration: none;
+  color: inherit;
+}
+.ml-bbox {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--nav-accent, #635bff) 0%, var(--nav-accent-dim, #4f46e5) 100%);
+  box-shadow: 0 2px 8px rgba(99, 91, 255, 0.4);
+}
+.ml-bbox img {
+  display: block;
+  width: 20px;
+  height: auto;
+}
+</style>

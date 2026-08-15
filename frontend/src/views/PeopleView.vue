@@ -1897,6 +1897,7 @@ onBeforeUnmount(() => {
   position: relative; overflow: hidden;
   background: var(--pp-bg); color: var(--pp-fg);
   font-family: var(--pp-body);
+  font-weight: 500;
 }
 .people * { box-sizing: border-box; }
 .people input, .people select, .people textarea, .people button { font-family: inherit; }

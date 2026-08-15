@@ -71,7 +71,8 @@ export type AutoTagKey =
 export type EngagementPatternKey = 'hot' | 'champion' | 'stable' | 'cooling' | 'cold';
 export type ScoreTier = 'cold' | 'warm' | 'hot' | 'champion' | null;
 export type StuckDuration = '>3d' | '>7d' | '>14d' | '>30d' | null;
-export type LastMessageWithin = '24h' | '7d' | '30d' | '>30d' | 'custom' | null;
+// '>7d' khớp định nghĩa "KH đình trệ" của Dashboard (deep-link từ KPI đó).
+export type LastMessageWithin = '24h' | '7d' | '30d' | '>7d' | '>30d' | 'custom' | null;
 export type SaleAssigneeFilter = string | null | 'all' | 'unassigned';
 // 2026-06-09 — Nhóm lọc "Tin nhắn" (user vs bot), radio 1-of-3 (null = không lọc).
 //   unanswered  = tin cuối là khách, chưa ai trả lời
@@ -273,6 +274,35 @@ export function useInboxFilters() {
   function clearAll() {
     Object.assign(state, defaultFilterState());
     activePresetId.value = null;
+  }
+
+  /**
+   * Seed the filter state from URL query params so other screens can deep-link into a
+   * pre-filtered inbox (Dashboard KPI → the exact conversations that KPI counted).
+   * Deliberately a small allowlist, not a full serialiser: unknown or malformed values
+   * are ignored so a stale bookmark degrades to the unfiltered inbox instead of erroring.
+   * Returns true when anything was applied.
+   */
+  const LAST_MESSAGE_VALUES: LastMessageWithin[] = ['24h', '7d', '30d', '>7d', '>30d'];
+  function hydrateFromQuery(query: Record<string, unknown>): boolean {
+    let applied = false;
+    const str = (v: unknown) => (typeof v === 'string' ? v : undefined);
+
+    if (str(query.unreplied) === '1') { state.quickPills.add('unanswered'); applied = true; }
+    if (str(query.unread) === '1') { state.quickPills.add('unread'); applied = true; }
+
+    const lmw = str(query.lastMessageWithin);
+    if (lmw && (LAST_MESSAGE_VALUES as string[]).includes(lmw)) {
+      state.lastMessageWithin = lmw as LastMessageWithin;
+      applied = true;
+    }
+
+    // Team-wide numbers must open the team-wide list, not just the viewer's own.
+    // Server scope still decides what actually comes back.
+    if (str(query.assignee) === 'all') { state.saleAssigneeId = 'all'; applied = true; }
+
+    if (applied) activePresetId.value = null;
+    return applied;
   }
 
   // ─── Build query params cho GET /conversations ────────────────────────
@@ -537,6 +567,7 @@ export function useInboxFilters() {
     setSortMode,
     setActiveTab,
     clearAll,
+    hydrateFromQuery,
     // Query
     buildQueryParams,
   };

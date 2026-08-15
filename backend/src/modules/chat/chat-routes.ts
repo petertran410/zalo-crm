@@ -386,7 +386,7 @@ export async function chatRoutes(app: FastifyInstance) {
       // 2026-06-08 — Cột 1 sidebar deep filter (trước đây BE bỏ qua → "nút chết").
       stages = '',              // CSV statusId: lọc theo Trạng thái KH (Status table)
       stuckDuration = '',       // '>3d'|'>7d'|'>14d'|'>30d' → Friend.stuckSince cũ hơn ngưỡng
-      lastMessageWithin = '',   // '24h'|'7d'|'30d'|'>30d' → Conversation.lastMessageAt
+      lastMessageWithin = '',   // '24h'|'7d'|'30d'|'>7d'|'>30d' → Conversation.lastMessageAt
       customerWaitingReply = '',// 'true' → KH nhắn sau cùng (lastInboundAt > lastOutboundAt)
       saleWaitingReply = '',    // 'true' → Sale nhắn sau cùng (lastOutboundAt >= lastInboundAt)
       birthdayWithin7d = '',    // 'true' → Contact.birthDate rơi vào 7 ngày tới (theo ngày/tháng)
@@ -680,9 +680,11 @@ export async function chatRoutes(app: FastifyInstance) {
         : lastMessageWithin === '30d' ? 30 * 24 * 3600e3 : 0;
       if (ms > 0) {
         where.lastMessageAt = { ...(where.lastMessageAt || {}), gte: new Date(Date.now() - ms) };
-      } else if (lastMessageWithin === '>30d') {
-        // Im lặng > 30 ngày: lastMessageAt cũ hơn 30 ngày.
-        where.lastMessageAt = { ...(where.lastMessageAt || {}), lte: new Date(Date.now() - 30 * 24 * 3600e3) };
+      } else if (lastMessageWithin === '>7d' || lastMessageWithin === '>30d') {
+        // Im lặng quá ngưỡng: lastMessageAt cũ hơn N ngày. '>7d' khớp định nghĩa
+        // "KH đình trệ" của Dashboard nên KPI đó deep-link được vào đây.
+        const days = lastMessageWithin === '>7d' ? 7 : 30;
+        where.lastMessageAt = { ...(where.lastMessageAt || {}), lte: new Date(Date.now() - days * 24 * 3600e3) };
       }
     }
 

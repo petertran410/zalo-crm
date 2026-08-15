@@ -1,6 +1,6 @@
 <template>
   <TopProgressBar />
-  <component :is="layout">
+  <component :is="layout" :class="{ 'app-brand-typography': useBrandTypography }">
     <!--
       Fix 3: KeepAlive cache component khi switch tab Sales sidebar.
       max=8: giữ tối đa 8 component trong bộ nhớ (LRU — cũ nhất bị xoá trước).
@@ -44,6 +44,14 @@ const layout = computed(() => {
   const name = (route.meta?.layout as string) || 'default';
   if (name === 'auth') return AuthLayout;
   return isMobile.value ? MobileLayout : WorkspaceShell;
+});
+
+// Dashboard and messaging keep their established typography; every other route
+// uses the shared Montserrat-heading / Roboto-Medium body system.
+const useBrandTypography = computed(() => {
+  return route.name !== 'Dashboard'
+    && route.name !== 'FacebookInbox'
+    && route.meta?.resource !== 'conversation';
 });
 
 // Workspace Architecture 2026-07 — tự động resolve workspace khi user thay đổi.

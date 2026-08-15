@@ -21,6 +21,60 @@ html, body {
 
 #app { height: 100%; }
 
+/* Shared app typography. App.vue omits this route class for Dashboard and chat. */
+.app-brand-typography {
+  --app-font-body: "Roboto", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --app-font-heading: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font: var(--app-font-body);
+  --pp-body: var(--app-font-body);
+  --pp-display: var(--app-font-heading);
+  --rl-font-body: var(--app-font-body);
+  --rl-font-head: var(--app-font-heading);
+  font-family: var(--app-font-body) !important;
+  font-weight: 500;
+}
+
+.app-brand-typography :where(*:not(.v-icon):not(.mdi):not([class^="mdi-"]):not([class*=" mdi-"])) {
+  font-family: var(--app-font-body);
+}
+
+.app-brand-typography :is(
+  h1, h2, h3, h4, h5, h6, legend, [role="heading"],
+  .text-h1, .text-h2, .text-h3, .text-h4, .text-h5, .text-h6,
+  .text-subtitle-1, .text-subtitle-2,
+  .h-page, .h-sec, .v-card-title, .v-dialog-title, .v-toolbar-title,
+  .title, .heading, .headline, .ttl, .mtt,
+  .mkt-brand .mt, .prof-top .pn, .seq .sn,
+  .cpd-name, .ldp-name, .ldp-note-head, .ob-greeting,
+  .ce-mkt-header, .pg-name-big, .usage-divider, .hero-name,
+  [class$="__title"], [class*="__title "],
+  [class$="-title"], [class*="-title "],
+  [class$="__heading"], [class*="__heading "],
+  [class$="-heading"], [class*="-heading "],
+  [class$="__headline"], [class*="__headline "],
+  [class$="-headline"], [class*="-headline "],
+  [class$="__ttl"], [class*="__ttl "],
+  [class$="-ttl"], [class*="-ttl "],
+  [class$="__h1"], [class*="__h1 "],
+  [class$="-h1"], [class*="-h1 "],
+  [class$="__h2"], [class*="__h2 "],
+  [class$="-h2"], [class*="-h2 "],
+  [class$="__h3"], [class*="__h3 "],
+  [class$="-h3"], [class*="-h3 "]
+) {
+  font-family: var(--app-font-heading) !important;
+}
+
+.app-brand-typography :is(code, pre, kbd, samp, .mono, .num),
+.app-brand-typography :is(code, pre, kbd, samp, .mono, .num) * {
+  font-family: var(--mono, "Roboto Mono", ui-monospace, monospace) !important;
+}
+
+/* Calendar day numbers are display headings, not the generic numeric utility. */
+.app-brand-typography .wk-dhead .num {
+  font-family: var(--app-font-heading) !important;
+}
+
 /* ════════ Smax light theme — defaults for v-* components ════════ */
 .v-theme--smax-light .v-card {
   background: var(--smax-bg) !important;
