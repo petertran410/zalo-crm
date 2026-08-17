@@ -1,9 +1,49 @@
 <template>
   <div class="conv-list">
-    <!-- ════════ Header: search + label chip + tabs ════════ -->
-    <div class="cl-header">
+    <!-- Smax-style inbox toolbar: search, label filter, and compact compose control. -->
+    <header class="cl-inbox-header">
+      <div class="cl-search-row">
+        <div class="cl-search-box">
+          <input
+            ref="searchInputEl"
+            :value="search"
+            class="cl-search"
+            :class="{ 'has-text': search, 'cl-search--flash': searchFlash }"
+            type="search"
+            autocomplete="off"
+            placeholder="Tìm kiếm..."
+            aria-label="Tìm hội thoại"
+            @input="onSearchInput"
+            @keydown.enter.prevent="onSearchEnter"
+            @keydown.escape.prevent="clearSearch"
+            @animationend="searchFlash = false"
+          />
+          <button
+            v-if="search"
+            class="cl-search-clear"
+            type="button"
+            aria-label="Xóa tìm kiếm"
+            title="Xóa tìm kiếm"
+            @click="clearSearch"
+          ><XIcon :size="14" /></button>
+        </div>
+        <button class="cl-label-filter" type="button" title="Lọc theo nhãn">
+          Nhãn <span class="cl-label-caret">⌄</span>
+        </button>
+        <button
+          ref="newMsgBtnEl"
+          class="cl-new-msg"
+          type="button"
+          title="Tạo hội thoại mới"
+          aria-label="Tạo hội thoại mới"
+          @click="onClickNewMessage"
+        >
+          <span class="cl-new-msg-more">⋮</span>
+        </button>
+      </div>
+    </header>
 
-      <!-- Phase 6+ Inbox Triage Filter Bar (Mini counter + sort) -->
+    <div class="cl-header">
       <slot name="filters" />
     </div>
 
@@ -128,7 +168,6 @@
           </div>
         </div>
 
-        <AiSentimentBadge v-if="parseSentiment(conv)" :sentiment="parseSentiment(conv)" class="sentiment" />
       </div>
       </TransitionGroup>
 
@@ -176,6 +215,14 @@
     </Teleport>
 
     <!-- Compose new message dialog — chỉ mở SAU khi chọn nick từ NickPickerPopup -->
+    <NickPickerPopup
+      v-model="newMsgPickerOpen"
+      :accounts="composeAccounts"
+      :trigger-el="newMsgBtnEl"
+      title="Chọn nick để nhắn tin"
+      @pick="onPickNickForNewMsg"
+    />
+
     <NewMessageDialog
       v-model="newMsgOpen"
       :accounts="composeAccounts"
@@ -190,11 +237,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
-import type { Conversation, AiSentiment } from '@/composables/use-chat';
+import type { Conversation } from '@/composables/use-chat';
 import { api } from '@/api/index';
 // Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự thô).
 import { ChevronUp as ChevronUpIcon, X as XIcon } from 'lucide-vue-next';
-import AiSentimentBadge from '@/components/ai/ai-sentiment-badge.vue';
 import Avatar from '@/components/ui/Avatar.vue';
 import NewMessageDialog from '@/components/chat/NewMessageDialog.vue';
 import ConversationContextMenu from '@/components/chat/conversation-context-menu.vue';
@@ -959,16 +1005,6 @@ function truncate(s: string, n: number): string {
   return s.length > n ? s.slice(0, n) + '…' : s;
 }
 
-function parseSentiment(conv: Conversation): AiSentiment | null {
-  const raw = (conv.contact as { metadata?: { aiSentiment?: AiSentiment | string } } | null)?.metadata?.aiSentiment;
-  if (!raw) return null;
-  try {
-    return typeof raw === 'string' ? JSON.parse(raw) : raw;
-  } catch {
-    return null;
-  }
-}
-
 // formatTime đã chuyển sang composable use-relative-time (formatConvTime) + render
 // qua component con ConvTime (2026-06-11 perf). Không còn định nghĩa ở đây.
 
@@ -1069,15 +1105,45 @@ function onPatternLeave() {
 
 <style scoped>
 .conv-list {
-  background: var(--smax-bg);
+  background: var(--app-surface-panel);
   display: flex; flex-direction: column;
   height: 100%; overflow: hidden;
 }
 
+.cl-inbox-header {
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-panel);
+  flex-shrink: 0;
+}
+.cl-label-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 9px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cl-label-filter:hover { background: var(--app-surface-hover); }
+.cl-label-caret { font-size: 15px; line-height: 1; }
+.cl-new-msg-more { font-size: 24px; line-height: .65; transform: translateY(-1px); }
+.cl-title-row,
+.cl-eyebrow,
+.cl-title,
+.cl-unread-summary { display: none; }
+
 .cl-header {
-  padding: 11px 13px;
-  border-bottom: 1px solid var(--smax-grey-200);
-  background: var(--smax-grey-50);
+  padding: 0;
+  border-bottom: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-sunken);
 }
 /* ── Collapsible search area (controlled by FilterBar collapse button) ── */
 .cl-search-collapsible {
@@ -1089,51 +1155,64 @@ function onPatternLeave() {
   max-height: 180px; /* đủ cho search row + label bar */
 }
 
-.cl-search-row {
-  display: flex; gap: 6px; align-items: center;
-  position: relative; /* anchor cho NickPickerPopup */
-}
-/* 2026-06-12 — wrapper input + nút X (anchor cho nút clear absolute bên phải) */
 .cl-search-box {
-  flex: 1; min-width: 0;
+  flex: 1;
+  min-width: 0;
   position: relative;
   display: flex;
 }
 .cl-search-box .cl-search { flex: 1; }
-/* Nút X xóa tìm kiếm — mờ nhẹ, đậm lên khi hover. Chỉ hiện khi có text (v-if). */
 .cl-search-clear {
   position: absolute;
-  right: 7px; top: 50%;
+  right: 8px;
+  top: 50%;
   transform: translateY(-50%);
-  display: inline-flex; align-items: center; justify-content: center;
-  width: 20px; height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   padding: 0;
   border: none;
   border-radius: 50%;
   background: transparent;
-  color: var(--smax-grey-400, #9CA3AF);
+  color: var(--app-text-muted);
   cursor: pointer;
-  opacity: 0.55;
-  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
+  opacity: .6;
+  transition: opacity .15s ease, background .15s ease, color .15s ease;
 }
 .cl-search-clear:hover {
   opacity: 1;
-  background: var(--smax-grey-200, #E5E7EB);
-  color: var(--smax-grey-700, #374151);
+  background: var(--app-border-subtle);
+  color: var(--app-text-secondary);
 }
-/* Khi có text, chừa chỗ bên phải cho nút X (đỡ đè chữ) */
 .cl-search.has-text { padding-right: 32px; }
+.cl-search::placeholder { color: var(--app-text-muted); }
+
+.cl-search-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  position: relative;
+}
 .cl-search {
-  flex: 1; min-width: 0;
-  padding: 9px 11px 9px 36px;
-  border: 1.5px solid var(--smax-grey-200);
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 11px 0 38px;
+  border: 0;
   border-radius: 9px;
-  font-size: 13px;
-  background: var(--smax-bg) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='%235a6478' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 11px center;
+  font-size: 14px;
+  background: var(--app-surface-sunken) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 24 24' fill='none' stroke='%235a6478' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 12px center;
   outline: none;
   font-family: inherit;
+  color: var(--app-text-primary);
+  transition: box-shadow .15s ease, background-color .15s ease;
 }
-.cl-search:focus { border-color: var(--smax-primary); }
+.cl-search:focus {
+  background-color: var(--app-surface-panel);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--app-accent) 32%, transparent);
+}
 
 /* Wedge A 2026-05-28: flash đỏ cam khi sale click "Tin nhắn mới" mà search trống */
 .cl-search--flash {
@@ -1143,7 +1222,7 @@ function onPatternLeave() {
   0%   { border-color: #d97706; box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.55); background-color: #fffaf0; }
   35%  { border-color: #ea580c; box-shadow: 0 0 0 6px rgba(217, 119, 6, 0.18); background-color: #fff5e6; }
   70%  { border-color: #d97706; box-shadow: 0 0 0 0 rgba(217, 119, 6, 0.0); background-color: #fffaf0; }
-  100% { border-color: var(--smax-grey-200); box-shadow: none; background-color: var(--smax-bg); }
+  100% { border-color: var(--app-border-default); box-shadow: none; background-color: var(--app-surface-panel); }
 }
 
 .cl-new-msg-caret {
@@ -1155,22 +1234,25 @@ function onPatternLeave() {
 .cl-new-msg-caret svg, .clear-tags svg { display: block; }
 .clear-tags { display: inline-flex; align-items: center; justify-content: center; }
 .cl-new-msg {
-  display: inline-flex; align-items: center; gap: 4px;
-  padding: 8px 10px;
-  border: 1.5px solid var(--smax-primary);
-  background: var(--smax-primary-soft);
-  color: var(--smax-primary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--app-text-secondary);
   border-radius: 9px;
-  font-size: 12px; font-weight: 600;
   cursor: pointer;
   font-family: inherit;
-  white-space: nowrap;
   flex-shrink: 0;
+  transition: background .15s ease, color .15s ease;
 }
 .cl-new-msg:hover {
-  background: var(--smax-primary);
-  color: white;
+  background: var(--app-surface-hover);
+  color: var(--app-text-primary);
 }
+.cl-new-msg:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
 
 .cl-label-bar {
   display: flex; gap: 4px; margin-top: 7px;
@@ -1184,26 +1266,27 @@ function onPatternLeave() {
 .cl-label-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 3px 9px;
-  border-radius: 11px;
+  border-radius: var(--app-radius-pill);
   font-size: 11px; font-weight: 500;
-  border: 1px solid var(--tag-color, #D1D5DB);
-  color: var(--tag-color, #4B5563);
+  border: 1px solid var(--tag-color, var(--app-border-default));
+  color: var(--tag-color, var(--app-text-secondary));
   cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   user-select: none;
-  background: var(--smax-bg);
+  background: var(--app-surface-panel);
   transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
 }
 .cl-label-chip:hover {
-  background: color-mix(in srgb, var(--tag-color, #6B7280) 12%, transparent);
+  background: color-mix(in srgb, var(--tag-color, var(--app-text-secondary)) 12%, transparent);
 }
 .cl-label-chip.active {
-  background: var(--tag-color, #6B7280);
-  color: white;
-  border-color: var(--tag-color, #6B7280);
+  background: var(--tag-color, var(--app-text-secondary));
+  color: var(--app-text-inverse);
+  border-color: var(--tag-color, var(--app-text-secondary));
   font-weight: 600;
 }
+.cl-label-chip:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 /* Nút × clear tag filter — to hơn + có border để dễ click */
 .clear-tags {
   flex-shrink: 0;
@@ -1277,20 +1360,21 @@ function onPatternLeave() {
 .conv-list--no-move .conv-list-move { transition: none !important; }
 .loading {
   padding: 20px; text-align: center;
-  color: var(--smax-grey-700); font-size: 12px; font-style: italic;
+  color: var(--app-text-secondary); font-size: 12px; font-style: italic;
 }
 
 .conv-item {
-  padding: 11px 13px;
-  display: flex; gap: 11px;
+  padding: 10px 13px;
+  display: flex;
+  gap: 11px;
   align-items: flex-start;
   cursor: pointer;
-  border-bottom: 1px solid var(--smax-grey-100);
+  border-bottom: 1px solid var(--app-border-subtle);
   position: relative;
   user-select: none;
-  /* Cố định chiều cao mỗi item — name + preview + tag row reserved */
   min-height: 78px;
   box-sizing: border-box;
+  transition: background-color .14s ease, box-shadow .14s ease, border-color .14s ease;
 }
 /* Avatar dịch xuống nhẹ để canh giữa với name + preview (bỏ qua tag row) */
 .conv-item :deep(.smax-av) { margin-top: 2px; flex-shrink: 0; }
@@ -1327,10 +1411,10 @@ function onPatternLeave() {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 2px solid #fff;
-  background: var(--smax-grey-100, #f3f4f6);
+  border: 2px solid var(--app-surface-panel);
+  background: var(--app-surface-canvas);
   object-fit: cover;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--app-shadow-sm);
   z-index: 1;
 }
 .ci-nick-mini--initial {
@@ -1339,41 +1423,40 @@ function onPatternLeave() {
   justify-content: center;
   font-size: 9px;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #2962ff, #6366f1);
+  color: var(--app-text-inverse);
+  background: var(--app-accent);
 }
-.conv-item.active .ci-nick-mini { border-color: var(--smax-primary-soft, #e3f2fd); }
-.conv-item:hover { background: var(--smax-grey-50); }
+.conv-item.active .ci-nick-mini { border-color: var(--app-accent-soft); }
+.conv-item:hover { background: var(--app-surface-hover); }
 
-/* ════ 2026-07-22: OPTION 1 CLEAN SOFT TINT CARDS ════ */
-/* Active Item (Ô đang chọn chat) */
+/* Active: chỉ dùng soft tint + viền accent. Giữ item là một list-row thay vì
+   “card nổi” quá đậm, để list quét nhanh và giống workspace inbox tham chiếu. */
 .conv-item.active,
 .conv-item.is-group.active {
-  background: #EFF6FF !important;
-  color: #0F172A !important;
-  border-radius: 12px !important;
-  margin: 3px 6px !important;
-  border: 1.5px solid #93C5FD !important;
-  border-left: 1.5px solid #93C5FD !important;
+  background: var(--app-surface-hover) !important;
+  color: var(--app-text-primary) !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--app-border-subtle) !important;
+  border-left: 0 !important;
   padding-left: 13px !important;
-  border-bottom-color: #93C5FD !important;
-  box-shadow: 0 4px 14px rgba(0, 104, 255, 0.10) !important;
+  box-shadow: none !important;
 }
 .conv-item.active:hover,
 .conv-item.is-group.active:hover {
-  background: #E0F2FE !important;
-  border-color: #60A5FA !important;
+  background: var(--app-surface-hover) !important;
 }
 .conv-item.active .ci-name {
-  color: #0068FF !important;
+  color: var(--app-accent) !important;
   font-weight: 750 !important;
 }
 .conv-item.active .ci-preview {
-  color: #334155 !important;
+  color: var(--app-text-secondary) !important;
   font-weight: 500 !important;
 }
 .conv-item.active .ci-time {
-  color: #0068FF !important;
+  color: var(--app-accent) !important;
   font-weight: 700 !important;
 }
 .conv-item.active .group-icon {
@@ -1382,19 +1465,18 @@ function onPatternLeave() {
 
 /* Unread Item (Ô chưa đọc) */
 .conv-item.unread {
-  background: #FFFBEB !important;
-  border-radius: 12px !important;
-  margin: 3px 6px !important;
-  border: 1px solid #FCD34D !important;
-  border-left: 1px solid #FCD34D !important;
+  background: var(--app-surface-panel) !important;
+  border-left: 0 !important;
   padding-left: 13px !important;
-  border-bottom-color: #FCD34D !important;
-  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08) !important;
-  transition: all 0.18s ease !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  border-top: 0 !important;
+  border-right: 0 !important;
+  border-bottom-color: var(--app-border-subtle) !important;
+  box-shadow: none !important;
 }
 .conv-item.unread:hover {
-  background: #FEF3C7 !important;
-  border-color: #FBBF24 !important;
+  background: var(--app-surface-hover) !important;
 }
 .conv-item.unread .ci-name {
   font-weight: 750 !important;
@@ -1442,14 +1524,19 @@ function onPatternLeave() {
   flex-shrink: 0;
 }
 .ci-unread-count {
-  min-width: 20px; height: 18px;
-  padding: 0 6px;
-  background: #b8bfc9;
-  color: white;
-  font-size: 10px; font-weight: 700;
-  border-radius: 9px;
-  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  background: #27445f;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 750;
+  border-radius: var(--app-radius-pill);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   line-height: 1;
+  box-shadow: none;
 }
 
 /* Phase 8 — Engagement pattern badge */
@@ -1677,7 +1764,7 @@ function onPatternLeave() {
 
 .empty-state {
   text-align: center; padding: 40px 13px;
-  color: var(--smax-grey-700); font-size: 12px;
+  color: var(--app-text-secondary); font-size: 12px;
 }
 </style>
 
@@ -1698,10 +1785,11 @@ function onPatternLeave() {
 .del-card {
   width: 340px;
   max-width: calc(100vw - 32px);
-  background: #fff;
-  border-radius: 14px;
+  background: var(--app-surface-panel);
+  border: 1px solid var(--app-border-subtle);
+  border-radius: var(--app-radius-xl);
   padding: 22px 22px 16px;
-  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.28);
+  box-shadow: var(--app-shadow-lg);
   text-align: center;
   font-family: inherit;
   animation: del-pop 0.14s ease-out;
@@ -1721,13 +1809,13 @@ function onPatternLeave() {
 .del-title {
   font-size: 16px;
   font-weight: 700;
-  color: #111827;
+  color: var(--app-text-primary);
   margin-bottom: 6px;
 }
 .del-desc {
   font-size: 12.5px;
   line-height: 1.5;
-  color: #6b7280;
+  color: var(--app-text-secondary);
   margin-bottom: 18px;
 }
 .del-actions {
@@ -1736,8 +1824,8 @@ function onPatternLeave() {
 }
 .del-btn {
   flex: 1;
-  height: 38px;
-  border-radius: 9px;
+  height: var(--app-control-h-lg);
+  border-radius: var(--app-radius-lg);
   border: 0;
   font-size: 13.5px;
   font-weight: 600;
@@ -1746,26 +1834,26 @@ function onPatternLeave() {
   transition: background-color 0.12s ease, opacity 0.12s ease;
 }
 .del-btn--ghost {
-  background: #f3f4f6;
-  color: #374151;
+  background: var(--app-surface-hover);
+  color: var(--app-text-secondary);
 }
-.del-btn--ghost:hover { background: #e5e7eb; }
+.del-btn--ghost:hover { background: var(--app-border-subtle); }
 .del-btn--danger {
-  background: #ef4444;
-  color: #fff;
+  background: var(--app-danger);
+  color: var(--app-text-inverse);
 }
 .del-btn--danger:hover { background: #dc2626; }
 .del-btn--danger:disabled { opacity: 0.6; cursor: default; }
-.del-btn:focus-visible { outline: 2px solid #2962ff; outline-offset: 2px; }
+.del-btn:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
 .del-hint {
   margin-top: 12px;
   font-size: 11px;
-  color: #9ca3af;
+  color: var(--app-text-muted);
 }
 .del-hint kbd {
-  background: #f3f4f6;
-  border: 1px solid #e5e7eb;
-  border-radius: 4px;
+  background: var(--app-surface-hover);
+  border: 1px solid var(--app-border-subtle);
+  border-radius: var(--app-radius-sm);
   padding: 1px 5px;
   font-size: 10.5px;
   font-family: inherit;

@@ -2,7 +2,8 @@ import { Command, CommandHandler, CommandValidator, ValidationResult } from '../
 import { commandDispatcher } from '../../../shared/commands/command-dispatcher.js';
 import { getPosMcpClient } from '../../../shared/mcp/mcp-client.js';
 import { prisma } from '../../../shared/database/prisma-client.js';
-import { syncPosCustomersFromMcp } from '../../../shared/mcp/pos-sync-service.js';
+import { getCustomerSyncSince, syncPosCustomersFromMcp } from '../../../shared/mcp/pos-sync-service.js';
+import { withPosSyncLock } from '../pos-sync-lock.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { handleMcpError } from '../../../shared/commands/error-handler.js';
 import { v4 as uuidv4 } from 'uuid';
@@ -67,8 +68,10 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
           });
         }
         
-        // Chạy sync ngầm
-        syncPosCustomersFromMcp(context.orgId).catch(err => {
+        // Sync ngầm, chạy tăng dần thay vì kéo lại toàn bộ khách hàng.
+        void withPosSyncLock(context.orgId, 'Customer', async () =>
+          syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+        ).catch(err => {
           logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
         });
 
@@ -141,7 +144,9 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
       }
 
       // 4. Kích hoạt Background Sync
-      syncPosCustomersFromMcp(context.orgId).catch(err => {
+      void withPosSyncLock(context.orgId, 'Customer', async () =>
+        syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+      ).catch(err => {
         logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
       });
 
@@ -251,7 +256,9 @@ export class UpdateCustomerHandler implements CommandHandler<Command<UpdateCusto
       }
 
       // Kích hoạt Background Sync
-      syncPosCustomersFromMcp(context.orgId).catch(err => {
+      void withPosSyncLock(context.orgId, 'Customer', async () =>
+        syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+      ).catch(err => {
         logger.error('[UpdateCustomerHandler] Background sync customers failed:', err);
       });
 

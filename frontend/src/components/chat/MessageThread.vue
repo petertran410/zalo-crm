@@ -9,8 +9,11 @@
   >
     <!-- Empty state -->
     <div v-if="!conversation" class="empty-state">
-      <v-icon icon="mdi-chat-outline" size="96" color="grey-lighten-2" />
-      <p class="text-h6 mt-4">Chọn cuộc trò chuyện</p>
+      <div class="empty-chat-mark" aria-hidden="true">
+        <v-icon icon="mdi-chat-outline" size="66" />
+      </div>
+      <p class="empty-title">Have a good day <span aria-hidden="true">☺</span></p>
+      <p class="empty-subtitle">Chọn một hội thoại để bắt đầu xử lý tin nhắn</p>
     </div>
 
     <template v-else>
@@ -149,35 +152,47 @@
                Function fireWebhook() + state webhookLoading vẫn giữ trong file
                để bật lại sau bằng cách un-comment block button trên. -->
 
-          <!-- More dropdown: gộp Lịch sử / Tìm / Note -->
-          <v-menu>
-            <template #activator="{ props: act }">
-              <button class="icon-btn" v-bind="act" title="Thêm"><MoreVerticalIcon :size="16" :stroke-width="2" /></button>
-            </template>
-            <v-list density="compact" min-width="220">
-              <!-- 2026-06-06 (Anh chốt): toggle cột 4 (thông tin KH) đưa vào menu ... -->
-              <v-list-item
-                :prepend-icon="showContactPanel ? 'mdi-information' : 'mdi-information-outline'"
-                :title="showContactPanel ? 'Ẩn thông tin KH (cột phải)' : 'Hiện thông tin KH (cột phải)'"
-                @click="$emit('toggle-contact-panel')"
-              />
-              <v-divider />
-              <v-list-item prepend-icon="mdi-history" title="Lịch sử hội thoại" @click="toast.push('Lịch sử: chưa implement')" />
-              <v-list-item prepend-icon="mdi-magnify" title="Tìm trong hội thoại" @click="toast.push('Tìm: chưa implement')" />
-              <v-list-item prepend-icon="mdi-note-edit-outline" title="Ghi chú nhanh" @click="onOpenNote" />
-              <v-divider />
-              <!-- Merge KH này vào KH khác (transfer Friends + delete source Contact) -->
-              <v-list-item
-                v-if="conversation.contact"
-                prepend-icon="mdi-merge"
-                title="Gắn vào KH Cha (merge)"
-                @click="showLinkParentDialog = true"
-              />
-              <v-divider />
-              <v-list-item prepend-icon="mdi-bell-off-outline" title="Tắt thông báo" @click="toast.push('Mute: chưa implement')" />
-              <v-list-item prepend-icon="mdi-flag-outline" title="Báo cáo" @click="toast.push('Report: chưa implement')" />
-            </v-list>
-          </v-menu>
+          <!-- Header overflow menu is rendered locally to avoid Vuetify overlay teleporting out of the chat shell. -->
+          <div ref="headerMoreRef" class="header-more-wrap">
+            <button
+              class="icon-btn"
+              type="button"
+              title="Thêm"
+              aria-label="Thêm thao tác hội thoại"
+              :aria-expanded="headerMoreOpen"
+              @click.stop="headerMoreOpen = !headerMoreOpen"
+            ><MoreVerticalIcon :size="16" :stroke-width="2" /></button>
+
+            <div v-if="headerMoreOpen" class="header-more-menu" role="menu">
+              <button type="button" role="menuitem" @click="toggleContactPanelFromMenu">
+                <v-icon :icon="showContactPanel ? 'mdi-information' : 'mdi-information-outline'" size="20" />
+                {{ showContactPanel ? 'Ẩn thông tin KH (cột phải)' : 'Hiện thông tin KH (cột phải)' }}
+              </button>
+              <span class="header-more-divider" />
+              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Lịch sử hội thoại')">
+                <v-icon icon="mdi-history" size="20" />Lịch sử hội thoại
+              </button>
+              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Tìm trong hội thoại')">
+                <v-icon icon="mdi-magnify" size="20" />Tìm trong hội thoại
+              </button>
+              <button type="button" role="menuitem" @click="openNoteFromMenu">
+                <v-icon icon="mdi-note-edit-outline" size="20" />Ghi chú nhanh
+              </button>
+              <template v-if="conversation.contact">
+                <span class="header-more-divider" />
+                <button type="button" role="menuitem" @click="openMergeFromMenu">
+                  <v-icon icon="mdi-merge" size="20" />Gắn vào KH Cha (merge)
+                </button>
+              </template>
+              <span class="header-more-divider" />
+              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Tắt thông báo')">
+                <v-icon icon="mdi-bell-off-outline" size="20" />Tắt thông báo
+              </button>
+              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Báo cáo')">
+                <v-icon icon="mdi-flag-outline" size="20" />Báo cáo
+              </button>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -187,7 +202,7 @@
         <div class="virtual-banner-body">
           <div class="virtual-banner-title">Chat nội bộ — tin nhắn KHÔNG gửi đi Zalo</div>
           <div class="virtual-banner-sub">
-            Dùng để ghi nhật ký chăm sóc + đặt lịch hẹn. Trợ lý AI sẽ gợi ý câu hỏi khai thác thông tin KH cho anh/chị.
+              Dùng để ghi nhật ký chăm sóc và đặt lịch hẹn.
           </div>
         </div>
       </div>
@@ -356,15 +371,6 @@
       <!-- Typing indicator -->
       <TypingIndicator :typers="currentTypers" />
 
-      <!-- AI suggest bar -->
-      <AISuggestBar
-        :suggestion="aiSuggestion"
-        :loading="aiSuggestionLoading"
-        :error="aiSuggestionError"
-        @use="applySuggestion"
-        @refresh="$emit('ask-ai')"
-      />
-
       <!-- ════════ Input area: toolbar trên textarea (Smax-style) ════════ -->
       <div class="input-area">
         <!-- Tag bar Friend-cấp (per-pair sale-nick × KH) — chỉ KH chat 1-1.
@@ -435,9 +441,6 @@
             @click="openBlockPicker"
           >
             <PackageIcon :size="18" :stroke-width="1.5" />
-          </button>
-          <button class="icon-tool ai-btn" title="AI compose" :disabled="aiSuggestionLoading" @click="$emit('ask-ai')">
-            <SparklesIcon :size="18" :stroke-width="1.5" />
           </button>
         </div>
 
@@ -768,7 +771,6 @@ import type { Conversation, Message } from '@/composables/use-chat';
 import { formatInOrgTz, weekdayInOrgTz, getOrgParts } from '@/composables/use-org-timezone';
 import { api } from '@/api/index';
 import { saveFromChat, saveFromChatBatch, toggleFavorite } from '@/api/media';
-import AISuggestBar from '@/components/chat/AISuggestBar.vue';
 // Mission Fix 2 (2026-05-30) — header picker GHI `Contact.statusId` (FK Status table)
 // để Wave 3 evaluateStatusGate đọc đúng cột. Trước đây CareStatusBadge ghi enum legacy
 // `Contact.status` khiến lazy gate KHÔNG kích hoạt. CareStatusBadge giữ ở ChatContactPanel.vue
@@ -782,7 +784,7 @@ import BlockPreviewDialog from '@ee/automation/chat-blocks/BlockPreviewDialog.vu
 // M14 (2026-06-02) — Popup chọn "Khối tin nhắn" từ Automation Blocks
 import BlockPickerPopup from '@ee/automation/chat-blocks/BlockPickerPopup.vue';
 import MessageBubble from '@/components/chat/message-bubble.vue';
-// M53 2026-05-30: Trợ lý AI cho virtual chat
+// Virtual chat messages are stored locally and are not sent through Zalo.
 import AiAssistantMessage from '@/components/chat/AiAssistantMessage.vue';
 import ReactionDetailPopup from '@/components/chat/reaction-detail-popup.vue';
 import { usePrivacyVisibility } from '@/composables/use-privacy-visibility';
@@ -829,7 +831,6 @@ import {
   Type as TypeIcon,
   CalendarClock as CalendarClockIcon,
   Zap as ZapIcon,
-  Sparkles as SparklesIcon,
   Package as PackageIcon,
   // Header action + chrome icons (anh chốt 2026-06-08 — bỏ emoji thô, đồng bộ Lucide)
   UserPlus as UserPlusIcon,
@@ -917,9 +918,6 @@ const props = defineProps<{
   loading: boolean;
   sending: boolean;
   showContactPanel?: boolean;
-  aiSuggestion: string;
-  aiSuggestionLoading: boolean;
-  aiSuggestionError: string;
   allConversations?: Conversation[];
   replyingTo?: Message | null;
   editingMessage?: Message | null;
@@ -929,7 +927,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   send: [content: string, replyMessageId?: string | null, styles?: Array<{ st: string; start: number; len: number }>, mentions?: Array<{ uid: string; pos: number; len: number }>];
   'toggle-contact-panel': [];
-  'ask-ai': [];
   'add-reaction': [msgId: string, reaction: string];
   'remove-reaction': [msgId: string, reaction: string];
   'delete-message': [msgId: string];
@@ -952,6 +949,9 @@ const emit = defineEmits<{
 }>();
 
 const toast = useToast();
+// Header overflow menu state. Rendered inline (not through Vuetify overlays) so the
+// chat shell keeps its grid context while the menu is open.
+const headerMoreOpen = ref(false);
 const inputText = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 const previewImageUrl = ref('');
@@ -1485,7 +1485,7 @@ async function onSyncLabels() {
 }
 
 function goToLabelsSettings() {
-  window.location.assign('/settings?tab=zalo-labels');
+  window.location.assign('/settings/crm/zalo-labels');
 }
 
 // CRM tags = merge Contact.tags + Friend.crmTagsPerNick (Zalo-mirrored "🔵 X").
@@ -2162,6 +2162,22 @@ async function onAcceptInvite() {
     actionLoading.value = false;
   }
 }
+function onUnavailableMenuAction(label: string) {
+  headerMoreOpen.value = false;
+  toast.push(`${label}: chưa triển khai`);
+}
+function toggleContactPanelFromMenu() {
+  headerMoreOpen.value = false;
+  emit('toggle-contact-panel');
+}
+function openNoteFromMenu() {
+  headerMoreOpen.value = false;
+  onOpenNote();
+}
+function openMergeFromMenu() {
+  headerMoreOpen.value = false;
+  showLinkParentDialog.value = true;
+}
 function onOpenNote() {
   // Open right info panel + scroll to note footer
   if (!props.showContactPanel) emit('toggle-contact-panel');
@@ -2174,7 +2190,7 @@ const inputPlaceholder = computed(() => {
   }
   // M53 2026-05-30: virtual conv → placeholder rõ ràng là nhật ký nội bộ
   if (isVirtualConv.value) {
-    return 'Ghi nội dung trao đổi — Trợ lý AI sẽ gợi ý câu hỏi tiếp theo...';
+    return 'Ghi nội dung trao đổi...';
   }
   // Bỏ "Đang nhắn từ nick" vì đã có avatar nick bên trái input — gọn hơn.
   // Hint phím tắt giữ ngắn gọn.
@@ -2634,15 +2650,6 @@ async function loadTemplates() {
 }
 onMounted(() => { loadTemplates(); });
 
-// Listener cho tab CRM (cột 4) — widget "AI Next Action" → emit insert-suggestion
-// qua window event để giảm prop drilling. Cùng pattern với 'zalo-labels-synced'.
-function onInsertSuggestionEvent(e: Event) {
-  const text = (e as CustomEvent<{ text: string }>).detail?.text;
-  if (text) void applySuggestion(text);
-}
-onMounted(() => window.addEventListener('chat:insert-suggestion', onInsertSuggestionEvent));
-onBeforeUnmount(() => window.removeEventListener('chat:insert-suggestion', onInsertSuggestionEvent));
-
 // 2026-05-27: Phase Lead Pool — modal "Mở chat Zalo" navigate kèm ?draft=...
 // → tự apply vào input editor + clear query để refresh F5 không paste lại.
 import { useRoute as _useRouteDraft, useRouter as _useRouterDraft } from 'vue-router';
@@ -2654,7 +2661,8 @@ async function consumeDraftFromQuery() {
   await nextTick();
   // delay nhẹ để editor mount xong rồi mới setContent
   setTimeout(() => {
-    void applySuggestion(draft);
+    inputText.value = draft;
+    void nextTick().then(() => editorRef.value?.focus('end'));
     // Clear query để refresh không apply lại
     const q = { ..._draftRoute.query };
     delete q.draft;
@@ -2824,17 +2832,6 @@ function handleSend() {
   emit('cancel-reply-edit');
 }
 
-// Áp dụng suggestion: chèn text vào editor + focus caret cuối → user Enter gửi luôn.
-async function applySuggestion(text?: string) {
-  const t = text || props.aiSuggestion;
-  if (!t) return;
-  inputText.value = t;
-  // setContent ở RichTextEditor là async qua watch — đợi nextTick để editor update
-  // xong rồi mới focus 'end' (caret tại cuối text). Tránh focus trước khi content mount.
-  await nextTick();
-  setTimeout(() => editorRef.value?.focus('end'), 30);
-}
-
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function formatMessageTime(d: string) {
   return formatInOrgTz(d, undefined, { timeOnly: true });
@@ -2889,14 +2886,6 @@ watch(() => props.conversation?.id, async (newId) => {
   }
 });
 
-// Auto-apply AI suggestion ngay khi generate xong (transition empty → non-empty).
-// User chỉ cần bấm ✨ → text vào input + caret cuối → Enter gửi luôn.
-watch(() => props.aiSuggestion, (next, prev) => {
-  if (next && next !== prev) {
-    applySuggestion(next);
-  }
-});
-
 // Auto-focus editor khi vào Reply / Edit mode — con trỏ chuột nằm trong ô input
 // để user gõ luôn, không cần click thêm. Watch cả 2 prop: trigger bằng external
 // (click reply trong context menu, hoặc từ swipe action sau này).
@@ -2918,7 +2907,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 .message-thread {
   display: flex; flex-direction: column;
   height: 100%;
-  background: var(--smax-grey-100);
+  background: var(--app-surface-sunken);
   overflow: hidden;
   position: relative;
 }
@@ -2929,29 +2918,29 @@ watch(() => props.editingMessage?.id, async (id) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(248, 250, 252, 0.72);
-  border: 2px dashed var(--smax-primary, #1786be);
+  background: color-mix(in srgb, var(--app-surface-panel) 72%, transparent);
+  border: 2px dashed var(--app-accent);
   pointer-events: none;
 }
 .drop-card {
   width: min(360px, calc(100% - 40px));
   padding: 18px 20px;
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 16px 38px rgba(15, 23, 42, 0.18);
+  border-radius: var(--app-radius-lg);
+  background: var(--app-surface-panel);
+  box-shadow: var(--app-shadow-lg);
   text-align: center;
 }
 .drop-title {
   margin-top: 8px;
   font-size: 15px;
   font-weight: 700;
-  color: var(--smax-text, #111827);
+  color: var(--app-text-primary);
 }
 .drop-subtitle {
   margin-top: 4px;
   font-size: 12px;
   line-height: 1.45;
-  color: var(--smax-grey-700, #6b7280);
+  color: var(--app-text-secondary);
 }
 
 /* Jump-to-quoted-message highlight — pulse border 2s khi user click reply card.
@@ -2979,12 +2968,12 @@ watch(() => props.editingMessage?.id, async (id) => {
 .msg-bubble-wrap.msg-privacy-locked.msg-wrap-self { justify-content: flex-end; }
 .msg-locked-placeholder {
   display: inline-flex; align-items: center; gap: 7px;
-  background: #F3F4F6; border: 1px dashed #D1D5DB; border-radius: 14px;
-  padding: 8px 14px; color: #9CA3AF; font-size: 13px; max-width: 70%;
+  background: var(--app-surface-hover); border: 1px dashed var(--app-border-default); border-radius: 14px;
+  padding: 8px 14px; color: var(--app-text-muted); font-size: 13px; max-width: 70%;
 }
 .msg-locked-icon { font-size: 16px; color: #B45309; }
 .msg-locked-text { font-style: italic; }
-.msg-bubble-wrap.msg-privacy-locked:hover .msg-locked-placeholder { border-color: #B45309; color: #6B7280; }
+.msg-bubble-wrap.msg-privacy-locked:hover .msg-locked-placeholder { border-color: #B45309; color: var(--app-text-secondary); }
 
 /* Blur CHỈ text/content/media bên trong bubble — KHÔNG blur .message-bubble (box) */
 .msg-privacy-blurred :deep(.text-content),
@@ -3081,10 +3070,36 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 
 .empty-state {
-  display: flex; flex: 1;
-  align-items: center; justify-content: center;
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
   flex-direction: column;
-  color: var(--smax-grey-700);
+  gap: 10px;
+  color: #132044;
+  background: #cfd1dc;
+  text-align: center;
+}
+.empty-chat-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 94px;
+  height: 94px;
+  border-radius: 50%;
+  color: #132044;
+  background: rgba(255, 255, 255, .18);
+}
+.empty-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 500;
+  letter-spacing: -.03em;
+}
+.empty-subtitle {
+  margin: 0;
+  color: rgba(19, 32, 68, .65);
+  font-size: 13px;
 }
 
 /* ════════ Chat header (3-row layout — Anh chốt 2026-06-03) ════════
@@ -3105,6 +3120,61 @@ watch(() => props.editingMessage?.id, async (id) => {
   position: absolute;
   top: 8px;
   right: 17px;
+}
+
+/* Local overflow menu: it stays inside the header stacking context and cannot
+   trigger Vuetify's teleported overlay/scroll-lock behaviour. */
+.header-more-wrap {
+  position: relative;
+  display: inline-flex;
+  z-index: 30;
+}
+.header-more-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: 272px;
+  padding: 6px 0;
+  background: var(--app-surface-panel, #fff);
+  border: 1px solid var(--app-border-subtle, #e2e8f0);
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
+  overflow: hidden;
+  z-index: 40;
+}
+.header-more-menu button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--app-text-primary, #1e293b);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.35;
+  text-align: left;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.header-more-menu button:hover,
+.header-more-menu button:focus-visible {
+  background: var(--app-surface-hover, #f1f5f9);
+  outline: none;
+}
+.header-more-menu button :deep(.v-icon) {
+  flex: 0 0 20px;
+  color: var(--app-text-secondary, #64748b);
+}
+.header-more-divider {
+  display: block;
+  height: 1px;
+  margin: 5px 0;
+  background: var(--app-border-subtle, #e2e8f0);
 }
 /* Gom 2 dòng 2026-06-06 (Anh chốt):
    Dòng 1 (.ch-row-1) = tên + gender + deal-stage, chừa chỗ phải cho actions cluster.
@@ -3129,7 +3199,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 .ch-avatar-wrap.clickable { cursor: pointer; }
 .ch-avatar-wrap.clickable:hover { transform: scale(1.05); box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.18); }
 .ch-name.clickable { cursor: pointer; transition: color 0.12s ease; }
-.ch-name.clickable:hover { color: var(--smax-primary, #1786be); }
+.ch-name.clickable:hover { color: var(--app-accent); }
 
 .ch-info {
   flex: 1; min-width: 0;
@@ -3481,6 +3551,14 @@ watch(() => props.editingMessage?.id, async (id) => {
 .pill-success { background: rgba(0,200,83,0.12); color: #00897b; }
 
 .ch-actions { display: flex; gap: 5px; align-items: center; }
+/* The overflow menu is absolutely positioned inside .ch-actions, so it must keep
+   its own column layout instead of being laid out as a flex row item. */
+.ch-actions .header-more-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  align-items: stretch;
+}
 .btn-action {
   padding: 6px 11px;
   border-radius: 7px;
@@ -3643,27 +3721,28 @@ watch(() => props.editingMessage?.id, async (id) => {
   margin-left: 2px;
 }
 .btn-webhook {
-  background: var(--smax-primary);
-  color: white;
-  border-color: var(--smax-primary);
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
+  border-color: var(--app-accent);
 }
-.btn-webhook:hover:not(:disabled) { background: var(--smax-primary-hover); }
+.btn-webhook:hover:not(:disabled) { background: var(--app-accent-hover); }
 .btn-webhook:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .icon-btn {
   width: 33px; height: 33px;
-  border-radius: 7px;
+  border-radius: var(--app-radius-md);
   background: transparent; border: none;
   display: flex; align-items: center; justify-content: center;
   cursor: pointer;
-  color: var(--smax-grey-700);
+  color: var(--app-text-secondary);
   font-size: 15px;
 }
-.icon-btn:hover { background: var(--smax-grey-100); }
+.icon-btn:hover { background: var(--app-surface-hover); }
 .icon-btn.on {
-  background: var(--smax-primary-soft);
-  color: var(--smax-primary);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
 }
+.icon-btn:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 2px; }
 
 /* ════════ Messages ════════ */
 /* min-height: 0 cho phép flex item co lại khi input-area mở rộng (toolbar slide-in,
@@ -3682,7 +3761,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .msg-divider {
   text-align: center; margin: 13px 0 9px;
-  color: var(--smax-grey-700); font-size: 11px;
+  color: var(--app-text-secondary); font-size: 11px;
 }
 /* E07 Image lightbox — anh chốt 2026-05-21: nút ‹ › + arrow keys, KHÔNG loop. */
 .lightbox-wrap {
@@ -3761,10 +3840,10 @@ watch(() => props.editingMessage?.id, async (id) => {
 .msg-album-wrap .msg-avatar { flex-shrink: 0; }
 .msg-album-body { max-width: 60%; }
 .bubble.album {
-  background: var(--smax-bg);
-  border-radius: 13px;
+  background: var(--app-surface-panel);
+  border-radius: var(--app-radius-xl);
   overflow: hidden;
-  box-shadow: 0 1px 1px rgba(0,0,0,0.06);
+  box-shadow: var(--app-shadow-sm);
 }
 .album-sender {
   font-size: 11.5px; color: var(--smax-primary);
@@ -3888,7 +3967,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .icon-tool.active {
   background: var(--smax-primary-soft, #e3f2fd);
-  color: var(--smax-primary, #1786be);
+  color: var(--app-accent);
 }
 .icon-tool.spacer-after {
   border-right: 1px solid var(--smax-grey-200);
@@ -4007,7 +4086,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .zlbl-trigger:hover {
   background: var(--smax-primary-soft, #e3f2fd);
-  border-color: var(--smax-primary, #1786be);
+  border-color: var(--app-accent);
   box-shadow: 0 1px 3px rgba(0,0,0,0.06);
 }
 .zlbl-icon { flex-shrink: 0; display: block; }
@@ -4042,7 +4121,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 .zlbl-inline-sync {
   margin-top: 8px;
   background: var(--smax-primary-soft, #e3f2fd);
-  color: var(--smax-primary, #1786be);
+  color: var(--app-accent);
   border: none;
   font-size: 12px;
   font-weight: 600;
@@ -4089,7 +4168,7 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .zlbl-option.active .zlbl-name { font-weight: 600; }
 .zlbl-check {
-  color: var(--smax-primary, #1786be);
+  color: var(--app-accent);
   font-size: 14px;
   font-weight: 700;
   flex-shrink: 0;

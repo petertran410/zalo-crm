@@ -25,7 +25,7 @@
 
         <button class="ppl-theme" :title="theme === 'dark' ? 'Chuyển nền sáng' : 'Chuyển nền tối'" @click="toggleTheme">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 12.4A6.2 6.2 0 0 1 7.6 4.5a6.5 6.5 0 1 0 7.9 7.9Z" /></svg>
-          {{ theme === 'dark' ? 'Sáng' : 'Tối' }}
+          <span class="ppl-theme-label">{{ theme === 'dark' ? 'Sáng' : 'Tối' }}</span>
         </button>
       </div>
 
@@ -1880,29 +1880,43 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* ═══════════ Token màu — light + dark (design CRM Atlas) ═══════════
-   Đặt trên .people để dark mode KHÔNG rò ra ngoài trang này. */
-.people {
-  --pp-bg: #F0EFF6; --pp-panel: #FFFFFF; --pp-card: #F7F6FC;
-  --pp-fg: #1B1A24; --pp-muted: #736F84; --pp-faint: #9C97AC;
-  --pp-line: #E7E4F0; --pp-accent: #5B4BE6; --pp-onAccent: #FFFFFF;
-  --pp-chip: #EDEAFB; --pp-chipFg: #4C3FBF;
-  --pp-good: #0E9F6E; --pp-warn: #C2810C; --pp-bad: #DC3A5B;
-  --pp-shadow: rgba(30, 20, 80, .16);
+   Đặt trên .people để dark mode KHÔNG rò ra ngoài trang này.
 
-  /* Chữ (anh chốt 2026-07-29 sau khi soi /font-lab.html):
-       tiêu đề  = Montserrat 700/800 — chỉ ở cỡ lớn, nơi nét hình học còn đọc được
-       nội dung = Roboto 400/500/700 — gọn nhất trong 5 font đã thử, nét ở 13–14px
-       số/mã    = var(--mono) = Roboto Mono, cùng superfamily với Roboto
-     Nhãn nhỏ 10.5px in hoa CỐ TÌNH để Roboto: ở cỡ đó nét hình học của
-     Montserrat không còn thấy, chỉ tổ rộng thêm ~11%. */
-  --pp-display: 'Montserrat', -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --pp-body: 'Roboto', -apple-system, 'Segoe UI', sans-serif;
+   2026-08-12 — ánh xạ về hệ token chung của app:
+   Trang này trước dùng bảng màu RIÊNG (nền tím nhạt #F0EFF6, accent tím #5B4BE6,
+   viền #E7E4F0, chữ #1B1A24) trong khi phần còn lại của CRM dùng nền xám-xanh
+   và accent xanh Zalo. Chuyển từ Tin nhắn sang Khách hàng là đổi hẳn tông màu,
+   trông như hai sản phẩm khác nhau.
+   Nay các biến --pp-* ở nhánh SÁNG trỏ thẳng vào --app-*; nhánh TỐI giữ nguyên
+   giá trị tuyệt đối vì app chưa có bộ token tối. Giữ tên biến --pp-* để không
+   phải sửa hơn 600 dòng CSS phía dưới, và nút bật/tắt nền tối vẫn chạy y như cũ. */
+.people {
+  --pp-bg: var(--app-surface-canvas);
+  --pp-panel: var(--app-surface-panel);
+  --pp-card: var(--app-surface-sunken);
+  --pp-fg: var(--app-text-primary);
+  --pp-muted: var(--app-text-secondary);
+  --pp-faint: var(--app-text-muted);
+  --pp-line: var(--app-border-subtle);
+  --pp-accent: var(--app-accent);
+  --pp-onAccent: var(--app-text-inverse);
+  --pp-chip: var(--app-accent-soft);
+  --pp-chipFg: var(--app-accent);
+  --pp-good: var(--app-success);
+  --pp-warn: var(--app-warning);
+  --pp-bad: var(--app-danger);
+  --pp-shadow: rgba(16, 24, 40, .16);
+
+  /* Chữ: bỏ Montserrat/Roboto riêng của trang, dùng đúng font của app để tiêu đề
+     và nội dung ở đây khớp với các màn khác. */
+  --pp-display: inherit;
+  --pp-body: inherit;
 }
 .people[data-theme='dark'] {
   --pp-bg: #121121; --pp-panel: #1B1930; --pp-card: #232040;
   --pp-fg: #EFEDF8; --pp-muted: #9A95B0; --pp-faint: #7A7593;
-  --pp-line: #2C2846; --pp-accent: #9686FF; --pp-onAccent: #16132B;
-  --pp-chip: #2A2647; --pp-chipFg: #C5BEF5;
+  --pp-line: #2C2846; --pp-accent: #6BA6FF; --pp-onAccent: #10203A;
+  --pp-chip: #1E2A44; --pp-chipFg: #A8C9FF;
   --pp-good: #4ADEA0; --pp-warn: #E3B457; --pp-bad: #FF7C9C;
   --pp-shadow: rgba(0, 0, 0, .5);
 }
@@ -1925,67 +1939,87 @@ onBeforeUnmount(() => {
 @keyframes ppPop { from { transform: translateY(8px) scale(.98); opacity: 0 } to { transform: none; opacity: 1 } }
 
 /* ═══════════ Header ═══════════ */
-.ppl-head { padding: 14px 28px 0; display: flex; flex-direction: column; gap: 12px; z-index: 15; }
-.ppl-head-row { display: flex; align-items: center; gap: 20px; }
-.ppl-title h1 { margin: 0; font-family: var(--pp-display); font-size: 22px; font-weight: 800; letter-spacing: -.03em; line-height: 1; }
+.ppl-head { padding: 14px 24px 0; display: flex; flex-direction: column; gap: 10px; z-index: 15; }
+.ppl-head-row { display: flex; align-items: center; gap: 12px; }
+.ppl-title h1 { margin: 0; font-family: var(--pp-display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
 
+/* Ô tìm kiếm: neo về bên phải cạnh các nút hành động (mẫu tham chiếu đặt tìm
+   kiếm + bộ lọc cùng một hàng bên phải tiêu đề) thay vì căn giữa tuyệt đối.
+   margin-left:auto đẩy cả cụm sang phải; bỏ margin:0 auto cũ. */
 .ppl-search {
-  flex: 1; max-width: 430px; margin: 0 auto;
-  display: flex; align-items: center; gap: 10px;
-  height: 44px; padding: 0 16px; border-radius: 999px;
+  flex: 1; max-width: 360px; margin-left: auto;
+  display: flex; align-items: center; gap: 9px;
+  height: var(--app-control-h-lg); padding: 0 14px;
+  border-radius: var(--app-radius-md);
   background: var(--pp-panel); border: 1px solid var(--pp-line);
-  box-shadow: 0 2px 8px -4px var(--pp-shadow);
-  transition: border-color .14s;
+  transition: border-color .14s, box-shadow .14s;
 }
-.ppl-search.on { border-color: var(--pp-accent); }
-.ppl-search svg { width: 16px; height: 16px; color: var(--pp-accent); flex: none; }
-.ppl-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--pp-fg); font-size: 13.5px; }
+.ppl-search.on,
+.ppl-search:focus-within {
+  border-color: var(--pp-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--pp-accent) 14%, transparent);
+}
+.ppl-search svg { width: 16px; height: 16px; color: var(--pp-muted); flex: none; }
+.ppl-search input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--pp-fg); font-size: 13px; }
+.ppl-search input::placeholder { color: var(--pp-faint); }
 .ppl-search-x { cursor: pointer; color: var(--pp-muted); font-size: 16px; line-height: 1; }
 
 .ppl-btn-primary {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: 44px; padding: 0 20px; border: 0; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 7px;
+  height: var(--app-control-h-lg); padding: 0 16px; border: 0;
+  border-radius: var(--app-radius-md);
   background: var(--pp-accent); color: var(--pp-onAccent);
-  font-size: 13.5px; font-weight: 700; cursor: pointer; white-space: nowrap;
-  box-shadow: 0 8px 20px -8px var(--pp-accent);
+  font-size: 13px; font-weight: 600; cursor: pointer; white-space: nowrap;
   transition: opacity .12s;
 }
 /* Hover dùng opacity (transform/opacity only) — trước là transition: filter. */
 .ppl-btn-primary:hover:not(:disabled) { opacity: .9; }
 .ppl-btn-primary:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
-.ppl-btn-primary.sm { height: 36px; padding: 0 18px; font-size: 13px; }
+.ppl-btn-primary:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
+.ppl-btn-primary.sm { height: var(--app-control-h-md); padding: 0 14px; font-size: 12.5px; }
 .ppl-btn-primary svg { width: 15px; height: 15px; }
 .ppl-btn-ghost {
-  height: 40px; padding: 0 18px; border: 1px solid var(--pp-line); border-radius: 999px;
-  background: transparent; color: var(--pp-fg); font-size: 13.5px; font-weight: 700; cursor: pointer;
+  height: var(--app-control-h-md); padding: 0 14px;
+  border: 1px solid var(--pp-line); border-radius: var(--app-radius-md);
+  background: transparent; color: var(--pp-fg); font-size: 13px; font-weight: 600; cursor: pointer;
 }
-.ppl-btn-ghost.sm { height: 32px; padding: 0 13px; font-size: 12px; align-self: flex-start; background: var(--pp-panel); }
+.ppl-btn-ghost.sm { height: 30px; padding: 0 12px; font-size: 12px; align-self: flex-start; background: var(--pp-panel); }
 
+/* Nút đổi nền sáng/tối: thu về dạng icon-only cho đỡ chiếm chỗ trên hàng đầu,
+   nhãn chữ chỉ hiện ở màn rộng. */
 .ppl-theme {
-  display: inline-flex; align-items: center; gap: 7px;
-  height: 44px; padding: 0 15px; border-radius: 999px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  height: var(--app-control-h-lg); padding: 0 11px;
+  border-radius: var(--app-radius-md);
   border: 1px solid var(--pp-line); background: var(--pp-panel);
   color: var(--pp-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
 }
-.ppl-theme:hover { color: var(--pp-fg); }
+.ppl-theme:hover { color: var(--pp-fg); background: var(--pp-card); }
+.ppl-theme:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
 .ppl-theme svg { width: 16px; height: 16px; }
+.ppl-theme-label { display: none; }
+@media (min-width: 1280px) { .ppl-theme-label { display: inline; } }
 
 /* ── Thanh lọc ── */
-.ppl-tools { display: flex; align-items: center; gap: 10px; position: relative; }
+.ppl-tools { display: flex; align-items: center; gap: 8px; position: relative; }
 .ppl-chip-btn {
-  display: inline-flex; align-items: center; gap: 9px;
-  height: 38px; padding: 0 15px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 8px;
+  height: var(--app-control-h-md); padding: 0 13px;
+  border-radius: var(--app-radius-md);
   border: 1px solid var(--pp-line); background: var(--pp-panel);
-  color: var(--pp-fg); font-size: 13px; font-weight: 600; cursor: pointer;
+  color: var(--pp-fg); font-size: 12.5px; font-weight: 600; cursor: pointer;
 }
-.ppl-chip-btn.armed, .ppl-chip-btn.open { border-color: var(--pp-accent); }
+.ppl-chip-btn.armed, .ppl-chip-btn.open { border-color: var(--pp-accent); color: var(--pp-accent); }
 .ppl-chip-btn.open { background: var(--pp-chip); }
+.ppl-chip-btn:hover { border-color: var(--pp-accent); }
+.ppl-chip-btn:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
 .ppl-chip-btn svg { width: 14px; height: 14px; }
 .ppl-chip-sum { font-weight: 500; color: var(--pp-muted); }
 .ppl-count-badge {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-  background: var(--pp-accent); color: var(--pp-onAccent); font-size: 11px; font-weight: 800;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--app-radius-pill);
+  background: var(--pp-accent); color: var(--pp-onAccent); font-size: 11px; font-weight: 700;
 }
 .ppl-clear {
   font-size: 13px; font-weight: 600; color: var(--pp-muted); cursor: pointer;
@@ -2103,12 +2137,21 @@ onBeforeUnmount(() => {
 .ppl-day.end { border-radius: 4px 9px 9px 4px; }
 .ppl-day.in { background: var(--pp-chip); color: var(--pp-chipFg); border-radius: 4px; }
 
-/* ═══════════ Danh sách ═══════════ */
-.ppl-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 10px 28px 24px; transition: opacity .16s; }
+/* ═══════════ Danh sách ═══════════
+   2026-08-12: chuyển từ "mỗi dòng là một card nổi, cách nhau 8px" sang bảng liền
+   mạch trong một khung duy nhất. Lý do: danh sách khách hàng là dữ liệu để QUÉT
+   theo cột — card rời làm mắt phải nhảy qua từng khoảng trống và tốn ~40% chiều
+   cao cho khoảng cách + bóng đổ, nên mỗi màn thấy được ít dòng hơn hẳn.
+   Hàng tiêu đề nay dính (sticky) để cuộn sâu vẫn biết đang đọc cột nào. */
+.ppl-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 10px 24px 24px; transition: opacity .16s; }
 .ppl-cols, .ppl-row { display: flex; align-items: center; min-width: 1120px; }
 .ppl-cols {
-  padding: 0 18px 8px; font-size: 10.5px; letter-spacing: .11em;
-  text-transform: uppercase; font-weight: 800; color: var(--pp-muted);
+  position: sticky; top: 0; z-index: 2;
+  padding: 10px 16px; font-size: 10.5px; letter-spacing: .08em;
+  text-transform: uppercase; font-weight: 700; color: var(--pp-muted);
+  background: var(--pp-card);
+  border: 1px solid var(--pp-line);
+  border-radius: var(--app-radius-lg) var(--app-radius-lg) 0 0;
 }
 .c-check { width: 34px; flex: none; display: flex; align-items: center; }
 .c-check input { width: 15px; height: 15px; accent-color: var(--pp-accent); cursor: pointer; }
@@ -2124,19 +2167,31 @@ onBeforeUnmount(() => {
 .ppl-cols .c-sent, .ppl-cols .c-created, .ppl-cols .c-inter { cursor: pointer; }
 .ppl-cols .on { color: var(--pp-accent); }
 
-.ppl-rows { display: flex; flex-direction: column; gap: 8px; }
-/* Hover chỉ transition transform (item 5: transform/opacity only trên phần tử
-   lặp lại). border-color vẫn đổi nhưng snap, không transition → không có
-   thuộc tính paint nào animate trên mỗi dòng của list dài. */
-.ppl-row {
-  padding: 13px 18px; border-radius: 14px;
-  background: var(--pp-panel); border: 1px solid var(--pp-line);
-  cursor: pointer; box-shadow: 0 1px 3px -1px var(--pp-shadow);
-  transition: transform .12s;
+/* Thân bảng: một khung, các dòng ngăn nhau bằng đường kẻ 1px. */
+.ppl-rows {
+  display: flex; flex-direction: column;
+  background: var(--pp-panel);
+  border: 1px solid var(--pp-line);
+  border-top: 0;
+  border-radius: 0 0 var(--app-radius-lg) var(--app-radius-lg);
+  overflow: hidden;
 }
-.ppl-row:hover { border-color: var(--pp-accent); transform: translateY(-1px); }
-.ppl-row.sel { background: var(--pp-chip); border-color: var(--pp-accent); }
-.ppl-row.picked { border-color: var(--pp-accent); }
+/* Bỏ transform khi hover: ở bảng liền mạch, dòng nhấc lên 1px sẽ đè lên đường kẻ
+   của dòng kế và trông như bảng bị rung khi rê chuột dọc danh sách. */
+.ppl-row {
+  padding: 11px 16px;
+  background: var(--pp-panel);
+  border-bottom: 1px solid var(--pp-line);
+  cursor: pointer;
+  transition: background-color .12s;
+}
+.ppl-row:last-child { border-bottom: 0; }
+.ppl-row:hover { background: var(--app-surface-hover); }
+.ppl-row.sel {
+  background: var(--pp-chip);
+  box-shadow: inset 3px 0 0 var(--pp-accent);
+}
+.ppl-row.picked { background: var(--pp-chip); }
 .ppl-row.flash { animation: ppPulse 1.6s ease-out; }
 
 /* ── Bulk bar ── */
@@ -2224,16 +2279,20 @@ onBeforeUnmount(() => {
 }
 .ppl-lock svg { width: 9px; height: 9px; }
 
+/* Skeleton phải khớp bảng liền mạch ở trên: cùng khung, ngăn nhau bằng đường kẻ,
+   không còn là các card bo góc rời. */
 .ppl-skel {
-  display: flex; align-items: center; gap: 12px; padding: 15px 18px;
-  border-radius: 14px; background: var(--pp-panel); border: 1px solid var(--pp-line);
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px;
+  background: var(--pp-panel); border-bottom: 1px solid var(--pp-line);
   animation: ppShim 1.4s ease-in-out infinite;
 }
+.ppl-skel:first-child { border-radius: var(--app-radius-lg) var(--app-radius-lg) 0 0; }
+.ppl-skel:last-child { border-bottom: 0; border-radius: 0 0 var(--app-radius-lg) var(--app-radius-lg); }
 .sk-av { width: 40px; height: 40px; border-radius: 13px; background: var(--pp-card); }
 .sk-lines { display: flex; flex-direction: column; gap: 7px; flex: 1; }
 .sk-l { height: 11px; border-radius: 6px; background: var(--pp-card); }
 .sk-l.sm { height: 9px; }
-.sk-pill { height: 22px; width: 120px; border-radius: 999px; background: var(--pp-card); }
+.sk-pill { height: 22px; width: 120px; border-radius: var(--app-radius-pill); background: var(--pp-card); }
 
 .ppl-more { display: flex; align-items: center; justify-content: center; padding: 12px; }
 .ppl-spin {
@@ -2439,6 +2498,8 @@ onBeforeUnmount(() => {
    ≤700px: bảng 6 cột → card 2 hàng, drawer → sheet toàn màn. */
 @media (max-width: 900px) {
   .ppl-head-row { flex-wrap: wrap; }
+  /* Xuống hàng riêng và chiếm trọn bề ngang; margin:0 ở đây CỐ Ý ghi đè
+     margin-left:auto của bố cục desktop. */
   .ppl-search { order: 3; max-width: none; width: 100%; margin: 0; }
   .ppl-menu--filters, .ppl-menu--sort { left: 0; width: min(520px, calc(100vw - 40px)); }
   .ppl-cals { flex-direction: column; }
@@ -2446,34 +2507,41 @@ onBeforeUnmount(() => {
 }
 
 @media (max-width: 700px) {
-  .ppl-head { padding: 16px 16px 0; gap: 14px; }
-  .ppl-title h1 { font-size: 23px; }
-  .ppl-sub { display: none; }
-  .ppl-list { padding: 12px 16px 24px; }
-  .ppl-bulk { margin: 0 16px; }
+   .ppl-head { padding: 14px 16px 0; gap: 10px; }
+   .ppl-title h1 { font-size: 20px; }
+   .ppl-sub { display: none; }
+   .ppl-list { padding: 10px 16px 24px; }
+   .ppl-bulk { margin: 0 16px; }
 
-  /* Header cột ẩn — card tự mang nhãn qua data-label */
-  .ppl-cols { display: none; }
+   /* Header cột ẩn — card tự mang nhãn qua data-label */
+   .ppl-cols { display: none; }
 
-  .ppl-row, .ppl-skel { min-width: 0; }
-  .ppl-row {
-    display: grid; align-items: center; gap: 8px 10px;
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas:
-      'check person inter'
-      'check chan   tags';
-    padding: 12px 14px;
-  }
-  .ppl-row .c-check { grid-area: check; width: auto; }
-  .ppl-row .c-person { grid-area: person; min-width: 0; }
-  .ppl-row .c-chan { grid-area: chan; width: auto; }
-  .ppl-row .c-tags { grid-area: tags; width: auto; justify-content: flex-end; }
-  .ppl-row .c-inter { grid-area: inter; width: auto; text-align: right; font-size: 11.5px; color: var(--pp-muted); }
-  /* Ngày tạo + nhắn cuối bỏ khỏi card — vẫn xem được trong drawer */
-  .ppl-row .c-sent, .ppl-row .c-created { display: none; }
-  .ppl-row:hover { transform: none; }
+   .ppl-row, .ppl-skel { min-width: 0; }
+   .ppl-row {
+     display: grid; align-items: center; gap: 8px 10px;
+     grid-template-columns: auto 1fr auto;
+     grid-template-areas:
+       'check person inter'
+       'check chan   tags';
+     padding: 12px 14px;
+   }
+   /* Khung desktop nối liền nhiều hàng; mobile là card thông tin 2 hàng, nên
+      trả lại corner radius + border bao quanh từng dòng để tap target rõ ràng. */
+   .ppl-rows { gap: 8px; background: transparent; border: 0; border-radius: 0; overflow: visible; }
+   .ppl-row { border: 1px solid var(--pp-line); border-radius: var(--app-radius-lg); }
+   .ppl-row:last-child { border-bottom: 1px solid var(--pp-line); }
+   .ppl-skel { border: 1px solid var(--pp-line); border-radius: var(--app-radius-lg); }
+   .ppl-skel:first-child, .ppl-skel:last-child { border-radius: var(--app-radius-lg); }
+   .ppl-row .c-check { grid-area: check; width: auto; }
+   .ppl-row .c-person { grid-area: person; min-width: 0; }
+   .ppl-row .c-chan { grid-area: chan; width: auto; }
+   .ppl-row .c-tags { grid-area: tags; width: auto; justify-content: flex-end; }
+   .ppl-row .c-inter { grid-area: inter; width: auto; text-align: right; font-size: 11.5px; color: var(--pp-muted); }
+   /* Ngày tạo + nhắn cuối bỏ khỏi card — vẫn xem được trong drawer */
+   .ppl-row .c-sent, .ppl-row .c-created { display: none; }
+   .ppl-row:hover { transform: none; }
 
-  /* Drawer → bottom sheet toàn màn */
+   /* Drawer → bottom sheet toàn màn */
   .ppl-drawer {
     width: 100%; max-width: 100%; border-left: 0;
     border-top: 1px solid var(--pp-line);

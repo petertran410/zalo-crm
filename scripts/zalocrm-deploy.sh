@@ -149,10 +149,10 @@ wait_app() {
   die "app không khởi động được — xem: docker logs $APP"
 }
 
-migrate() {
-  log "Áp migration database (prisma migrate deploy)…"
-  docker exec "$APP" npx prisma migrate deploy || die "migrate thất bại — xem docker logs $APP"
-  ok "Migration đã áp xong."
+sync_schema() {
+  log "Đồng bộ schema database (prisma db push)…"
+  docker exec "$APP" npx prisma db push || die "Đồng bộ schema thất bại — xem docker logs $APP"
+  ok "Schema database đã đồng bộ."
 }
 
 cutover() {
@@ -203,7 +203,7 @@ if [ "$MODE" = "install" ]; then
   ensure_env
   build_up
   wait_app
-  migrate
+  sync_schema
   restart_app
   health
   echo ""
@@ -216,7 +216,7 @@ else
   backup_db
   build_up         # up -d --build, KHÔNG -v → GIỮ database
   wait_app
-  migrate
+  sync_schema
   cutover
   restart_app
   health

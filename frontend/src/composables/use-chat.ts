@@ -23,21 +23,6 @@ interface ZaloAccount {
   archivedAt?: string | null;
 }
 
-export interface AiSentiment {
-  label: 'positive' | 'neutral' | 'negative';
-  confidence: number;
-  reason: string;
-}
-
-export interface AiConfig {
-  provider: string;
-  model: string;
-  maxDaily: number;
-  enabled: boolean;
-  hasAnthropicKey?: boolean;
-  hasGeminiKey?: boolean;
-}
-
 interface ConversationMessage {
   content: string | null;
   contentType: string;
@@ -336,15 +321,6 @@ export function useChat() {
     get: () => workScope.scopeAccountId() ?? null,
     set: (v) => workScope.lockToNick(v),
   });
-  const aiSuggestion = ref('');
-  const aiSuggestionLoading = ref(false);
-  const aiSuggestionError = ref('');
-  const aiSummary = ref('');
-  const aiSummaryLoading = ref(false);
-  const aiSentiment = ref<AiSentiment | null>(null);
-  const aiSentimentLoading = ref(false);
-  const aiUsage = ref({ usedToday: 0, maxDaily: 500, remaining: 500, enabled: true });
-  const aiConfig = ref<AiConfig>({ provider: 'anthropic', model: 'claude-sonnet-4-6', maxDaily: 500, enabled: true });
   let socket: Socket | null = null;
   let convSyncTimer: ReturnType<typeof setTimeout> | null = null;
   // work-scope 2026-06-15 — badge "N tin nick khác": đếm tin OUT-OF-SCOPE per nick.
@@ -382,13 +358,6 @@ export function useChat() {
     conversations.value.find(c => c.id === selectedConvId.value)
     || (selectedConvDetail.value?.id === selectedConvId.value ? selectedConvDetail.value : null),
   );
-
-  function clearAiState() {
-    aiSuggestion.value = '';
-    aiSuggestionError.value = '';
-    aiSummary.value = '';
-    aiSentiment.value = null;
-  }
 
   const extraFilters = ref<Record<string, string>>({});
 
@@ -607,89 +576,8 @@ export function useChat() {
     }
   }
 
-  async function fetchAiConfig() {
-    try {
-      const res = await api.get('/ai/config');
-      aiConfig.value = {
-        provider: res.data.provider,
-        model: res.data.model,
-        maxDaily: res.data.maxDaily,
-        enabled: res.data.enabled,
-        hasAnthropicKey: res.data.hasAnthropicKey,
-        hasGeminiKey: res.data.hasGeminiKey,
-      };
-    } catch (err) {
-      console.error('Failed to fetch AI config:', err);
-    }
-  }
-
-  async function saveAiConfig(payload: AiConfig) {
-    const res = await api.put('/ai/config', payload);
-    aiConfig.value = {
-      provider: res.data.provider,
-      model: res.data.model,
-      maxDaily: res.data.maxDaily,
-      enabled: res.data.enabled,
-      hasAnthropicKey: aiConfig.value.hasAnthropicKey,
-      hasGeminiKey: aiConfig.value.hasGeminiKey,
-    };
-  }
-
-  async function fetchAiUsage() {
-    try {
-      const res = await api.get('/ai/usage');
-      aiUsage.value = res.data;
-    } catch (err) {
-      console.error('Failed to fetch AI usage:', err);
-    }
-  }
-
-  async function generateAiSuggestion() {
-    if (!selectedConvId.value) return;
-    aiSuggestionLoading.value = true;
-    aiSuggestionError.value = '';
-    try {
-      const res = await api.post('/ai/suggest', { conversationId: selectedConvId.value });
-      aiSuggestion.value = res.data.content || '';
-      await fetchAiUsage();
-    } catch (err: any) {
-      aiSuggestionError.value = err.response?.data?.error || 'Không thể tạo gợi ý AI';
-    } finally {
-      aiSuggestionLoading.value = false;
-    }
-  }
-
-  async function generateAiSummary() {
-    if (!selectedConvId.value) return;
-    aiSummaryLoading.value = true;
-    try {
-      const res = await api.post(`/ai/summarize/${selectedConvId.value}`);
-      aiSummary.value = res.data.content || '';
-      await fetchAiUsage();
-    } catch (err) {
-      console.error('Failed to summarize conversation:', err);
-    } finally {
-      aiSummaryLoading.value = false;
-    }
-  }
-
-  async function generateAiSentiment() {
-    if (!selectedConvId.value) return;
-    aiSentimentLoading.value = true;
-    try {
-      const res = await api.post(`/ai/sentiment/${selectedConvId.value}`);
-      aiSentiment.value = res.data;
-      await fetchAiUsage();
-    } catch (err) {
-      console.error('Failed to analyze sentiment:', err);
-    } finally {
-      aiSentimentLoading.value = false;
-    }
-  }
-
   async function selectConversation(convId: string) {
     selectedConvId.value = convId;
-    clearAiState();
     // Nếu conv không có trong list (filter loại ra HOẶC vừa tạo mới qua
     // ensure-conversation từ dialog) → refresh list để MessageThread render được.
     // selectedConv = computed find trong list — list rỗng = blank UI.
@@ -749,9 +637,6 @@ export function useChat() {
     // (gọi POST /conversations/:id/touch-profile, cooldown 5min server-side). KHÔNG
     // duplicate ở đây để tránh spam SDK + 404 lên endpoint /contacts/:id/sync-zalo-profile
     // (legacy, đã bỏ).
-    // AI summary + sentiment KHÔNG auto-fire mỗi lần đổi conv — user bấm nút refresh khi cần.
-    // Trước đây 2 LLM call awaited mỗi switch = 2-10s + tốn quota.
-    void fetchAiUsage();
   }
 
   async function sendMessage(content: string, replyMessageId?: string | null, styles?: Array<{ st: string; start: number; len: number }>, mentions?: Array<{ uid: string; pos: number; len: number }>) {
@@ -1272,28 +1157,12 @@ export function useChat() {
     searchQuery,
     accountFilter,
     extraFilters,
-    aiSuggestion,
-    aiSuggestionLoading,
-    aiSuggestionError,
-    aiSummary,
-    aiSummaryLoading,
-    aiSentiment,
-    aiSentimentLoading,
-    aiUsage,
-    aiConfig,
     fetchConversations,
-    fetchAiConfig,
-    saveAiConfig,
-    fetchAiUsage,
     fetchMessages,
     selectConversation,
     patchContactProfile,
     sendMessage,
     sendMessageTo,
-    generateAiSuggestion,
-    generateAiSummary,
-    generateAiSentiment,
-    clearAiState,
     initSocket,
     destroySocket,
     getSocket: () => socket,

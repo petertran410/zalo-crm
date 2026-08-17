@@ -53,20 +53,6 @@
       </v-card-text>
     </v-card>
 
-    <v-card class="mb-4">
-      <v-card-title class="text-body-1 d-flex align-center">
-        AI Assistant
-        <v-spacer />
-        <v-btn color="primary" variant="outlined" @click="showAiConfig = true">Cấu hình AI</v-btn>
-      </v-card-title>
-      <v-card-text>
-        <div class="text-body-2">Provider: <strong>{{ aiConfig.provider }}</strong></div>
-        <div class="text-body-2">Model: <strong>{{ aiConfig.model }}</strong></div>
-        <div class="text-body-2">Quota/ngày: <strong>{{ aiConfig.maxDaily }}</strong></div>
-        <div class="text-body-2">Trạng thái: <strong>{{ aiConfig.enabled ? 'Bật' : 'Tắt' }}</strong></div>
-      </v-card-text>
-    </v-card>
-
     <!-- API Docs -->
     <v-card>
       <v-card-title class="text-body-1">API Documentation</v-card-title>
@@ -94,19 +80,12 @@ Webhook events:
       {{ snack.text }}
     </v-snackbar>
 
-    <AiConfigDialog
-      v-model="showAiConfig"
-      :loading="aiSaving"
-      :config="aiConfig"
-      @save="saveAiConfig"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { api } from '@/api';
-import AiConfigDialog from '@/components/ai/ai-config-dialog.vue';
 
 const apiKey = ref('');
 const generatingKey = ref(false);
@@ -115,9 +94,6 @@ const webhookSecret = ref('');
 const showWebhookSecret = ref(false);
 const saving = ref(false);
 const testing = ref(false);
-const showAiConfig = ref(false);
-const aiSaving = ref(false);
-const aiConfig = ref({ provider: 'anthropic', model: 'claude-sonnet-4-6', maxDaily: 500, enabled: true });
 
 const snack = ref({ show: false, text: '', color: 'success' });
 
@@ -142,20 +118,6 @@ async function loadWebhook() {
   } catch {
     webhookUrl.value = '';
     webhookSecret.value = '';
-  }
-}
-
-async function loadAiConfig() {
-  try {
-    const res = await api.get('/ai/config');
-    aiConfig.value = {
-      provider: res.data.provider,
-      model: res.data.model,
-      maxDaily: res.data.maxDaily,
-      enabled: res.data.enabled,
-    };
-  } catch {
-    aiConfig.value = { provider: 'anthropic', model: 'claude-sonnet-4-6', maxDaily: 500, enabled: true };
   }
 }
 
@@ -205,26 +167,7 @@ async function testWebhook() {
   }
 }
 
-async function saveAiConfig(value: { provider: string; model: string; maxDaily: number; enabled: boolean }) {
-  aiSaving.value = true;
-  try {
-    const res = await api.put('/ai/config', value);
-    aiConfig.value = {
-      provider: res.data.provider,
-      model: res.data.model,
-      maxDaily: res.data.maxDaily,
-      enabled: res.data.enabled,
-    };
-    showAiConfig.value = false;
-    showSnack('Đã lưu cấu hình AI');
-  } catch {
-    showSnack('Lưu cấu hình AI thất bại', 'error');
-  } finally {
-    aiSaving.value = false;
-  }
-}
-
 onMounted(async () => {
-  await Promise.all([loadApiKey(), loadWebhook(), loadAiConfig()]);
+  await Promise.all([loadApiKey(), loadWebhook()]);
 });
 </script>

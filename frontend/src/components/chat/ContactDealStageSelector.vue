@@ -188,7 +188,7 @@ async function select(newId: string | null) {
 }
 
 function goToSettings() {
-  window.location.assign('/settings/statuses');
+  window.location.assign('/settings/crm/statuses');
 }
 
 onMounted(() => {

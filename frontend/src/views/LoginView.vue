@@ -90,7 +90,7 @@ const brandSlogan = ref('');
 const brandCopyright = ref(`© ${new Date().getFullYear()} Hi-CRM`);
 const emailPlaceholder = ref(DEFAULT_PLACEHOLDER);
 
-// Phase Onboarding v1 — sau khi force change password thành công, redirect về /login?password-changed=1
+// Sau khi đổi mật khẩu thành công, redirect về /login?password-changed=1
 const passwordChangedNotice = ref(route.query['password-changed'] === '1');
 
 onMounted(() => {

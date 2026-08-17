@@ -12,7 +12,7 @@
             variant="flat"
             class="ml-3 font-weight-bold text-white"
           >
-            <v-icon left size="14" class="mr-1">{{ healthIcon }}</v-icon>
+            <v-icon start size="14" class="mr-1">{{ healthIcon }}</v-icon>
             {{ healthText }}
           </v-chip>
         </div>
@@ -28,7 +28,7 @@
           :loading="loadingStats"
           @click="fetchStats"
         >
-          <v-icon left size="18" class="mr-1">mdi-refresh</v-icon> Làm mới
+          <v-icon start size="18" class="mr-1">mdi-refresh</v-icon> Làm mới
         </v-btn>
         <v-btn
           color="primary"
@@ -37,7 +37,7 @@
           elevation="2"
           @click="handleTriggerSync"
         >
-          <v-icon left size="18" class="mr-1">mdi-cloud-sync</v-icon> Kích hoạt đồng bộ POS
+          <v-icon start size="18" class="mr-1">mdi-cloud-sync</v-icon> Kích hoạt đồng bộ POS
         </v-btn>
       </div>
     </header>
@@ -212,7 +212,7 @@
                 variant="tonal"
                 class="font-weight-bold"
               >
-                <v-icon left size="12" class="mr-1">{{ statusChipIcon(item.status) }}</v-icon>
+                <v-icon start size="12" class="mr-1">{{ statusChipIcon(item.status) }}</v-icon>
                 {{ item.status }}
               </v-chip>
             </td>
@@ -308,7 +308,7 @@
             :loading="retryingId === selectedLog.id"
             @click="handleRetryWebhook(selectedLog.id)"
           >
-            <v-icon left size="16" class="mr-1">mdi-refresh</v-icon> Retry Webhook này
+            <v-icon start size="16" class="mr-1">mdi-refresh</v-icon> Retry Webhook này
           </v-btn>
           <v-btn variant="outlined" @click="showDetailModal = false">Đóng</v-btn>
         </v-card-actions>
@@ -518,7 +518,7 @@ async function handleRetryWebhook(id: string) {
     if (res.data?.success) {
       toast.success('Thực thi lại Webhook thành công!');
     } else {
-      toast.warn(res.data?.error || 'Thực thi lại Webhook chưa thành công');
+      toast.warning(res.data?.error || 'Thực thi lại Webhook chưa thành công');
     }
     await Promise.all([fetchStats(), fetchLogs()]);
     if (selectedLog.value && selectedLog.value.id === id) {

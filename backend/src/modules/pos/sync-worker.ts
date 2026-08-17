@@ -5,6 +5,7 @@ import { getIo } from '../../shared/event-buffer.js';
 import {
   batchUpsertCustomers,
   batchUpsertProducts,
+  getCustomerSyncSince,
   syncPosCustomersFromMcp,
   syncPosProductsFromMcp,
   syncPosOrdersFromMcp,
@@ -13,6 +14,13 @@ import {
 } from '../../shared/mcp/pos-sync-service.js';
 import { notifyAdminsOfIncidentAsync } from '../system-notifications/system-notify-service.js';
 import { linkPosCustomersToContacts } from '../../workers/pos-customer-linker.js';
+import {
+  getHisweetiePublicApiClient,
+  isPublicApiSyncEnabled,
+  isRetryableNetworkError,
+  PublicApiUnreachableError,
+} from '../integrations/hisweetie-public-api-client.js';
+import { withPosSyncLock, SyncCancelledError } from './pos-sync-lock.js';
 
 function emitSyncUpdate(orgId: string, data: {
   jobId: string;
@@ -31,19 +39,55 @@ function emitSyncUpdate(orgId: string, data: {
   }
 }
 
-export async function runBackgroundSync(orgId: string, jobId: string): Promise<void> {
-  logger.info(`[sync-worker] Starting background sync job ${jobId} for org ${orgId}`);
-  const client = getPosMcpClient();
+/**
+ * Đổi lỗi kỹ thuật thành câu người dùng đọc hiểu được.
+ * `lastError` hiện thẳng trên panel đồng bộ ở header, mà "TypeError: fetch
+ * failed" thì người vận hành không biết phải làm gì tiếp.
+ */
+function toUserFacingError(err: any): string {
+  const raw = err?.message || String(err);
+  if (err instanceof PublicApiUnreachableError || isRetryableNetworkError(err)) {
+    return 'Không kết nối được máy chủ POS. Kiểm tra POS có đang chạy không, rồi bấm Chạy lại.';
+  }
+  if (raw.includes('rate_limit_exceeded') || raw.includes('429')) {
+    return 'POS tạm khóa do vượt giới hạn truy cập. Chờ vài phút rồi bấm Chạy lại.';
+  }
+  if (raw.includes('Hisweetie Public API 401') || raw.includes('Hisweetie Public API 403')) {
+    return 'Thông tin kết nối POS không hợp lệ. Kiểm tra lại client id/secret trong cấu hình.';
+  }
+  if (raw.includes('chưa cấu hình')) {
+    return 'Chưa cấu hình kết nối POS. Liên hệ quản trị viên để thiết lập.';
+  }
+  return raw;
+}
 
-  // Retrieve current job
-  const job = await prisma.syncJob.findUnique({
-    where: { id: jobId }
-  });
-
-  if (!job) {
+/**
+ * @param forceFull true (mặc định) = quét toàn bộ, dùng cho thao tác bấm tay.
+ *                  false = đồng bộ tăng dần, dùng cho tác vụ nền định kỳ.
+ */
+export async function runBackgroundSync(
+  orgId: string,
+  jobId: string,
+  forceFull = true,
+): Promise<void> {
+  const jobPreview = await prisma.syncJob.findUnique({ where: { id: jobId }, select: { entity: true } });
+  if (!jobPreview) {
     logger.error(`[sync-worker] SyncJob ${jobId} not found in database.`);
     return;
   }
+  return withPosSyncLock(orgId, jobPreview.entity, () => runBackgroundSyncUnlocked(orgId, jobId, forceFull));
+}
+
+async function runBackgroundSyncUnlocked(
+  orgId: string,
+  jobId: string,
+  forceFull: boolean,
+): Promise<void> {
+  logger.info(`[sync-worker] Starting background sync job ${jobId} for org ${orgId}`);
+  const client = isPublicApiSyncEnabled() ? null : getPosMcpClient();
+
+  const job = await prisma.syncJob.findUnique({ where: { id: jobId } });
+  if (!job) return;
 
   // Update status to Running
   await prisma.syncJob.update({
@@ -56,13 +100,37 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
 
   const entity = job.entity;
 
+  // Truyền xuống các vòng phân trang dài để dừng ngay khi người dùng bấm hủy.
+  const shouldCancel = async (): Promise<boolean> => {
+    const cur = await prisma.syncJob.findUnique({
+      where: { id: jobId },
+      select: { status: true },
+    });
+    return !cur || cur.status === 'Cancelled';
+  };
+
+  // Báo ngay Pending → Running. Thiếu bước này thì giao diện kẹt ở
+  // "Đang khởi tạo tiến trình" và không bao giờ vẽ thanh tiến trình,
+  // dù backend đã chạy và emit tiến độ đều đặn.
+  emitSyncUpdate(orgId, {
+    jobId,
+    entity,
+    processed: job.processed ?? 0,
+    total: job.total ?? 0,
+    status: 'Running',
+  });
+
   try {
     if (entity === 'Customer') {
       // 1. Fetch total count from POS
       let total = 0;
       try {
-        const totalsRes = await client.customers.totals({ isActive: true });
-        total = Number(totalsRes?.totals ?? totalsRes?.total ?? totalsRes?.count ?? totalsRes?.data ?? 0);
+        // Public API trả tổng số ở `total` của response phân trang; MCP dùng
+        // customers.totals. Lấy 1 bản ghi là đủ để biết tổng, không tốn hạn mức.
+        const totalsRes: any = isPublicApiSyncEnabled()
+          ? await getHisweetiePublicApiClient().listCustomers({ pageSize: 1 })
+          : await client!.customers.totals({ isActive: true });
+        total = Number(totalsRes?.total ?? totalsRes?.totals ?? totalsRes?.count ?? totalsRes?.data ?? 0);
         logger.info(`[sync-worker] POS Customers total: ${total}`);
       } catch (err: any) {
         logger.warn(`[sync-worker] Failed to fetch customer totals: ${err.message || err}`);
@@ -78,35 +146,78 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       // 2. Fetch page by page
       let currentItem = 0;
 
-      // Kiểm tra có job trước đó bị lỗi/hủy để tiếp tục (resume) không
-      const lastJob = await prisma.syncJob.findFirst({
-        where: {
-          orgId,
-          entity: 'Customer',
-          id: { not: jobId }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
+      // Job chạy lại được seed sẵn `processed` của job hỏng trước đó → tiếp tục
+      // từ đúng chỗ dừng. Tách khỏi `forceFull` vì cờ đó còn bật cả delta sync;
+      // chạy lại phải giữ full scan, chỉ bỏ qua phần đã lấy xong.
+      if (job.processed > 0) {
+        currentItem = job.processed;
+        logger.info(
+          `[sync-worker] Job ${jobId} chạy lại: tiếp tục từ bản ghi ${currentItem}`,
+        );
+      } else if (!forceFull) {
+        // Chỉ resume khi KHÔNG phải bấm tay. Bấm tay mà resume theo offset của job
+        // hỏng trước đó sẽ bỏ qua toàn bộ phần đầu danh sách một cách âm thầm.
+        const lastJob = await prisma.syncJob.findFirst({
+          where: {
+            orgId,
+            entity: 'Customer',
+            id: { not: jobId }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
 
-      if (lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
-        currentItem = lastJob.processed;
-        logger.info(`[sync-worker] Resuming background customer sync from offset ${currentItem} (previous job: ${lastJob.id}, status: ${lastJob.status})`);
+        if (lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
+          currentItem = lastJob.processed;
+          logger.info(`[sync-worker] Resuming background customer sync from offset ${currentItem} (previous job: ${lastJob.id}, status: ${lastJob.status})`);
+        }
+      }
+
+      // Bấm tay từ dashboard luôn quét TOÀN BỘ. Delta chỉ dùng cho sync ngầm
+      // (sau create/update KH, cron) — nếu bấm tay cũng delta thì UI hiện "0 bản ghi"
+      // và người dùng tưởng không chạy, dù hệ thống đang hoạt động đúng.
+      const customerSince =
+        !forceFull && isPublicApiSyncEnabled()
+          ? await getCustomerSyncSince(orgId)
+          : null;
+
+      if (customerSince) {
+        // Delta: bắt đầu lại từ đầu danh sách đã lọc, không resume offset full-scan.
+        currentItem = 0;
+        logger.info(`[sync-worker] Customer delta since ${customerSince.toISOString()}`);
+      } else {
+        logger.info(`[sync-worker] Customer FULL scan (target ≈ ${total})`);
       }
 
       const pageSize = 100;
       let processed = currentItem;
       let hasMore = true;
+      let cancelled = false;
+      // Khi delta, total trên UI phải là số bản ghi delta, không phải tổng 50k của POS.
+      let displayTotal = customerSince ? -1 : total;
 
       while (hasMore) {
         // Double check if job was cancelled or deleted
         const currentJob = await prisma.syncJob.findUnique({ where: { id: jobId } });
         if (!currentJob || currentJob.status === 'Cancelled') {
           logger.info(`[sync-worker] Job ${jobId} was stopped or deleted.`);
+          cancelled = true;
           break;
         }
 
-        const res = await client.customers.list({ currentItem, pageSize, isActive: true });
+        const res = isPublicApiSyncEnabled()
+          ? await getHisweetiePublicApiClient().listCustomers({
+              currentItem,
+              pageSize,
+              includeInactive: true,
+              ...(customerSince ? { lastModifiedFrom: customerSince.toISOString() } : {}),
+            })
+          : await client!.customers.list({ currentItem, pageSize, isActive: true });
         const customers = (res as any).data || [];
+
+        // Public API trả total của kết quả đã lọc — dùng để UI biết tiến độ delta.
+        if (customerSince && typeof (res as any).total === 'number') {
+          displayTotal = Number((res as any).total);
+        }
 
         if (customers.length === 0) {
           hasMore = false;
@@ -125,24 +236,45 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
           data: {
             processed,
             currentPage,
+            total: displayTotal > 0 ? displayTotal : processed,
           }
         });
 
-        emitSyncUpdate(orgId, { jobId, entity, processed, total: total > 0 ? total : processed, status: 'Running' });
-        logger.info(`[sync-worker] Synced ${customers.length} customers. Total processed: ${processed}/${total}`);
+        emitSyncUpdate(orgId, {
+          jobId,
+          entity,
+          processed,
+          total: displayTotal > 0 ? displayTotal : processed,
+          status: 'Running',
+        });
+        logger.info(
+          `[sync-worker] Synced ${customers.length} customers. `
+          + `Total processed: ${processed}/${displayTotal > 0 ? displayTotal : '?'}`,
+        );
 
         if (customers.length < pageSize) {
           hasMore = false;
         } else {
           currentItem += pageSize;
           if (currentItem > 50000) {
-            logger.warn(`[sync-worker] Đã chạm giới hạn tối đa 50,000 khách hàng từ POS MCP Server. Dừng đồng bộ để tránh lỗi offset.`);
+            logger.warn(`[sync-worker] Đã chạm giới hạn tối đa 50,000 khách hàng. Dừng để tránh lỗi offset.`);
             hasMore = false;
-          } else {
-            // Small pause to prevent rate limiting
-            await new Promise((resolve) => setTimeout(resolve, 200));
           }
+          // Không sleep thêm ở đây: HisweetiePublicApiClient đã giãn nhịp 800ms/request.
         }
+      }
+
+      // Hủy giữa chừng: giữ nguyên trạng thái Cancelled, không ghi đè Completed.
+      if (cancelled) {
+        emitSyncUpdate(orgId, {
+          jobId,
+          entity,
+          processed,
+          total: displayTotal > 0 ? displayTotal : processed,
+          status: 'Cancelled',
+        });
+        logger.info(`[sync-worker] Job ${jobId} (Customer) cancelled at ${processed} records.`);
+        return;
       }
 
       // Complete
@@ -151,45 +283,75 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
         data: {
           status: 'Completed',
           endTime: new Date(),
-          total: processed, // set final count
+          // processed = số bản ghi đã đọc từ POS; total = mốc hiển thị trên UI.
+          processed,
+          total: customerSince ? processed : (total > 0 ? total : processed),
         }
       });
-      emitSyncUpdate(orgId, { jobId, entity, processed, total: processed, status: 'Completed' });
-      logger.info(`[sync-worker] Job ${jobId} (Customer) completed successfully. Total: ${processed}`);
+      emitSyncUpdate(orgId, {
+        jobId,
+        entity,
+        processed,
+        total: customerSince ? processed : (total > 0 ? total : processed),
+        status: 'Completed',
+      });
+      if (processed === 0 && customerSince) {
+        logger.info(
+          `[sync-worker] Job ${jobId} (Customer) completed — không có khách thay đổi `
+          + `kể từ ${customerSince.toISOString()} (delta).`,
+        );
+      } else {
+        logger.info(`[sync-worker] Job ${jobId} (Customer) completed successfully. Total: ${processed}`);
+      }
 
     } else if (entity === 'Product') {
       let page = 1;
       let processed = 0;
 
-      // Kiểm tra có job sản phẩm trước đó bị lỗi/hủy để tiếp tục (resume) không
-      const lastJob = await prisma.syncJob.findFirst({
-        where: {
-          orgId,
-          entity: 'Product',
-          id: { not: jobId }
-        },
-        orderBy: { createdAt: 'desc' }
-      });
+      // Job chạy lại được seed sẵn `processed` của job hỏng trước đó → tiếp tục
+      // từ đúng chỗ dừng. Tách khỏi `forceFull` vì cờ đó còn bật cả delta sync;
+      // chạy lại phải giữ full scan, chỉ bỏ qua phần đã lấy xong.
+      if (job.processed > 0) {
+        page = job.currentPage || 1;
+        processed = job.processed;
+        logger.info(
+          `[sync-worker] Job ${jobId} chạy lại: tiếp tục từ trang ${page}, bản ghi ${processed}`,
+        );
+      } else if (!forceFull) {
+        // Kiểm tra có job sản phẩm trước đó bị lỗi/hủy để tiếp tục (resume) không
+        const lastJob = await prisma.syncJob.findFirst({
+          where: {
+            orgId,
+            entity: 'Product',
+            id: { not: jobId }
+          },
+          orderBy: { createdAt: 'desc' }
+        });
 
-      if (lastJob && lastJob.status !== 'Completed' && lastJob.currentPage > 0) {
-        page = lastJob.currentPage;
-        processed = lastJob.processed;
-        logger.info(`[sync-worker] Resuming background product sync from page ${page}, processed: ${processed} (previous job: ${lastJob.id}, status: ${lastJob.status})`);
+        if (lastJob && lastJob.status !== 'Completed' && lastJob.currentPage > 0) {
+          page = lastJob.currentPage;
+          processed = lastJob.processed;
+          logger.info(`[sync-worker] Resuming background product sync from page ${page}, processed: ${processed} (previous job: ${lastJob.id}, status: ${lastJob.status})`);
+        }
       }
 
       emitSyncUpdate(orgId, { jobId, entity, processed, total: processed, status: 'Running' });
 
       const limit = 100;
       let hasMore = true;
+      let productCancelled = false;
 
       while (hasMore) {
         const currentJob = await prisma.syncJob.findUnique({ where: { id: jobId } });
         if (!currentJob || currentJob.status === 'Cancelled') {
           logger.info(`[sync-worker] Job ${jobId} was stopped or deleted.`);
+          productCancelled = true;
           break;
         }
 
-        const res = await client.products.list({ page, limit });
+        const res = isPublicApiSyncEnabled()
+          ? await getHisweetiePublicApiClient().listProducts({ page, limit })
+          : await client!.products.list({ page, limit });
         const products = (res as any).data || [];
 
         if (products.length === 0) {
@@ -221,6 +383,12 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
         }
       }
 
+      if (productCancelled) {
+        emitSyncUpdate(orgId, { jobId, entity, processed, total: processed, status: 'Cancelled' });
+        logger.info(`[sync-worker] Job ${jobId} (Product) cancelled at ${processed} records.`);
+        return;
+      }
+
       // Complete
       await prisma.syncJob.update({
         where: { id: jobId },
@@ -234,7 +402,7 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       logger.info(`[sync-worker] Job ${jobId} (Product) completed successfully. Total: ${processed}`);
     } else if (entity === 'Order') {
       emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
-      await syncPosOrdersFromMcp(orgId);
+      await syncPosOrdersFromMcp(orgId, shouldCancel);
       await linkPosCustomersToContacts(orgId);
       await prisma.syncJob.update({
         where: { id: jobId },
@@ -243,7 +411,7 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       emitSyncUpdate(orgId, { jobId, entity, processed: 100, total: 100, status: 'Completed' });
     } else if (entity === 'Invoice') {
       emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
-      await syncPosInvoicesFromMcp(orgId);
+      await syncPosInvoicesFromMcp(orgId, shouldCancel);
       await linkPosCustomersToContacts(orgId);
       await prisma.syncJob.update({
         where: { id: jobId },
@@ -261,15 +429,15 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
     } else if (entity === 'All') {
       emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: 5, status: 'Running' });
       logger.info(`[sync-worker] Starting ALL sync pipeline: Customer -> Product -> BranchInventory -> Order -> Invoice`);
-      await syncPosCustomersFromMcp(orgId);
+      await syncPosCustomersFromMcp(orgId, { since: await getCustomerSyncSince(orgId), shouldCancel });
       emitSyncUpdate(orgId, { jobId, entity, processed: 1, total: 5, status: 'Running' });
-      await syncPosProductsFromMcp(orgId);
+      await syncPosProductsFromMcp(orgId, shouldCancel);
       emitSyncUpdate(orgId, { jobId, entity, processed: 2, total: 5, status: 'Running' });
       await syncPosBranchInventoryFromMcp(orgId);
       emitSyncUpdate(orgId, { jobId, entity, processed: 3, total: 5, status: 'Running' });
-      await syncPosOrdersFromMcp(orgId);
+      await syncPosOrdersFromMcp(orgId, shouldCancel);
       emitSyncUpdate(orgId, { jobId, entity, processed: 4, total: 5, status: 'Running' });
-      await syncPosInvoicesFromMcp(orgId);
+      await syncPosInvoicesFromMcp(orgId, shouldCancel);
       // Link POS customers → contacts một lần duy nhất sau khi toàn bộ data đã sync
       await linkPosCustomersToContacts(orgId);
       await prisma.syncJob.update({
@@ -281,7 +449,34 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       throw new Error(`Unsupported sync entity: ${entity}`);
     }
   } catch (err: any) {
+    // Người dùng bấm hủy không phải sự cố — không báo động, không tăng errorCount.
+    if (err instanceof SyncCancelledError) {
+      const cur = await prisma.syncJob.findUnique({
+        where: { id: jobId },
+        select: { processed: true, total: true },
+      });
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: {
+          status: 'Cancelled',
+          endTime: new Date(),
+          lastError: 'Người dùng hủy thủ công',
+        },
+      });
+      emitSyncUpdate(orgId, {
+        jobId,
+        entity,
+        processed: cur?.processed ?? 0,
+        total: cur?.total ?? 0,
+        status: 'Cancelled',
+        lastError: 'Người dùng hủy thủ công',
+      });
+      logger.info(`[sync-worker] SyncJob ${jobId} cancelled by user.`);
+      return;
+    }
+
     logger.error(`[sync-worker] SyncJob ${jobId} failed:`, err);
+    const userError = toUserFacingError(err);
     
     // Save failure status
     await prisma.syncJob.update({
@@ -289,7 +484,7 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       data: {
         status: 'Failed',
         endTime: new Date(),
-        lastError: err.message || String(err),
+        lastError: userError,
         errorCount: { increment: 1 },
       },
     });
@@ -313,7 +508,7 @@ export async function runBackgroundSync(orgId: string, jobId: string): Promise<v
       processed: finalJob?.processed ?? 0,
       total: finalJob?.total ?? 0,
       status: 'Failed',
-      lastError: err.message || String(err)
+      lastError: userError,
     });
   }
 }

@@ -36,9 +36,6 @@ vi.mock('../src/shared/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/modules/activity/activity-logger.js', () => ({ logActivity: vi.fn() }));
-vi.mock('../src/modules/scoring/aggregate-contact.js', () => ({
-  updateContactAggregate: updateContactAggregateMock,
-}));
 
 const { submitNote } = await import('../src/modules/lead-pool/lead-pool-service.js');
 

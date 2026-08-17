@@ -43,10 +43,3 @@ export const managerMenu: MenuItemConfig[] = [
     matchPrefix: '/pos',
   },
 ];
-
-/** Dropdown Báo cáo cho Manager — giống Admin nhưng không có Phân tích nâng cao. */
-export const managerReportsDropdown: MenuItemConfig[] = [
-  { key: 'rpt-overview',   title: 'Tổng quan điều hành',   icon: 'mdi-view-dashboard-outline', to: '/reports/tong-quan' },
-  { key: 'rpt-sales',      title: 'Hiệu suất Sale & Team', icon: 'mdi-account-tie-outline',    to: '/reports/sale' },
-  { key: 'rpt-engagement', title: 'Engagement KH',         icon: 'mdi-fire',                   to: '/reports/engagement' },
-];

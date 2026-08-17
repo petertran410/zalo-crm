@@ -7,14 +7,17 @@
          Đăng xuất ở mọi cỡ dưới ~1600px, mà body overflow-x:hidden nên KHÔNG cuộn
          tới được. Bỏ wordmark thu lại 73px là vừa khít 1440. -->
     <header class="smax-topnav">
-      <!-- Brand — logo lấy theo hồ sơ tổ chức (đồng bộ /login, /setup-password).
-           Wordmark đã bỏ; tên tổ chức chuyển sang thuộc tính title. -->
-      <RouterLink to="/" class="hs-brand" :title="`${brandName} CRM`">
-        <span class="hs-bbox"><img :src="brandLogo" :alt="brandName" @error="onLogoError" /></span>
-      </RouterLink>
+      <!-- Brand + workspace identity. Smax separates these two layers: logo then
+           current workspace. The dropdown affordance is intentionally visual only
+           until multi-workspace switching is enabled. -->
+      <div class="workspace-identity" :title="brandName">
+        <span class="workspace-avatar">{{ brandInitial }}</span>
+        <span class="workspace-name">{{ brandName }}</span>
+        <ChevronDown class="workspace-caret" :size="16" :stroke-width="2" />
+      </div>
 
       <!-- Primary nav tabs, chỉ ở chế độ thanh ngang -->
-      <nav v-if="navMode === 'bar'" class="nav-tabs">
+      <nav v-if="navMode === 'bar'" class="nav-tabs" aria-label="Điều hướng chính">
         <RouterLink
           v-for="tab in visiblePrimaryTabs"
           :key="tab.path"
@@ -22,58 +25,42 @@
           class="nav-tab"
           :class="{ active: isActive(tab) }"
         >
-          <v-icon :icon="tab.icon" size="16" class="ic-svg" />{{ tab.label }}
+          <component :is="tab.icon" class="ic-svg" :size="18" :stroke-width="1.9" /><span class="nav-tab-text">{{ tab.label }}</span>
           <span
             v-if="tab.path === '/appointments' && todayCount > 0"
             class="nav-badge"
             :title="`${todayCount} lịch hẹn còn mở hôm nay`"
           >{{ todayCount }}</span>
         </RouterLink>
-
-
-        <!-- Báo cáo dropdown — gộp Phân tích + Báo cáo (anh chốt 2026-05-28).
-             RBAC: chỉ hiện cho ai có engagement_score (Sale Senior trở lên).
-             Đang tắt, xem SHOW_REPORTS_NAV. -->
-        <NavReportsMenu
-          v-if="SHOW_REPORTS_NAV && authStore.canAccess('engagement_score')"
-          v-model="reportsMenu"
-          mode="bar"
-        />
         <NavSettingsMenu v-model="settingsMenu" mode="bar" />
       </nav>
 
       <!-- Flexible spacer pushes everything after it to the right edge. -->
       <div class="topnav-spacer" />
 
-      <!-- Global Sync Widget -->
-      <SyncHeaderWidget />
-
-      <!-- Global search trigger -->
-      <GlobalSearch class="topnav-search" />
-
-      <!-- Right icon buttons -->
-      <!-- 2026-06-13 (anh chốt): nút này trỏ về trang quản lý nick Zalo (trước trỏ /groups). -->
-      <RouterLink to="/settings/channels/zalo" class="icon-btn" title="Quản lý nick Zalo">
-        <v-icon size="18">mdi-cellphone-link</v-icon>
-      </RouterLink>
-
-      <NotificationBell class="icon-btn-wrap" />
-
-      <v-menu v-model="userMenu" :close-on-content-click="true">
-        <template #activator="{ props: act }">
-          <button class="user-avatar" v-bind="act" :title="authStore.user?.fullName || 'Tài khoản'">
-            <Avatar :src="authStore.user?.avatarUrl" :name="authStore.user?.fullName || 'U'" :size="32" :platform="null" />
-          </button>
-        </template>
-        <v-list density="compact" min-width="200">
-          <v-list-item :title="authStore.user?.fullName || ''" :subtitle="authStore.user?.email || ''" />
-          <v-divider />
-          <!-- 2026-06-13 (anh chốt): Hồ sơ trỏ về trang gom "Tài khoản của tôi". Bỏ nút Theme tối. -->
-          <v-list-item to="/settings/personal/profile" title="Hồ sơ" prepend-icon="mdi-account-circle-outline" />
-          <v-divider />
-          <v-list-item @click="logout" title="Đăng xuất" prepend-icon="mdi-logout" />
-        </v-list>
-      </v-menu>
+      <div class="topnav-actions">
+        <SyncHeaderWidget />
+        <GlobalSearch class="topnav-search" />
+        <!-- 2026-06-13: trỏ tới trang quản lý nick Zalo. -->
+        <RouterLink to="/settings/channels/zalo" class="icon-btn" title="Quản lý nick Zalo" aria-label="Quản lý nick Zalo">
+          <Smartphone :size="19" :stroke-width="1.9" />
+        </RouterLink>
+        <NotificationBell />
+        <v-menu v-model="userMenu" :close-on-content-click="true">
+          <template #activator="{ props: act }">
+            <button class="user-avatar" v-bind="act" :title="authStore.user?.fullName || 'Tài khoản'" aria-label="Mở menu tài khoản">
+              <Avatar :src="authStore.user?.avatarUrl" :name="authStore.user?.fullName || 'U'" :size="32" :platform="null" />
+            </button>
+          </template>
+          <v-list density="compact" min-width="200">
+            <v-list-item :title="authStore.user?.fullName || ''" :subtitle="authStore.user?.email || ''" />
+            <v-divider />
+            <v-list-item to="/settings/personal/profile" title="Hồ sơ" prepend-icon="mdi-account-circle-outline" />
+            <v-divider />
+            <v-list-item @click="logout" title="Đăng xuất" prepend-icon="mdi-logout" />
+          </v-list>
+        </v-menu>
+      </div>
     </header>
 
     <!-- Banner cố định cho sale chưa setup liên hệ nội bộ -->
@@ -102,7 +89,7 @@
             :class="{ 'rail-item--active': isActive(tab) }"
             :title="tab.label"
           >
-            <v-icon :icon="tab.icon" size="21" class="ic-svg" />
+            <component :is="tab.icon" :size="21" :stroke-width="1.9" class="ic-svg" />
             <span class="rail-label">{{ tab.short ?? tab.label }}</span>
             <span
               v-if="tab.path === '/appointments' && todayCount > 0"
@@ -113,12 +100,6 @@
         </div>
 
         <div class="rail-foot">
-          <!-- Đang tắt, xem SHOW_REPORTS_NAV. -->
-          <NavReportsMenu
-            v-if="SHOW_REPORTS_NAV && authStore.canAccess('engagement_score')"
-            v-model="reportsMenu"
-            mode="rail"
-          />
           <NavSettingsMenu v-model="settingsMenu" mode="rail" />
         </div>
       </nav>
@@ -149,7 +130,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, type Component } from 'vue';
 import { useTheme } from 'vuetify';
 import { useRoute, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
@@ -166,8 +147,23 @@ import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBui
 import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 import { fetchPublicBranding } from '@/api/public-branding';
 import { usePosNotification } from '@/composables/use-pos-notification';
-import NavReportsMenu from '@/components/nav/NavReportsMenu.vue';
 import NavSettingsMenu from '@/components/nav/NavSettingsMenu.vue';
+/* Navigation icons are Lucide SVG, not the MDI icon font.
+   The MDI font renders each glyph inside its own solid em-box, which on a dark
+   header reads as a white tile behind every icon. Stroked SVG has a transparent
+   background and a consistent 1.9 stroke, matching the reference shell. */
+import {
+  LayoutDashboard,
+  Share2,
+  MessageSquareText,
+  Users,
+  CalendarCheck,
+  FolderClosed,
+  Store,
+  Megaphone,
+  ChevronDown,
+  Smartphone,
+} from 'lucide-vue-next';
 import '@/assets/nav-shell.css';
 
 // Multi-draft order queue store
@@ -183,11 +179,9 @@ const router = useRouter();
 
 // Dropdown Vuetify ở z-index 2000, kẹt mở là phủ lên nav và nuốt hết click. Vì vậy giữ
 // bằng v-model rồi ép đóng sau mỗi điều hướng, kể cả điều hướng bị huỷ hay chặn quyền.
-const reportsMenu = ref(false);
 const settingsMenu = ref(false);
 const userMenu = ref(false);
 function closeAllNavMenus() {
-  reportsMenu.value = false;
   settingsMenu.value = false;
   userMenu.value = false;
 }
@@ -252,12 +246,8 @@ function dismissInternalContactBanner() {
 }
 
 // Brand lockup trên menu: logo và tên tổ chức, đồng bộ với /login.
-const DEFAULT_LOGO = '/brand/hs-monogram.png';
-const brandLogo = ref(DEFAULT_LOGO);
 const brandName = ref('Hi-CRM');
-function onLogoError() {
-  if (brandLogo.value !== DEFAULT_LOGO) brandLogo.value = DEFAULT_LOGO;
-}
+const brandInitial = computed(() => brandName.value.trim().charAt(0).toUpperCase() || 'H');
 
 onMounted(() => {
   // 2026-06-13 (anh chốt): app LUÔN theme sáng 'hsLight', bỏ chọn theme tối. Ép cứng +
@@ -277,7 +267,6 @@ onMounted(() => {
   fetchPublicBranding()
     .then((b) => {
       if (!b) return;
-      brandLogo.value = b.logoUrl || DEFAULT_LOGO;
       brandName.value = b.name || 'Hi-CRM';
     })
     .catch(() => {});
@@ -306,15 +295,12 @@ function syncNavMode() {
 // độ chỉ kiểm được bằng cách tải lại ở từng bề rộng.
 
 
-// Hai module này chưa có kế hoạch dùng nên chỉ tắt lối vào, route vẫn giữ nguyên và gõ
-// thẳng URL vẫn vào được. Bật lại chỉ cần đổi cờ tương ứng về true.
-const SHOW_REPORTS_NAV = false;
 const SHOW_MARKETING_NAV = false;
 
 interface NavTab {
   path: string;
   label: string;
-  icon: string;
+  icon: Component;
   /** Nhãn rút gọn cho rail dọc vì ô chỉ rộng 62px. Không có thì dùng label. */
   short?: string;
   matchPrefix?: string;
@@ -329,19 +315,19 @@ interface NavTab {
 //     "Báo cáo" tab riêng (gộp dropdown), Automation legacy dropdown (Marketing thay).
 // Icons MDI line stroke-2 (mdi-*-outline) thay emoji để nhất quán + đổi màu theo theme.
 const primaryTabs: NavTab[] = [
-  { path: '/',                       label: 'Dashboard',   icon: 'mdi-view-dashboard-outline', matchPrefix: '/$' },
-  { path: '/channels',               label: 'Kênh Kết Nối', short: 'Kênh', icon: 'mdi-transit-connection-variant', resource: 'zalo_account' },
-  { path: '/chat',                   label: 'Tin nhắn',    icon: 'mdi-message-text-outline', resource: 'conversation' },
+  { path: '/',                       label: 'Dashboard',   icon: LayoutDashboard, matchPrefix: '/$' },
+  { path: '/channels',               label: 'Kênh Kết Nối', short: 'Kênh', icon: Share2, resource: 'zalo_account' },
+  { path: '/chat',                   label: 'Tin nhắn',    icon: MessageSquareText, resource: 'conversation' },
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
   // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
-  { path: '/contacts',               label: 'Khách hàng',  icon: 'mdi-account-outline', resource: 'contact' },
+  { path: '/contacts',               label: 'Khách hàng',  icon: Users, resource: 'contact' },
   // Gộp "Lịch hẹn" và "Công việc" thành một mặt Schedule.
   // 2 trang vẫn riêng, nhưng vào từ một chỗ rồi chuyển qua lại bằng tab con
   // (ScheduleTabs). matchPrefix nhận cả /tasks để tab vẫn sáng khi đang ở đó.
-  { path: '/appointments',           label: 'Công việc',   icon: 'mdi-calendar-check-outline', matchAny: ['/appointments', '/tasks'] },
+  { path: '/appointments',           label: 'Công việc',   icon: CalendarCheck, matchAny: ['/appointments', '/tasks'] },
   // Route /media giữ nguyên để deep-link và bookmark cũ không gãy.
-  { path: '/media',                  label: 'Kho lưu trữ', short: 'Kho', icon: 'mdi-folder-multiple-outline', resource: 'media' },
-  { path: '/pos',                    label: 'Cửa hàng POS', short: 'POS', icon: 'mdi-storefront-outline' },
+  { path: '/media',                  label: 'Kho lưu trữ', short: 'Kho', icon: FolderClosed, resource: 'media' },
+  { path: '/pos',                    label: 'Cửa hàng POS', short: 'POS', icon: Store },
 ];
 
 // Tab Marketing gồm nhiều chức năng, hiện nếu user có quyền bất kỳ chức năng nào và trỏ
@@ -374,14 +360,14 @@ const visiblePrimaryTabs = computed(() => {
     tabs.push({
       path: marketingEntry.value,
       label: 'Marketing',
-      icon: 'mdi-bullhorn-outline',
+      icon: Megaphone,
       matchPrefix: '/marketing',
     });
   } else if (!isExtension) {
     tabs.push({
       path: '/marketing/group-scan',
       label: 'Marketing',
-      icon: 'mdi-bullhorn-outline',
+      icon: Megaphone,
       matchPrefix: '/marketing',
     });
   }
@@ -400,7 +386,7 @@ function isActive(tab: NavTab): boolean {
   }
   return route.path === tab.path || route.path.startsWith(tab.path + '/');
 }
-// isSettingsActive / isReportsActive đã chuyển vào NavSettingsMenu / NavReportsMenu
+// isSettingsActive is handled by NavSettingsMenu.
 // Mỗi dropdown tự tính trạng thái sáng của nó.
 
 // Workspace selector đã ẩn ở Variant A 2026-05-28 (single-tenant chưa cần switch).

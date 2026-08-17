@@ -183,7 +183,7 @@ export async function login(identifier: string, password: string): Promise<JwtPa
 }
 
 // Return safe user profile (no password hash). Phase Onboarding v1 — expose
-// passwordChangedAt + onboardingDismissedAt để FE biết hiện force change pw modal
+      // Giữ metadata tương thích cho client và báo cáo trạng thái tài khoản.
 // + checklist hay không.
 export async function getProfile(userId: string) {
   const user = await prisma.user.findUnique({

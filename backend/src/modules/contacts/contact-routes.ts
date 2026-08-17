@@ -1676,12 +1676,6 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
-      // ── Phase 6 polish P2 quick win — VIP tag → +intent signal ───────────
-      if (added.length > 0) {
-        const { onCrmTagsAdded } = await import('../scoring/scoring-hooks.js');
-        onCrmTagsAdded(user.orgId, updated.id, added);
-      }
-
       return updated;
     } catch (err) {
       logger.error('[contacts] Update tags error:', err);

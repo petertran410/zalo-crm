@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { getPosMcpClient } from './mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../../modules/integrations/hisweetie-public-api-client.js';
+import { SyncCancelledError, type ShouldCancel } from '../../modules/pos/pos-sync-lock.js';
 import { prisma } from '../database/prisma-client.js';
 import { logger } from '../utils/logger.js';
 import { getIo } from '../event-buffer.js';
@@ -1014,8 +1016,16 @@ async function batchUpsertBranchInventoryChunk(orgId: string, inventoryLogs: any
 
 // ── Public Sync Functions ────────────────────────────────────────────────────
 
-export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
+export async function syncPosProductsFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  const usePublicApi = isPublicApiSyncEnabled();
+  const client = usePublicApi ? null : getPosMcpClient();
+  const fetchProductPage = (args: { page: number; limit: number }) =>
+    usePublicApi ? publicApi.listProducts(args) : client!.products.list(args);
+
   logger.info(`[pos-sync] Syncing products for org ${orgId}`);
   emitProgress(orgId, { table: 'products', phase: 'fetching', current: 0, total: -1 });
 
@@ -1049,7 +1059,9 @@ export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
     let hasMore = true;
 
     while (hasMore) {
-      const res = await fetchWithRetry(() => client.products.list({ page, limit }));
+      // Kiểm tra trước mỗi trang: hủy thì dừng ngay, không tốn thêm request POS.
+      if (await shouldCancel?.()) throw new SyncCancelledError();
+      const res = await fetchWithRetry(() => fetchProductPage({ page, limit }));
       const products = (res as any).data || [];
 
       if (products.length === 0) {
@@ -1092,24 +1104,65 @@ export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
     emitProgress(orgId, { table: 'products', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất ${totalSynced} sản phẩm` });
     logger.info(`[pos-sync] Sync completed. Total synced products: ${totalSynced}`);
   } catch (err: any) {
+    const isCancel = err instanceof SyncCancelledError;
     await prisma.syncJob.update({
       where: { id: job.id },
       data: {
-        status: 'Failed',
+        status: isCancel ? 'Cancelled' : 'Failed',
         endTime: new Date(),
-        lastError: err.message || String(err)
+        lastError: isCancel ? 'Người dùng hủy thủ công' : (err.message || String(err))
       }
     });
 
-    emitProgress(orgId, { table: 'products', phase: 'error', current: totalSynced, total: 0, message: err.message || 'Lỗi đồng bộ sản phẩm' });
+    emitProgress(orgId, { table: 'products', phase: isCancel ? 'done' : 'error', current: totalSynced, total: isCancel ? totalSynced : 0, message: isCancel ? `Đã hủy ở ${totalSynced} sản phẩm` : (err.message || 'Lỗi đồng bộ sản phẩm') });
     logger.error('[pos-sync] Sync products failed:', err.message || err);
     throw err;
   }
 }
 
-export async function syncPosCustomersFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing customers for org ${orgId}`);
+/**
+ * Mốc để đồng bộ tăng dần: lần đồng bộ khách hàng gần nhất chạy xong khi nào.
+ * Lùi lại 5 phút cho chắc, tránh sót bản ghi đổi ngay lúc job trước kết thúc.
+ * Chưa từng đồng bộ xong lần nào thì trả null nghĩa là phải quét toàn bộ.
+ */
+export async function getCustomerSyncSince(orgId: string): Promise<Date | null> {
+  const lastCompleted = await prisma.syncJob.findFirst({
+    where: { orgId, entity: 'Customer', status: 'Completed' },
+    orderBy: { endTime: 'desc' },
+    select: { endTime: true },
+  });
+  if (!lastCompleted?.endTime) return null;
+  return new Date(lastCompleted.endTime.getTime() - 5 * 60 * 1000);
+}
+
+export async function syncPosCustomersFromMcp(
+  orgId: string,
+  opts: { since?: Date | null; shouldCancel?: ShouldCancel } = {},
+): Promise<void> {
+  const shouldCancel = opts.shouldCancel;
+  // Chỉ dùng Public API khi được bật rõ ràng bằng HISWEETIE_SYNC_TRANSPORT=public_api
+  // và đã có đủ cấu hình; mặc định vẫn giữ nguyên đường MCP đang chạy.
+  const publicApi = getHisweetiePublicApiClient();
+  const usePublicApi = isPublicApiSyncEnabled();
+  const client = usePublicApi ? null : getPosMcpClient();
+
+  // Đồng bộ tăng dần: chỉ lấy khách đổi sau mốc `since`. Kéo lại toàn bộ ~50k
+  // khách cho mỗi lần chạy là nguyên nhân chính chạm trần 5000 request/giờ.
+  // Chỉ Public API hiểu `lastModifiedFrom`, MCP thì bỏ qua tham số này.
+  const since = usePublicApi ? opts.since ?? null : null;
+  const fetchCustomerPage = (args: { currentItem: number; pageSize: number }) =>
+    usePublicApi
+      ? publicApi.listCustomers({
+          ...args,
+          includeInactive: true,
+          ...(since ? { lastModifiedFrom: since.toISOString() } : {}),
+        })
+      : client!.customers.list({ ...args, isActive: true });
+
+  logger.info(
+    `[pos-sync] Syncing customers for org ${orgId} via ${usePublicApi ? 'Public API' : 'MCP'}`
+    + (since ? ` (delta từ ${since.toISOString()})` : ' (toàn bộ)'),
+  );
   emitProgress(orgId, { table: 'customers', phase: 'fetching', current: 0, total: -1 });
 
   const lastJob = await prisma.syncJob.findFirst({
@@ -1120,7 +1173,8 @@ export async function syncPosCustomersFromMcp(orgId: string): Promise<void> {
   let currentItem = 0;
   let totalSynced = 0;
 
-  if (lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
+  // Delta sync bắt đầu lại từ đầu danh sách đã lọc; chỉ resume khi quét toàn bộ.
+  if (!since && lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
     currentItem = lastJob.processed;
     totalSynced = lastJob.processed;
     logger.info(`[pos-sync] Resuming manual customer sync from offset ${currentItem}`);
@@ -1142,7 +1196,8 @@ export async function syncPosCustomersFromMcp(orgId: string): Promise<void> {
     let hasMore = true;
 
     while (hasMore) {
-      const res = await fetchWithRetry(() => client.customers.list({ currentItem, pageSize, isActive: true }));
+      if (await shouldCancel?.()) throw new SyncCancelledError();
+      const res = await fetchWithRetry(() => fetchCustomerPage({ currentItem, pageSize }));
       const customers = (res as any).data || [];
 
       if (customers.length === 0) {
@@ -1190,24 +1245,30 @@ export async function syncPosCustomersFromMcp(orgId: string): Promise<void> {
     emitProgress(orgId, { table: 'customers', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất ${totalSynced} khách hàng` });
     logger.info(`[pos-sync] Sync completed. Total synced customers: ${totalSynced}`);
   } catch (err: any) {
+    const isCancel = err instanceof SyncCancelledError;
     await prisma.syncJob.update({
       where: { id: job.id },
       data: {
-        status: 'Failed',
+        status: isCancel ? 'Cancelled' : 'Failed',
         endTime: new Date(),
-        lastError: err.message || String(err)
+        lastError: isCancel ? 'Người dùng hủy thủ công' : (err.message || String(err))
       }
     });
 
-    emitProgress(orgId, { table: 'customers', phase: 'error', current: totalSynced, total: 0, message: err.message || 'Lỗi đồng bộ khách hàng' });
+    emitProgress(orgId, { table: 'customers', phase: isCancel ? 'done' : 'error', current: totalSynced, total: isCancel ? totalSynced : 0, message: isCancel ? `Đã hủy ở ${totalSynced} khách hàng` : (err.message || 'Lỗi đồng bộ khách hàng') });
     logger.error('[pos-sync] Sync customers failed:', err.message || err);
     throw err;
   }
 }
 
-export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing orders for org ${orgId} (1 năm gần nhất)`);
+export async function syncPosOrdersFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  const usePublicApi = isPublicApiSyncEnabled();
+  const client = usePublicApi ? null : getPosMcpClient();
+  logger.info(`[pos-sync] Syncing orders for org ${orgId} via ${usePublicApi ? 'Public API' : 'MCP'} (1 năm gần nhất)`);
   emitProgress(orgId, { table: 'orders', phase: 'fetching', current: 0, total: -1 });
 
   const oneYearAgo = new Date();
@@ -1219,11 +1280,11 @@ export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
   let hasMore = true;
 
   while (hasMore) {
-    const res = await fetchWithRetry(() => client.orders.list({
-      page,
-      limit,
-      fromDate: oneYearAgo.toISOString(),
-    }));
+    if (await shouldCancel?.()) throw new SyncCancelledError();
+    const res = await fetchWithRetry(() => {
+      const args = { page, limit, fromDate: oneYearAgo.toISOString() };
+      return usePublicApi ? publicApi.listOrders(args) : client!.orders.list(args);
+    });
 
     const orders = (res as any).data || (res as any).orders || [];
     if (orders.length === 0) {
@@ -1249,9 +1310,14 @@ export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
   logger.info(`[pos-sync] Sync orders completed. Total: ${totalSynced}`);
 }
 
-export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing invoices for org ${orgId}`);
+export async function syncPosInvoicesFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  const usePublicApi = isPublicApiSyncEnabled();
+  const client = usePublicApi ? null : getPosMcpClient();
+  logger.info(`[pos-sync] Syncing invoices for org ${orgId} via ${usePublicApi ? 'Public API' : 'MCP'}`);
   emitProgress(orgId, { table: 'invoices', phase: 'fetching', current: 0, total: -1 });
 
   const oneYearAgo = new Date();
@@ -1263,11 +1329,11 @@ export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
   let hasMore = true;
 
   while (hasMore) {
-    const res = await fetchWithRetry(() => client.invoices.list({
-      page,
-      limit,
-      fromDate: oneYearAgo.toISOString(),
-    }));
+    if (await shouldCancel?.()) throw new SyncCancelledError();
+    const res = await fetchWithRetry(() => {
+      const args = { page, limit, fromDate: oneYearAgo.toISOString() };
+      return usePublicApi ? publicApi.listInvoices(args) : client!.invoices.list(args);
+    });
 
     const invoices = (res as any).data || (res as any).invoices || [];
     if (invoices.length === 0) {
@@ -1294,14 +1360,18 @@ export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
 }
 
 export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing branch inventory for org ${orgId}`);
+  const publicApi = getHisweetiePublicApiClient();
+  const usePublicApi = isPublicApiSyncEnabled();
+  const client = usePublicApi ? null : getPosMcpClient();
+  logger.info(`[pos-sync] Syncing branch inventory for org ${orgId} via ${usePublicApi ? 'Public API' : 'MCP'}`);
   emitProgress(orgId, { table: 'branch_inventory', phase: 'fetching', current: 0, total: -1 });
 
   let totalSynced = 0;
 
   try {
-    const branchesRes = await fetchWithRetry(() => client.branches.list());
+    const branchesRes = await fetchWithRetry(() =>
+      usePublicApi ? publicApi.listBranches({ pageSize: 100 }) : client!.branches.list(),
+    );
     const branches = (branchesRes as any).data || (branchesRes as any).branches || [];
 
     if (branches.length === 0) {
@@ -1312,7 +1382,12 @@ export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void
       const branchId = Number(branch.id);
       const branchName = branch.name || `Chi nhánh ${branchId}`;
 
-      const res = await fetchWithRetry(() => client.products.branchInventory(branchId));
+      // Public API phơi tồn kho ở resource `inventories`, lọc theo branchIds.
+      const res = await fetchWithRetry(() =>
+        usePublicApi
+          ? publicApi.listInventories({ branchIds: String(branchId), pageSize: 100 })
+          : client!.products.branchInventory(branchId),
+      );
       const inventoryItems = (res as any).data || (res as any).inventory || (res as any).items || [];
 
       if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
@@ -1337,7 +1412,10 @@ export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void
     let hasMore = true;
 
     while (hasMore) {
-      const res = await fetchWithRetry(() => client.products.list({ page, limit }));
+      const res = await fetchWithRetry(() => {
+        const args = { page, limit };
+        return usePublicApi ? publicApi.listProducts(args) : client!.products.list(args);
+      });
       const products = (res as any).data || [];
       if (products.length === 0) { hasMore = false; break; }
 

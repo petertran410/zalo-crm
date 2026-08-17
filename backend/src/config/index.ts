@@ -80,6 +80,13 @@ export const config = {
   posClientId: envValue('HISWEETIE_POS_CLIENT_ID') || '',
   posClientSecret: envValue('HISWEETIE_POS_CLIENT_SECRET') || '',
 
+  /* --- Hisweetie POS Public API REST --- */
+  hisweetiePublicApiUrl: (envValue('HISWEETIE_PUBLIC_API_URL') || '').replace(/\/+$/, ''),
+  hisweetiePublicApiClientId: envValue('HISWEETIE_PUBLIC_API_CLIENT_ID') || '',
+  hisweetiePublicApiClientSecret: envValue('HISWEETIE_PUBLIC_API_CLIENT_SECRET') || '',
+  hisweetiePublicApiMinIntervalMs: Math.max(720, parseInt(envValue('HISWEETIE_PUBLIC_API_MIN_INTERVAL_MS') || '800', 10) || 800),
+  hisweetieSyncTransport: (envValue('HISWEETIE_SYNC_TRANSPORT') || 'mcp') === 'public_api' ? 'public_api' : 'mcp',
+
   /* Legacy keys (kept for backward compat) */
   anthropicApiKey: envValue('ANTHROPIC_API_KEY') || envValue('ANTHROPIC_AUTH_TOKEN') || '',
   geminiApiKey: envValue('GEMINI_API_KEY') || envValue('GEMINI_AUTH_TOKEN') || '',

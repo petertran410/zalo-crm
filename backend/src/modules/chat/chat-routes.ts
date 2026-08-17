@@ -18,8 +18,6 @@ import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { sendFacebookMessage } from '../channels/facebook/facebook-outbound-service.js';
 import { applyContactAggregateFromMessage, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
-// M53 2026-05-30 — AI Trợ Lý cho Virtual Chat (KH no-Zalo)
-import { triggerVirtualChatAiReply } from '../ai/ai-virtual-chat-service.js';
 // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual conv
 import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
 // Fix 2026-06-03 — M11 optimistic badge cache (Anh báo "Sale CRM · Staff")
@@ -1689,12 +1687,6 @@ export async function chatRoutes(app: FastifyInstance) {
           ownerUserId: conversation.zaloAccount.ownerUserId,
           extra: { _virtual: true },
         });
-
-        // M53 AI Trợ Lý — fire-and-forget, KHÔNG block response
-        void triggerVirtualChatAiReply(
-          { conversationId: id, triggerMessageId: message.id, orgId: user.orgId },
-          io,
-        );
 
         // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual.
         // Sale chăm KH qua chat = counter "Cùng chăm" +1 (idempotent).

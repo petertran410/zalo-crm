@@ -1,5 +1,5 @@
 <template>
-  <div class="dept-page">
+  <div class="dept-page rbac-users">
     <header class="page-hero">
       <div class="hero-left">
         <!-- Bỏ hero-sub 2026-08-06 (gọn giao diện): chỉ là kể lại tiêu đề, mọi
@@ -7,8 +7,7 @@
         <h1 class="hero-title">Nhân viên</h1>
       </div>
       <div class="hero-right" v-if="canCreateUser">
-        <!-- 2026-06-07 anh chốt: DUY NHẤT 1 kênh tạo user qua Zalo (bỏ "Tạo nhanh"). -->
-        <button class="btn-primary" @click="openCreateWithZaloDialog" title="Tạo nhân viên gộp Zalo handshake — tự gửi tin login qua Zalo">
+        <button class="btn-primary" @click="openCreateUserDialog" title="Tạo tài khoản nhân viên bằng email + mật khẩu">
           <span class="btn-icon">＋</span> Thêm nhân viên
         </button>
       </div>
@@ -104,7 +103,7 @@
       <div class="empty-icon">👥</div>
       <h3>Chưa có nhân viên nào</h3>
       <p>Bấm "Thêm nhân viên" ở góc phải trên để tạo tài khoản đầu tiên.</p>
-      <button v-if="canCreateUser" class="btn-primary mt-3" @click="openCreateWithZaloDialog">
+      <button v-if="canCreateUser" class="btn-primary mt-3" @click="openCreateUserDialog">
         <span class="btn-icon">＋</span> Thêm nhân viên đầu tiên
       </button>
     </div>
@@ -299,12 +298,11 @@
       @changed="onChanged"
     />
 
-    <!-- Phase user-create-with-zalo 2026-05-27 — create user gộp Zalo handshake -->
-    <CreateUserWithZaloModal
-      v-model:open="createWithZaloOpen"
+    <CreateUserModal
+      v-model:open="createUserOpen"
       :departments="flatDepts"
       :permission-groups="flatGroups"
-      @created="onCreatedWithZalo"
+      @created="onCreated"
     />
 
   </div>
@@ -323,7 +321,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/api/index';
 import UserEditPanel from '@/components/rbac/UserEditPanel.vue';
-import CreateUserWithZaloModal from '@/components/users/CreateUserWithZaloModal.vue';
+import CreateUserModal from '@/components/users/CreateUserModal.vue';
 
 const store = useRbacStore();
 const authStore = useAuthStore();
@@ -361,8 +359,6 @@ const selectedUser = ref<RbacUser | null>(null);
 const currentUserId = computed(() => authStore.user?.id ?? '');
 const currentUserRole = computed(() => authStore.user?.role ?? 'member');
 
-// Phase user-create-with-zalo 2026-05-27 — DUY NHẤT 1 kênh tạo user (qua Zalo).
-// 2026-06-07 anh chốt: bỏ "Tạo nhanh" (POST /users) — credentials tổng hợp 1 text copy ở bước 3 modal.
 const canCreateUser = computed(() => ['owner', 'admin'].includes(currentUserRole.value));
 
 // 2026-06-09 (anh chốt FN4) — chọn nhiều + gán phòng/nhóm hàng loạt (owner/admin).
@@ -406,9 +402,9 @@ async function applyBulk() {
     bulkBusy.value = false;
   }
 }
-const createWithZaloOpen = ref(false);
-function openCreateWithZaloDialog() { createWithZaloOpen.value = true; }
-async function onCreatedWithZalo() {
+const createUserOpen = ref(false);
+function openCreateUserDialog() { createUserOpen.value = true; }
+async function onCreated() {
   await store.loadUsers();
 }
 
@@ -512,16 +508,15 @@ function avatarColor(name: string): string {
 
 // Phase status 4-state 2026-05-27 — compute 4 trạng thái từ user fields:
 //   - isActive=false → 'disabled' (Vô hiệu)
-//   - isActive=true && passwordChangedAt=null → 'pending' (Chưa kích hoạt)
-//   - isActive=true && passwordChangedAt!=null && lastLoginAt > now-3d → 'active' (Hoạt động)
-//   - else → 'silent' (Im lặng — đã login nhưng > 3 ngày không vào, hoặc chưa login bao giờ dù đã đổi pw)
+//   - isActive=true && lastLoginAt=null → 'pending' (Chưa kích hoạt)
+//   - isActive=true && lastLoginAt > now-3d → 'active' (Hoạt động)
+//   - else → 'silent' (Im lặng — hơn 3 ngày không vào)
 const SILENT_THRESHOLD_MS = 3 * 24 * 3600 * 1000;
 type StatusKey = 'pending' | 'active' | 'silent' | 'disabled';
 
 function computeStatusKey(u: RbacUser): StatusKey {
   if (!u.isActive) return 'disabled';
-  if (!u.passwordChangedAt) return 'pending';
-  if (!u.lastLoginAt) return 'silent';
+  if (!u.lastLoginAt) return 'pending';
   const lastLogin = new Date(u.lastLoginAt).getTime();
   return Date.now() - lastLogin <= SILENT_THRESHOLD_MS ? 'active' : 'silent';
 }
@@ -534,7 +529,7 @@ function statusInfo(u: RbacUser): { icon: string; label: string; chipClass: stri
         icon: '🟡',
         label: 'Chưa kích hoạt',
         chipClass: 'chip-status-pending',
-        tooltip: 'Sale chưa từng đăng nhập + đổi mật khẩu lần đầu',
+        tooltip: 'Nhân viên chưa từng đăng nhập',
       };
     case 'active':
       return {
@@ -550,7 +545,7 @@ function statusInfo(u: RbacUser): { icon: string; label: string; chipClass: stri
         chipClass: 'chip-status-silent',
         tooltip: u.lastLoginAt
           ? `Hơn 3 ngày chưa login. Login cuối: ${new Date(u.lastLoginAt).toLocaleString('vi-VN')}`
-          : 'Đã đổi mật khẩu lần đầu nhưng chưa từng login lại',
+          : 'Hơn 3 ngày chưa đăng nhập',
       };
     case 'disabled':
       return { icon: '⚪', label: 'Vô hiệu', chipClass: 'chip-status-disabled', tooltip: 'Tài khoản đã bị vô hiệu — không cho đăng nhập' };
@@ -581,12 +576,9 @@ function onboardingChipClass(s: OnboardingSummary): string {
 }
 function onboardingIcon(s: OnboardingSummary): string {
   if (s.percent === 100) return '✅';
-  if (s.changePassword === false) return '🔒'; // ưu tiên cảnh báo chưa đổi pw
   return '🎯';
 }
 const STEP_LABEL_VI: Record<string, string> = {
-  change_password: 'Đổi mật khẩu',
-  connect_nick: 'Kết nối nick Zalo',
   pin: 'Đặt PIN bảo mật (tuỳ chọn)',
 };
 function onboardingTooltip(s: OnboardingSummary): string {
@@ -614,8 +606,8 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .at-toolbar-spacer { flex: 1; }
 .at-count {
   font-size: 12px;
-  color: #41454d;
-  background: #f0f1f3;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-hover);
   padding: 6px 12px;
   border-radius: 9999px;
   font-weight: 500;
@@ -632,8 +624,8 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .status-chip {
   font-size: 12.5px;
   font-weight: 500;
-  color: #41454d;
-  background: #f0f1f3;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-hover);
   border: 1px solid transparent;
   padding: 6px 13px;
   border-radius: 9999px;
@@ -642,50 +634,54 @@ function onboardingTooltip(s: OnboardingSummary): string {
   transition: all 0.12s;
   font-family: inherit;
 }
-.status-chip:hover { background: #e4e6e9; }
-.status-chip.active {
-  background: var(--smax-primary-soft, #e4f1f8);
-  border-color: var(--smax-primary, #1786be);
-  color: var(--smax-primary, #1786be);
+.status-chip:hover { background: var(--app-border-subtle); }
+.rbac-users .status-chip.active {
+  background: var(--app-accent-soft);
+  border-color: var(--app-accent);
+  color: var(--app-accent);
   font-weight: 600;
 }
-.status-chip:focus-visible { outline: 2px solid var(--smax-primary, #1786be); outline-offset: 1px; }
+.rbac-users .status-chip:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* 2026-06-09 — Thao tác hàng loạt */
 .bulk-bar {
   display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-  background: #e4f1f8; border: 1px solid #1786be; border-radius: 10px;
+  background: var(--app-accent-soft); border: 1px solid var(--app-accent); border-radius: 10px;
   padding: 10px 14px; margin-bottom: 12px;
 }
-.bulk-count { font-weight: 600; color: #0e6491; font-size: 13px; }
+.bulk-count { font-weight: 600; color: var(--app-accent-hover); font-size: 13px; }
 .bulk-select {
   font-size: 13px; padding: 6px 10px; border: 1px solid #bae6fd; border-radius: 8px;
-  background: #fff; color: #2b2f36;
+  background: var(--app-surface-panel); color: var(--app-text-primary);
 }
-.bulk-apply {
-  background: #1786be; color: #fff; border: none; font-weight: 600;
+.rbac-users .bulk-apply {
+  background: var(--app-accent); color: var(--app-text-inverse); border: none; font-weight: 600;
   padding: 7px 16px; border-radius: 8px; cursor: pointer; font-size: 13px;
 }
-.bulk-apply:hover:not(:disabled) { background: #0e6491; }
+.bulk-apply:hover:not(:disabled) { background: var(--app-accent-hover); }
 .bulk-apply:disabled { opacity: 0.5; cursor: not-allowed; }
 .bulk-clear {
-  background: none; border: none; color: #0e6491; cursor: pointer;
+  background: none; border: none; color: var(--app-accent-hover); cursor: pointer;
   font-size: 13px; text-decoration: underline; margin-left: auto;
 }
 .th-check, .cell-check { width: 34px; text-align: center; }
 .cell-check input, .th-check input { cursor: pointer; }
-.row-checked td { background: #f0f9ff !important; }
+.row-checked td { background: var(--app-accent-soft) !important; }
 
 /* Airtable table */
-.at-table-wrap {
-  background: white;
-  border: 1px solid #e0e2e6;
-  border-radius: 12px;
-  overflow: hidden;
-  box-shadow: 0 1px 3px rgba(24,29,38,0.04);
+.rbac-users .at-table-wrap {
+  background: var(--app-surface-panel);
+  border: 1px solid var(--app-border-subtle);
+  border-radius: var(--app-radius-lg);
+  /* Bảng có 8 cột. Ở viewport nhỏ không được clip cột cuối; cuộn ngang riêng
+     trong wrapper còn giữ sidebar Settings đứng yên. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  box-shadow: var(--app-shadow-sm);
 }
-.at-table {
+.rbac-users .at-table {
   width: 100%;
+  min-width: 980px;
   border-collapse: collapse;
   font-size: 13px;
   table-layout: auto;
@@ -695,15 +691,15 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .at-table thead th {
   position: sticky;
   top: 0;
-  background: #f8fafc;
+  background: var(--app-surface-sunken);
   padding: 12px 14px;
   text-align: left;
   font-weight: 600;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.6px;
-  color: #41454d;
-  border-bottom: 2px solid #e0e2e6;
+  color: var(--app-text-secondary);
+  border-bottom: 2px solid var(--app-border-subtle);
   white-space: nowrap;
 }
 .th-num { width: 46px; text-align: center !important; }
@@ -719,16 +715,16 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .at-table tbody tr {
   cursor: pointer;
   transition: background 0.1s;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--app-surface-hover);
 }
-.at-table tbody tr:hover { background: #f8fafc; }
+.at-table tbody tr:hover { background: var(--app-surface-sunken); }
 .at-table tbody tr.row-active { background: #fdf3df; }
 .at-table tbody tr.row-active:hover { background: #fceec5; }
 .at-table tbody tr.row-inactive .cell-name-main,
 .at-table tbody tr.row-inactive .cell-email {
-  color: #9297a0;
+  color: var(--app-text-muted);
   text-decoration: line-through;
-  text-decoration-color: #c9ccd1;
+  text-decoration-color: var(--app-border-default);
 }
 .at-table tbody tr:last-child { border-bottom: 0; }
 .at-table tbody td {
@@ -739,7 +735,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 /* Cells */
 .cell-num {
   text-align: center;
-  color: #9297a0;
+  color: var(--app-text-muted);
   font-size: 11px;
   font-weight: 500;
 }
@@ -769,7 +765,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .cell-name-main {
   font-size: 13px;
   font-weight: 500;
-  color: #181d26;
+  color: var(--app-text-primary);
   line-height: 1.2;
   white-space: nowrap;
   overflow: hidden;
@@ -788,7 +784,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .cell-email {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   font-size: 12px;
-  color: #41454d;
+  color: var(--app-text-secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -798,7 +794,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .cell-phone {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
   font-size: 13px;
-  color: #181d26;
+  color: var(--app-text-primary);
   white-space: nowrap;
 }
 .cell-phone code {
@@ -921,7 +917,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .chip-dept { background: #e3ede4; color: #0a2e0e; }
 .chip-leader { background: #fdf3df; color: #7a5818; }
 .chip-deputy { background: #f5e9d4; color: #aa2d00; }
-.chip-member { background: #f0f1f3; color: #41454d; }
+.chip-member { background: var(--app-surface-hover); color: var(--app-text-secondary); }
 .chip-system { background: #fdf3df; color: #7a5818; }
 .chip-custom { background: #e0e9f5; color: #1b61c9; }
 /* Phase Privacy v2 2026-05-23 — Nick liên lạc nội bộ chip */
@@ -931,13 +927,13 @@ function onboardingTooltip(s: OnboardingSummary): string {
 }
 .chip-internal:hover { background: #FDE68A; }
 .chip-active { background: #d8ecda; color: #0a2e0e; }
-.chip-inactive { background: #f0f1f3; color: #9297a0; }
+.chip-inactive { background: var(--app-surface-hover); color: var(--app-text-muted); }
 
 /* Phase status 4-state 2026-05-27 — 4 màu chip cho 4 trạng thái */
 .chip-status-active   { background: #d8ecda; color: #0a2e0e; font-weight: 500; }
-.chip-status-pending  { background: #fff4d6; color: #7a5818; font-weight: 500; }
+.chip-status-pending  { background: var(--app-surface-panel)4d6; color: #7a5818; font-weight: 500; }
 .chip-status-silent   { background: #e8eaef; color: #5a6470; font-weight: 500; }
-.chip-status-disabled { background: #f0f1f3; color: #9297a0; font-weight: 500; }
+.chip-status-disabled { background: var(--app-surface-hover); color: var(--app-text-muted); font-weight: 500; }
 /* Phase Onboarding v1 2026-05-24 — chip % setup */
 .chip-onboarding-done     { background: #ECFDF5; color: #047857; }
 .chip-onboarding-progress { background: #FEF3C7; color: #92400E; }
@@ -946,7 +942,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 .th-onboarding   { white-space: nowrap; }
 
 .at-empty {
-  color: #c9ccd1;
+  color: var(--app-border-default);
   font-size: 12px;
 }
 
@@ -958,14 +954,14 @@ function onboardingTooltip(s: OnboardingSummary): string {
   height: 28px;
   border-radius: 6px;
   cursor: pointer;
-  color: #41454d;
+  color: var(--app-text-secondary);
   font-size: 12px;
   transition: all 0.1s;
 }
 .at-btn-icon:hover {
-  background: #181d26;
+  background: var(--app-text-primary);
   color: white;
-  border-color: #181d26;
+  border-color: var(--app-accent);
 }
 
 /* Phase Onboarding v1 2026-05-24 — Create user dialog + hero button */
