@@ -27,7 +27,7 @@
           rounded="lg"
           @click="triggerSync"
         >
-          <v-icon left size="18" class="mr-1">mdi-sync</v-icon> Đồng bộ từ POS
+          <v-icon start size="18" class="mr-1">mdi-sync</v-icon> Đồng bộ từ POS
         </v-btn>
       </div>
     </header>

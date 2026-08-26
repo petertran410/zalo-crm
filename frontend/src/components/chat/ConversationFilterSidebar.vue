@@ -63,7 +63,7 @@
           :class="{ active: filters.activePresetId.value !== null, open: openPopover === 'preset' }"
           :title="`Bộ lọc đã lưu (${filters.presets.value.length})`"
           aria-label="Bộ lọc đã lưu"
-          @click.stop="togglePopover('preset')"
+          @click.stop="togglePopover('preset', $event)"
         >
           <StarIcon class="ic" :size="18" :stroke-width="1.9" />
           <span class="badge">{{ filters.presets.value.length }}</span>
@@ -78,7 +78,7 @@
           :class="{ active: tagActiveCount > 0, open: openPopover === 'tag' }"
           :title="`${TIPS.tag}${tagActiveCount > 0 ? ` · ${tagActiveCount} đang áp` : ''}`"
           aria-label="Lọc theo tag"
-          @click.stop="togglePopover('tag')"
+          @click.stop="togglePopover('tag', $event)"
         >
           <Tag class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="tagActiveCount > 0" class="badge">{{ tagActiveCount }}</span>
@@ -91,7 +91,7 @@
           :class="{ active: messageActiveCount > 0, open: openPopover === 'message' }"
           :title="`${TIPS.message}${messageActiveCount > 0 ? ` · 1 đang áp` : ''}`"
           aria-label="Lọc theo tin nhắn (user vs bot)"
-          @click.stop="togglePopover('message')"
+          @click.stop="togglePopover('message', $event)"
         >
           <InboxIcon class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="eventCounts.msgBotNoSale > 0" class="badge red">{{ eventCounts.msgBotNoSale }}</span>
@@ -105,7 +105,7 @@
           :class="{ active: scoreActiveCount > 0, open: openPopover === 'score' }"
           :title="`${TIPS.score}${scoreActiveCount > 0 ? ` · ${scoreActiveCount} đang áp` : ''}`"
           aria-label="Lọc theo điểm và trạng thái"
-          @click.stop="togglePopover('score')"
+          @click.stop="togglePopover('score', $event)"
         >
           <Gauge class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="scoreActiveCount > 0" class="badge">{{ scoreActiveCount }}</span>
@@ -118,7 +118,7 @@
           :class="{ active: timeActiveCount > 0, open: openPopover === 'time' }"
           :title="`${TIPS.time}${timeActiveCount > 0 ? ` · ${timeActiveCount} đang áp` : ''}`"
           aria-label="Lọc theo thời gian"
-          @click.stop="togglePopover('time')"
+          @click.stop="togglePopover('time', $event)"
         >
           <Clock class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="timeActiveCount > 0" class="badge">{{ timeActiveCount }}</span>
@@ -130,7 +130,7 @@
           :class="{ active: eventActiveCount > 0, open: openPopover === 'event' }"
           :title="`${TIPS.event}${eventActiveCount > 0 ? ` · ${eventActiveCount} đang áp` : ''}`"
           aria-label="Lọc theo sự kiện"
-          @click.stop="togglePopover('event')"
+          @click.stop="togglePopover('event', $event)"
         >
           <CalendarClock class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="eventActiveCount > 0" class="badge red">{{ eventActiveCount }}</span>
@@ -142,7 +142,7 @@
           :class="{ active: saleActiveCount > 0, open: openPopover === 'sale' }"
           :title="`${TIPS.sale}${saleActiveCount > 0 ? ` · 1 đang áp` : ''}`"
           aria-label="Lọc theo sale phụ trách"
-          @click.stop="togglePopover('sale')"
+          @click.stop="togglePopover('sale', $event)"
         >
           <UserRoundCog class="ic" :size="18" :stroke-width="1.9" />
           <span v-if="saleActiveCount > 0" class="badge">{{ saleActiveCount }}</span>
@@ -879,6 +879,8 @@ const props = defineProps<{
   // 2026-06-11: trạng thái live từng nick để đếm online/offline ở fp-sub.
   accountStatuses?: { id: string; online: boolean }[];
   currentRole?: string;
+  /** Smax desktop inbox uses the compact action rail permanently. */
+  compactRail?: boolean;
 }>();
 
 defineEmits<{
@@ -908,8 +910,9 @@ async function onLockBadgeClick(_wasUnlocked: boolean) {
 }
 
 // ─── Collapse state ──────────────────────────────────────
-const collapsed = ref(localStorage.getItem('filter-sidebar-collapsed') === '1');
+const collapsed = ref(props.compactRail || localStorage.getItem('filter-sidebar-collapsed') === '1');
 function toggleCollapsed() {
+  if (props.compactRail) return;
   collapsed.value = !collapsed.value;
   localStorage.setItem('filter-sidebar-collapsed', collapsed.value ? '1' : '0');
   // Close any open popover when toggling collapse
@@ -919,8 +922,19 @@ function toggleCollapsed() {
 // ─── Collapsed mode popover state ────────────────────────
 type PopoverKey = 'tag' | 'message' | 'score' | 'time' | 'event' | 'sale' | 'preset';
 const openPopover = ref<PopoverKey | null>(null);
-function togglePopover(k: PopoverKey) {
-  openPopover.value = openPopover.value === k ? null : k;
+function togglePopover(k: PopoverKey, event?: MouseEvent) {
+  if (openPopover.value === k) {
+    openPopover.value = null;
+    popoverAnchor.value = null;
+    return;
+  }
+  const btn = (event?.currentTarget as HTMLElement | undefined)
+    ?? (event?.target as HTMLElement | undefined)?.closest?.('.c-icon-btn') as HTMLElement | undefined;
+  if (btn) {
+    const rect = btn.getBoundingClientRect();
+    popoverAnchor.value = { top: rect.top - 6, left: rect.right + 10 };
+  }
+  openPopover.value = k;
 }
 
 // icon = component Lucide (anh chốt 2026-06-08, thay emoji nhãn) — khớp icon strip thu gọn.
@@ -950,25 +964,18 @@ const popoverActiveCount = computed(() => {
   }
 });
 
-// Anchor popover vertically next to the clicked icon
-const ICON_BTN_HEIGHT = 40;
-const ICON_GAP = 4;
-const ICON_STRIP_PADDING_TOP = 8;
-const ICON_DIVIDER_HEIGHT = 9; // 1px line + 4px margin × 2
+// Popover anchor: rail sits inside overflow-hidden panes, so the panel is positioned
+// against the viewport using the clicked button's rect.
+const popoverAnchor = ref<{ top: number; left: number } | null>(null);
+const POPOVER_MAX_HEIGHT = 480;
 const popoverStyle = computed(() => {
-  if (!openPopover.value) return {};
-  const idx = POPOVER_META[openPopover.value].iconIndex;
-  // Strip layout: 1 folder + (preset?) + divider + (tag, score, time, event, sale)
-  const presetVisible = props.filters.presets.value.length > 0;
-  let buttonsBeforeDivider = 1 + (presetVisible ? 1 : 0);
-  let y = ICON_STRIP_PADDING_TOP;
-  // sum buttons before our index
-  for (let i = 0; i < idx; i++) {
-    // each icon contributes height + gap
-    y += ICON_BTN_HEIGHT + ICON_GAP;
-    if (i === buttonsBeforeDivider - 1) y += ICON_DIVIDER_HEIGHT;
-  }
-  return { top: `${y}px` };
+  if (!openPopover.value || !popoverAnchor.value) return {};
+  const maxTop = Math.max(8, window.innerHeight - POPOVER_MAX_HEIGHT - 8);
+  return {
+    position: 'fixed' as const,
+    top: `${Math.min(popoverAnchor.value.top, maxTop)}px`,
+    left: `${popoverAnchor.value.left}px`,
+  };
 });
 
 // Close popover on outside click / ESC
@@ -1498,23 +1505,83 @@ watch(
 </script>
 
 <style scoped>
+/* ════════════════════════════════════════════════════════════════════════════
+   Cột 1 của inbox — bộ lọc + thư mục.
+
+   2026-08-12: cột này từng có bảng màu RIÊNG (tím #5E6AD2, xám #1F2D3D/#E4E5E9,
+   nền kính mờ trắng 45%) không liên quan gì tới phần còn lại của CRM. Ba cột kia
+   dùng xanh Zalo nên chỗ "đang chọn" ở cột 1 lại là tím, còn cột 2/3 là xanh —
+   người dùng thấy hai hệ màu trên cùng một màn.
+   Toàn bộ đã đổi sang token ngữ nghĩa (--app-*). Không đổi cấu trúc, class hay
+   hành vi: chỉ thay giá trị màu/viền/nền.
+   ════════════════════════════════════════════════════════════════════════════ */
 .filter-sidebar {
   width: 100%;
   height: 100%;
-  background: rgba(255, 255, 255, 0.45);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-right: 1px solid rgba(0, 0, 0, 0.05);
+  background: var(--app-surface-panel);
+  border-right: 1px solid var(--app-border-subtle);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  font-family: inherit;
   font-size: 13px;
   line-height: 1.4;
-  color: #1F2D3D;
+  color: var(--app-text-primary);
   letter-spacing: -0.005em;
   -webkit-font-smoothing: antialiased;
 }
+/* Smax desktop rail: use the component's collapsed template as the rail content. */
+.filter-sidebar.smax-filter-rail {
+  width: 76px;
+  min-width: 76px;
+  overflow: hidden;
+  position: relative;
+  z-index: 20;
+}
+.filter-sidebar.smax-filter-rail .c-content {
+  overflow: hidden;
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .ws,
+.filter-sidebar.smax-filter-rail:not(.collapsed) .sb-content {
+  display: none;
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .sb-header {
+  justify-content: center;
+  padding: 12px 0;
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .collapse-btn {
+  transform: rotate(180deg);
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .ws-collapsed-stack,
+.filter-sidebar.smax-filter-rail:not(.collapsed) .c-content {
+  display: flex;
+}
+.filter-sidebar.smax-filter-rail .c-content {
+  padding-top: 4px;
+}
+.filter-sidebar.smax-filter-rail .c-icon-strip {
+  gap: 9px;
+}
+.filter-sidebar.smax-filter-rail .c-icon-btn {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+}
+.filter-sidebar.smax-filter-rail .c-nhan-khach-wrap {
+  margin: 0 0 8px;
+}
+.filter-sidebar.smax-filter-rail.collapsed { width: 76px; }
+.filter-sidebar.smax-filter-rail:not(.collapsed) .c-content {
+  flex: 1;
+  flex-direction: column;
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .c-icon-strip {
+  display: flex;
+}
+.filter-sidebar.smax-filter-rail:not(.collapsed) .c-footer {
+  display: flex;
+}
+
 .filter-sidebar.collapsed { width: 56px; }
 
 .ws-info {
@@ -1530,7 +1597,7 @@ watch(
 .ws-role-static {
   font-size: 11px;
   font-weight: 600;
-  color: #0068FF;
+  color: var(--app-accent);
   background: transparent;
   border: none;
   padding: 0;
@@ -1542,8 +1609,8 @@ watch(
   cursor: pointer;
 }
 .ws-role-select option {
-  background: #fff;
-  color: #1F2D3D;
+  background: var(--app-surface-panel);
+  color: var(--app-text-primary);
   font-size: 12px;
 }
 
@@ -1557,8 +1624,8 @@ watch(
   width: 28px;
   height: 28px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #5E6AD2 0%, #8B5CF6 100%);
-  color: white;
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
   font-size: 12px;
   font-weight: 700;
   display: flex;
@@ -1601,57 +1668,61 @@ watch(
   cursor: pointer;
   position: relative;
   font-size: 18px;
-  transition: all 0.12s;
+  transition: background .12s ease, color .12s ease;
   font-family: inherit;
   flex-shrink: 0;
 }
-.c-icon-btn:hover { background: #F4F4F7; }
+.c-icon-btn:hover { background: var(--app-surface-hover); }
 .c-icon-btn.active {
-  background: var(--smax-primary-soft, #e4f1f8);
-  box-shadow: inset 3px 0 0 var(--smax-primary, #1786be);
+  background: var(--app-accent-soft);
+  box-shadow: inset 3px 0 0 var(--app-accent);
 }
-.c-icon-btn.active .ic { color: var(--smax-primary, #1786be); }
+.c-icon-btn.active .ic { color: var(--app-accent); }
 .c-icon-btn.open {
-  background: var(--smax-primary, #1786be);
-  color: white;
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
 }
-.c-icon-btn.open .ic { color: #fff; }
-.c-icon-btn:focus-visible { outline: 2px solid var(--smax-primary, #1786be); outline-offset: 1px; }
+.c-icon-btn.open .ic { color: var(--app-text-inverse); }
+.c-icon-btn:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 /* Lucide SVG: màu mặc định xám, active/open override ở trên (icon emoji cũ → SVG 2026-06-06). */
-.c-icon-btn .ic { line-height: 1; color: #6b7488; }
+.c-icon-btn .ic { line-height: 1; color: var(--app-text-secondary); }
 .c-icon-btn .badge {
   position: absolute;
   top: 3px;
   right: 3px;
   min-width: 14px;
   height: 14px;
-  background: #5E6AD2;
-  color: white;
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
   font-size: 9px;
   font-weight: 700;
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
   padding: 0 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid #FAFAFC;
+  border: 2px solid var(--app-surface-panel);
 }
-.c-icon-btn .badge.red { background: #EF4444; }
-.c-icon-btn.open .badge { background: white; color: #5E6AD2; border-color: #5E6AD2; }
+.c-icon-btn .badge.red { background: var(--app-danger); }
+.c-icon-btn.open .badge {
+  background: var(--app-surface-panel);
+  color: var(--app-accent);
+  border-color: var(--app-accent);
+}
 .c-icon-btn .dot-only {
   position: absolute;
   top: 6px;
   right: 8px;
   width: 7px;
   height: 7px;
-  background: #5E6AD2;
+  background: var(--app-accent);
   border-radius: 50%;
-  border: 2px solid #FAFAFC;
+  border: 2px solid var(--app-surface-panel);
 }
 .c-divider {
   width: 24px;
   height: 1px;
-  background: #E4E5E9;
+  background: var(--app-border-subtle);
   margin: 4px 0;
   flex-shrink: 0;
 }
@@ -1662,16 +1733,16 @@ watch(
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  background: linear-gradient(180deg, transparent 0%, white 60%);
-  border-top: 1px solid #E4E5E9;
+  background: var(--app-surface-panel);
+  border-top: 1px solid var(--app-border-subtle);
 }
 .c-total-badge {
-  background: #5E6AD2;
-  color: white;
+  background: var(--app-accent);
+  color: var(--app-text-inverse);
   font-size: 10px;
   font-weight: 700;
   padding: 2px 6px;
-  border-radius: 999px;
+  border-radius: var(--app-radius-pill);
   min-width: 18px;
   text-align: center;
 }
@@ -1693,8 +1764,8 @@ watch(
 
 /* Popover */
 .c-popover {
-  position: absolute;
-  left: 56px;
+  position: fixed;
+  left: auto;
   width: 320px;
   background: white;
   border-radius: 10px;
@@ -1735,7 +1806,7 @@ watch(
   color: #1F2D3D;
 }
 .po-title .po-badge {
-  background: #5E6AD2;
+  background: var(--app-accent);
   color: white;
   font-size: 10px;
   font-weight: 700;
@@ -1790,7 +1861,7 @@ watch(
 .po-preset-row.active {
   background: #EEF0FF;
   border-color: rgba(94, 106, 210, 0.3);
-  color: #5E6AD2;
+  color: var(--app-accent);
   font-weight: 600;
 }
 .po-preset-emoji { font-size: 14px; }
@@ -1806,13 +1877,13 @@ watch(
   background: transparent;
   border: 1px dashed #D4D6DB;
   border-radius: 6px;
-  color: #5E6AD2;
+  color: var(--app-accent);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
 }
-.po-create-btn:hover { border-color: #5E6AD2; background: #EEF0FF; }
+.po-create-btn:hover { border-color: var(--app-accent); background: #EEF0FF; }
 
 /* ── Header ── */
 .sb-header {
@@ -1829,7 +1900,7 @@ watch(
   width: 22px;
   height: 22px;
   border-radius: 6px;
-  background: linear-gradient(135deg, #5E6AD2 0%, #8B5CF6 100%);
+  background: linear-gradient(135deg, var(--app-accent) 0%, #8B5CF6 100%);
   color: white;
   font-size: 11px;
   font-weight: 700;
@@ -1854,7 +1925,7 @@ watch(
   font-family: inherit;
 }
 .collapse-btn:hover { background: #F4F4F7; }
-.collapse-btn:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.collapse-btn:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* ── Content stack ── */
 .sb-content {
@@ -1896,8 +1967,8 @@ watch(
   font-family: inherit;
   text-align: left;
 }
-.fp-current:hover { border-color: #5E6AD2; }
-.fp-current:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.fp-current:hover { border-color: var(--app-accent); }
+.fp-current:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 .fp-thumb { width: 26px; height: 26px; position: relative; flex-shrink: 0; }
 .fp-thumb .av {
   position: absolute;
@@ -1920,7 +1991,7 @@ watch(
 .fp-name {
   font-size: 12.5px;
   font-weight: 600;
-  color: #5E6AD2;
+  color: var(--app-accent);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1930,7 +2001,7 @@ watch(
 .fp-sub .nk-on { background: #22C55E; }
 .fp-sub .nk-off { background: #EF4444; }
 .fp-sub .nk-gap { margin: 0 2px; color: #C7CDD4; }
-.fp-arrow { font-size: 13px; color: #5E6AD2; font-weight: 700; }
+.fp-arrow { font-size: 13px; color: var(--app-accent); font-weight: 700; }
 .fp-thumb .single {
   width: 26px;
   height: 26px;
@@ -1946,7 +2017,7 @@ watch(
   background-position: center;
 }
 .fp-thumb .single.all-thumb {
-  background: linear-gradient(135deg, #5E6AD2, #8B5CF6);
+  background: linear-gradient(135deg, var(--app-accent), #8B5CF6);
   font-size: 13px;
 }
 .fp-back {
@@ -1959,13 +2030,13 @@ watch(
   background: transparent;
   border: 1px solid #E4E5E9;
   border-radius: 6px;
-  color: #5E6AD2;
+  color: var(--app-accent);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
 }
-.fp-back:hover { background: #EEF0FF; border-color: #5E6AD2; }
+.fp-back:hover { background: #EEF0FF; border-color: var(--app-accent); }
 
 /* ── Saved preset bar ── */
 .saved-bar {
@@ -2002,10 +2073,10 @@ watch(
   color: #1F2D3D;
   font-family: inherit;
 }
-.saved-chip.active { background: #5E6AD2; color: white; }
+.saved-chip.active { background: var(--app-accent); color: white; }
 .saved-chip:hover:not(.active) { border-color: #D4D6DB; }
-.saved-chip.add { background: transparent; color: #5E6AD2; border: 1px dashed #D4D6DB; }
-.saved-chip:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.saved-chip.add { background: transparent; color: var(--app-accent); border: 1px dashed #D4D6DB; }
+.saved-chip:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* ── Body scroll ── */
 .sb-body { flex: 1; overflow-y: auto; padding: 4px 0; min-height: 0; }
@@ -2031,7 +2102,7 @@ watch(
   text-align: left;
 }
 .section-header:hover { background: #F4F4F7; }
-.section-header:focus-visible { outline: 2px solid #5E6AD2; outline-offset: -2px; }
+.section-header:focus-visible { outline: 2px solid var(--app-accent); outline-offset: -2px; }
 .section-header .left {
   display: flex;
   align-items: center;
@@ -2043,7 +2114,7 @@ watch(
 .section-header .left .emoji { font-size: 14px; }
 .section-header .right { display: flex; align-items: center; gap: 6px; }
 .count-badge {
-  background: #5E6AD2;
+  background: var(--app-accent);
   color: white;
   font-size: 10px;
   font-weight: 700;
@@ -2094,7 +2165,7 @@ watch(
 }
 .tag-search:focus-within {
   background: white;
-  border-color: #5E6AD2;
+  border-color: var(--app-accent);
   box-shadow: 0 0 0 2px rgba(94, 106, 210, 0.12);
 }
 .tag-search .ic { color: #97A0AC; font-size: 11px; flex-shrink: 0; }
@@ -2124,7 +2195,7 @@ watch(
 .sub-selected {
   font-size: 10px;
   font-weight: 600;
-  color: #5E6AD2;
+  color: var(--app-accent);
   text-transform: none;
   letter-spacing: 0;
 }
@@ -2171,8 +2242,8 @@ watch(
   white-space: nowrap;
 }
 .tag-pill:hover { border-color: #D4D6DB; }
-.tag-pill.selected { background: #5E6AD2; border-color: #5E6AD2; color: white; }
-.tag-pill:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.tag-pill.selected { background: var(--app-accent); border-color: var(--app-accent); color: white; }
+.tag-pill:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 .tag-pill .zalo-dot {
   width: 6px;
   height: 6px;
@@ -2195,7 +2266,7 @@ watch(
   font-family: inherit;
   color: #1F2D3D;
 }
-.score-input:focus { outline: none; border-color: #5E6AD2; }
+.score-input:focus { outline: none; border-color: var(--app-accent); }
 .score-track {
   flex: 1;
   height: 4px;
@@ -2223,9 +2294,9 @@ watch(
   color: #6B7785;
   font-weight: 500;
 }
-.score-tier-btn.active { background: #5E6AD2; border-color: #5E6AD2; color: white; }
+.score-tier-btn.active { background: var(--app-accent); border-color: var(--app-accent); color: white; }
 .score-tier-btn:hover:not(.active) { border-color: #D4D6DB; }
-.score-tier-btn:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.score-tier-btn:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* ── Stage chips ── */
 .stage-chips { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 0 2px; }
@@ -2245,9 +2316,9 @@ watch(
 }
 .stage-chip:hover { border-color: #D4D6DB; }
 /* 2026-06-08 — màu border/text lấy từ Status.color qua inline style; selected mặc định khi không có color. */
-.stage-chip.selected { background: var(--smax-primary-soft, #e4f1f8); border-color: var(--smax-primary, #1786be); color: var(--smax-primary, #1786be); }
+.stage-chip.selected { background: var(--smax-primary-soft, #e4f1f8); border-color: var(--app-accent); color: var(--app-accent); }
 .stage-chip .st-dot { width: 7px; height: 7px; border-radius: 999px; flex-shrink: 0; }
-.stage-chip:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.stage-chip:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* ── Radio pills ── */
 .radio-bar { display: flex; gap: 3px; padding: 4px 0; flex-wrap: wrap; }
@@ -2262,9 +2333,9 @@ watch(
   color: #6B7785;
   font-weight: 500;
 }
-.radio-pill.active { background: #5E6AD2; border-color: #5E6AD2; color: white; }
+.radio-pill.active { background: var(--app-accent); border-color: var(--app-accent); color: white; }
 .radio-pill:hover:not(.active) { border-color: #D4D6DB; }
-.radio-pill:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.radio-pill:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 
 /* ── Check row ── */
 .check-row {
@@ -2290,7 +2361,7 @@ watch(
   justify-content: center;
   background: white;
 }
-.check-row.checked .checkbox { background: #5E6AD2; border-color: #5E6AD2; }
+.check-row.checked .checkbox { background: var(--app-accent); border-color: var(--app-accent); }
 .check-row.checked .checkbox::after {
   content: '✓';
   color: white;
@@ -2303,7 +2374,7 @@ watch(
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.check-row.checked .label { color: #5E6AD2; font-weight: 600; }
+.check-row.checked .label { color: var(--app-accent); font-weight: 600; }
 .check-row .count {
   font-size: 10.5px;
   color: #97A0AC;
@@ -2329,7 +2400,7 @@ watch(
 .event-row .left { display: flex; align-items: center; gap: 8px; }
 .event-row .left .icon { font-size: 14px; }
 .event-row .left .lbl { color: #1F2D3D; font-weight: 500; }
-.event-row.checked .left .lbl { color: #5E6AD2; font-weight: 600; }
+.event-row.checked .left .lbl { color: var(--app-accent); font-weight: 600; }
 .event-row .right-count {
   font-size: 11px;
   font-weight: 700;
@@ -2362,7 +2433,7 @@ watch(
   flex-shrink: 0;
   position: relative;
 }
-.sale-row.checked .circle { border-color: #5E6AD2; }
+.sale-row.checked .circle { border-color: var(--app-accent); }
 .sale-row.checked .circle::after {
   content: '';
   position: absolute;
@@ -2371,9 +2442,9 @@ watch(
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #5E6AD2;
+  background: var(--app-accent);
 }
-.sale-row.checked .label { color: #5E6AD2; font-weight: 600; }
+.sale-row.checked .label { color: var(--app-accent); font-weight: 600; }
 
 /* ── Footer ── */
 .sb-footer {
@@ -2398,7 +2469,7 @@ watch(
   gap: 6px;
 }
 .footer-title .badge {
-  background: #5E6AD2;
+  background: var(--app-accent);
   color: white;
   font-size: 10px;
   font-weight: 700;
@@ -2422,10 +2493,10 @@ watch(
   color: #1F2D3D;
   font-family: inherit;
 }
-.f-chip:hover { border-color: #5E6AD2; color: #5E6AD2; }
+.f-chip:hover { border-color: var(--app-accent); color: var(--app-accent); }
 .f-chip .x { font-size: 9px; color: #97A0AC; }
-.f-chip:hover .x { color: #5E6AD2; }
-.f-chip:focus-visible { outline: 2px solid #5E6AD2; outline-offset: 1px; }
+.f-chip:hover .x { color: var(--app-accent); }
+.f-chip:focus-visible { outline: 2px solid var(--app-accent); outline-offset: 1px; }
 .clear-all {
   display: flex;
   align-items: center;
@@ -2435,14 +2506,14 @@ watch(
   padding: 4px;
   background: transparent;
   border: none;
-  color: #5E6AD2;
+  color: var(--app-accent);
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
   border-radius: 4px;
 }
-.clear-all:hover { background: #5E6AD2; color: white; }
+.clear-all:hover { background: var(--app-accent); color: white; }
 
 /* 2026-06-01: "Nhận khách" inline trong sidebar (thay FAB floating bottom-right) */
 .sb-nhan-khach {

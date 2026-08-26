@@ -1,193 +1,266 @@
 <template>
-  <div v-if="authStore.isAdmin" class="sync-widget-container">
+  <div v-if="authStore.isAdmin" ref="menuRoot" class="sync-widget-container">
     <!-- Topnav Trigger Button -->
-    <v-menu v-model="menuOpen" :close-on-content-click="false" location="bottom end" offset="6">
-      <template #activator="{ props }">
-        <button v-bind="props" class="sync-trigger-btn" :class="{ 'is-running': runningJob }">
-          <v-icon :class="{ 'spin-anim': runningJob }" size="16">mdi-sync</v-icon>
-          <span v-if="runningJob" class="btn-text">
-            {{ getEntityName(runningJob.entity) }}
-            <span class="pct">{{ percent }}%</span>
-          </span>
-          <span v-else class="btn-text font-weight-medium">Đồng bộ POS</span>
+    <button
+      ref="activator"
+      type="button"
+      class="sync-trigger-btn"
+      :class="{ 'is-running': runningJob, 'is-open': menuOpen }"
+      :title="runningJob ? `Đang đồng bộ ${getEntityName(runningJob.entity)}${hasKnownTotal ? `: ${percent}%` : ''}` : 'Mở trung tâm đồng bộ POS'"
+      :aria-label="runningJob ? `Đang đồng bộ ${getEntityName(runningJob.entity)}${hasKnownTotal ? `: ${percent}%` : ''}` : 'Mở trung tâm đồng bộ POS'"
+      :aria-expanded="menuOpen"
+      aria-haspopup="dialog"
+      @click.stop="toggleMenu"
+      @keydown.escape="closeMenu"
+    >
+      <RefreshCw :class="{ 'spin-anim': runningJob }" :size="17" :stroke-width="1.9" />
+      <span v-if="runningJob" class="btn-text">
+        {{ getEntityName(runningJob.entity) }}
+        <span v-if="hasKnownTotal" class="pct">{{ percent }}%</span>
+      </span>
+      <span v-else class="btn-text font-weight-medium">Đồng bộ POS</span>
+    </button>
+
+    <!--
+      Không dùng v-menu/VOverlay: overlay Vuetify teleport sang document.body.
+      Khi mở, overlay + scrim/layer che toàn bộ WorkspaceShell phía sau → màn trắng.
+      Pattern giống NavSettingsMenu: panel DOM nội tuyến, position absolute.
+    -->
+    <div
+      v-if="menuOpen"
+      class="sync-center-card"
+      role="dialog"
+      aria-label="Trung tâm đồng bộ POS"
+      @click.stop
+    >
+      <div class="panel-header">
+        <div class="panel-header-left">
+          <CloudSync class="panel-header-icon" :size="20" :stroke-width="1.9" />
+          <span class="panel-title">Trung tâm đồng bộ POS</span>
+        </div>
+        <button
+          type="button"
+          class="panel-icon-btn"
+          :disabled="isFetching"
+          title="Tải lại"
+          aria-label="Tải lại"
+          @click="fetchJobs"
+        >
+          <RefreshCw :class="{ 'spin-anim': isFetching }" :size="16" :stroke-width="1.9" />
         </button>
-      </template>
+      </div>
+      <div class="panel-divider" />
 
-      <!-- Sync Center Dropdown Panel -->
-      <v-card class="sync-center-card" width="400">
-        <div class="panel-header d-flex align-center justify-space-between px-4 py-3">
-          <div class="d-flex align-center gap-2">
-            <v-icon color="primary" size="20">mdi-cloud-sync-outline</v-icon>
-            <span class="panel-title font-weight-bold text-subtitle-1">Trung tâm đồng bộ POS</span>
-          </div>
-          <v-btn icon="mdi-refresh" variant="text" size="small" :loading="isFetching" title="Tải lại" @click="fetchJobs" />
-        </div>
-        <v-divider />
+      <!-- Trigger Sync Actions Bar -->
+      <div class="actions-bar">
+        <button type="button" class="sync-action-btn sync-action-btn--primary" :disabled="hasRunningJob" @click="triggerSync('Customer')">
+          KH
+        </button>
+        <button type="button" class="sync-action-btn sync-action-btn--secondary" :disabled="hasRunningJob" @click="triggerSync('Product')">
+          Sản phẩm
+        </button>
+        <button type="button" class="sync-action-btn sync-action-btn--info" :disabled="hasRunningJob" @click="triggerSync('Order')">
+          Đơn hàng
+        </button>
+        <button type="button" class="sync-action-btn sync-action-btn--warning" :disabled="hasRunningJob" @click="triggerSync('BranchInventory')">
+          Tồn kho
+        </button>
+        <button type="button" class="sync-action-btn sync-action-btn--success" :disabled="hasRunningJob" @click="triggerSync('All')">
+          Tất cả
+        </button>
+      </div>
+      <div class="panel-divider" />
 
-        <!-- Trigger Sync Actions Bar -->
-        <div class="px-3 py-2 bg-grey-lighten-4 d-flex flex-wrap gap-1">
-          <v-btn
-            size="x-small"
-            color="primary"
-            variant="tonal"
-            prepend-icon="mdi-account-sync"
-            :disabled="hasRunningJob"
-            @click="triggerSync('Customer')"
-          >
-            KH
-          </v-btn>
-          <v-btn
-            size="x-small"
-            color="secondary"
-            variant="tonal"
-            prepend-icon="mdi-package-variant-closed"
-            :disabled="hasRunningJob"
-            @click="triggerSync('Product')"
-          >
-            Sản phẩm
-          </v-btn>
-          <v-btn
-            size="x-small"
-            color="info"
-            variant="tonal"
-            prepend-icon="mdi-receipt-text-clock"
-            :disabled="hasRunningJob"
-            @click="triggerSync('Order')"
-          >
-            Đơn hàng
-          </v-btn>
-          <v-btn
-            size="x-small"
-            color="warning"
-            variant="tonal"
-            prepend-icon="mdi-warehouse"
-            :disabled="hasRunningJob"
-            @click="triggerSync('BranchInventory')"
-          >
-            Tồn kho
-          </v-btn>
-          <v-btn
-            size="x-small"
-            color="success"
-            variant="flat"
-            prepend-icon="mdi-sync"
-            :disabled="hasRunningJob"
-            @click="triggerSync('All')"
-          >
-            Tất cả
-          </v-btn>
-        </div>
-        <v-divider />
-
-        <v-card-text class="pa-0 sync-panel-body">
-          <!-- Active Job Progress Section -->
-          <div v-if="runningJob" class="active-job-section px-4 py-3">
-            <div class="d-flex justify-space-between align-center mb-1">
-              <span class="font-weight-bold text-body-2">
-                Đang đồng bộ {{ getEntityName(runningJob.entity) }}
-              </span>
-              <span class="text-caption text-primary font-weight-medium">{{ percent }}%</span>
+      <div class="sync-panel-body">
+        <!-- Active Job Progress Section -->
+        <div v-if="runningJob" class="active-job-section">
+          <div class="active-job-row">
+            <span class="active-job-title">
+              Đang đồng bộ {{ getEntityName(runningJob.entity) }}
+            </span>
+            <div class="active-job-right">
+              <span class="active-job-pct">{{ hasKnownTotal ? `${percent}%` : '…' }}</span>
+              <button
+                type="button"
+                class="stop-btn"
+                :disabled="cancelling"
+                title="Dừng tiến trình đồng bộ"
+                aria-label="Dừng tiến trình đồng bộ"
+                @click="cancelSync(runningJob.id)"
+              >
+                <Square :size="12" :stroke-width="2.4" />
+                <span>{{ cancelling ? 'Đang dừng…' : 'Dừng' }}</span>
+              </button>
             </div>
+          </div>
 
-            <v-progress-linear
-              :model-value="percent"
-              color="primary"
-              height="8"
-              rounded
-              class="mb-2"
+          <!--
+            Chưa biết tổng (delta sync, hoặc trang đầu chưa trả total) thì dùng
+            thanh chạy vô định thay vì để thanh 0% đứng im như bị treo.
+          -->
+          <div
+            class="progress-track"
+            role="progressbar"
+            :aria-valuenow="hasKnownTotal ? percent : undefined"
+            aria-valuemin="0"
+            aria-valuemax="100"
+          >
+            <div
+              v-if="hasKnownTotal"
+              class="progress-fill"
+              :style="{ width: `${percent}%` }"
             />
-
-            <div class="d-flex justify-space-between align-center text-caption text-grey-darken-1">
-              <span>{{ runningJob.processed.toLocaleString() }} / {{ runningJob.total.toLocaleString() }} bản ghi</span>
-              <span v-if="stats.speed > 0">{{ stats.speed }} req/s</span>
-            </div>
-
-            <div v-if="formattedEta" class="eta-badge mt-2 d-flex align-center gap-1 text-caption font-weight-medium">
-              <v-icon size="14" color="warning">mdi-clock-outline</v-icon>
-              <span>Thời gian còn lại: {{ formattedEta }}</span>
-            </div>
+            <div v-else class="progress-fill progress-fill--indeterminate" />
           </div>
 
-          <!-- Pending Job Section -->
-          <div v-else-if="pendingJob" class="pending-job-section px-4 py-3 text-center text-grey-darken-1">
-            <v-progress-circular indeterminate size="20" width="2" class="mr-2" color="primary" />
-            <span class="text-body-2">Đang khởi tạo tiến trình {{ getEntityName(pendingJob.entity) }}...</span>
+          <div class="active-job-meta">
+            <span>
+              {{ runningJob.processed.toLocaleString() }}
+              <template v-if="hasKnownTotal"> / {{ runningJob.total.toLocaleString() }}</template>
+              bản ghi
+            </span>
+            <span v-if="stats.speed > 0">{{ stats.speed }} bản ghi/s</span>
           </div>
 
-          <!-- History Section -->
-          <div class="history-section">
-            <div class="history-header px-4 py-2 text-caption text-grey font-weight-bold">
-              LỊCH SỬ ĐỒNG BỘ GẦN ĐÂY
-            </div>
-            <v-divider />
+          <div v-if="formattedEta" class="eta-badge">
+            <Clock :size="14" :stroke-width="1.9" />
+            <span>Thời gian còn lại: {{ formattedEta }}</span>
+          </div>
+        </div>
 
-            <div v-if="syncHistory.length === 0" class="px-4 py-6 text-center text-grey text-body-2">
-              Chưa có lịch sử đồng bộ nào
-            </div>
+        <!-- Khôi phục sau F5: chưa fetch xong thì chưa biết có job đang chạy hay
+             không. Hiện dòng chờ thay vì để trống rồi nhấp nháy ra thanh tiến trình. -->
+        <div v-else-if="!hasLoadedOnce" class="pending-job-section">
+          <span class="pending-spinner" aria-hidden="true" />
+          <span class="pending-text">Đang tải trạng thái đồng bộ...</span>
+        </div>
 
-            <div v-else class="history-list">
-              <div v-for="job in syncHistory.slice(0, 5)" :key="job.id" class="history-item px-4 py-2">
-                <div class="d-flex justify-space-between align-center">
-                  <div>
-                    <div class="font-weight-medium text-body-2">
-                      {{ getEntityName(job.entity) }}
-                    </div>
-                    <div class="text-caption text-grey">
-                      {{ formatDate(job.startTime) }} • {{ job.processed.toLocaleString() }} bản ghi
-                    </div>
+        <!-- Pending Job Section -->
+        <div v-else-if="pendingJob" class="pending-job-section">
+          <span class="pending-spinner" aria-hidden="true" />
+          <span class="pending-text">Đang khởi tạo tiến trình {{ getEntityName(pendingJob.entity) }}...</span>
+          <button
+            type="button"
+            class="stop-btn"
+            :disabled="cancelling"
+            title="Hủy tiến trình đồng bộ"
+            aria-label="Hủy tiến trình đồng bộ"
+            @click="cancelSync(pendingJob.id)"
+          >
+            <Square :size="12" :stroke-width="2.4" />
+            <span>{{ cancelling ? 'Đang hủy…' : 'Hủy' }}</span>
+          </button>
+        </div>
+
+        <!-- History Section -->
+        <div class="history-section">
+          <div class="history-header">
+            LỊCH SỬ ĐỒNG BỘ GẦN ĐÂY
+          </div>
+          <div class="panel-divider" />
+
+          <div v-if="syncHistory.length === 0" class="history-empty">
+            Chưa có lịch sử đồng bộ nào
+          </div>
+
+          <div v-else class="history-list">
+            <div v-for="job in syncHistory.slice(0, 5)" :key="job.id" class="history-item">
+              <div class="history-item-row">
+                <div>
+                  <div class="history-item-title">
+                    {{ getEntityName(job.entity) }}
                   </div>
-
-                  <!-- Status Dot & Actions -->
-                  <div class="d-flex align-center gap-2">
-                    <span
-                      class="status-dot"
-                      :class="{
-                        'status-completed': job.status === 'Completed',
-                        'status-failed': job.status === 'Failed',
-                        'status-cancelled': job.status === 'Cancelled'
-                      }"
-                    />
-                    <span class="text-caption font-weight-medium text-capitalize text-grey-darken-2">
-                      {{ translateStatus(job.status) }}
-                    </span>
-
-                    <v-btn
-                      v-if="job.status === 'Failed'"
-                      icon="mdi-replay"
-                      variant="text"
-                      density="compact"
-                      size="small"
-                      color="error"
-                      title="Thử lại"
-                      @click="retrySync(job.id)"
-                    />
+                  <div class="history-item-meta">
+                    {{ formatDate(job.startTime) }} • {{ job.processed.toLocaleString() }} bản ghi
                   </div>
                 </div>
 
-                <!-- Error Message Banner -->
-                <div v-if="job.status === 'Failed' && job.lastError" class="error-msg-box mt-1 px-2 py-1 text-caption text-red-darken-3 bg-red-lighten-5 rounded">
-                  Lỗi: {{ job.lastError }}
+                <div class="history-item-status">
+                  <span
+                    class="status-dot"
+                    :class="{
+                      'status-completed': job.status === 'Completed',
+                      'status-failed': job.status === 'Failed',
+                      'status-cancelled': job.status === 'Cancelled'
+                    }"
+                  />
+                  <span class="status-label">
+                    {{ translateStatus(job.status) }}
+                  </span>
+
+                  <button
+                    v-if="['Failed', 'Cancelled'].includes(job.status)"
+                    type="button"
+                    class="panel-icon-btn panel-icon-btn--error"
+                    title="Chạy lại"
+                    aria-label="Chạy lại"
+                    @click="retrySync(job.id)"
+                  >
+                    <RotateCcw :size="15" :stroke-width="1.9" />
+                  </button>
                 </div>
+              </div>
+
+              <div v-if="job.status === 'Failed' && job.lastError" class="error-msg-box">
+                Lỗi: {{ job.lastError }}
               </div>
             </div>
           </div>
-        </v-card-text>
-      </v-card>
-    </v-menu>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
+/**
+ * Trung tâm đồng bộ POS trên header.
+ * Panel DOM nội tuyến (không v-menu/VOverlay) — tránh overlay teleport body
+ * che trắng toàn bộ app khi mở dropdown.
+ */
+import { ref, computed, onMounted, onUnmounted, onBeforeUnmount, watch, nextTick } from 'vue';
+import { RefreshCw, CloudSync, Clock, RotateCcw, Square } from 'lucide-vue-next';
 import { useSync, getJobStats } from '@/composables/useSync';
 import { useAuthStore } from '@/stores/auth';
 
 const menuOpen = ref(false);
+const menuRoot = ref<HTMLElement | null>(null);
+const activator = ref<HTMLButtonElement | null>(null);
 const authStore = useAuthStore();
-const { activeJobs, syncHistory, isFetching, fetchJobs, startSync, retryJob } = useSync();
+const { activeJobs, syncHistory, isFetching, hasLoadedOnce, fetchJobs, startSync, cancelJob, retryJob } = useSync();
+const cancelling = ref(false);
 
 const now = ref(Date.now());
 let tickerInterval: ReturnType<typeof setInterval> | null = null;
+
+function closeMenu() {
+  menuOpen.value = false;
+}
+
+function toggleMenu() {
+  menuOpen.value = !menuOpen.value;
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!menuRoot.value?.contains(event.target as Node)) closeMenu();
+}
+
+function onDocumentKeyDown(event: KeyboardEvent) {
+  if (event.key === 'Escape') {
+    closeMenu();
+    void nextTick(() => activator.value?.focus());
+  }
+}
+
+watch(menuOpen, (isOpen) => {
+  if (isOpen) {
+    document.addEventListener('pointerdown', onDocumentPointerDown);
+    document.addEventListener('keydown', onDocumentKeyDown);
+  } else {
+    document.removeEventListener('pointerdown', onDocumentPointerDown);
+    document.removeEventListener('keydown', onDocumentKeyDown);
+  }
+});
 
 onMounted(() => {
   tickerInterval = setInterval(() => {
@@ -199,6 +272,11 @@ onUnmounted(() => {
   if (tickerInterval) clearInterval(tickerInterval);
 });
 
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+  document.removeEventListener('keydown', onDocumentKeyDown);
+});
+
 const runningJob = computed(() => {
   return activeJobs.value.find(j => j.status === 'Running') || null;
 });
@@ -208,6 +286,11 @@ const pendingJob = computed(() => {
 });
 
 const hasRunningJob = computed(() => !!runningJob.value || !!pendingJob.value);
+
+const hasKnownTotal = computed(() => {
+  const job = runningJob.value;
+  return !!job && job.total > 0 && job.total >= job.processed;
+});
 
 const percent = computed(() => {
   const job = runningJob.value;
@@ -235,6 +318,18 @@ const triggerSync = async (entity: 'Customer' | 'Product' | 'Order' | 'Invoice' 
     await startSync(entity);
   } catch (err: any) {
     console.error('[SyncHeaderWidget] Trigger sync failed:', err);
+  }
+};
+
+const cancelSync = async (jobId: string) => {
+  if (cancelling.value) return;
+  cancelling.value = true;
+  try {
+    await cancelJob(jobId);
+  } catch (err: any) {
+    console.error('[SyncHeaderWidget] Cancel job failed:', err);
+  } finally {
+    cancelling.value = false;
   }
 };
 
@@ -281,37 +376,47 @@ function translateStatus(status: string) {
 
 <style scoped>
 .sync-widget-container {
+  position: relative;
   display: inline-block;
   margin-left: 2px;
 }
 
 .sync-trigger-btn {
+  width: 32px;
   height: 32px;
+  min-width: 32px;
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 0 10px;
-  border-radius: 7px;
+  padding: 0;
+  border-radius: var(--app-radius-md);
   font-size: 13px;
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--shell-ink-2, #a8b0c0);
   background: transparent;
   border: none;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background .15s ease, color .15s ease;
   white-space: nowrap;
 }
-
-.sync-trigger-btn:hover {
+.sync-trigger-btn:hover,
+.sync-trigger-btn.is-open {
   background: rgba(255, 255, 255, 0.08);
-  color: white;
+  color: var(--shell-ink, #f2f4f8);
 }
-
+.sync-trigger-btn:focus-visible { outline: 2px solid var(--nav-accent, var(--app-accent)); outline-offset: 2px; }
+/* Only a running operation may expand into a compact progress label. Idle sync
+   stays icon-only, so it no longer competes with the global nav or search. */
 .sync-trigger-btn.is-running {
-  background: rgba(255, 255, 255, 0.15);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  box-shadow: 0 0 10px rgba(91, 184, 229, 0.3);
+  width: auto;
+  max-width: 150px;
+  padding: 0 9px;
+  background: color-mix(in srgb, var(--nav-accent, var(--app-accent)) 18%, transparent);
+  color: var(--shell-ink, #f2f4f8);
+  border: 1px solid color-mix(in srgb, var(--nav-accent, var(--app-accent)) 45%, transparent);
 }
+.sync-trigger-btn.is-running .btn-text { overflow: hidden; text-overflow: ellipsis; }
+.sync-trigger-btn:not(.is-running) .btn-text { display: none; }
 
 .btn-text {
   display: inline-flex;
@@ -324,17 +429,126 @@ function translateStatus(status: string) {
   /* Fallback đồng bộ bảng màu nav mới (revamp 2026-08-05). Widget này mount ở cả
      DefaultLayout lẫn SalesLayout; SalesLayout tự ghim --nav-accent màu cũ nên
      vỏ Sales không đổi. */
-  color: var(--nav-accent, #635BFF);
+  color: var(--nav-accent, var(--app-accent));
 }
 
+/* Panel nội tuyến — không teleport, không scrim full-screen */
 .sync-center-card {
-  border-radius: 12px !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15) !important;
+  position: absolute;
+  z-index: 2100;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 400px;
+  max-width: min(400px, calc(100vw - 24px));
+  border-radius: 12px;
+  border: 1px solid var(--app-border-subtle, #e2e8f0);
+  background: var(--app-surface-panel, #fff);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   overflow: hidden;
+  color: var(--app-text-primary, #252a36);
 }
 
 .panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
   background: #f8fafc;
+}
+
+.panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.panel-header-icon {
+  flex: 0 0 auto;
+  color: var(--app-accent, #0068ff);
+}
+
+.panel-title {
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.panel-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--app-text-secondary, #64748b);
+  cursor: pointer;
+}
+.panel-icon-btn:hover:not(:disabled) {
+  background: var(--app-surface-hover, #f1f5f9);
+  color: var(--app-text-primary, #252a36);
+}
+.panel-icon-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.panel-icon-btn--error {
+  color: #dc2626;
+}
+
+.panel-divider {
+  height: 1px;
+  background: var(--app-border-subtle, #e2e8f0);
+}
+
+.actions-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px 12px;
+  background: #f1f5f9;
+}
+
+.sync-action-btn {
+  appearance: none;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: opacity .15s ease, filter .15s ease;
+}
+.sync-action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.sync-action-btn--primary {
+  background: color-mix(in srgb, var(--app-accent, #0068ff) 16%, #fff);
+  color: var(--app-accent, #0068ff);
+}
+.sync-action-btn--secondary {
+  background: color-mix(in srgb, #7c3aed 14%, #fff);
+  color: #6d28d9;
+}
+.sync-action-btn--info {
+  background: color-mix(in srgb, #0ea5e9 16%, #fff);
+  color: #0284c7;
+}
+.sync-action-btn--warning {
+  background: color-mix(in srgb, #f59e0b 18%, #fff);
+  color: #b45309;
+}
+.sync-action-btn--success {
+  background: #16a34a;
+  color: #fff;
+}
+.sync-action-btn:not(:disabled):hover {
+  filter: brightness(0.97);
 }
 
 .sync-panel-body {
@@ -343,22 +557,154 @@ function translateStatus(status: string) {
 }
 
 .active-job-section {
+  padding: 12px 16px;
   background: #f0f9ff;
   border-bottom: 1px solid #e0f2fe;
 }
 
+.active-job-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+}
+
+.active-job-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.active-job-pct {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--app-accent, #0068ff);
+}
+
+.active-job-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 9px;
+  border: 1px solid #fecaca;
+  border-radius: 999px;
+  background: #fef2f2;
+  color: #dc2626;
+  font-size: 0.72rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease;
+}
+
+.stop-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.stop-btn:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+}
+
+.pending-text {
+  flex: 1;
+}
+
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--app-accent, #0068ff);
+  transition: width .25s ease;
+}
+
+/* Chưa biết tổng số bản ghi: chạy qua lại để thể hiện "đang chạy". */
+.progress-fill--indeterminate {
+  width: 35%;
+  transition: none;
+  animation: progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress-fill--indeterminate {
+    animation-duration: 2.4s;
+  }
+}
+
+.active-job-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
 .eta-badge {
+  margin-top: 8px;
   background: #fffbeb;
   border: 1px solid #fef3c7;
   color: #b45309;
   padding: 4px 8px;
   border-radius: 6px;
   display: inline-flex;
+  align-items: center;
+  gap: 4px;
   width: 100%;
+  font-size: 0.75rem;
+  font-weight: 600;
+  box-sizing: border-box;
+}
+
+.pending-job-section {
+  padding: 12px 16px;
+  color: #64748b;
+  font-size: 0.875rem;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pending-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #cbd5e1;
+  border-top-color: var(--app-accent, #0068ff);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex: 0 0 auto;
 }
 
 .history-header {
+  padding: 8px 16px;
   background: #f8fafc;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+.history-empty {
+  padding: 24px 16px;
+  text-align: center;
+  color: #94a3b8;
+  font-size: 0.875rem;
 }
 
 .history-list {
@@ -367,6 +713,7 @@ function translateStatus(status: string) {
 }
 
 .history-item {
+  padding: 8px 16px;
   border-bottom: 1px solid #f1f5f9;
   transition: background 0.15s ease;
 }
@@ -379,11 +726,42 @@ function translateStatus(status: string) {
   background: #f8fafc;
 }
 
+.history-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.history-item-title {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+.history-item-meta {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.history-item-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   display: inline-block;
+}
+
+.status-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #475569;
+  text-transform: capitalize;
 }
 
 .status-completed {
@@ -401,7 +779,13 @@ function translateStatus(status: string) {
 }
 
 .error-msg-box {
+  margin-top: 4px;
+  padding: 4px 8px;
   border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 0.75rem;
   word-break: break-all;
 }
 
@@ -414,6 +798,9 @@ function translateStatus(status: string) {
   to { transform: rotate(360deg); }
 }
 
-.gap-1 { gap: 4px; }
-.gap-2 { gap: 8px; }
+/* topnav / actions bar thường overflow:hidden — nới khi panel mở để không cắt dropdown */
+:global(.smax-topnav .topnav-actions:has(.sync-center-card)),
+:global(.smax-topnav:has(.sync-center-card)) {
+  overflow: visible;
+}
 </style>

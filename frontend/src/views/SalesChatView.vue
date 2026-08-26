@@ -93,19 +93,15 @@
       :conversation="selectedConv"
       :messages="messages"
       :loading="loadingMsgs"
-      :sending="sendingMsg"
-      :ai-suggestion="aiSuggestion"
-      :ai-suggestion-loading="aiSuggestionLoading"
-      :ai-suggestion-error="aiSuggestionError"
-      :all-conversations="conversations"
+       :sending="sendingMsg"
+       :all-conversations="conversations"
       :replying-to="replyingTo"
       :editing-message="editingMessage"
       :typing-users="currentTypers"
       :show-contact-panel="showContactPanel"
       class="smax-msg-col"
-      @send="sendMessage"
-      @ask-ai="generateAiSuggestion"
-      @open-media-tab="onOpenMediaTab"
+       @send="sendMessage"
+       @open-media-tab="onOpenMediaTab"
       @toggle-contact-panel="showContactPanel = !showContactPanel"
       @add-reaction="onAddReaction"
       @remove-reaction="onRemoveReaction"
@@ -152,16 +148,10 @@
       :active-zalo-account-id="selectedConv.zaloAccount?.id ?? null"
       :friend-id="selectedConv.friendship?.id ?? null"
       :conversation-id="selectedConv.id ?? null"
-      :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
-      :ai-summary="aiSummary"
-      :ai-summary-loading="aiSummaryLoading"
-      :ai-sentiment="aiSentiment"
-      :ai-sentiment-loading="aiSentimentLoading"
-      :current-role="currentRole"
-      class="smax-info-col"
-      @refresh-ai-summary="generateAiSummary"
-      @refresh-ai-sentiment="generateAiSentiment"
-      @close="showContactPanel = false"
+       :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
+       :current-role="currentRole"
+       class="smax-info-col"
+       @close="showContactPanel = false"
       @saved="fetchConversations()"
       @status-changed="onPanelStatusChanged"
     />
@@ -199,10 +189,7 @@ const router = useRouter();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  aiSuggestion, aiSuggestionLoading, aiSuggestionError,
-  aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
-  fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
-  generateAiSuggestion, generateAiSummary, generateAiSentiment,
+  fetchConversations, fetchMessages, selectConversation, sendMessage,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -729,7 +716,6 @@ onMounted(async () => {
     fetchConversations();
     void fetchPriorityUnread(); // badge đậm tab Ưu tiên — load NGAY lúc mount (không debounce)
     void fetchFollowingPairs(); // theo dõi — Set để cột 2 hiện chuông (anh chốt 2026-06-15)
-    fetchAiConfig();
     initSocket();
     registerSocketListeners(getSocket());
     // Bridge realtime chat state → MiniChatPanel (thay thế inject/provide không hoạt động

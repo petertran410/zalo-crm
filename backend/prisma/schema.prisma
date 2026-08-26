@@ -197,6 +197,7 @@ model Organization {
   posCustomerDebts        PosCustomerDebt[]
   posBranchInventory      PosBranchInventory[]
   posWebhookLogs          PosWebhookLog[]
+  posSaleMappings         PosSaleMapping[]
   syncJobs                SyncJob[]
   workspaceSessions       WorkspaceSession[]
 
@@ -281,6 +282,7 @@ model User {
   updatedAt                    DateTime             @updatedAt @map("updated_at")
 
   org                       Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posSaleMappings           PosSaleMapping[]
   team                      Team?                        @relation(fields: [teamId], references: [id])
   zaloAccounts              ZaloAccount[]
   zaloAccess                ZaloAccountAccess[]
@@ -4346,6 +4348,10 @@ model PosCustomer {
   assignedSaleName String?  @map("assigned_sale_name")
   status           String?
   tags             Json     @default("[]") // mảng string tag của POS
+  // Hồ sơ tổ chức (verify POS thật: type=1 → 100% có organization + taxCode)
+  organization     String?  // tên công ty từ POS `organization`
+  taxCode          String?  @map("tax_code")
+  isOrganization   Boolean? @map("is_organization") // POS `type`: 1 tổ chức, 0 cá nhân
   orgId            String   @map("org_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -4357,6 +4363,26 @@ model PosCustomer {
   @@index([phone])
   @@index([createdAt])
   @@map("pos_customers")
+}
+
+/**
+ * Map mã sale POS ("phuongnt" trong groups) → user CRM.
+ * Người dùng tự map (quyết định 2026-08-24) — hệ thống KHÔNG suy diễn từ tên/email.
+ * Chưa map thì Customer 360 hiển thị nguyên mã POS.
+ */
+model PosSaleMapping {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  posSaleCode String   @map("pos_sale_code")
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, posSaleCode])
+  @@map("pos_sale_mappings")
 }
 
 // Read Model cho Sản phẩm từ POS
@@ -4413,6 +4439,10 @@ model SyncJob {
   retryCount  Int       @default(0) @map("retry_count")
   startTime   DateTime  @default(now()) @map("start_time")
   endTime     DateTime? @map("end_time")
+  // Mốc thời gian do MÁY CHỦ POS trả về (`timestamp` trong response Public API).
+  // Dùng làm `lastModifiedFrom` cho lần đồng bộ tăng dần kế tiếp — PUBLIC-API.md
+  // mục 4 yêu cầu dùng đồng hồ POS, không dùng giờ máy CRM (lệch giờ = sót bản ghi).
+  posTimestamp DateTime? @map("pos_timestamp")
 
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -4578,6 +4608,7 @@ model PosWebhookLog {
   id          String    @id @default(uuid())
   orgId       String    @map("org_id")
   eventType   String    @map("event_type")
+  payloadHash String    @map("payload_hash")
   payload     Json
   status      String    @default("PENDING")
   attempts    Int       @default(0)
@@ -4588,6 +4619,7 @@ model PosWebhookLog {
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
+  @@unique([orgId, payloadHash])
   @@index([orgId, status])
   @@index([status, attempts, createdAt])
   @@index([orgId, eventType])

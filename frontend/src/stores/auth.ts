@@ -15,7 +15,6 @@ interface User {
   // Module Cá nhân 2026-06-13 — avatar ảnh thật (null = chưa có → Avatar.vue fallback chữ cái).
   avatarUrl?: string | null;
   // Phase Onboarding v1 2026-05-24 — track first-run setup state.
-  // passwordChangedAt = null → force change pw (router guard redirect /setup-password)
   passwordChangedAt?: string | null;
   onboardingDismissedAt?: string | null;
   // RBAC enforce 2026-06-08 — grants nhóm quyền của user hiện tại, dùng cho canAccess().

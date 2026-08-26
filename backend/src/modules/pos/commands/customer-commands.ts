@@ -1,11 +1,64 @@
 import { Command, CommandHandler, CommandValidator, ValidationResult } from '../../../shared/commands/command.interface.js';
 import { commandDispatcher } from '../../../shared/commands/command-dispatcher.js';
-import { getPosMcpClient } from '../../../shared/mcp/mcp-client.js';
+import { getHisweetiePublicApiClient } from '../../integrations/hisweetie-public-api-client.js';
 import { prisma } from '../../../shared/database/prisma-client.js';
-import { syncPosCustomersFromMcp } from '../../../shared/mcp/pos-sync-service.js';
+import { getCustomerSyncSince, syncPosCustomersFromMcp } from '../../../shared/mcp/pos-sync-service.js';
+import { withPosSyncLock } from '../pos-sync-lock.js';
 import { logger } from '../../../shared/utils/logger.js';
-import { handleMcpError } from '../../../shared/commands/error-handler.js';
+import { handleMcpError, parsePosPublicApiError } from '../../../shared/commands/error-handler.js';
+import { normalizePhone, phoneVariants } from '../../../shared/utils/phone.js';
 import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * Địa chỉ mặc định khi sale không nhập — POS BẮT BUỘC ≥1 địa chỉ giao hàng
+ * (verify thật 2026-08-25: thiếu addresses → 400 "Phải có ít nhất 1 địa chỉ").
+ * Shape đúng đặc tả PUBLIC-API.md §6, không thêm field lạ (strict validation).
+ */
+function buildAddresses(address?: string) {
+  return [{
+    address: address?.trim() || 'Chưa xác định',
+    newCityCode: '79',
+    newCityName: 'Thành phố Hồ Chí Minh',
+    newWardName: 'Phường Bến Thành',
+    isDefault: true,
+  }];
+}
+
+/**
+ * Tìm khách trùng SĐT. Verify thật 2026-08-25: POS `search` KHÔNG khớp số điện
+ * thoại (tìm "0899339387" → rỗng, tìm tên thì được) dù doc ghi có — nên tra
+ * LOCAL pos_customers trước (đã sync kèm phone), chỉ fallback POS search sau.
+ */
+async function findExistingByPhone(orgId: string, phone: string) {
+  const variants = new Set<string>([phone.trim()]);
+  const norm = normalizePhone(phone);
+  if (norm) variants.add(norm);
+  for (const v of phoneVariants(phone)) {
+    const n = normalizePhone(v);
+    if (n) variants.add(n);
+  }
+
+  const local = await prisma.posCustomer.findFirst({
+    where: { orgId, phone: { in: [...variants] } },
+    orderBy: { updatedAt: 'desc' },
+  });
+  if (local) {
+    return { id: local.posId, code: local.code, name: local.name, phone: local.phone };
+  }
+
+  // Fallback: hỏi POS trực tiếp (search khớp được tên/mã, SĐT thì không đáng tin).
+  try {
+    const res = await getHisweetiePublicApiClient().searchCustomers(phone.trim());
+    const found = (res as any).data || [];
+    if (found.length > 0) {
+      const c = found[0];
+      return { id: Number(c.id), code: c.code || null, name: c.name || '', phone: c.phone || c.contactNumber || null };
+    }
+  } catch (err: any) {
+    logger.warn('[CreateCustomerHandler] POS search fallback failed:', err.message || err);
+  }
+  return null;
+}
 
 export interface CreateCustomerPayload {
   contactId?: string;
@@ -44,19 +97,18 @@ export class CreateCustomerValidator implements CommandValidator<Command<CreateC
 
 export class CreateCustomerHandler implements CommandHandler<Command<CreateCustomerPayload>, any> {
   async handle(command: Command<CreateCustomerPayload>, context: { orgId: string; userId: string }): Promise<any> {
-    const { contactId, name, phone, email, address, branchId } = command.payload;
-    const mcpClient = getPosMcpClient();
+    const { contactId, name, phone, email, address } = command.payload;
+    // Public API thuần (PUBLIC-API.md §6) — MCP đã loại bỏ hoàn toàn khỏi luồng KH.
+    const api = getHisweetiePublicApiClient();
 
     // 1. Kiểm tra xem số điện thoại đã tồn tại trên POS chưa (Tránh trùng lặp)
     try {
       logger.info(`[CreateCustomerHandler] Checking duplicate phone: ${phone} on POS`);
-      const searchRes = await mcpClient.customers.search(phone.trim());
-      const existingCustomers = (searchRes as any).data || [];
-      if (existingCustomers.length > 0) {
+      const existing = await findExistingByPhone(context.orgId, phone);
+      if (existing) {
         // Tìm thấy khách hàng trùng SĐT -> Thực hiện liên kết thay vì tạo mới
-        const existing = existingCustomers[0];
         logger.info(`[CreateCustomerHandler] Found existing customer on POS with ID: ${existing.id}. Linking instead of creating.`);
-        
+
         if (contactId) {
           await prisma.contact.update({
             where: { id: contactId },
@@ -66,9 +118,11 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
             },
           });
         }
-        
-        // Chạy sync ngầm
-        syncPosCustomersFromMcp(context.orgId).catch(err => {
+
+        // Sync ngầm, chạy tăng dần thay vì kéo lại toàn bộ khách hàng.
+        void withPosSyncLock(context.orgId, 'Customer', async () =>
+          syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+        ).catch(err => {
           logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
         });
 
@@ -76,7 +130,7 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
           posCustomerId: existing.id,
           posCustomerCode: existing.code,
           name: existing.name,
-          phone: existing.phone || existing.contactNumber,
+          phone: existing.phone,
           linkedExisting: true,
         };
       }
@@ -84,42 +138,17 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
       logger.warn('[CreateCustomerHandler] Search POS customer check failed:', err.message || err);
     }
 
-    // 2. Tạo mới trên POS
-    const addresses = [
-      {
-        address: address ? address.trim() : 'Chưa xác định',
-        newCityCode: '79',
-        newCityName: 'Thành phố Hồ Chí Minh',
-        newWardCode: '26740',
-        newWardName: 'Phường Bến Thành',
-        isDefault: true,
-      }
-    ];
+    // 2. Tạo mới trên POS — payload đúng đặc tả §6; addresses BẮT BUỘC.
+    const payload = {
+      name: name.trim(),
+      contactNumber: phone.trim(),
+      addresses: buildAddresses(address),
+    };
 
-    let finalBranchId = branchId;
-    if (!finalBranchId) {
-      try {
-        const branchesRes = await mcpClient.branches.list();
-        const branches = (branchesRes as any).data || [];
-        if (branches.length > 0) {
-          finalBranchId = branches[0].id;
-        }
-      } catch (err: any) {
-        logger.warn('[CreateCustomerHandler] Failed to auto-detect branchId fallback:', err.message || err);
-      }
-    }
-
-    const idempotencyKey = uuidv4() as any;
+    const idempotencyKey = uuidv4();
     try {
-      logger.info(`[CreateCustomerHandler] Creating new customer on POS: ${name}`);
-      const res = await mcpClient.customers.create({
-        name: name.trim(),
-        phone: phone.trim(),
-        contactNumber: phone.trim(),
-        email: email ? email.trim() : undefined,
-        branchId: finalBranchId || undefined,
-        addresses,
-      }, idempotencyKey);
+      logger.info(`[CreateCustomerHandler] Creating new customer on POS via Public API: ${name}`);
+      const res = await api.createCustomer(payload, idempotencyKey);
 
       const created = (res as any).data || res;
       const posId = created.id;
@@ -141,7 +170,9 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
       }
 
       // 4. Kích hoạt Background Sync
-      syncPosCustomersFromMcp(context.orgId).catch(err => {
+      void withPosSyncLock(context.orgId, 'Customer', async () =>
+        syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+      ).catch(err => {
         logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
       });
 
@@ -153,6 +184,44 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
         linkedExisting: false,
       };
     } catch (err: any) {
+      // POS tự chặn trùng SĐT bằng 409 Conflict (verify thật 2026-08-25):
+      // 'Số điện thoại "xxx" đã được sử dụng bởi khách hàng "Tên"'.
+      // Local check bỏ lỡ vì sync chỉ lưu KH có phát sinh tài chính → KH mới
+      // chưa bao giờ mua không nằm trong pos_customers. Xử lý: tìm theo tên
+      // trong message (search POS khớp TÊN được) rồi LINK thay vì fail.
+      const { status, detail } = parsePosPublicApiError(err);
+      const dupMatch = status === 409
+        ? detail.match(/đã được sử dụng bởi khách hàng "([^"]+)"/)
+        : null;
+      if (dupMatch) {
+        const dupName = dupMatch[1];
+        try {
+          const res = await getHisweetiePublicApiClient().searchCustomers(dupName, 50);
+          const candidates = ((res as any).data || []) as any[];
+          const phoneDigits = phone.replace(/\D/g, '').slice(-9);
+          const match = candidates.find((c) => String(c.contactNumber || c.phone || '').replace(/\D/g, '').endsWith(phoneDigits))
+            || candidates.find((c) => c.name === dupName);
+          if (match) {
+            logger.info(`[CreateCustomerHandler] POS 409 duplicate → link existing customer ${match.id} (${match.name})`);
+            if (contactId) {
+              await prisma.contact.update({
+                where: { id: contactId },
+                data: { posCustomerId: Number(match.id), posCustomerCode: match.code || null },
+              });
+            }
+            return {
+              posCustomerId: Number(match.id),
+              posCustomerCode: match.code,
+              name: match.name,
+              phone: match.phone || match.contactNumber,
+              linkedExisting: true,
+            };
+          }
+        } catch (linkErr: any) {
+          logger.warn('[CreateCustomerHandler] 409 link-back failed:', linkErr.message || linkErr);
+        }
+        throw new Error(`Số điện thoại ${phone} đã tồn tại trên POS (khách "${dupName}"). Vui lòng liên kết thủ công trong panel khách hàng.`);
+      }
       const mappedMsg = handleMcpError(err);
       throw new Error(mappedMsg);
     }
@@ -199,45 +268,20 @@ export class UpdateCustomerValidator implements CommandValidator<Command<UpdateC
 
 export class UpdateCustomerHandler implements CommandHandler<Command<UpdateCustomerPayload>, any> {
   async handle(command: Command<UpdateCustomerPayload>, context: { orgId: string; userId: string }): Promise<any> {
-    const { posCustomerId, contactId, name, phone, email, address, branchId } = command.payload;
-    const mcpClient = getPosMcpClient();
-    const addresses = [
-      {
-        address: address ? address.trim() : 'Chưa xác định',
-        newCityCode: '79',
-        newCityName: 'Thành phố Hồ Chí Minh',
-        newWardCode: '26740',
-        newWardName: 'Phường Bến Thành',
-        isDefault: true,
-      }
-    ];
+    const { posCustomerId, contactId, name, phone, email, address } = command.payload;
+    // Public API thuần (PUBLIC-API.md §6) — payload chỉ gồm các trường trong đặc tả.
+    const api = getHisweetiePublicApiClient();
+    const payload = {
+      name: name.trim(),
+      contactNumber: phone.trim(),
+      addresses: buildAddresses(address),
+    };
 
-    let finalBranchId = branchId;
-    if (!finalBranchId) {
-      try {
-        const branchesRes = await mcpClient.branches.list();
-        const branches = (branchesRes as any).data || [];
-        if (branches.length > 0) {
-          finalBranchId = branches[0].id;
-        }
-      } catch (err: any) {
-        logger.warn('[UpdateCustomerHandler] Failed to auto-detect branchId fallback:', err.message || err);
-      }
-    }
-
-    const idempotencyKey = uuidv4() as any;
+    const idempotencyKey = uuidv4();
 
     try {
-      logger.info(`[UpdateCustomerHandler] Updating customer ${posCustomerId} on POS`);
-      const res = await mcpClient.customers.update(posCustomerId, {
-        name: name.trim(),
-        phone: phone.trim(),
-        contactNumber: phone.trim(),
-        email: email ? email.trim() : undefined,
-        branchId: finalBranchId || undefined,
-        addresses,
-      }, idempotencyKey);
-
+      logger.info(`[UpdateCustomerHandler] Updating customer ${posCustomerId} on POS via Public API`);
+      const res = await api.updateCustomer(posCustomerId, payload, idempotencyKey);
       const updated = (res as any).data || res;
 
       // Đồng bộ thông tin về CRM Contact nếu liên kết khớp
@@ -251,7 +295,9 @@ export class UpdateCustomerHandler implements CommandHandler<Command<UpdateCusto
       }
 
       // Kích hoạt Background Sync
-      syncPosCustomersFromMcp(context.orgId).catch(err => {
+      void withPosSyncLock(context.orgId, 'Customer', async () =>
+        syncPosCustomersFromMcp(context.orgId, { since: await getCustomerSyncSince(context.orgId) }),
+      ).catch(err => {
         logger.error('[UpdateCustomerHandler] Background sync customers failed:', err);
       });
 

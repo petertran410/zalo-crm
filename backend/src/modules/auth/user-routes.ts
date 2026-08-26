@@ -88,6 +88,7 @@ export async function userRoutes(app: FastifyInstance) {
       // 2026-08-06 — nhận nhóm quyền ngay lúc tạo. Bỏ trống → gán nhóm mặc định
       // theo legacy role bên dưới.
       permissionGroupId,
+      departmentId,
     } = request.body as any;
     if (!fullName || !password) {
       return reply.status(400).send({ error: 'Họ tên và mật khẩu là bắt buộc' });
@@ -146,32 +147,53 @@ export async function userRoutes(app: FastifyInstance) {
       }
     }
 
+    if (departmentId) {
+      const department = await prisma.department.findFirst({
+        where: { id: departmentId, orgId: currentUser.orgId, archivedAt: null },
+        select: { id: true },
+      });
+      if (!department) return reply.status(400).send({ error: 'Phòng ban không tồn tại trong tổ chức' });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        id: randomUUID(),
-        orgId: currentUser.orgId,
-        email: trimmedEmail,
-        phone: normalizedPhone,
-        fullName,
-        passwordHash,
-        role,
-        permissionGroupId: resolvedGroupId,
-        teamId: teamId || null,
-        // Phase Onboarding v1 2026-05-24 — user mới luôn null → force đổi password lần đầu.
-        passwordChangedAt: null,
-        onboardingStepsCompleted: undefined as any,
-        onboardingDismissedAt: null,
-      },
-      select: {
-        id: true,
-        email: true,
-        phone: true,
-        fullName: true,
-        role: true,
-        isActive: true,
-        createdAt: true,
-      },
+    const user = await prisma.$transaction(async (tx) => {
+      const createdUser = await tx.user.create({
+        data: {
+          id: randomUUID(),
+          orgId: currentUser.orgId,
+          email: trimmedEmail,
+          phone: normalizedPhone,
+          fullName,
+          passwordHash,
+          role,
+          permissionGroupId: resolvedGroupId,
+          teamId: teamId || null,
+          // Mật khẩu do tổ chức cấp và quản lý → KHÔNG ép user đổi lần đầu.
+          passwordChangedAt: new Date(),
+          onboardingStepsCompleted: undefined as any,
+          onboardingDismissedAt: null,
+        },
+        select: {
+          id: true,
+          email: true,
+          phone: true,
+          fullName: true,
+          role: true,
+          isActive: true,
+          createdAt: true,
+        },
+      });
+      if (departmentId) {
+        await tx.departmentMember.create({
+          data: {
+            id: randomUUID(),
+            userId: createdUser.id,
+            departmentId,
+            deptRole: 'member',
+          },
+        });
+      }
+      return createdUser;
     });
 
     logger.info(`User created: ${user.email || user.phone} by ${currentUser.email} (onboarding pending)`);
@@ -260,10 +282,7 @@ export async function userRoutes(app: FastifyInstance) {
   });
 
   // PUT /api/v1/users/:id/password — reset password (owner/admin only).
-  // Phase Onboarding v1 2026-05-24 — set passwordChangedAt=null + bump jwtTokenVersion
-  // để sale bị reset password phải:
-  //   1. Login lại với pw mới (JWT cũ bị revoke)
-  //   2. Force đổi password sang pw riêng (admin biết pw vừa reset = security risk)
+  // Mật khẩu mới có hiệu lực trực tiếp; revoke mọi JWT cũ để user đăng nhập lại.
   app.put('/api/v1/users/:id/password', async (request: FastifyRequest, reply: FastifyReply) => {
     const currentUser = request.user!;
     if (!['owner', 'admin'].includes(currentUser.role)) {
@@ -281,13 +300,13 @@ export async function userRoutes(app: FastifyInstance) {
       where: { id, orgId: currentUser.orgId },
       data: {
         passwordHash,
-        passwordChangedAt: null,            // force user phải đổi lại sau khi login
-        jwtTokenVersion: { increment: 1 },  // revoke mọi JWT cũ
+        passwordChangedAt: new Date(),
+        jwtTokenVersion: { increment: 1 },
       },
       select: { id: true, fullName: true },
     });
 
-    logger.info(`User ${id} password reset by ${currentUser.email} (JWT revoked, onboarding force re-flow)`);
+    logger.info(`User ${id} password reset by ${currentUser.email} (JWT revoked)`);
     await writeAudit(currentUser, 'user.reset_password', id, { sentZalo: !!sendZalo });
 
     // 2026-06-09 (anh chốt): gửi mật khẩu mới qua Zalo từ nick hệ thống → user.
@@ -302,8 +321,7 @@ export async function userRoutes(app: FastifyInstance) {
         const content =
           `Quản trị viên vừa đặt lại mật khẩu tài khoản của bạn.\n` +
           `Mật khẩu mới: ${password}\n` +
-          `Đăng nhập: ${loginUrl}\n` +
-          `Vui lòng đổi lại mật khẩu sau khi đăng nhập.`;
+          `Đăng nhập: ${loginUrl}`;
         const result = await sendSystemNotificationToUser({
           orgId: currentUser.orgId,
           targetUserId: id,
@@ -646,9 +664,8 @@ export async function userRoutes(app: FastifyInstance) {
   // ════════════════════════════════════════════════════════════════════════
 
   // ════════════════════════════════════════════════════════════════════════
-  // Phase Onboarding v1 2026-05-24 — 4-step first-run setup endpoints
-  // GET    /me/onboarding             → 4 step status + percent
-  // POST   /me/change-password        → force change pw + revoke JWT
+  // GET    /me/onboarding             → trạng thái PIN bảo mật tuỳ chọn
+  // POST   /me/change-password        → chỉ owner/admin tự đổi mật khẩu
   // POST   /me/onboarding/skip-step   → skip PIN step
   // POST   /me/onboarding/dismiss     → ẩn checklist (collapse mini)
   // POST   /me/onboarding/reopen      → mở lại checklist
@@ -667,8 +684,18 @@ export async function userRoutes(app: FastifyInstance) {
     }
   });
 
+  // POST /api/v1/me/change-password — CHỈ owner/admin được tự đổi mật khẩu.
+  // Chính sách bảo mật tổ chức: tài khoản + mật khẩu nhân viên do tổ chức cấp và
+  // quản lý; nhân viên KHÔNG được tự đổi. Muốn đổi → owner/admin reset hộ qua
+  // PUT /api/v1/users/:id/password.
   app.post('/api/v1/me/change-password', async (request: FastifyRequest, reply: FastifyReply) => {
     const currentUser = request.user!;
+    if (!['owner', 'admin'].includes(currentUser.role)) {
+      return reply.status(403).send({
+        error: 'Mật khẩu do tổ chức quản lý. Vui lòng liên hệ quản trị viên để được đặt lại.',
+        code: 'self_change_disabled',
+      });
+    }
     const body = (request.body ?? {}) as { currentPassword?: string; newPassword?: string };
     if (!body.currentPassword || !body.newPassword) {
       return reply.status(400).send({ error: 'currentPassword + newPassword là bắt buộc' });

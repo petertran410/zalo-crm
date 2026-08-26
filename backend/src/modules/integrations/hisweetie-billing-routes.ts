@@ -23,7 +23,7 @@ import { assertContactVisible } from '../contacts/contact-scope.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity } from '../activity/activity-logger.js';
-import { getHisweetieClient, isHisweetieMcpConfigured } from './hisweetie-mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from './hisweetie-public-api-client.js';
 import { asItemArray } from './hisweetie-mcp-routes.js';
 import { createBillingDraft, dispatchBillingToPos, isPosBillingDispatchEnabled } from './hisweetie-billing-service.js';
 import type { BillingLineInput } from './hisweetie-billing.js';
@@ -62,9 +62,9 @@ export async function hisweetieBillingRoutes(app: FastifyInstance): Promise<void
 
   // ── Chi nhánh (chọn kho xuất hàng) ───────────────────────────────────────
   app.get('/api/v1/pos-catalog/branches', async (_req: FastifyRequest, reply: FastifyReply) => {
-    if (!isHisweetieMcpConfigured()) return notConfigured(reply);
+    if (!isPublicApiSyncEnabled()) return notConfigured(reply);
     try {
-      const raw = await getHisweetieClient().branches.list();
+      const raw = await getHisweetiePublicApiClient().listBranches({ pageSize: 100 });
       const items = asItemArray(raw).map((b) => ({
         id: num(b.id), name: (b.name as string) ?? '(không tên)', code: (b.code as string) ?? null,
       }));
@@ -77,7 +77,7 @@ export async function hisweetieBillingRoutes(app: FastifyInstance): Promise<void
 
   // ── Tìm sản phẩm (picker) ────────────────────────────────────────────────
   app.get('/api/v1/pos-catalog/products', async (request: FastifyRequest, reply: FastifyReply) => {
-    if (!isHisweetieMcpConfigured()) return notConfigured(reply);
+    if (!isPublicApiSyncEnabled()) return notConfigured(reply);
     const q = request.query as { search?: string; branchId?: string; page?: string; limit?: string };
     try {
       const page = Math.max(1, parseInt(q.page || '1', 10) || 1);
@@ -88,7 +88,7 @@ export async function hisweetieBillingRoutes(app: FastifyInstance): Promise<void
         const bid = parseInt(q.branchId, 10);
         if (!Number.isNaN(bid)) args.branchId = bid;
       }
-      const raw = await getHisweetieClient().products.list(args);
+      const raw = await getHisweetiePublicApiClient().listProducts({ page, limit, ...(q.search?.trim() ? { search: q.search.trim() } : {}) });
       const items = asItemArray(raw).map(slimProduct).filter((p) => p.allowsSale);
       const total = num((raw as Record<string, unknown>).total);
       return { items, page, limit, total };
@@ -227,7 +227,7 @@ export async function hisweetieBillingRoutes(app: FastifyInstance): Promise<void
       }
 
       const httpByCode: Record<string, number> = {
-        DISPATCH_DISABLED: 503, MCP_NOT_CONFIGURED: 503, NOT_FOUND: 404,
+        DISPATCH_DISABLED: 503, PUBLIC_API_NOT_CONFIGURED: 503, NOT_FOUND: 404,
         ALREADY_SENT: 409, IN_FLIGHT: 409, POS_ERROR: 502,
       };
       return reply.status(httpByCode[result.code] ?? 500).send({

@@ -40,6 +40,7 @@ import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
 import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
+import { customer360Routes } from './modules/contacts/customer-360-routes.js';
 import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
@@ -60,14 +61,11 @@ import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
 import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
 import { userPreferenceRoutes } from './modules/auth/user-preference-routes.js';
 import { timelineRoutes } from './modules/activity/timeline-routes.js';
-import { scoringRoutes } from './modules/scoring/scoring-routes.js';
 import { zaloLabelsRoutes, startLabelsBackgroundSync } from './modules/zalo/zalo-labels-routes.js';
 import { startAppointmentReminder } from './modules/contacts/appointment-reminder.js';
 import { zinstantProxyRoutes } from './modules/contacts/zinstant-proxy-routes.js';
 import { dashboardRoutes } from './modules/dashboard/dashboard-routes.js';
 import { dashboardActionHubRoutes } from './modules/dashboard/dashboard-action-hub-routes.js';
-import { reportRoutes } from './modules/dashboard/report-routes.js';
-import { reportAnalyticsRoutes } from './modules/dashboard/report-analytics-routes.js';
 import { userRoutes } from './modules/auth/user-routes.js';
 import { teamRoutes } from './modules/auth/team-routes.js';
 import { orgRoutes } from './modules/auth/org-routes.js';
@@ -85,10 +83,9 @@ import { startZaloHealthCheck } from './modules/zalo/zalo-health-check.js';
 import { publicApiRoutes } from './modules/api/public-api-routes.js';
 import { webhookSettingsRoutes } from './modules/api/webhook-settings-routes.js';
 import { startContactIntelligence } from './modules/contacts/contact-intelligence.js';
-import { analyticsRoutes } from './modules/analytics/analytics-routes.js';
-import { savedReportRoutes } from './modules/analytics/saved-report-routes.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
+import { posSaleMappingRoutes } from './modules/pos/pos-sale-mapping-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
 import { workspaceSessionRoutes } from './modules/pos/workspace-session-routes.js';
 import { posWebhookRoutes } from './routes/pos-webhook-routes.js';
@@ -98,11 +95,6 @@ import { startPosInventoryAuditCron } from './jobs/pos-inventory-audit.cron.js';
 import { startPosSummaryReportCron } from './jobs/pos-summary-report.cron.js';
 // Automation + Marketing (engine, blocks, sequences, triggers, broadcasts,
 // care-session, lists, friend-invite) → extension bundle (src/_ee/automation).
-// Telegram bridge (Zalo/Telegram) is core, stays outside _ee.
-import { initTelegramBridge } from "./modules/integrations/providers/telegram-bridge/index.js";
-// Telegram bridge routes are core too, stays outside _ee.
-import { telegramBridgeRoutes } from './modules/integrations/providers/telegram-bridge/telegram-bridge-routes.js';
-import { aiRoutes } from './modules/ai/ai-routes.js';
 import { chatOperationsRoutes, registerChatSocketHandlers } from './modules/chat/chat-operations-routes.js';
 import { groupRoutes } from './modules/zalo/group-routes.js';
 import { groupScanRoutes } from './modules/zalo/group-scan-routes.js';
@@ -298,6 +290,7 @@ async function bootstrap() {
   await app.register(mediaRoutes);
   await app.register(chatArchiveRoutes);
   await app.register(contactRoutes);
+  await app.register(customer360Routes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
   await app.register(cockpitRoutes);
@@ -324,7 +317,6 @@ async function bootstrap() {
   });
   await app.register(userPreferenceRoutes);
   await app.register(timelineRoutes);
-  await app.register(scoringRoutes);
   // Engagement heatmap timeline + admin recompute/backfill
   const { registerEngagementRoutes } =
     await import("./modules/engagement/engagement-routes.js");
@@ -347,8 +339,6 @@ async function bootstrap() {
   await app.register(zinstantProxyRoutes);
   await app.register(dashboardRoutes);
   await app.register(dashboardActionHubRoutes);
-  await app.register(reportRoutes);
-  await app.register(reportAnalyticsRoutes);
   await app.register(userRoutes);
   await app.register(teamRoutes);
   await app.register(orgRoutes);
@@ -362,21 +352,16 @@ async function bootstrap() {
   await app.register(searchRoutes);
   await app.register(publicApiRoutes);
   await app.register(webhookSettingsRoutes);
-  await app.register(analyticsRoutes);
-  await app.register(savedReportRoutes);
   await app.register(integrationRoutes);
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   await app.register(posRoutes);
+  await app.register(posSaleMappingRoutes);
   await app.register(workspaceSessionRoutes);
   await app.register(syncRoutes);
   await app.register(posWebhookRoutes);
   await app.register(posSyncDashboardRoutes);
   await app.register(contactPosRoutes);
-  // Automation + Marketing routes (blocks/sequences/triggers/broadcasts/care-session/
-  // lists/friend-invite + bull-board/stats/manual-control) → extension bundle.
-  await app.register(telegramBridgeRoutes); // Telegram bridge (Zalo↔Telegram) — core
-  await app.register(aiRoutes);
   await app.register(chatOperationsRoutes);
   await app.register(groupRoutes);
   await app.register(groupScanRoutes); // E1 Quét group (🟢 Community)
@@ -502,10 +487,6 @@ async function bootstrap() {
     const { startStatusLogCheckpointCron } =
       await import("./modules/zalo/status-log-checkpoint-cron.js");
     startStatusLogCheckpointCron();
-    // Lead Scoring background jobs (decay hourly + stuck detection 6am daily)
-    const { startScoringScheduler } =
-      await import("./modules/scoring/scoring-scheduler.js");
-    startScoringScheduler({ enabled: config.nodeEnv !== "test" });
     // Tag Taxonomy v2 (Issue 6A)
     // Cron 5 phút batch UPDATE Contact.autoTags từ Redis dirty set.
     // Wave 5 Slim drop Contact.autoTags → bỏ luôn cron.
@@ -535,29 +516,25 @@ async function bootstrap() {
     // Open-core: extension cron/worker startups (no-op in Community edition).
     await ee?.startExtensionJobs?.(app, io);
 
-  // Cầu Telegram: subscribe bridge-bus, mirror tin Zalo sang Telegram.
-  // Core feature ngoài _ee, chạy ở cả Extension lẫn Community.
-    if (config.nodeEnv !== "test") {
-      try {
-        initTelegramBridge();
-      } catch (err) {
-        logger.error("[telegram-bridge] init failed (non-fatal):", err);
-      }
-    }
-
     // Graceful shutdown (review #7): Docker/k8s gửi SIGTERM khi deploy/scale → đóng gọn
     // BullMQ worker (group-scan) + Fastify (drain in-flight HTTP/WS) trước khi thoát, tránh
     // job dở dang + cắt kết nối đột ngột. Timeout 10s rồi thoát cưỡng bức nếu treo.
     let shuttingDown = false;
     const shutdown = async (signal: string) => {
-      if (shuttingDown) return;
+      // Ctrl+C lần 2 (hoặc SIGTERM lặp) = thoát NGAY, không chờ drain nữa.
+      if (shuttingDown) {
+        logger.warn(`[shutdown] nhận ${signal} lần 2 — thoát ngay lập tức`);
+        process.exit(130);
+      }
       shuttingDown = true;
       logger.info(`[shutdown] nhận ${signal} — đóng server...`);
+      // KHÔNG unref(): timer phải giữ event loop sống để thực sự bắn được sau 10s.
+      // unref() khiến timer bị bỏ qua nếu event loop rảnh, và không cứu được khi
+      // handle khác (BullMQ/Redis/socket Zalo) giữ process → treo vô hạn.
       const force = setTimeout(() => {
         logger.warn("[shutdown] quá 10s, thoát cưỡng bức");
         process.exit(1);
       }, 10_000);
-      force.unref();
       try {
         await app.close().catch((e) => logger.warn('[shutdown] app.close lỗi:', e));
         logger.info('[shutdown] đóng gọn xong.');
@@ -566,8 +543,9 @@ async function bootstrap() {
         process.exit(0);
       }
     };
-    process.once("SIGTERM", () => void shutdown("SIGTERM"));
-    process.once("SIGINT", () => void shutdown("SIGINT"));
+    // .on thay vì .once: cần bắt được Ctrl+C lần 2 để thoát cưỡng bức.
+    process.on("SIGTERM", () => void shutdown("SIGTERM"));
+    process.on("SIGINT", () => void shutdown("SIGINT"));
   } catch (err) {
     logger.error("Failed to start server:", err);
     process.exit(1);

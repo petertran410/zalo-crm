@@ -155,14 +155,6 @@
               </span>
             </div>
             <ul class="ob-steplist">
-              <li class="ob-stepitem" :class="{ done: user.onboarding.changePassword }">
-                <span class="ob-mark">{{ user.onboarding.changePassword ? '✅' : '⬜' }}</span>
-                Đổi mật khẩu lần đầu
-              </li>
-              <li class="ob-stepitem" :class="{ done: user.onboarding.connectNick }">
-                <span class="ob-mark">{{ user.onboarding.connectNick ? '✅' : '⬜' }}</span>
-                Kết nối ≥ 1 nick Zalo
-              </li>
               <li
                 class="ob-stepitem"
                 :class="{ done: user.onboarding.pin && !user.onboarding.pinSkipped, skipped: user.onboarding.pinSkipped }"
@@ -263,7 +255,7 @@
         <h3 class="ce-title">{{ confirmModal.title }}</h3>
         <p class="ce-msg">{{ confirmModal.message }}</p>
         <!-- Tùy chọn gửi mật khẩu mới qua Zalo (chỉ hiện cho reset pw) -->
-        <label v-if="confirmModal.showZaloOpt" class="ce-zalo-opt">
+        <label v-if="confirmModal.showZaloOpt && user?.recipientStatus === 'ready'" class="ce-zalo-opt">
           <input type="checkbox" v-model="sendPwViaZalo" />
           Gửi mật khẩu mới cho nhân viên qua Zalo (nick hệ thống) — có lưu ở Thông báo hệ thống
         </label>
@@ -335,7 +327,7 @@ const canResetPassword = computed(() => {
   return ['owner', 'admin'].includes(props.currentUserRole ?? '') && props.user?.id !== props.currentUserId;
 });
 const resetPwResult = ref<string | null>(null);
-const sendPwViaZalo = ref(true); // mặc định gửi pw mới qua Zalo cho tiện sale
+const sendPwViaZalo = ref(false);
 
 // 2026-06-09 — modal xác nhận in-app (thay confirm() trình duyệt xấu).
 const confirmModal = ref<{

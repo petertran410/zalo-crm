@@ -3,7 +3,7 @@
 // bơm 44k record rác vào tab Khách Hàng. Số tiền POS trả dạng STRING ("127050")
 // nên so sánh > 0 phải parse, không dựa vào truthiness.
 import { describe, it, expect } from 'vitest';
-import { isEngagedCustomer, extractCustomer } from '../src/modules/integrations/hisweetie-customer-mapper.js';
+import { isEngagedCustomer, extractCustomer, isPosCustomerActive } from '../src/modules/integrations/hisweetie-customer-mapper.js';
 
 describe('isEngagedCustomer — tín hiệu tương tác thương mại', () => {
   it('KH chưa tương tác gì (mọi total = "0") → false', () => {
@@ -128,5 +128,32 @@ describe('extractCustomer — map payload POS → field CRM', () => {
     expect(c.name).toBeNull();
     expect(c.email).toBeNull();
     expect(c.phone).toBeNull();
+  });
+});
+
+// Anh chốt: chỉ đồng bộ KH CÒN HOẠT ĐỘNG. Bộ lọc chính là không gửi
+// `includeInactive` khi gọi POS; hàm này là lớp phòng thủ phía CRM cho record
+// inactive lọt qua đường khác (webhook, caller cũ).
+describe('isPosCustomerActive — chỉ nhận khách còn hoạt động', () => {
+  it('isActive=false → loại', () => {
+    expect(isPosCustomerActive({ id: 1, isActive: false })).toBe(false);
+  });
+
+  it('isActive=true → giữ', () => {
+    expect(isPosCustomerActive({ id: 1, isActive: true })).toBe(true);
+  });
+
+  // Payload POS không phải lúc nào cũng kèm isActive. Mặc định "loại" ở đây sẽ
+  // chặn sạch dữ liệu — đúng kiểu lỗi im lặng khó truy nhất.
+  it('thiếu field / null / undefined → coi là còn hoạt động, KHÔNG chặn nhầm', () => {
+    expect(isPosCustomerActive({ id: 1 })).toBe(true);
+    expect(isPosCustomerActive({ id: 1, isActive: null })).toBe(true);
+    expect(isPosCustomerActive({ id: 1, isActive: undefined })).toBe(true);
+  });
+
+  // POS trả JSON thật thì isActive là boolean; chuỗi "false" (nếu có) KHÔNG được
+  // suy diễn thành false — chỉ loại khi tường minh boolean false.
+  it('chuỗi "false" không bị suy diễn thành ngừng hoạt động', () => {
+    expect(isPosCustomerActive({ id: 1, isActive: 'false' })).toBe(true);
   });
 });

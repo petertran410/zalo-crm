@@ -43,7 +43,6 @@ vi.mock('../src/shared/realtime/emit-chat.js', () => ({ emitChatMessage: vi.fn()
 vi.mock('../src/modules/contacts/contact-aggregate.js', () => ({
   applyContactAggregateFromMessage: vi.fn(), applyFriendAggregate: vi.fn(),
 }));
-vi.mock('../src/modules/ai/ai-virtual-chat-service.js', () => ({ triggerVirtualChatAiReply: vi.fn() }));
 vi.mock('../src/modules/contacts/contact-scope.js', () => ({ attachContactCollaboratorByUser: vi.fn() }));
 vi.mock('../src/modules/chat/chat-helpers.js', () => ({ getUserFullName: vi.fn().mockResolvedValue('Sale A') }));
 vi.mock('../src/shared/zalo-operations.js', () => ({ zaloOps: {} }));

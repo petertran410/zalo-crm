@@ -3,11 +3,13 @@
    Used by DefaultLayout (top nav), ChatView, ContactsView, FriendsView.
    ════════════════════════════════════════════════════════════ */
 :root {
-  /* Brand palette — xanh ngọc */
-  --smax-primary: #1786be;
-  --smax-primary-hover: #0f6fa0;
-  --smax-primary-soft: #e4f1f8;
-  --smax-primary-700: #0b5880;
+  /* Brand palette — xanh Hi-CRM/Zalo. Phải khớp `primary` trong Vuetify
+     (plugins/vuetify.ts) để v-btn color="primary" và CSS token không tạo ra
+     hai sắc xanh khác nhau trên cùng một màn. */
+  --smax-primary: #0068ff;
+  --smax-primary-hover: #0057d6;
+  --smax-primary-soft: #e9f3ff;
+  --smax-primary-700: #0046b8;
   --smax-success: #00c853;
   --smax-warning: #ff9100;
   --smax-info: #2196f3;
@@ -15,9 +17,17 @@
 
   /* Grey scale */
   --smax-grey-50: #fafbfc;
-  --smax-grey-100: #f5f6fa;
+  /* Nền canvas khớp `background` của theme hsLight trong plugins/vuetify.ts.
+     Trước đây là #f5f6fa còn Vuetify vẽ #f7f9fb, nên vùng do v-main tô và vùng
+     do CSS token tô lệch nhau một sắc rất nhẹ ở chỗ giáp ranh. */
+  --smax-grey-100: #f7f9fb;
   --smax-grey-200: #ebedf0;
   --smax-grey-300: #d4d8de;
+  /* Alias chuyển tiếp cho component cũ. Các màn mới dùng --app-text-*; alias
+     này chỉ tránh declaration bị invalid khi CSS legacy gọi grey 400/500/600. */
+  --smax-grey-400: #a8aebb;
+  --smax-grey-500: #7a8494;
+  --smax-grey-600: #677185;
   --smax-grey-700: #5a6478;
   --smax-text: #212121;
 
@@ -56,6 +66,83 @@
   --smax-radius-md: 7px;
   --smax-radius-lg: 9px;
   --smax-radius-xl: 13px;
+
+  /* ── Lớp token NGỮ NGHĨA (chuẩn hoá 2026-08-12) ────────────────────────────
+     Token --smax-* ở trên là lớp NGUYÊN LIỆU (màu thô, đo từ mockup) và đang
+     được 49 component dùng trực tiếp nên KHÔNG đổi giá trị, tránh vỡ diện rộng.
+
+     Lớp dưới đây là lớp Ý ĐỊNH: đặt tên theo vai trò trong giao diện chứ không
+     theo màu. Màn mới và màn refactor phải dùng lớp này. Đổi diện mạo toàn app
+     về sau chỉ cần sửa ánh xạ ở đây, không phải đi sửa từng file.
+
+     Quy ước đặt tên:
+       --app-surface-*  nền theo độ sâu (canvas → nổi lên trên)
+       --app-border-*   đường kẻ theo độ đậm
+       --app-text-*     chữ theo thứ bậc
+       --app-space-*    thang giãn cách
+       --app-radius-*   bo góc
+       --app-shadow-*   đổ bóng theo độ cao
+     ────────────────────────────────────────────────────────────────────────── */
+
+  /* Nền — 3 mức độ sâu. canvas là nền ngoài cùng, raised nổi trên panel. */
+  --app-surface-canvas: var(--smax-grey-100);
+  --app-surface-panel: var(--smax-bg);
+  --app-surface-raised: var(--smax-bg);
+  --app-surface-sunken: var(--smax-grey-50);
+  --app-surface-hover: var(--smax-grey-50);
+  --app-surface-active: var(--smax-primary-soft);
+  --app-surface-inverse: var(--smax-header-bg);
+
+  /* Đường kẻ — subtle cho chia ô trong panel, strong cho ranh giới vùng lớn. */
+  --app-border-subtle: var(--smax-grey-200);
+  --app-border-default: var(--smax-grey-300);
+  --app-border-strong: var(--smax-grey-700);
+  --app-border-focus: var(--smax-primary);
+
+  /* Chữ — 4 bậc. muted dùng cho nhãn phụ, không dùng cho nội dung chính. */
+  --app-text-primary: var(--smax-text);
+  --app-text-secondary: var(--smax-grey-700);
+  --app-text-muted: #8b93a7;
+  --app-text-inverse: #ffffff;
+  --app-text-link: var(--smax-primary);
+
+  /* Ngữ nghĩa trạng thái — dùng cho badge, alert, chấm trạng thái. */
+  --app-accent: var(--smax-primary);
+  --app-accent-hover: var(--smax-primary-hover);
+  --app-accent-soft: var(--smax-primary-soft);
+  --app-success: var(--smax-success);
+  --app-warning: var(--smax-warning);
+  --app-danger: var(--smax-error);
+  --app-info: var(--smax-info);
+
+  /* Thang giãn cách 4px. Dùng thang này thay vì gõ số lẻ trong từng file. */
+  --app-space-1: 4px;
+  --app-space-2: 8px;
+  --app-space-3: 12px;
+  --app-space-4: 16px;
+  --app-space-5: 20px;
+  --app-space-6: 24px;
+  --app-space-8: 32px;
+
+  /* Bo góc — ánh xạ sang thang radius sẵn có để không sinh giá trị thứ hai. */
+  --app-radius-sm: var(--smax-radius-sm);
+  --app-radius-md: var(--smax-radius-md);
+  --app-radius-lg: var(--smax-radius-lg);
+  --app-radius-xl: var(--smax-radius-xl);
+  --app-radius-pill: 999px;
+
+  /* Đổ bóng theo độ cao. sm cho card đứng yên, md cho popover, lg cho modal. */
+  --app-shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --app-shadow-md: 0 4px 12px rgba(16, 24, 40, 0.08);
+  --app-shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.14);
+
+  /* Chiều cao control — giữ mọi nút/ô nhập/chip cùng nhịp trên một hàng. */
+  --app-control-h-sm: 28px;
+  --app-control-h-md: 32px;
+  --app-control-h-lg: 38px;
+
+  /* Chiều cao thanh tiêu đề trong trang nội dung (không phải nav toàn cục). */
+  --app-page-header-h: 48px;
   /* Chiều cao phần chrome NẰM NGANG phía trên nội dung. Đây là NGUỒN DUY NHẤT —
      mọi màn tính `height: calc(100vh - var(--smax-topnav-h))` phải đọc biến này,
      KHÔNG hardcode 48/52/56/60px (revamp nav 2026-08-05: trước đó 13 file mỗi file

@@ -15,10 +15,8 @@
  * Lifecycle: open → in_progress → resolved, resolved → in_progress (Mở lại — sửa lỗi
  * bấm nhầm "Đánh dấu xong", xem ticket-permissions.ts).
  *
- * AI draft: POST /conversations/:id/ticket-draft tái dùng generateAiOutput(type='summary')
- * có sẵn từ module ai — KHÔNG lưu ticket, chỉ trả draft {title, summary} để FE prefill form,
- * nhân viên xem lại + bấm "Tạo ticket" mới thực sự lưu (draft-then-confirm, không auto-create —
- * khớp AI_CAPABILITIES deny-by-default, xem ai-capabilities.ts).
+ * Tickets can be created from conversation messages after the shared
+ * conversation-read ACL verifies that the user may access the source.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
@@ -26,9 +24,8 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { assertContactVisible, getContactScope } from '../contacts/contact-scope.js';
-import { assertConversationReadAccess, assertPrivacyAllowsAi } from '../ai/ai-routes.js';
+import { assertConversationReadAccess } from '../chat/conversation-access.js';
 import { resolveWorkItemFromMessage } from '../chat/work-from-message.js';
-import { generateAiOutput } from '../ai/ai-service.js';
 import {
   canMutateTicket, canDeleteTicket, isValidTicketTransition, TICKET_STATUSES,
 } from './ticket-permissions.js';
@@ -54,21 +51,6 @@ function ticketLogEntity(ticket: { id: string; contactId: string | null }): { en
   return ticket.contactId
     ? { entityType: 'contact', entityId: ticket.contactId }
     : { entityType: 'ticket', entityId: ticket.id };
-}
-
-/** Suy ra tiêu đề ngắn từ đoạn summary AI trả (câu đầu, cắt 80 ký tự) — nhân viên sửa lại tự do. */
-function deriveTitleFromSummary(summary: string): string {
-  const firstSentence = summary.split(/[.!?\n]/)[0]?.trim() || '';
-  const title = firstSentence.slice(0, 80).trim();
-  return title || 'Ticket mới';
-}
-
-function aiErrorMessage(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes('AI is disabled')) return 'Tính năng AI đang tắt cho tổ chức này';
-  if (msg.includes('quota exceeded')) return 'Đã hết lượt dùng AI hôm nay';
-  if (msg.includes('provider key is not configured')) return 'Chưa cấu hình AI provider';
-  return 'Không thể tạo tóm tắt tự động, vui lòng nhập thủ công';
 }
 
 export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
@@ -193,43 +175,11 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
-  // ── POST /api/v1/conversations/:id/ticket-draft ────────────────────────────
-  // Draft-then-confirm: gọi AI tóm tắt hội thoại, trả về {title, summary} CHƯA LƯU.
-  // Lỗi AI (quota/disabled/provider) → 200 kèm draft=null + warning, KHÔNG throw — để FE
-  // fallback sang form thủ công thay vì chặn tạo ticket hoàn toàn.
-  app.post('/api/v1/conversations/:id/ticket-draft', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    try {
-      const conversationId = request.params.id;
-      const access = await assertConversationReadAccess(request, reply, conversationId);
-      if (!access) return; // reply đã gửi bên trong helper
-      if (!(await assertPrivacyAllowsAi(request, reply, conversationId))) return;
-
-      const conv = await prisma.conversation.findUnique({ where: { id: conversationId }, select: { contactId: true } });
-
-      try {
-        const result = await generateAiOutput({ orgId: request.user!.orgId, conversationId, type: 'summary' });
-        // generateAiOutput trả union (sentiment có {label,reason} khác summary có {content}) —
-        // TS không narrow theo input.type tại call site, guard bằng 'in' cho an toàn runtime.
-        if (!('content' in result)) throw new Error('Unexpected AI response shape for summary');
-        return {
-          draft: { title: deriveTitleFromSummary(result.content), summary: result.content },
-          contactId: conv?.contactId ?? null,
-        };
-      } catch (aiErr) {
-        logger.warn(`[tickets] AI draft failed for conversation ${conversationId}: ${aiErr instanceof Error ? aiErr.message : aiErr}`);
-        return { draft: null, warning: aiErrorMessage(aiErr), contactId: conv?.contactId ?? null };
-      }
-    } catch (err) {
-      logger.error('[tickets] Draft error:', err);
-      return reply.status(500).send({ error: 'Failed to draft ticket' });
-    }
-  });
-
   // ── POST /api/v1/tickets ────────────────────────────────────────────────────
   app.post('/api/v1/tickets', async (request: FastifyRequest<{
       Body: {
       title?: string; summary?: string; priority?: string; category?: string | null; assigneeUserId?: string;
-      contactId?: string | null; conversationId?: string | null; aiGenerated?: boolean;
+      contactId?: string | null; conversationId?: string | null;
       sourceMessageId?: string | null;
       sourceMessageIds?: string[] | null;
       mediaAssetIds?: string[] | null;
@@ -310,7 +260,6 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
           contactId,
           conversationId,
           sourceMessageId,
-          aiGenerated: Boolean(request.body?.aiGenerated),
         },
         include: TICKET_INCLUDE,
       });
@@ -342,7 +291,7 @@ export async function ticketsRoutes(app: FastifyInstance): Promise<void> {
         ...ticketLogEntity(ticket),
         details: {
           ticketId: ticket.id, title: ticket.title, priority: ticket.priority,
-          assigneeUserId, aiGenerated: ticket.aiGenerated, attachmentCount,
+          assigneeUserId, attachmentCount,
         },
       });
 

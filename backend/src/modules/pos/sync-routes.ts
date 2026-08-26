@@ -3,6 +3,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { runBackgroundSync } from './sync-worker.js';
+import { getIo } from '../../shared/event-buffer.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
   // Require authentication for all sync routes
@@ -224,6 +225,63 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
     }
   );
 
+  // POST /api/v1/sync/jobs/:id/cancel — dừng job đang Pending/Running (admin only)
+  app.post(
+    '/api/v1/sync/jobs/:id/cancel',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId } = request.authCtx!;
+        const { id } = request.params as { id: string };
+
+        const targetJob = await prisma.syncJob.findUnique({ where: { id } });
+        if (!targetJob || targetJob.orgId !== orgId) {
+          return reply.status(404).send({ error: 'Không tìm thấy Sync Job' });
+        }
+
+        if (!['Pending', 'Running'].includes(targetJob.status)) {
+          return reply.status(400).send({
+            error: 'Chỉ hủy được job đang chờ hoặc đang chạy',
+            status: targetJob.status,
+          });
+        }
+
+        const updated = await prisma.syncJob.update({
+          where: { id },
+          data: {
+            status: 'Cancelled',
+            endTime: new Date(),
+            lastError: 'Người dùng hủy thủ công',
+          },
+        });
+
+        // Báo FE ngay để thanh tiến trình biến mất, không chờ worker poll xong.
+        const io = getIo();
+        if (io) {
+          io.to(`org:${orgId}`).emit('pos:sync:update', {
+            jobId: updated.id,
+            entity: updated.entity,
+            processed: updated.processed,
+            total: updated.total,
+            status: 'Cancelled',
+            lastError: updated.lastError,
+          });
+        }
+
+        logger.info(`[sync-routes] Job ${id} cancelled by user (was ${targetJob.status})`);
+        return {
+          jobId: updated.id,
+          status: 'Cancelled',
+          processed: updated.processed,
+          message: 'Đã gửi lệnh hủy. Worker sẽ dừng sau trang hiện tại.',
+        };
+      } catch (err: any) {
+        logger.error('[sync-routes] Cancel sync job failed:', err);
+        return reply.status(500).send({ error: 'Failed to cancel sync job' });
+      }
+    },
+  );
+
   // POST /api/v1/sync/jobs/:id/retry — retry a failed sync job (admin only)
   app.post(
     '/api/v1/sync/jobs/:id/retry',
@@ -241,11 +299,15 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(404).send({ error: 'Không tìm thấy Sync Job' });
         }
 
-        if (targetJob.status !== 'Failed') {
-          return reply.status(400).send({ error: 'Chỉ có thể chạy lại các job bị lỗi' });
+        // Job bị hủy giữa chừng cũng cần chạy lại được, không chỉ job lỗi.
+        if (!['Failed', 'Cancelled'].includes(targetJob.status)) {
+          return reply.status(400).send({ error: 'Chỉ chạy lại được job đã lỗi hoặc đã hủy' });
         }
 
-        // Create a new retry job
+        // Chạy lại phải TIẾP TỤC từ chỗ dừng, không quét lại từ bản ghi 0.
+        // Job hỏng ở 9900/50915 mà quét lại từ đầu là phí ~99 request và
+        // ~8 phút, đúng lúc người dùng đang sốt ruột vì vừa lỗi.
+        const canResume = targetJob.processed > 0;
         const newJob = await prisma.syncJob.create({
           data: {
             orgId,
@@ -253,10 +315,16 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
             entity: targetJob.entity,
             status: 'Pending',
             retryCount: targetJob.retryCount + 1,
-          }
+            processed: canResume ? targetJob.processed : 0,
+            currentPage: canResume ? targetJob.currentPage : 0,
+            // Giữ nguyên mốc tổng đã biết để UI vẽ được % ngay từ đầu,
+            // không phải chờ trang đầu tiên trả về mới biết total.
+            total: targetJob.total,
+          },
         });
 
-        // Trigger worker
+        // forceFull=true: chạy lại vẫn là quét toàn bộ, KHÔNG chuyển sang delta.
+        // Việc tiếp tục từ chỗ dừng do worker tự đọc `processed` đã seed ở trên.
         void runBackgroundSync(orgId, newJob.id).catch((err) => {
           logger.error(`[sync-routes] Background worker failed to start for retried job ${newJob.id}:`, err);
         });
