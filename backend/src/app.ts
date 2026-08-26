@@ -40,6 +40,7 @@ import { configRoutes } from './modules/config/config-routes.js';
 import { mediaRoutes } from './modules/media/media-routes.js';
 import { chatArchiveRoutes } from './modules/chat-archive/chat-archive-routes.js';
 import { contactRoutes } from './modules/contacts/contact-routes.js';
+import { customer360Routes } from './modules/contacts/customer-360-routes.js';
 import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
@@ -84,6 +85,7 @@ import { webhookSettingsRoutes } from './modules/api/webhook-settings-routes.js'
 import { startContactIntelligence } from './modules/contacts/contact-intelligence.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
+import { posSaleMappingRoutes } from './modules/pos/pos-sale-mapping-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
 import { workspaceSessionRoutes } from './modules/pos/workspace-session-routes.js';
 import { posWebhookRoutes } from './routes/pos-webhook-routes.js';
@@ -288,6 +290,7 @@ async function bootstrap() {
   await app.register(mediaRoutes);
   await app.register(chatArchiveRoutes);
   await app.register(contactRoutes);
+  await app.register(customer360Routes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
   await app.register(cockpitRoutes);
@@ -353,6 +356,7 @@ async function bootstrap() {
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   await app.register(posRoutes);
+  await app.register(posSaleMappingRoutes);
   await app.register(workspaceSessionRoutes);
   await app.register(syncRoutes);
   await app.register(posWebhookRoutes);

@@ -5,22 +5,22 @@ API tích hợp dữ liệu POS dành cho đối tác (website, sàn thương m�
 Thiết kế bám theo tài liệu **KiotViet Public API** để đối tác đã quen KiotViet
 tái sử dụng được client sẵn có.
 
-| | |
-|---|---|
-| Base URL | `https://<domain>/api/public/v1` |
-| Xác thực | OAuth 2.0 `client_credentials` |
-| Giới hạn | **5000 request/giờ** cho mỗi client |
-| Đọc | 26 resource |
-| Ghi | `customers`, `products`, `categories`, `orders`, `invoices` |
-| Định dạng | JSON, UTF-8 |
+|           |                                                             |
+| --------- | ----------------------------------------------------------- |
+| Base URL  | `https://backendpos.hisweetievietnam.com/api/public/v1`     |
+| Xác thực  | OAuth 2.0 `client_credentials`                              |
+| Giới hạn  | **5000 request/giờ** cho mỗi client                         |
+| Đọc       | 26 resource                                                 |
+| Ghi       | `customers`, `products`, `categories`, `orders`, `invoices` |
+| Định dạng | JSON, UTF-8                                                 |
 
 Khác biệt có chủ đích so với KiotViet:
 
-| | KiotViet | Hisweetie POS |
-|---|---|---|
+|                   | KiotViet | Hisweetie POS                                   |
+| ----------------- | -------- | ----------------------------------------------- |
 | Header `Retailer` | bắt buộc | **không cần** (hệ thống dùng một cơ sở dữ liệu) |
-| `Idempotency-Key` | không có | **có** — chống tạo trùng khi gửi lại |
-| Xoá dữ liệu | có | **không** — chỉ ngừng hoạt động hoặc huỷ |
+| `Idempotency-Key` | không có | **có** — chống tạo trùng khi gửi lại            |
+| Xoá dữ liệu       | có       | **không** — chỉ ngừng hoạt động hoặc huỷ        |
 
 ---
 
@@ -44,7 +44,7 @@ Khác biệt có chủ đích so với KiotViet:
 ## 1. Lấy access token
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/oauth/token \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/oauth/token \
   -H "Content-Type: application/x-www-form-urlencoded" \
   -d "grant_type=client_credentials" \
   -d "client_id=<CLIENT_ID>" \
@@ -54,7 +54,7 @@ curl -X POST https://<domain>/api/public/v1/oauth/token \
 Chấp nhận cả `application/json`:
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/oauth/token \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/oauth/token \
   -H "Content-Type: application/json" \
   -d '{
     "grant_type": "client_credentials",
@@ -108,10 +108,10 @@ ngay lập tức** ở request kế tiếp, không cần chờ hết hạn.
 
 ### Phân trang
 
-| Tham số | Mặc định | Giới hạn |
-|---|---|---|
-| `pageSize` | 20 | 1 – 100 |
-| `currentItem` | 0 | ≥ 0 (offset, không phải số trang) |
+| Tham số       | Mặc định | Giới hạn                          |
+| ------------- | -------- | --------------------------------- |
+| `pageSize`    | 20       | 1 – 100                           |
+| `currentItem` | 0        | ≥ 0 (offset, không phải số trang) |
 
 Trang thứ n (đếm từ 1): `currentItem = (n - 1) × pageSize`.
 
@@ -145,34 +145,34 @@ GET /{resource}/{id}
 
 ### Danh sách resource
 
-| Nhóm | Resource |
-|---|---|
-| Hàng hoá | `products`, `categories`, `trademarks`, `inventories`, `price-books` |
-| Khách hàng | `customers`, `customer-groups`, `customer-types` |
-| Bán hàng | `orders`, `invoices`, `return-orders`, `consignments`, `sale-channels` |
-| Mua hàng | `suppliers`, `supplier-groups`, `purchase-orders`, `order-suppliers`, `supplier-returns` |
-| Kho | `transfers` |
-| Tài chính | `cashflows`, `bank-accounts`, `surchages` |
-| Hệ thống | `branches`, `users`, `locations`, `settings` |
+| Nhóm       | Resource                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------- |
+| Hàng hoá   | `products`, `categories`, `trademarks`, `inventories`, `price-books`                     |
+| Khách hàng | `customers`, `customer-groups`, `customer-types`                                         |
+| Bán hàng   | `orders`, `invoices`, `return-orders`, `consignments`, `sale-channels`                   |
+| Mua hàng   | `suppliers`, `supplier-groups`, `purchase-orders`, `order-suppliers`, `supplier-returns` |
+| Kho        | `transfers`                                                                              |
+| Tài chính  | `cashflows`, `bank-accounts`, `surchages`                                                |
+| Hệ thống   | `branches`, `users`, `locations`, `settings`                                             |
 
-> `surchages` (thiếu chữ *r*) giữ đúng chính tả của KiotViet để client cũ gọi được.
+> `surchages` (thiếu chữ _r_) giữ đúng chính tả của KiotViet để client cũ gọi được.
 
 ### Tham số truy vấn
 
-| Tham số | Mặc định | Ý nghĩa |
-|---|---|---|
-| `lastModifiedFrom` | — | Lấy bản ghi có `updatedAt >= giá trị này` |
-| `lastModifiedTo` | — | Cận trên của mốc thời gian |
-| `pageSize` | 20 | Số bản ghi mỗi trang, tối đa 100 |
-| `currentItem` | 0 | Bỏ qua bao nhiêu bản ghi (offset) |
-| `orderBy` | `updatedAt` | Trường sắp xếp — xem danh sách bên dưới |
-| `orderDirection` | `asc` | `asc` hoặc `desc` |
-| `includeInactive` | `false` | Lấy cả bản ghi đã ngừng hoạt động |
-| `search` | — | Tìm theo tên/mã/số điện thoại tuỳ resource |
-| `branchIds` | — | Lọc theo chi nhánh, phân tách bằng dấu phẩy |
-| `customerIds` | — | Lọc theo khách hàng |
-| `status` | — | Lọc theo trạng thái |
-| `include` | — | Nạp kèm dữ liệu liên quan |
+| Tham số            | Mặc định    | Ý nghĩa                                     |
+| ------------------ | ----------- | ------------------------------------------- |
+| `lastModifiedFrom` | —           | Lấy bản ghi có `updatedAt >= giá trị này`   |
+| `lastModifiedTo`   | —           | Cận trên của mốc thời gian                  |
+| `pageSize`         | 20          | Số bản ghi mỗi trang, tối đa 100            |
+| `currentItem`      | 0           | Bỏ qua bao nhiêu bản ghi (offset)           |
+| `orderBy`          | `updatedAt` | Trường sắp xếp — xem danh sách bên dưới     |
+| `orderDirection`   | `asc`       | `asc` hoặc `desc`                           |
+| `includeInactive`  | `false`     | Lấy cả bản ghi đã ngừng hoạt động           |
+| `search`           | —           | Tìm theo tên/mã/số điện thoại tuỳ resource  |
+| `branchIds`        | —           | Lọc theo chi nhánh, phân tách bằng dấu phẩy |
+| `customerIds`      | —           | Lọc theo khách hàng                         |
+| `status`           | —           | Lọc theo trạng thái                         |
+| `include`          | —           | Nạp kèm dữ liệu liên quan                   |
 
 **`orderBy` chỉ nhận 7 giá trị sau**, gửi giá trị khác sẽ nhận `400`:
 
@@ -199,19 +199,19 @@ hiện tại.
 
 ```bash
 # Trang đầu
-curl "https://<domain>/api/public/v1/customers?pageSize=50" \
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/customers?pageSize=50" \
   -H "Authorization: Bearer <token>"
 
 # Tìm khách theo tên hoặc số điện thoại
-curl "https://<domain>/api/public/v1/customers?search=0901234567" \
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/customers?search=0901234567" \
   -H "Authorization: Bearer <token>"
 
 # Đơn hàng của 2 chi nhánh, kèm chi tiết và thanh toán
-curl "https://<domain>/api/public/v1/orders?branchIds=1,2&include=details,payments" \
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/orders?branchIds=1,2&include=details,payments" \
   -H "Authorization: Bearer <token>"
 
 # Chi tiết một hoá đơn
-curl "https://<domain>/api/public/v1/invoices/1234?include=details,payments,delivery" \
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/invoices/1234?include=details,payments,delivery" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -227,11 +227,11 @@ Cách đồng bộ đúng:
 
 ```bash
 # Lần đầu
-curl "https://<domain>/api/public/v1/products?pageSize=100"
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/products?pageSize=100"
 # → timestamp: "2026-08-14T10:00:00.000Z"
 
 # Lần sau — chỉ lấy phần đã đổi
-curl "https://<domain>/api/public/v1/products?lastModifiedFrom=2026-08-14T10:00:00.000Z"
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/products?lastModifiedFrom=2026-08-14T10:00:00.000Z"
 ```
 
 **Dùng `timestamp` của máy chủ, không dùng giờ máy đối tác.** Lệch giờ giữa hai
@@ -268,15 +268,15 @@ khi thử lại.
 
 ## 5. Endpoint bổ trợ
 
-| Endpoint | Trả về |
-|---|---|
-| `GET /customers/{id}/addresses` | Địa chỉ giao hàng |
-| `GET /customers/{id}/groups` | Nhóm khách hàng |
-| `GET /customers/{id}/ledger` | Sổ công nợ (có dư nợ cộng dồn) |
-| `GET /orders/{id}/payments` | Thanh toán của đơn |
-| `GET /invoices/{id}/payments` | Thanh toán của hoá đơn |
-| `GET /orders/{id}/delivery` | Giao hàng của đơn |
-| `GET /invoices/{id}/delivery` | Giao hàng của hoá đơn |
+| Endpoint                        | Trả về                         |
+| ------------------------------- | ------------------------------ |
+| `GET /customers/{id}/addresses` | Địa chỉ giao hàng              |
+| `GET /customers/{id}/groups`    | Nhóm khách hàng                |
+| `GET /customers/{id}/ledger`    | Sổ công nợ (có dư nợ cộng dồn) |
+| `GET /orders/{id}/payments`     | Thanh toán của đơn             |
+| `GET /invoices/{id}/payments`   | Thanh toán của hoá đơn         |
+| `GET /orders/{id}/delivery`     | Giao hàng của đơn              |
+| `GET /invoices/{id}/delivery`   | Giao hàng của hoá đơn          |
 
 Trừ `ledger`, các endpoint trên **trả toàn bộ bản ghi, không phân trang**.
 
@@ -284,27 +284,27 @@ Trừ `ledger`, các endpoint trên **trả toàn bộ bản ghi, không phân t
 
 `GET /customers/{id}/ledger` nhận thêm:
 
-| Tham số | Mặc định | Ý nghĩa |
-|---|---|---|
-| `fromDate` | — | Mốc đầu khoảng thời gian (ISO 8601) |
-| `toDate` | — | Mốc cuối khoảng thời gian |
-| `types` | tất cả | Lọc loại phát sinh, phân tách bằng dấu phẩy |
-| `pageSize` | 20 | Tối đa 100 |
-| `currentItem` | 0 | Offset |
+| Tham số       | Mặc định | Ý nghĩa                                     |
+| ------------- | -------- | ------------------------------------------- |
+| `fromDate`    | —        | Mốc đầu khoảng thời gian (ISO 8601)         |
+| `toDate`      | —        | Mốc cuối khoảng thời gian                   |
+| `types`       | tất cả   | Lọc loại phát sinh, phân tách bằng dấu phẩy |
+| `pageSize`    | 20       | Tối đa 100                                  |
+| `currentItem` | 0        | Offset                                      |
 
 `types` nhận bốn giá trị:
 
-| Giá trị | Nghiệp vụ | Tác động công nợ |
-|---|---|---|
-| `invoice` | Bán hàng | tăng nợ |
-| `payment` | Khách thanh toán | giảm nợ |
-| `refund` | Hoàn tiền cho khách | tăng nợ |
-| `return` | Trả hàng | giảm nợ |
+| Giá trị   | Nghiệp vụ           | Tác động công nợ |
+| --------- | ------------------- | ---------------- |
+| `invoice` | Bán hàng            | tăng nợ          |
+| `payment` | Khách thanh toán    | giảm nợ          |
+| `refund`  | Hoàn tiền cho khách | tăng nợ          |
+| `return`  | Trả hàng            | giảm nợ          |
 
 Mỗi dòng có thêm `runningDebt` — dư nợ cộng dồn tính đến thời điểm đó.
 
 ```bash
-curl "https://<domain>/api/public/v1/customers/1234/ledger?fromDate=2026-01-01T00:00:00.000Z&types=invoice,payment&pageSize=50" \
+curl "https://backendpos.hisweetievietnam.com/api/public/v1/customers/1234/ledger?fromDate=2026-01-01T00:00:00.000Z&types=invoice,payment&pageSize=50" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -312,20 +312,20 @@ curl "https://<domain>/api/public/v1/customers/1234/ledger?fromDate=2026-01-01T0
 
 ## 6. Ghi dữ liệu
 
-| Resource | Tạo | Cập nhật | Huỷ / ngừng hoạt động |
-|---|---|---|---|
-| `customers` | `POST /customers` | `PUT /customers/{id}` | `DELETE /customers/{id}` |
-| `products` | `POST /products` | `PUT /products/{id}` | `POST /products/{id}/deactivate` |
-| `categories` | `POST /categories` | `PUT /categories/{id}` | không hỗ trợ |
-| `orders` | `POST /orders` | `PUT /orders/{id}` | `PUT /orders/{id}/cancel` |
-| `invoices` | `POST /invoices` | `PUT /invoices/{id}` | `PUT /invoices/{id}/cancel` |
+| Resource     | Tạo                | Cập nhật               | Huỷ / ngừng hoạt động            |
+| ------------ | ------------------ | ---------------------- | -------------------------------- |
+| `customers`  | `POST /customers`  | `PUT /customers/{id}`  | `DELETE /customers/{id}`         |
+| `products`   | `POST /products`   | `PUT /products/{id}`   | `POST /products/{id}/deactivate` |
+| `categories` | `POST /categories` | `PUT /categories/{id}` | không hỗ trợ                     |
+| `orders`     | `POST /orders`     | `PUT /orders/{id}`     | `PUT /orders/{id}/cancel`        |
+| `invoices`   | `POST /invoices`   | `PUT /invoices/{id}`   | `PUT /invoices/{id}/cancel`      |
 
 Các thao tác tạo trả **HTTP 201**, cập nhật và huỷ trả **200**.
 
 ### Tạo khách hàng
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/customers \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/customers \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: 7f3a9c21-4e8b-4d1a-9c2f-1b5e6a7d8c90" \
@@ -349,7 +349,7 @@ curl -X POST https://<domain>/api/public/v1/customers \
 Bắt buộc `branchId`, `customerId` và `items`.
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/orders \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/orders \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: <uuid>" \
@@ -373,7 +373,7 @@ Khuyến mãi được máy chủ tính lại, không lấy theo giá trị đ�
 nhật công nợ**. Luôn gửi `Idempotency-Key`.
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/invoices \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/invoices \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: <uuid>" \
@@ -409,7 +409,7 @@ mã hậu tố `.01`, `.02`… và huỷ bản cũ, kèm hoàn tồn rồi trừ
 ### Huỷ đơn hàng và hoá đơn
 
 ```bash
-curl -X PUT https://<domain>/api/public/v1/orders/1234/cancel \
+curl -X PUT https://backendpos.hisweetievietnam.com/api/public/v1/orders/1234/cancel \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -H "Idempotency-Key: <uuid>" \
@@ -449,13 +449,13 @@ vì tạo bản ghi mới.
 Idempotency-Key: 7f3a9c21-4e8b-4d1a-9c2f-1b5e6a7d8c90
 ```
 
-| Tình huống | Kết quả |
-|---|---|
-| Lần đầu | Chạy nghiệp vụ, lưu phản hồi |
-| Gọi lại cùng khoá, cùng nội dung | Trả lại phản hồi cũ, **không tạo mới** |
-| Gọi lại khi lần đầu chưa xong | `409` — thử lại sau |
-| Cùng khoá nhưng nội dung khác | `409` — khoá đã dùng cho request khác |
-| Lần đầu lỗi | Khoá được giải phóng, gửi lại cùng khoá được |
+| Tình huống                       | Kết quả                                      |
+| -------------------------------- | -------------------------------------------- |
+| Lần đầu                          | Chạy nghiệp vụ, lưu phản hồi                 |
+| Gọi lại cùng khoá, cùng nội dung | Trả lại phản hồi cũ, **không tạo mới**       |
+| Gọi lại khi lần đầu chưa xong    | `409` — thử lại sau                          |
+| Cùng khoá nhưng nội dung khác    | `409` — khoá đã dùng cho request khác        |
+| Lần đầu lỗi                      | Khoá được giải phóng, gửi lại cùng khoá được |
 
 Khoá giữ trong **24 giờ**. **Mỗi thao tác một khoá mới** — dùng lại khoá cũ cho
 việc khác sẽ bị từ chối.
@@ -478,7 +478,7 @@ Thay vì hỏi liên tục, đăng ký webhook để POS chủ động báo khi 
 ### Đăng ký
 
 ```bash
-curl -X POST https://<domain>/api/public/v1/webhooks \
+curl -X POST https://backendpos.hisweetievietnam.com/api/public/v1/webhooks \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -488,13 +488,13 @@ curl -X POST https://<domain>/api/public/v1/webhooks \
   }'
 ```
 
-| Trường | Bắt buộc | Ghi chú |
-|---|---|---|
-| `resource` | có | Một trong 26 resource ở mục 3 |
-| `url` | có | **Bắt buộc HTTPS** — payload chứa dữ liệu khách hàng và đơn hàng |
-| `secret` | không | Dài **16 – 255** ký tự, dùng để ký payload |
-| `description` | không | Ghi chú nội bộ |
-| `isActive` | không | Mặc định bật |
+| Trường        | Bắt buộc | Ghi chú                                                          |
+| ------------- | -------- | ---------------------------------------------------------------- |
+| `resource`    | có       | Một trong 26 resource ở mục 3                                    |
+| `url`         | có       | **Bắt buộc HTTPS** — payload chứa dữ liệu khách hàng và đơn hàng |
+| `secret`      | không    | Dài **16 – 255** ký tự, dùng để ký payload                       |
+| `description` | không    | Ghi chú nội bộ                                                   |
+| `isActive`    | không    | Mặc định bật                                                     |
 
 - Đăng ký lại cùng `resource` + `url` sẽ cập nhật bản cũ và đặt lại bộ đếm lỗi.
 - Mốc quét bắt đầu từ lúc đăng ký, **không dội lại lịch sử**.
@@ -527,10 +527,13 @@ Nếu có `secret`, mỗi lần gọi kèm header `X-Webhook-Signature` = HMAC S
 body. Luôn kiểm tra trước khi xử lý:
 
 ```js
-const crypto = require('crypto');
+const crypto = require("crypto");
 
 function verify(rawBody, signature, secret) {
-  const expected = crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
+  const expected = crypto
+    .createHmac("sha256", secret)
+    .update(rawBody)
+    .digest("hex");
   return crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(signature));
 }
 ```
@@ -540,11 +543,11 @@ lại có thể khác, chữ ký sẽ không khớp.
 
 ### Quy tắc gửi lại
 
-| Tình huống | Xử lý |
-|---|---|
-| Phản hồi 2xx | Thành công, mốc quét tiến lên |
+| Tình huống             | Xử lý                                                               |
+| ---------------------- | ------------------------------------------------------------------- |
+| Phản hồi 2xx           | Thành công, mốc quét tiến lên                                       |
 | Mã lỗi hoặc quá 5 giây | Thất bại — **mốc quét giữ nguyên**, lô dữ liệu gửi lại ở chu kỳ sau |
-| Lỗi 10 lần liên tiếp | Tạm ngưng gọi. Đăng ký lại để kích hoạt |
+| Lỗi 10 lần liên tiếp   | Tạm ngưng gọi. Đăng ký lại để kích hoạt                             |
 
 Nghĩa là **không mất dữ liệu khi endpoint tạm chết**, nhưng đối tác phải chịu
 được nhận trùng — hãy xử lý theo hướng idempotent, đối chiếu theo `id`.
@@ -555,14 +558,14 @@ Chu kỳ quét là mỗi phút, nên tin báo trễ tối đa khoảng một ph�
 
 ## 9. Mã lỗi
 
-| Mã | Ý nghĩa | Xử lý phía đối tác |
-|---|---|---|
-| 400 | Tham số sai, resource không tồn tại, hoặc gửi thừa trường lạ | Sửa request, **không gửi lại nguyên trạng** |
-| 401 | Thiếu token, token sai, hết hạn, hoặc client đã bị tắt | Lấy token mới; vẫn lỗi thì liên hệ quản trị |
-| 404 | Không tìm thấy bản ghi | Kiểm tra lại `id` |
-| 409 | Xung đột `Idempotency-Key` | Xem mục 7 |
-| 429 | Vượt 5000 request/giờ | Chờ theo `Retry-After` rồi thử lại |
-| 500 | Lỗi phía máy chủ | Thử lại có giãn cách; kéo dài thì liên hệ quản trị |
+| Mã  | Ý nghĩa                                                      | Xử lý phía đối tác                                 |
+| --- | ------------------------------------------------------------ | -------------------------------------------------- |
+| 400 | Tham số sai, resource không tồn tại, hoặc gửi thừa trường lạ | Sửa request, **không gửi lại nguyên trạng**        |
+| 401 | Thiếu token, token sai, hết hạn, hoặc client đã bị tắt       | Lấy token mới; vẫn lỗi thì liên hệ quản trị        |
+| 404 | Không tìm thấy bản ghi                                       | Kiểm tra lại `id`                                  |
+| 409 | Xung đột `Idempotency-Key`                                   | Xem mục 7                                          |
+| 429 | Vượt 5000 request/giờ                                        | Chờ theo `Retry-After` rồi thử lại                 |
+| 500 | Lỗi phía máy chủ                                             | Thử lại có giãn cách; kéo dài thì liên hệ quản trị |
 
 Thân phản hồi lỗi theo định dạng chuẩn:
 
@@ -589,13 +592,13 @@ Riêng lỗi OAuth theo định dạng của chuẩn OAuth 2.0:
 
 Vì lý do bảo mật, các trường sau luôn bị loại khỏi phản hồi:
 
-| Resource | Trường bị loại |
-|---|---|
-| `customers` | Số CCCD/CMND, tài khoản ngân hàng xuất hoá đơn, mã nhân viên Misa, người tạo/sửa |
-| `users` | Chỉ trả `id`, `name`, `email`, `phone`, `avatar`, `branchId`, `isActive`, `createdAt`, `updatedAt` |
-| `products` | Mã Misa, mã nhà máy sản xuất |
-| `orders`, `invoices` | Người tạo, người bán, trạng thái đồng bộ Misa |
-| `cashflows` | Mã tham chiếu cổng thanh toán |
+| Resource             | Trường bị loại                                                                                     |
+| -------------------- | -------------------------------------------------------------------------------------------------- |
+| `customers`          | Số CCCD/CMND, tài khoản ngân hàng xuất hoá đơn, mã nhân viên Misa, người tạo/sửa                   |
+| `users`              | Chỉ trả `id`, `name`, `email`, `phone`, `avatar`, `branchId`, `isActive`, `createdAt`, `updatedAt` |
+| `products`           | Mã Misa, mã nhà máy sản xuất                                                                       |
+| `orders`, `invoices` | Người tạo, người bán, trạng thái đồng bộ Misa                                                      |
+| `cashflows`          | Mã tham chiếu cổng thanh toán                                                                      |
 
 Ngoài ra khoá đồng bộ nội bộ (KiotViet, Lark, Misa) bị loại khỏi phần lớn
 resource nghiệp vụ.
@@ -609,14 +612,14 @@ resource nghiệp vụ.
 Quản trị viên POS quản lý client tại **Cài đặt → Tích hợp API**, hoặc qua API nội
 bộ (yêu cầu đăng nhập POS và quyền `settings:update`):
 
-| Method + Path | Chức năng |
-|---|---|
-| `GET /api/public-api/clients` | Danh sách client |
-| `POST /api/public-api/clients` | Tạo client mới |
-| `PATCH /api/public-api/clients/{id}` | Cập nhật thông tin |
-| `POST /api/public-api/clients/{id}/rotate-secret` | Xoay khoá bí mật |
-| `POST /api/public-api/clients/{id}/activate` | Kích hoạt |
-| `POST /api/public-api/clients/{id}/deactivate` | Ngừng hoạt động |
+| Method + Path                                     | Chức năng          |
+| ------------------------------------------------- | ------------------ |
+| `GET /api/public-api/clients`                     | Danh sách client   |
+| `POST /api/public-api/clients`                    | Tạo client mới     |
+| `PATCH /api/public-api/clients/{id}`              | Cập nhật thông tin |
+| `POST /api/public-api/clients/{id}/rotate-secret` | Xoay khoá bí mật   |
+| `POST /api/public-api/clients/{id}/activate`      | Kích hoạt          |
+| `POST /api/public-api/clients/{id}/deactivate`    | Ngừng hoạt động    |
 
 Ngoài ra có thể tạo bằng dòng lệnh:
 
@@ -679,12 +682,12 @@ DELETE /api/public/v1/webhooks/{id}
 
 ### Header
 
-| Header | Khi nào dùng |
-|---|---|
-| `Authorization: Bearer <token>` | Mọi request trừ `/oauth/token` |
-| `Content-Type: application/json` | Mọi request có thân |
-| `Idempotency-Key: <uuid>` | Khuyến nghị cho mọi thao tác ghi |
-| `X-Webhook-Signature` | Máy chủ gửi kèm khi gọi webhook của đối tác |
+| Header                           | Khi nào dùng                                |
+| -------------------------------- | ------------------------------------------- |
+| `Authorization: Bearer <token>`  | Mọi request trừ `/oauth/token`              |
+| `Content-Type: application/json` | Mọi request có thân                         |
+| `Idempotency-Key: <uuid>`        | Khuyến nghị cho mọi thao tác ghi            |
+| `X-Webhook-Signature`            | Máy chủ gửi kèm khi gọi webhook của đối tác |
 
 ### Danh mục tham khảo
 

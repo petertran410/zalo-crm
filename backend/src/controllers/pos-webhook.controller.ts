@@ -23,12 +23,15 @@ export interface VerifySignatureResult {
  * Verifies the incoming POS Webhook HMAC-SHA256 signature against request.rawBody.
  */
 export function verifyPosWebhookSignature(request: FastifyRequest): VerifySignatureResult {
-  const signatureHeader = request.headers['x-pos-signature'];
+  const signatureHeader = request.headers['x-webhook-signature'] ?? request.headers['x-pos-signature'];
   if (!signatureHeader || typeof signatureHeader !== 'string') {
-    return { valid: false, reason: 'Missing x-pos-signature header' };
+    return { valid: false, reason: 'Missing X-Webhook-Signature header' };
   }
 
-  const secret = config.posWebhookSecret || process.env.POS_WEBHOOK_SECRET || 'default_pos_webhook_secret_key_change_me_in_prod';
+  const secret = config.posWebhookSecret;
+  if (!secret) {
+    return { valid: false, reason: 'POS webhook secret is not configured' };
+  }
   const rawBody = request.rawBody;
 
   if (!rawBody || !Buffer.isBuffer(rawBody)) {
@@ -57,23 +60,21 @@ export function verifyPosWebhookSignature(request: FastifyRequest): VerifySignat
   }
 }
 
-/**
- * Helper to resolve target Organization ID from payload, query, header, or DB fallback.
- */
-async function resolveOrgId(request: FastifyRequest, body: any): Promise<string> {
-  if (body?.orgId && typeof body.orgId === 'string') return body.orgId;
-  if (body?.org_id && typeof body.org_id === 'string') return body.org_id;
+/** Resolve the tenant only from server-side configuration. */
+async function resolveOrgId(_request: FastifyRequest, _body: any): Promise<string> {
+  const configuredOrgId = config.posWebhookOrgId;
+  if (!configuredOrgId) {
+    throw new Error('POS_WEBHOOK_ORG_ID is required for POS webhook processing');
+  }
 
-  const queryOrgId = (request.query as any)?.orgId;
-  if (queryOrgId && typeof queryOrgId === 'string') return queryOrgId;
-
-  const headerOrgId = request.headers['x-org-id'];
-  if (headerOrgId && typeof headerOrgId === 'string') return headerOrgId;
-
-  const firstOrg = await prisma.organization.findFirst({ select: { id: true } });
-  if (firstOrg) return firstOrg.id;
-
-  throw new Error('Organization context could not be resolved for webhook processing');
+  const organization = await prisma.organization.findUnique({
+    where: { id: configuredOrgId },
+    select: { id: true },
+  });
+  if (!organization) {
+    throw new Error('Configured POS webhook organization does not exist');
+  }
+  return organization.id;
 }
 
 /**
@@ -92,7 +93,7 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
 
   const currentAttempts = log.attempts + 1;
   const payload = (log.payload || {}) as Record<string, any>;
-  const eventType = (log.eventType || payload.event || payload.eventType || '').toLowerCase();
+  const eventType = (log.eventType || payload.resource || payload.event || payload.eventType || '').toLowerCase();
   const orgId = log.orgId;
 
   try {
@@ -148,7 +149,7 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
         data: itemList[0],
       });
     } else {
-      logger.warn(`[pos-webhook-controller] Unrecognized POS eventType: ${eventType}`);
+      throw new Error(`Unrecognized POS resource: ${eventType}`);
     }
 
     await prisma.posWebhookLog.update({
@@ -211,16 +212,39 @@ export async function handlePosWebhook(request: FastifyRequest, reply: FastifyRe
   }
 
   const body = (request.body || {}) as Record<string, any>;
-  const eventType = String(body.event || body.eventType || body.type || 'pos.event');
+  const eventType = String(body.resource || body.event || body.eventType || body.type || '');
+  if (!eventType) {
+    return reply.status(400).send({
+      error: 'Bad Request',
+      code: 'missing_resource',
+      message: 'POS webhook payload must include resource',
+    });
+  }
 
   try {
     const orgId = await resolveOrgId(request, body);
+    const rawBody = request.rawBody as Buffer;
+    const payloadHash = crypto.createHash('sha256').update(rawBody).digest('hex');
+    const existingLog = await prisma.posWebhookLog.findFirst({
+      where: { orgId, payloadHash },
+      select: { id: true, status: true },
+    });
+    if (existingLog) {
+      return reply.status(200).send({
+        success: true,
+        duplicate: true,
+        logId: existingLog.id,
+        status: existingLog.status,
+        message: 'POS Webhook đã được tiếp nhận trước đó',
+      });
+    }
 
     // 2. Log webhook request as PENDING
     const webhookLog = await prisma.posWebhookLog.create({
       data: {
         orgId,
         eventType,
+        payloadHash,
         payload: body as any,
         status: 'PENDING',
         attempts: 0,

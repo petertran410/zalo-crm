@@ -2,17 +2,44 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { PosPaginationService } from '../../shared/mcp/pos-pagination-service.js';
 import { syncPosCustomersFromMcp, syncPosProductsFromMcp } from '../../shared/mcp/pos-sync-service.js';
-import { getPosMcpClient } from '../../shared/mcp/mcp-client.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
 import { withPosSyncLock } from './pos-sync-lock.js';
 import { logger } from '../../shared/utils/logger.js';
 import { commandDispatcher } from '../../shared/commands/command-dispatcher.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logActivity } from '../activity/activity-logger.js';
+import { assertContactVisible } from '../contacts/contact-scope.js';
 
 // Import để đảm bảo các Commands được đăng ký vào Dispatcher
 import './commands/customer-commands.js';
 import './commands/order-commands.js';
+
+/**
+ * Dữ liệu thương mại của một khách (đơn, công nợ, hồ sơ POS) là dữ liệu nhạy cảm:
+ * sale chỉ được xem khách mình phụ trách, trừ khi có grant `contact.view_all`
+ * hoặc là admin/owner. Trả 404 thay vì 403 để không lộ sự tồn tại của contact.
+ *
+ * Dùng chung một cổng với Customer 360 (contact-scope) để hai đường vào cùng
+ * một dữ liệu không lệch chính sách.
+ */
+async function ensureContactVisible(
+  request: FastifyRequest,
+  reply: FastifyReply,
+  contactId: string,
+): Promise<boolean> {
+  const user = request.user!;
+  const visible = await assertContactVisible({
+    userId: user.id,
+    orgId: user.orgId,
+    legacyRole: user.role,
+    contactId,
+  });
+  if (!visible) {
+    reply.status(404).send({ error: 'Contact not found' });
+    return false;
+  }
+  return true;
+}
 
 export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
@@ -132,23 +159,14 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           };
         }
 
-        const mcpClient = getPosMcpClient();
-        const mcpRes = await mcpClient.customers.search(keyword);
-        const mcpItems = (mcpRes as any).data || [];
-
+        // Public API là đường duy nhất — MCP đã loại bỏ khỏi mã nguồn.
         return {
-          source: 'mcp',
-          items: mcpItems.map((c: any) => ({
-            id: c.id,
-            code: c.code,
-            name: c.name,
-            phone: c.phone || c.contactNumber,
-            customerType: typeof c.customerType === 'string' ? c.customerType : (c.customerType?.name || null),
-          })),
+          source: 'public_api',
+          items: [],
         };
       } catch (liveErr: any) {
         logger.warn('[pos-routes] Live customer search failed, returning empty:', liveErr.message || liveErr);
-        return { source: isPublicApiSyncEnabled() ? 'public_api' : 'mcp', items: [] };
+        return { source: 'public_api', items: [] };
       }
     } catch (err: any) {
       logger.error('[pos-routes] Search customers 2-layer failed:', err);
@@ -160,12 +178,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/pos/customers/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
     try {
-      if (isPublicApiSyncEnabled()) {
-        return await getHisweetiePublicApiClient().getCustomer(parseInt(id));
-      }
-      const mcpClient = getPosMcpClient();
-      const customer = await mcpClient.customers.get(parseInt(id));
-      return customer;
+      return await getHisweetiePublicApiClient().getCustomer(parseInt(id));
     } catch (err: any) {
       logger.error(`[pos-routes] Fetch POS customer detail failed for id ${id}:`, err);
       return reply.status(500).send({ error: err.message || 'Failed to fetch detailed POS customer profile' });
@@ -284,6 +297,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/pos/contacts/:contactId/status', async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { contactId } = request.params as { contactId: string };
+      if (!(await ensureContactVisible(request, reply, contactId))) return;
       const contact = await prisma.contact.findUnique({
         where: { id: contactId },
       });
@@ -292,12 +306,15 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(404).send({ error: 'Contact not found' });
       }
 
-      const mcpClient = getPosMcpClient();
+      // Không dựng client POS ở đây: endpoint này vẫn trả được kết quả từ dữ liệu
+      // local khi POS chưa cấu hình. Chỉ gọi live khi thực sự cần, và luôn có fallback.
+      const fetchPosCustomer = (posCustomerId: number) =>
+        getHisweetiePublicApiClient().getCustomer(posCustomerId);
 
       // 1. Trường hợp đã liên kết
       if (contact.posCustomerId) {
         try {
-          const customerProfile = await mcpClient.customers.get(contact.posCustomerId);
+          const customerProfile = await fetchPosCustomer(contact.posCustomerId);
           return {
             linked: true,
             posCustomerId: contact.posCustomerId,
@@ -325,7 +342,8 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       // 2. Trường hợp chưa liên kết -> Thử tìm kiếm theo số điện thoại để gợi ý
       if (contact.phone) {
         try {
-          const searchRes = await mcpClient.customers.search(contact.phone.trim());
+          const keyword = contact.phone.trim();
+          const searchRes = getHisweetiePublicApiClient().searchCustomers(keyword);
           const found = (searchRes as any).data || [];
           if (found.length > 0) {
             return {
@@ -377,6 +395,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       try {
         const user = request.user!;
         const { contactId } = request.params as { contactId: string };
+        if (!(await ensureContactVisible(request, reply, contactId))) return;
         const { posCustomerId, posCustomerCode, posCustomerName, posCustomerPhone } = request.body as any;
 
         // Lấy thông tin Contact hiện tại để audit & sync
@@ -467,6 +486,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       try {
         const user = request.user!;
         const { contactId } = request.params as { contactId: string };
+        if (!(await ensureContactVisible(request, reply, contactId))) return;
 
         // Lấy thông tin POS hiện tại để lưu vào audit log
         const existingContact = await prisma.contact.findUnique({
@@ -523,8 +543,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.get('/api/v1/pos/branches', async (request: FastifyRequest, reply: FastifyReply) => {
     logger.info('[pos-routes] GET /api/v1/pos/branches called');
     try {
-      const mcpClient = getPosMcpClient();
-      const res = await mcpClient.branches.list();
+      const res = await getHisweetiePublicApiClient().listBranches({ pageSize: 100 });
       logger.info(`[pos-routes] branches.list res keys: ${Object.keys(res || {})}`);
       const branches = (res as any).data || res;
       const responseData = { success: true, data: Array.isArray(branches) ? branches : [] };
@@ -603,6 +622,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = request.user!;
       const { contactId } = request.params as { contactId: string };
+      if (!(await ensureContactVisible(request, reply, contactId))) return;
 
       const result = await commandDispatcher.dispatch({
         name: 'GetContactOrders',
@@ -624,6 +644,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = request.user!;
       const { contactId } = request.params as { contactId: string };
+      if (!(await ensureContactVisible(request, reply, contactId))) return;
 
       const result = await commandDispatcher.dispatch({
         name: 'GetContactOrders',
@@ -645,6 +666,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     try {
       const user = request.user!;
       const { contactId } = request.params as { contactId: string };
+      if (!(await ensureContactVisible(request, reply, contactId))) return;
 
       const contact = await prisma.contact.findFirst({
         where: { id: contactId, orgId: user.orgId },
@@ -663,6 +685,9 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       });
 
       // 2. Query unpaid invoices
+      // Lọc theo số tiền còn nợ, KHÔNG theo chuỗi status: POS trả status tiếng Việt
+      // theo luồng giao hàng nên ['Unpaid','Partial','Overdue'] không khớp bản ghi nào.
+      // Hoá đơn đã huỷ vẫn giữ remaining_debt nên phải loại, tránh cộng nợ ảo.
       const invoices = await prisma.posInvoice.findMany({
         where: {
           orgId: user.orgId,
@@ -670,7 +695,8 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
             { contactId },
             ...(contact?.posCustomerId ? [{ posCustomerId: contact.posCustomerId }] : [])
           ],
-          status: { in: ['Unpaid', 'Partial', 'Overdue'] }
+          remainingDebt: { gt: 0 },
+          NOT: { status: { in: ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'] } },
         },
         orderBy: { invoiceDate: 'desc' }
       });

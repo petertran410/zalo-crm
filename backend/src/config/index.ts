@@ -170,12 +170,13 @@ export const config = {
   rlsSetConfig: (envValue('RLS_SET_CONFIG') || 'false').toLowerCase() === 'true',
 
   /* --- POS Realtime Webhook Secret (R3) --- */
-  posWebhookSecret: envValue('POS_WEBHOOK_SECRET') || 'default_pos_webhook_secret_key_change_me_in_prod',
-  /* --- Hisweetie POS MCP (CRM → POS gateway) 2026-07 ---
-   * Client SDK @dieptra/mcp-client: OAuth client_credentials + Streamable HTTP /mcp.
-   * baseUrl = origin only (vd https://sandbox-mcp.hisweetievietnam.com), không kèm /mcp.
-   * Để trống clientId/secret → feature disabled (routes trả 503). */
-  hisweetieMcpUrl: (envValue('HISWEETIE_MCP_URL') || envValue('HISWEETIE_POS_BASE_URL') || '').replace(/\/+$/, ''),
-  hisweetieClientId: envValue('HISWEETIE_CLIENT_ID') || envValue('HISWEETIE_POS_CLIENT_ID') || '',
-  hisweetieClientSecret: envValue('HISWEETIE_CLIENT_SECRET') || envValue('HISWEETIE_POS_CLIENT_SECRET') || '',
+  // Production must configure an explicit secret. The receiver fails closed when absent.
+  posWebhookSecret: envValue('POS_WEBHOOK_SECRET'),
+  // Public POS webhooks do not carry orgId. Resolve the tenant from server-side config,
+  // never from a client-controlled header/query/body or "first organization" fallback.
+  posWebhookOrgId: envValue('POS_WEBHOOK_ORG_ID'),
+  /* --- Hisweetie POS MCP — ĐÃ LOẠI BỎ (2026-08-25) ---
+   * Toàn bộ CRM → POS chuyển sang Public API thuần (hisweetie-public-api-client.ts).
+   * Các biến HISWEETIE_MCP_URL / HISWEETIE_CLIENT_ID / HISWEETIE_CLIENT_SECRET
+   * không còn được đọc — xóa khỏi .env khi tiện. */
 };

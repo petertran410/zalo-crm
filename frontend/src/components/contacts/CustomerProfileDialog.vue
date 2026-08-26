@@ -333,7 +333,7 @@
                 :pos-customer-id="c?.posCustomerId || undefined"
                 :pos-customer-code="c?.posCustomerCode || undefined"
                 :customer-name="displayName"
-                :customer-phone="primaryPhone"
+                :customer-phone="primaryPhone || undefined"
                 @open-detail="openOrderDetail"
               />
             </section>

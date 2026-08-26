@@ -25,6 +25,8 @@ export interface POSProduct {
   unit?: string;
   onHand?: number;
   imageUrl?: string;
+  /** Ảnh gốc độ phân giải cao; dùng làm fallback khi `imageUrl` lỗi. */
+  originalImageUrl?: string;
   images?: { id: number; productId: number; image: string; createdAt: string }[];
 }
 

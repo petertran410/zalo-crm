@@ -16,17 +16,16 @@ const prismaMock = {
   },
 };
 const ordersCreateMock = vi.fn();
-// config mutable để test đổi URL sang production
-const configMock = { hisweetieMcpUrl: 'https://sandbox-mcp.hisweetievietnam.com' };
+const isPublicApiSyncEnabledMock = vi.fn(() => true);
 
 vi.mock('../src/shared/database/prisma-client.js', () => ({ prisma: prismaMock }));
 vi.mock('../src/shared/utils/logger.js', () => ({
   logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }));
 vi.mock('../src/config/index.js', () => ({ config: configMock }));
-vi.mock('../src/modules/integrations/hisweetie-mcp-client.js', () => ({
-  isHisweetieMcpConfigured: () => true,
-  getHisweetieClient: () => ({ orders: { create: ordersCreateMock } }),
+vi.mock('../src/modules/integrations/hisweetie-public-api-client.js', () => ({
+  isPublicApiSyncEnabled: isPublicApiSyncEnabledMock,
+  getHisweetiePublicApiClient: () => ({ createOrder: ordersCreateMock }),
 }));
 
 const { createBillingDraft, dispatchBillingToPos } = await import('../src/modules/integrations/hisweetie-billing-service.js');
@@ -49,7 +48,7 @@ function draftRow(over: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   process.env.HISWEETIE_BILLING_DISPATCH = 'enabled';
-  configMock.hisweetieMcpUrl = 'https://sandbox-mcp.hisweetievietnam.com';
+  isPublicApiSyncEnabledMock.mockReturnValue(true);
   prismaMock.posBillingDraft.updateMany.mockResolvedValue({ count: 1 });
   prismaMock.posBillingDraft.update.mockResolvedValue({});
 });
@@ -76,7 +75,7 @@ describe('createBillingDraft — snapshot KH + SP', () => {
   });
 });
 
-describe('dispatchBillingToPos — gửi POS sandbox', () => {
+describe('dispatchBillingToPos — gửi POS qua Public API', () => {
   it('cờ env tắt → DISPATCH_DISABLED, KHÔNG gọi POS', async () => {
     delete process.env.HISWEETIE_BILLING_DISPATCH;
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
@@ -84,16 +83,17 @@ describe('dispatchBillingToPos — gửi POS sandbox', () => {
     expect(ordersCreateMock).not.toHaveBeenCalled();
   });
 
-  it('URL production → THROW (sandbox guard), KHÔNG gọi POS, KHÔNG đụng draft', async () => {
-    configMock.hisweetieMcpUrl = 'https://mcp.hisweetievietnam.com';
-    await expect(dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG })).rejects.toThrow(/sandbox/);
+  it('Public API chưa cấu hình → PUBLIC_API_NOT_CONFIGURED, không gọi POS', async () => {
+    isPublicApiSyncEnabledMock.mockReturnValue(false);
+    const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
+    expect(r).toMatchObject({ ok: false, code: 'PUBLIC_API_NOT_CONFIGURED' });
     expect(ordersCreateMock).not.toHaveBeenCalled();
     expect(prismaMock.posBillingDraft.updateMany).not.toHaveBeenCalled();
   });
 
-  it('happy path: payload mang tên KH + tên SP, DÙNG LẠI idempotencyKey, status→sent', async () => {
+  it('happy path: payload đúng đặc tả Public API, DÙNG LẠI idempotencyKey, status→sent', async () => {
     prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
-    ordersCreateMock.mockResolvedValue({ id: 777 });
+    ordersCreateMock.mockResolvedValue({ id: 777, code: 'DH777' });
 
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
 
@@ -102,12 +102,10 @@ describe('dispatchBillingToPos — gửi POS sandbox', () => {
     expect(idem).toBe(IDEM); // key sinh lúc tạo draft — retry không nhân đôi đơn
     expect(payload.customerId).toBe(65550);
     expect(payload.branchId).toBe(2);
-    expect(payload.description).toContain('Chị Hoa');
-    expect(payload.description).toContain('draft-1');
-    expect(payload.description).toContain('Giao giờ hành chính');
-    expect(payload.items[0].note).toBe('Trà đào cam sả');
-    // KHÔNG gửi key tự chế (bài học addresses goal 2)
-    expect(Object.keys(payload.items[0]).sort()).toEqual(['note', 'productId', 'quantity', 'unitPrice']);
+    // Public API strict: chỉ gửi đúng các trường trong đặc tả §6 — khuyến mãi
+    // do máy chủ POS tính lại, không gửi description/discount/note.
+    expect(Object.keys(payload).sort()).toEqual(['branchId', 'customerId', 'items']);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(['productId', 'quantity', 'unitPrice']);
 
     const sentUpdate = prismaMock.posBillingDraft.update.mock.calls[0][0];
     expect(sentUpdate.data.status).toBe('sent');
@@ -132,7 +130,7 @@ describe('dispatchBillingToPos — gửi POS sandbox', () => {
 
   it('POS lỗi → status=failed + dispatchError lưu lại, trả POS_ERROR', async () => {
     prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
-    ordersCreateMock.mockRejectedValue(new Error('MCP tool crm_create_order failed: branch closed'));
+    ordersCreateMock.mockRejectedValue(new Error('Hisweetie Public API 500: branch closed'));
 
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
 

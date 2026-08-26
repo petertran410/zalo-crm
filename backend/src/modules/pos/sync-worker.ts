@@ -1,4 +1,3 @@
-import { getPosMcpClient } from '../../shared/mcp/mcp-client.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { getIo } from '../../shared/event-buffer.js';
@@ -6,6 +5,7 @@ import {
   batchUpsertCustomers,
   batchUpsertProducts,
   getCustomerSyncSince,
+  readServerTimestamp,
   syncPosCustomersFromMcp,
   syncPosProductsFromMcp,
   syncPosOrdersFromMcp,
@@ -84,8 +84,6 @@ async function runBackgroundSyncUnlocked(
   forceFull: boolean,
 ): Promise<void> {
   logger.info(`[sync-worker] Starting background sync job ${jobId} for org ${orgId}`);
-  const client = isPublicApiSyncEnabled() ? null : getPosMcpClient();
-
   const job = await prisma.syncJob.findUnique({ where: { id: jobId } });
   if (!job) return;
 
@@ -127,9 +125,7 @@ async function runBackgroundSyncUnlocked(
       try {
         // Public API trả tổng số ở `total` của response phân trang; MCP dùng
         // customers.totals. Lấy 1 bản ghi là đủ để biết tổng, không tốn hạn mức.
-        const totalsRes: any = isPublicApiSyncEnabled()
-          ? await getHisweetiePublicApiClient().listCustomers({ pageSize: 1 })
-          : await client!.customers.totals({ isActive: true });
+        const totalsRes: any = await getHisweetiePublicApiClient().listCustomers({ pageSize: 1 });
         total = Number(totalsRes?.total ?? totalsRes?.totals ?? totalsRes?.count ?? totalsRes?.data ?? 0);
         logger.info(`[sync-worker] POS Customers total: ${total}`);
       } catch (err: any) {
@@ -192,6 +188,9 @@ async function runBackgroundSyncUnlocked(
       let processed = currentItem;
       let hasMore = true;
       let cancelled = false;
+      // Mốc server của trang ĐẦU tiên — ghi lại lúc job xong để lần delta sau
+      // dùng đúng đồng hồ POS thay vì giờ máy CRM (PUBLIC-API.md mục 4).
+      let serverTimestamp: Date | null = null;
       // Khi delta, total trên UI phải là số bản ghi delta, không phải tổng 50k của POS.
       let displayTotal = customerSince ? -1 : total;
 
@@ -204,15 +203,17 @@ async function runBackgroundSyncUnlocked(
           break;
         }
 
-        const res = isPublicApiSyncEnabled()
-          ? await getHisweetiePublicApiClient().listCustomers({
-              currentItem,
-              pageSize,
-              includeInactive: true,
-              ...(customerSince ? { lastModifiedFrom: customerSince.toISOString() } : {}),
-            })
-          : await client!.customers.list({ currentItem, pageSize, isActive: true });
+        // KHÔNG gửi `includeInactive`: POS mặc định false = chỉ trả khách CÒN
+        // HOẠT ĐỘNG, khớp với `isActive: true` của nhánh MCP và khớp với `total`
+        // đếm ở trên (cũng đếm active-only) nên thanh tiến trình không lệch.
+        const res = await getHisweetiePublicApiClient().listCustomers({
+            currentItem,
+            pageSize,
+            ...(customerSince ? { lastModifiedFrom: customerSince.toISOString() } : {}),
+          });
         const customers = (res as any).data || [];
+
+        if (serverTimestamp === null) serverTimestamp = readServerTimestamp(res);
 
         // Public API trả total của kết quả đã lọc — dùng để UI biết tiến độ delta.
         if (customerSince && typeof (res as any).total === 'number') {
@@ -286,6 +287,9 @@ async function runBackgroundSyncUnlocked(
           // processed = số bản ghi đã đọc từ POS; total = mốc hiển thị trên UI.
           processed,
           total: customerSince ? processed : (total > 0 ? total : processed),
+          // Chỉ ghi khi POS thật sự trả mốc; null thì getCustomerSyncSince tự lùi
+          // về fallback endTime−5 phút.
+          ...(serverTimestamp ? { posTimestamp: serverTimestamp } : {}),
         }
       });
       emitSyncUpdate(orgId, {
@@ -349,9 +353,7 @@ async function runBackgroundSyncUnlocked(
           break;
         }
 
-        const res = isPublicApiSyncEnabled()
-          ? await getHisweetiePublicApiClient().listProducts({ page, limit })
-          : await client!.products.list({ page, limit });
+        const res = await getHisweetiePublicApiClient().listProducts({ page, limit });
         const products = (res as any).data || [];
 
         if (products.length === 0) {

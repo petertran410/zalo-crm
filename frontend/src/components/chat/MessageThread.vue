@@ -2212,8 +2212,8 @@ function onDealStageUpdated(newStatusId: string | null) {
  * 2026-05-30). CareStatusBadge + persist enum legacy vẫn sống trong
  * ChatContactPanel.vue nếu sale cần thao tác status enum cũ. */
 
-// @ts-expect-error TS6133 — Webhook button bị ẩn 2026-06-03 (Anh chốt), giữ
-// function để bật lại nhanh khi cần. Xem template trong header section.
+// Webhook button bị ẩn 2026-06-03 (Anh chốt), giữ function để bật lại nhanh
+// khi cần. Xem template trong header section.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function fireWebhook() {
   if (!props.conversation?.contact?.id) return;

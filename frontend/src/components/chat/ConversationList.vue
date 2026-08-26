@@ -275,7 +275,7 @@ const props = defineProps<{
    *  :key cho TransitionGroup → tab switch tạo instance MỚI → bỏ qua FLIP
    *  animation cross-tab. Reorder trong cùng tab (tin mới đến) vẫn animate.
    *  Không bắt buộc; nếu missing thì TransitionGroup hoạt động như trước. */
-  activeTabKey?: string;
+  activeTabKey?: string | null;
   /** Phase 2026-05-30 — SĐT từ lead Facebook (/chat?compose=SĐT). Khi có giá trị →
    *  tự mở "Tin nhắn mới" + điền sẵn SĐT để dialog lookup Zalo + tạo hội thoại. */
   autoComposePhone?: string;

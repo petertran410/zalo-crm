@@ -3,7 +3,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone, phoneVariants } from '../../shared/utils/phone.js';
-import { getPosMcpClient } from '../../shared/mcp/mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
 
 export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
   // Require auth middleware
@@ -84,30 +84,30 @@ export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
           alreadyLinked: contact.posCustomerId === cust.posId,
         }));
 
-        // If no local pos_customers match and we have phone numbers, fallback to searching via POS MCP API
-        if (suggestions.length === 0 && phoneList.length > 0) {
+        // If no local pos_customers match and we have phone numbers, fallback to searching POS live
+        if (suggestions.length === 0 && phoneList.length > 0 && isPublicApiSyncEnabled()) {
           try {
-            const mcpClient = getPosMcpClient();
+            const api = getHisweetiePublicApiClient();
             for (const phoneSearch of phoneList) {
-              const res = await mcpClient.customers.search(phoneSearch);
-              const mcpCusts = (res as any).data || (res as any).customers || [];
-              if (Array.isArray(mcpCusts) && mcpCusts.length > 0) {
-                for (const c of mcpCusts) {
+              const res = await api.searchCustomers(phoneSearch);
+              const posCusts = (res as any).data || [];
+              if (Array.isArray(posCusts) && posCusts.length > 0) {
+                for (const c of posCusts) {
                   suggestions.push({
                     posCustomerId: Number(c.id),
                     posCustomerCode: c.code || null,
                     name: c.name || '',
                     phone: c.phone || c.contactNumber || null,
-                    address: c.addresses?.[0]?.address || c.address || null,
-                    customerType: typeof c.customerType === 'string' ? c.customerType : c.customerType?.name || null,
-                    assignedSaleName: c.misaEmployeeName || c.createdBy || null,
+                    address: c.invoiceAddress || c.address || null,
+                    customerType: c.groups || null,
+                    assignedSaleName: null,
                     alreadyLinked: contact.posCustomerId === Number(c.id),
                   });
                 }
               }
             }
-          } catch (mcpErr: any) {
-            logger.warn(`[contact-pos] MCP customer search fallback warning: ${mcpErr.message || mcpErr}`);
+          } catch (posErr: any) {
+            logger.warn(`[contact-pos] POS customer search fallback warning: ${posErr.message || posErr}`);
           }
         }
 

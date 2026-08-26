@@ -6,6 +6,12 @@ export type PublicApiListResponse<T> = {
   pageSize?: number;
   currentItem?: number;
   data?: T[];
+  /**
+   * Mốc thời gian CỦA MÁY CHỦ POS lúc trả kết quả (ISO 8601).
+   * Doc mục 4 yêu cầu dùng chính giá trị này cho `lastModifiedFrom` lần sau —
+   * lấy giờ máy CRM sẽ lệch đồng hồ giữa hai bên và bỏ sót bản ghi.
+   */
+  timestamp?: string;
 };
 
 type TokenResponse = {
@@ -27,6 +33,30 @@ export type PublicApiListParams = {
   pageSize?: number;
   search?: string;
   include?: string;
+};
+
+/** Shape ghi khách hàng — đúng ví dụ PUBLIC-API.md §6 (POS từ chối trường lạ). */
+export type PublicApiCustomerWrite = {
+  name: string;
+  contactNumber: string;
+  addresses?: Array<{
+    address: string;
+    newCityCode?: string;
+    newCityName?: string;
+    newWardName?: string;
+    isDefault?: boolean;
+  }>;
+};
+
+/** Shape tạo đơn — đúng ví dụ PUBLIC-API.md §6 "Tạo đơn hàng". */
+export type PublicApiOrderWrite = {
+  branchId: number;
+  customerId: number;
+  items: Array<{
+    productId: number;
+    quantity: number;
+    unitPrice: number;
+  }>;
 };
 
 /** Ném ra khi POS trả 429 — để tầng gọi nhận biết và chờ đúng cách. */
@@ -101,12 +131,16 @@ export class HisweetiePublicApiClient {
   private lastRequestAt = 0;
 
   constructor(
-    private readonly baseUrl = config.hisweetiePublicApiUrl,
+    baseUrl = config.hisweetiePublicApiUrl,
     private readonly clientId = config.hisweetiePublicApiClientId,
     private readonly clientSecret = config.hisweetiePublicApiClientSecret,
     /** 5000 req/giờ ≈ 1 req/720ms. Để 800ms cho có biên an toàn. */
     private readonly minIntervalMs = config.hisweetiePublicApiMinIntervalMs,
-  ) {}
+  ) {
+    this.baseUrl = normalizePublicApiBaseUrl(baseUrl);
+  }
+
+  private readonly baseUrl: string;
 
   isConfigured(): boolean {
     return Boolean(this.baseUrl && this.clientId && this.clientSecret);
@@ -115,8 +149,8 @@ export class HisweetiePublicApiClient {
   async getToken(): Promise<TokenResponse> {
     this.assertConfigured();
     const response = await this.fetchWithNetworkRetry(
-      '/api/public/v1/oauth/token',
-      () => fetch(`${this.baseUrl}/api/public/v1/oauth/token`, {
+      `${API_PREFIX}/oauth/token`,
+      () => fetch(`${this.baseUrl}${API_PREFIX}/oauth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
@@ -162,6 +196,42 @@ export class HisweetiePublicApiClient {
     return this.request<Record<string, unknown>>(`/customers/${id}`);
   }
 
+  /* ── Ghi dữ liệu (doc §6, §7) ─────────────────────────────────────────────
+   * POS bật kiểm tra nghiêm ngặt: gửi thừa trường không có trong đặc tả → 400.
+   * Vì repo không có public-api.openapi.yaml, payload chỉ gửi ĐÚNG các trường
+   * xuất hiện trong ví dụ của PUBLIC-API.md §6 — không thêm field "cho chắc".
+   * Mọi thao tác ghi đều bắt buộc Idempotency-Key (UUID) — retry cùng khoá POS
+   * trả lại kết quả cũ thay vì tạo bản ghi trùng.
+   */
+
+  /** POST /customers — trả 201. Payload: {name, contactNumber, addresses?}. */
+  createCustomer(payload: PublicApiCustomerWrite, idempotencyKey: string) {
+    return this.write<Record<string, unknown>>('POST', '/customers', payload, idempotencyKey);
+  }
+
+  /** PUT /customers/{id} — trả 200. Cùng shape với create. */
+  updateCustomer(id: number, payload: PublicApiCustomerWrite, idempotencyKey: string) {
+    return this.write<Record<string, unknown>>('PUT', `/customers/${id}`, payload, idempotencyKey);
+  }
+
+  /**
+   * DELETE /customers/{id} — KHÔNG xoá cứng, chỉ đặt isActive=false (doc §6).
+   * An toàn khi gọi lại nên KHÔNG cần Idempotency-Key (doc §7).
+   */
+  deactivateCustomer(id: number) {
+    return this.write<Record<string, unknown>>('DELETE', `/customers/${id}`, undefined, '');
+  }
+
+  /** POST /orders — trả 201. Payload tối thiểu: {branchId, customerId, items}. */
+  createOrder(payload: PublicApiOrderWrite, idempotencyKey: string) {
+    return this.write<Record<string, unknown>>('POST', '/orders', payload, idempotencyKey);
+  }
+
+  /** PUT /orders/{id}/cancel — trả 200. cancelPayments: huỷ kèm phiếu thu. */
+  cancelOrder(id: number, idempotencyKey: string, cancelPayments = false) {
+    return this.write<Record<string, unknown>>('PUT', `/orders/${id}/cancel`, { cancelPayments }, idempotencyKey);
+  }
+
   /**
    * Quy đổi tham số kiểu MCP (`page`/`limit`/`fromDate`) sang kiểu Public API
    * (`currentItem`/`pageSize`/`lastModifiedFrom`) để các hàm đồng bộ sẵn có gọi
@@ -176,6 +246,8 @@ export class HisweetiePublicApiClient {
     query.set('currentItem', String(currentItem));
     query.set('pageSize', String(Math.min(pageSize, 100)));
     if (params.search) query.set('search', params.search);
+    // KHÔNG gửi `includeInactive` = POS mặc định false = chỉ trả bản ghi CÒN
+    // HOẠT ĐỘNG (doc mục 3). Chỉ gửi khi caller thật sự cần cả bản ghi đã ngừng.
     if (params.includeInactive) query.set('includeInactive', 'true');
     const lastModifiedFrom = params.lastModifiedFrom ?? params.fromDate;
     if (lastModifiedFrom) query.set('lastModifiedFrom', lastModifiedFrom);
@@ -200,16 +272,38 @@ export class HisweetiePublicApiClient {
     return run;
   }
 
-  private async executeThrottled<T>(path: string, retryOn401 = true): Promise<T> {
+  /** Ghi dữ liệu qua cùng hàng đợi giãn nhịp — retry 401/429 giống request(). */
+  private write<T>(method: 'POST' | 'PUT' | 'DELETE', path: string, body: unknown, idempotencyKey: string): Promise<T> {
+    const run = this.queue.then(
+      () => this.executeThrottled<T>(path, true, method, body, idempotencyKey),
+      () => this.executeThrottled<T>(path, true, method, body, idempotencyKey),
+    );
+    this.queue = run.catch(() => undefined);
+    return run;
+  }
+
+  private async executeThrottled<T>(
+    path: string,
+    retryOn401 = true,
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+    body?: unknown,
+    idempotencyKey?: string,
+  ): Promise<T> {
     const waitMs = this.lastRequestAt + this.minIntervalMs - Date.now();
     if (waitMs > 0) await sleep(waitMs);
     this.lastRequestAt = Date.now();
 
     const token = await this.getAccessToken();
+    const headers: Record<string, string> = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+    if (body !== undefined) headers['Content-Type'] = 'application/json';
+    if (idempotencyKey) headers['Idempotency-Key'] = idempotencyKey;
+
     const response = await this.fetchWithNetworkRetry(
       path,
-      () => fetch(`${this.baseUrl}/api/public/v1${path}`, {
-        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+      () => fetch(`${this.baseUrl}${API_PREFIX}${path}`, {
+        method,
+        headers,
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
       }),
     );
 
@@ -268,6 +362,9 @@ export class HisweetiePublicApiClient {
   private async getAccessToken(): Promise<string> {
     if (this.accessToken && Date.now() < this.tokenExpiresAt) return this.accessToken;
     const token = await this.getToken();
+    if (!token.access_token || typeof token.access_token !== 'string') {
+      throw new Error('Hisweetie Public API trả token không hợp lệ');
+    }
     this.accessToken = token.access_token;
     this.tokenExpiresAt = Date.now() + Math.max(30, (token.expires_in ?? 300) - 30) * 1000;
     return this.accessToken;
@@ -291,6 +388,17 @@ export class HisweetiePublicApiClient {
     }
     return body as T;
   }
+}
+
+/** Mọi endpoint public của POS đều nằm dưới tiền tố này, kể cả /oauth/token. */
+const API_PREFIX = '/api/public/v1';
+
+/**
+ * Chấp nhận cả origin trần lẫn URL đã kèm sẵn /api/public/v1, tránh tạo ra
+ * đường dẫn lặp kiểu /api/public/v1/api/public/v1/customers.
+ */
+function normalizePublicApiBaseUrl(value: string): string {
+  return value.replace(/\/+$/, '').replace(/\/api\/public\/v1$/i, '');
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));

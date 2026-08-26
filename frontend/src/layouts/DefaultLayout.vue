@@ -146,7 +146,6 @@ import { useAppointmentBadge } from '@/composables/use-appointment-badge';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
 import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
 import { fetchPublicBranding } from '@/api/public-branding';
-import { usePosNotification } from '@/composables/use-pos-notification';
 import NavSettingsMenu from '@/components/nav/NavSettingsMenu.vue';
 /* Navigation icons are Lucide SVG, not the MDI icon font.
    The MDI font renders each glyph inside its own solid em-box, which on a dark
@@ -168,7 +167,6 @@ import '@/assets/nav-shell.css';
 
 // Multi-draft order queue store
 const orderDraftStore = useOrderDraftStore();
-usePosNotification();
 // 2026-06-04: gỡ MiniOnboardingIndicator (Anh chốt code lại setup 4 bước sau)
 // LeadFloatingButton moved to ConversationFilterSidebar 2026-06-01
 // Đã gỡ import api vì banner "BỎ LỠ thông báo" đã tắt.
