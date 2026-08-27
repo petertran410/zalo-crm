@@ -86,15 +86,24 @@ export const vuetify = createVuetify({
     },
   },
   defaults: {
-    // HS defaults: nút bo md không uppercase, card bo lg viền, chip pill
+    // HS defaults: nút bo md không uppercase, card bo lg viền, chip pill.
+    // Mật độ mặc định là 'compact' cho mọi control nhập liệu — CRM hiển thị
+    // nhiều trường trên một hàng, để 'default' làm form cao gấp rưỡi và mỗi
+    // màn lại tự khai báo density riêng, dẫn tới cao thấp so le giữa các trang.
     VBtn: { variant: 'flat', rounded: 'md', style: 'text-transform:none;letter-spacing:0;' },
-    VTextField: { variant: 'outlined', density: 'compact' },
-    VSelect: { variant: 'outlined', density: 'compact' },
-    VAutocomplete: { variant: 'outlined', density: 'compact' },
-    VTextarea: { variant: 'outlined', density: 'compact' },
+    VTextField: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VSelect: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VAutocomplete: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VCombobox: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VTextarea: { variant: 'outlined', density: 'compact', hideDetails: 'auto' },
+    VCheckbox: { density: 'compact', hideDetails: 'auto', color: 'primary' },
+    VRadioGroup: { density: 'compact', hideDetails: 'auto' },
+    VSwitch: { density: 'compact', hideDetails: 'auto', color: 'primary', inset: true },
     VCard: { rounded: 'lg', variant: 'flat' },
     VChip: { rounded: 'pill', size: 'small' },
     VDialog: { maxWidth: 600 },
+    VList: { density: 'compact' },
+    VTooltip: { location: 'bottom' },
   },
 });
 

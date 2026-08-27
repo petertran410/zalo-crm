@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
 import { useProgress } from '@/composables/use-progress';
 // Open-core: extension route injection (empty in Community edition via @ee stub).
-import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from "@ee/routes";
+import { eeSettingsChildren, eeTopRoutes } from "@ee/routes";
 // Edition flag (open-core): EE=true, Community=false. Dùng để chỉ đăng ký menu
 // Marketing CE khi KHÔNG phải EE (tránh đụng /marketing của EE trong eeTopRoutes).
 import { isExtension } from "@ee/edition";
@@ -22,14 +22,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/SetupView.vue"),
     meta: { layout: "auth" },
   },
-  // Ép đổi mật khẩu lần đầu đăng nhập
-  {
-    path: "/setup-password",
-    name: "SetupPassword",
-    component: () => import("@/views/ForcePasswordChangeView.vue"),
-    meta: { layout: "auth", requiresAuth: true, allowUnchangedPassword: true },
-  },
-  // Trang công khai không cần đăng nhập: sale bấm link trong tin Zalo để
+  // Trang CÔNG KHAI (không cần đăng nhập) — sale bấm link trong tin Zalo để
   // đánh dấu Lịch hẹn Hoàn thành / Huỷ. Xác thực bằng token ?t= (2026-06-16).
   {
     path: "/appointments/action",
@@ -121,76 +114,17 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/TasksView.vue"),
     meta: { requiresAuth: true },
   },
-  // Module Báo cáo: shell và 7 màn
-  {
-    path: "/reports",
-    component: () => import("@/views/reports/ReportsShell.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-    redirect: "/reports/tong-quan",
-    children: [
-      {
-        path: "tong-quan",
-        name: "Reports.Overview",
-        component: () => import("@/views/reports/OverviewReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "nick",
-        name: "Reports.Nick",
-        component: () => import("@/views/reports/NickFleetReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "sale",
-        name: "Reports.Sales",
-        component: () => import("@/views/reports/SalesReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "pipeline",
-        name: "Reports.Pipeline",
-        component: () => import("@/views/reports/PipelineReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "engagement",
-        name: "Reports.Engagement",
-        component: () => import("@/views/reports/EngagementReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "audit",
-        name: "Reports.Audit",
-        component: () => import("@/views/reports/AuditReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      ...eeReportsChildren,
-    ],
-  },
-  // Báo cáo cơ bản cũ, giữ để deep-link không gãy.
-  {
-    path: "/reports-co-ban",
-    name: "Reports",
-    component: () => import("@/views/ReportsView.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-  },
-  {
-    path: "/analytics",
-    name: "Analytics",
-    component: () => import("@/views/AnalyticsView.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-  },
-  // Settings mới: sidebar 6 nhóm
+  // ════════ NEW Settings — 6-group sidebar layout ════════
   {
     path: "/settings",
     component: () => import("@/views/settings/SettingsLayout.vue"),
     meta: { requiresAuth: true },
     children: [
-      // Default: root /settings → role-based default route (handled in SettingsLayout onMounted)
+      // Trang tổng quan Settings — giữ /settings là điểm vào thay vì chuyển thẳng đến hồ sơ.
       {
         path: "",
         name: "Settings",
-        component: () => import("@/views/settings/PersonalAccountPage.vue"),
+        component: () => import("@/views/settings/SettingsHome.vue"),
       },
 
       // Personal: gom thành một trang "Tài khoản của tôi".
@@ -344,13 +278,7 @@ const routes: RouteRecordRaw[] = [
           import("@/components/settings/ZaloLabelsManagement.vue"),
         meta: { resource: "settings" },
       },
-      {
-        path: "crm/scoring",
-        name: "Settings.Scoring",
-        component: () => import("@/views/ScoringSettingsView.vue"),
-        meta: { resource: "settings" },
-      },
-      // Nhắc hẹn Zalo: bật tắt và số phút delay gửi link đánh dấu.
+      // Lịch hẹn → nhắc hẹn Zalo (2026-06-16) — bật/tắt + delay phút gửi link đánh dấu.
       {
         path: "crm/appointments",
         name: "Settings.Appointments",
@@ -376,14 +304,6 @@ const routes: RouteRecordRaw[] = [
         name: "Settings.Templates",
         component: () => import("@/views/settings/SettingsComingSoon.vue"),
         props: { feature: "templates" },
-        meta: { resource: "settings" },
-      },
-      // Lead Pool routes → extension bundle (eeSettingsChildren).
-      // Trợ Lý AI Virtual Chat
-      {
-        path: "crm/ai-assistant",
-        name: "Settings.AiAssistant",
-        component: () => import("@/views/settings/AiAssistantPage.vue"),
         meta: { resource: "settings" },
       },
       // 🔌 Channels & Integrations
@@ -475,12 +395,9 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: "/leads/stuck",
-    name: "StuckLeads",
-    component: () => import("@/views/StuckLeadsView.vue"),
-    meta: { requiresAuth: true, resource: "contact" },
+    redirect: "/contacts",
   },
-  // Legacy redirects: route cũ đã chuyển xuống /settings/*
-  { path: "/settings/scoring", redirect: "/settings/crm/scoring" },
+  // Legacy redirects — old routes moved under /settings/*
   { path: "/api-settings", redirect: "/settings/dev/api" },
   { path: "/integrations", redirect: "/settings/channels/integrations" },
   {
@@ -577,7 +494,6 @@ const LEGACY_TAB_MAP: Record<string, string> = {
   statuses: "/settings/crm/statuses",
   "crm-tags": "/settings/crm/tags",
   "zalo-labels": "/settings/crm/zalo-labels",
-  scoring: "/settings/crm/scoring",
 };
 
 // Auth guard + legacy tab redirect
@@ -622,24 +538,7 @@ router.beforeEach(async (to, _from, next) => {
         return next("/sales-chat");
       }
     }
-    // Ép đổi mật khẩu lần đầu đăng nhập.
-    // passwordChangedAt = null → block tất cả route khác, ép sale qua /setup-password.
-    // allowUnchangedPassword cho phép /setup-password route bypass (chính nó).
-    if (
-      authStore.user?.passwordChangedAt === null &&
-      !to.meta.allowUnchangedPassword
-    ) {
-      return next("/setup-password");
-    }
-    // Ngược lại: nếu user đã đổi pw mà vẫn vào /setup-password → redirect dashboard
-    if (
-      authStore.user?.passwordChangedAt !== null &&
-      to.meta.allowUnchangedPassword
-    ) {
-      return next("/");
-    }
-
-    // RBAC page-level guard: chặn theo nhóm quyền.
+    // RBAC page-level guard 2026-06-08 — chặn theo nhóm quyền (grants).
     // Route khai báo meta.resource → user phải canAccess(resource, action) mới vào.
     // owner/admin = full (canAccess tự bypass). Default action = 'access'.
     const required = to.meta.resource as string | undefined;
@@ -678,7 +577,6 @@ const ROUTE_TITLES: Record<string, string> = {
   // Top-level
   Login: "Đăng nhập",
   Setup: "Khởi tạo",
-  SetupPassword: "Đổi mật khẩu",
   Dashboard: "Tổng quan",
   ChannelConnections: "Kênh Kết Nối",
   Chat: "Hội thoại",
@@ -689,15 +587,6 @@ const ROUTE_TITLES: Record<string, string> = {
   Profile: "Hồ sơ cá nhân",
   Appointments: "Lịch hẹn",
   Tasks: "Công việc",
-  Reports: "Báo cáo",
-  "Reports.Overview": "Báo cáo · Tổng quan điều hành",
-  "Reports.Nick": "Báo cáo · Vận hành Nick Zalo",
-  "Reports.Sales": "Báo cáo · Hiệu suất Sale & Team",
-  "Reports.Pipeline": "Báo cáo · Pipeline & Lead Pool",
-  "Reports.Automation": "Báo cáo · Automation & Chăm sóc",
-  "Reports.Engagement": "Báo cáo · Engagement KH",
-  "Reports.Audit": "Báo cáo · Audit & Sức khỏe hệ thống",
-  Analytics: "Phân tích",
   CustomerActivityLog: "Nhật ký hoạt động KH",
   StuckLeads: "Lead bị kẹt",
   Automation: "Tự động hóa",
@@ -723,13 +612,11 @@ const ROUTE_TITLES: Record<string, string> = {
   "Settings.Tags": "Thẻ (tag)",
   "Settings.TagsV2": "Thẻ (taxonomy)",
   "Settings.ZaloLabels": "Nhãn Zalo",
-  "Settings.Scoring": "Chấm điểm tương tác",
   "Settings.Appointments": "Lịch hẹn & Nhắc hẹn",
   "Settings.Stuck": "KH bị kẹt",
   "Settings.Folders": "Thư mục",
   "Settings.Templates": "Mẫu tin",
   "Settings.LeadPool": "Lead Pool",
-  "Settings.AiAssistant": "Trợ lý AI",
   "Settings.ZaloAccounts": "Tài khoản Zalo",
   "Settings.FacebookLeadAds": "Facebook Lead Ads",
   "Settings.ZaloAdsLeadForm": "Zalo Ads Lead Form",
@@ -768,4 +655,43 @@ router.afterEach((to) => {
   const key = typeof to.name === "string" ? to.name : "";
   const screen = ROUTE_TITLES[key];
   document.title = screen ? `${screen} · ${BRAND}` : BRAND;
+});
+
+// ── Lazy-route load failure: KHÔNG để app trắng màn ───────────────────────────
+// Route dùng dynamic import; nếu chunk lỗi (component throw khi setup, deploy mới
+// làm hash chunk cũ 404, mạng đứt) thì <router-view> không render gì cả → người
+// dùng chỉ thấy nền trắng, không biết chuyện gì xảy ra.
+// Ở đây bắt lỗi để: (1) báo toast, (2) reload 1 lần cho case chunk cũ đã bị xoá
+// sau deploy, (3) các case còn lại đưa về Dashboard thay vì đứng ở màn trắng.
+const CHUNK_RELOAD_KEY = "router.chunkReloadAt";
+
+function isChunkLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /Failed to fetch dynamically imported module/i.test(message) ||
+    /error loading dynamically imported module/i.test(message) ||
+    /Importing a module script failed/i.test(message)
+  );
+}
+
+router.onError((error, to) => {
+  useProgress().finish();
+
+  if (isChunkLoadError(error)) {
+    // Chunk cũ bị xoá sau khi deploy bản mới → reload để lấy manifest mới.
+    // Chỉ tự reload tối đa 1 lần / 10s để không rơi vào vòng lặp reload vô hạn.
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+    if (Date.now() - last > 10_000) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+      window.location.assign(to.fullPath);
+      return;
+    }
+  }
+
+  console.error("[router] Không tải được màn hình:", to.fullPath, error);
+  try {
+    useToast().error("Không mở được màn hình này. Vui lòng thử lại.");
+  } catch {
+    /* toast chưa sẵn sàng */
+  }
 });

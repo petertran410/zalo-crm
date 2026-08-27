@@ -68,7 +68,8 @@
         </div>
       </div>
 
-      <!-- Card 3: Bảo mật -->
+      <!-- Card 3: Bảo mật — mật khẩu do tổ chức quản lý.
+           Nhân viên KHÔNG tự đổi; chỉ owner/admin được đổi mật khẩu của chính mình. -->
       <div class="card">
         <div class="card-head"><h3>Bảo mật</h3></div>
         <div class="card-pad sec-row">
@@ -76,7 +77,8 @@
             <div class="sec-lbl">Mật khẩu</div>
             <div class="sec-sub">••••••••</div>
           </div>
-          <button class="btn btn-primary" @click="showPwModal = true">🔑 Đổi mật khẩu</button>
+          <button v-if="canChangeOwnPassword" class="btn btn-primary" @click="showPwModal = true">🔑 Đổi mật khẩu</button>
+          <span v-else class="locked">🔒 do quản trị quản lý</span>
         </div>
       </div>
 
@@ -101,7 +103,7 @@
     </template>
 
     <!-- Modal đổi mật khẩu (Q1 = modal) -->
-    <ChangePasswordModal v-if="showPwModal" @close="showPwModal = false" />
+    <ChangePasswordModal v-if="showPwModal && canChangeOwnPassword" @close="showPwModal = false" />
   </div>
 </template>
 
@@ -123,6 +125,7 @@ const roleLabel = computed(() => {
   return 'Nhân viên';
 });
 const roleClass = computed(() => `role-${authStore.user?.role || 'member'}`);
+const canChangeOwnPassword = computed(() => ['owner', 'admin'].includes(authStore.user?.role ?? ''));
 
 // ── Sửa họ tên (edit inline) ──
 const editing = ref(false);

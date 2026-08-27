@@ -159,7 +159,6 @@ import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
 import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
-import { usePosNotification } from '@/composables/use-pos-notification';
 import '@/assets/sales-theme.css';
 
 const orderDraftStore = useOrderDraftStore();
@@ -169,8 +168,6 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const workspaceStore = useWorkspaceStore();
-
-usePosNotification();
 
 const userMenu = ref(false);
 const isSidebarExpanded = ref(false);

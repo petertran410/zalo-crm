@@ -36,8 +36,7 @@ export interface PermissionGroupNode {
   children: PermissionGroupNode[];
 }
 
-// 2026-06-09 (Anh chốt): gỡ 'internal_contact' khỏi onboarding (còn 3 bước).
-export type OnboardingStepKey = 'change_password' | 'connect_nick' | 'pin';
+export type OnboardingStepKey = 'pin';
 
 export interface OnboardingSummary {
   userId: string;
@@ -45,8 +44,6 @@ export interface OnboardingSummary {
   totalCount: number;
   percent: number;
   pendingSteps: OnboardingStepKey[];
-  changePassword: boolean;
-  connectNick: boolean;
   pin: boolean;
   pinSkipped: boolean;
   dismissed: boolean;
@@ -87,11 +84,7 @@ export interface RbacUser {
   recipientStatus: 'ready' | 'pending_friend_request' | 'pending_user_confirm' | 'invalid' | 'missing_internal_contact' | string | null;
   recipientError: string | null;
   maxPrivacyNicks?: number;
-  // Phase status 4-state 2026-05-27 — FE compute status từ 3 field này:
-  //   - isActive=false → Vô hiệu
-  //   - isActive=true && passwordChangedAt=null → Chưa kích hoạt (sale chưa từng login + đổi pw)
-  //   - isActive=true && passwordChangedAt!=null && lastLoginAt > now-3d → Hoạt động
-  //   - else → Im lặng
+  // Phase status 4-state 2026-05-27 — FE compute status từ isActive + lastLoginAt:
   passwordChangedAt: string | null;
   lastLoginAt: string | null;
   isActive: boolean;

@@ -1,5 +1,5 @@
 <template>
-  <div class="dept-page">
+  <div class="dept-page rbac-departments">
     <header class="page-hero">
       <div class="hero-left">
         <h1 class="hero-title">Sơ đồ tổ chức</h1>
@@ -514,87 +514,87 @@ function avatarColor(name: string): string {
 
 <style>
 /* RBAC DepartmentsView — non-scoped vì recursive h() components không nhận data-v-* attribute */
-.dept-page {
-  background: white;
+.rbac-departments .dept-page  {
+  background: transparent;
   min-height: 100%;
-  padding: 28px 32px 96px;
-  font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif;
-  color: #181d26;
+  padding: 0 0 var(--app-space-8);
+  font-family: inherit;
+  color: var(--app-text-primary);
   letter-spacing: -0.005em;
 }
 
 /* Hero */
-.page-hero { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; gap: 24px; }
-.hero-title { font-size: 30px; font-weight: 400; line-height: 1.2; margin: 0 0 6px; }
-.hero-sub { font-size: 13px; color: #41454d; margin: 0; max-width: 600px; }
+.rbac-departments .page-hero  { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 28px; gap: 24px; }
+.rbac-departments .hero-title  { font-size: 30px; font-weight: 400; line-height: 1.2; margin: 0 0 6px; }
+.rbac-departments .hero-sub  { font-size: 13px; color: var(--app-text-secondary); margin: 0; max-width: 600px; }
 
 /* Stats */
-.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
-.stat-card { border-radius: 12px; padding: 14px 18px; position: relative; overflow: hidden; }
-.stat-card::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
-.stat-primary { background: #f8fafc; }
-.stat-primary::before { background: #181d26; }
-.stat-forest { background: #e3ede4; }
-.stat-forest::before { background: #0a2e0e; }
-.stat-mustard { background: #fdf3df; }
-.stat-mustard::before { background: #d9a441; }
-.stat-cream { background: #f5e9d4; }
-.stat-cream::before { background: #aa2d00; }
-.stat-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #41454d; margin-bottom: 4px; }
-.stat-value { font-size: 24px; font-weight: 400; color: #181d26; letter-spacing: -0.3px; }
-.stat-unit { font-size: 13px; color: #9297a0; }
+.rbac-departments .stats-row  { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px; }
+.rbac-departments .stat-card  { border-radius: 12px; padding: 14px 18px; position: relative; overflow: hidden; }
+.rbac-departments .stat-card::before  { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 4px; }
+.rbac-departments .stat-primary  { background: var(--app-surface-sunken); }
+.rbac-departments .stat-primary::before  { background: var(--app-accent); }
+.rbac-departments .stat-forest  { background: #e3ede4; }
+.rbac-departments .stat-forest::before  { background: #0a2e0e; }
+.rbac-departments .stat-mustard  { background: #fdf3df; }
+.rbac-departments .stat-mustard::before  { background: #d9a441; }
+.rbac-departments .stat-cream  { background: #f5e9d4; }
+.rbac-departments .stat-cream::before  { background: #aa2d00; }
+.rbac-departments .stat-label  { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: var(--app-text-secondary); margin-bottom: 4px; }
+.rbac-departments .stat-value  { font-size: 24px; font-weight: 400; color: var(--app-text-primary); letter-spacing: -0.3px; }
+.rbac-departments .stat-unit  { font-size: 13px; color: var(--app-text-muted); }
 
 /* Toolbar */
-.toolbar { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
-.search-box { display: flex; align-items: center; gap: 8px; background: #f8fafc; border: 1px solid #dddddd; border-radius: 8px; padding: 0 12px; flex: 1; max-width: 400px; }
-.search-box:focus-within { border-color: #181d26; background: white; box-shadow: 0 0 0 3px rgba(24,29,38,0.06); }
-.search-icon { color: #9297a0; }
-.search-box input { flex: 1; border: 0; background: transparent; padding: 10px 0; font-size: 13px; outline: none; color: #181d26; font-family: inherit; }
-.search-clear { background: none; border: 0; color: #9297a0; cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; }
-.view-toggle { display: flex; gap: 4px; background: #f0f1f3; padding: 3px; border-radius: 8px; }
-.view-toggle button {
+.rbac-departments .toolbar  { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 16px; }
+.rbac-departments .search-box  { display: flex; align-items: center; gap: 8px; background: var(--app-surface-sunken); border: 1px solid var(--app-border-default); border-radius: 8px; padding: 0 12px; flex: 1; max-width: 400px; }
+.rbac-departments .search-box:focus-within  { border-color: var(--app-accent); background: white; box-shadow: 0 0 0 3px rgba(24,29,38,0.06); }
+.rbac-departments .search-icon  { color: var(--app-text-muted); }
+.rbac-departments .search-box input  { flex: 1; border: 0; background: transparent; padding: 10px 0; font-size: 13px; outline: none; color: var(--app-text-primary); font-family: inherit; }
+.rbac-departments .search-clear  { background: none; border: 0; color: var(--app-text-muted); cursor: pointer; font-size: 18px; padding: 0 4px; line-height: 1; }
+.rbac-departments .view-toggle  { display: flex; gap: 4px; background: var(--app-surface-hover); padding: 3px; border-radius: 8px; }
+.rbac-departments .view-toggle button  {
   background: transparent; border: 0; padding: 6px 14px; font-size: 12px; font-weight: 500;
-  border-radius: 6px; cursor: pointer; color: #41454d; transition: all 0.1s;
+  border-radius: 6px; cursor: pointer; color: var(--app-text-secondary); transition: all 0.1s;
 }
-.view-toggle button.active { background: white; color: #181d26; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+.rbac-departments .view-toggle button.active  { background: white; color: var(--app-text-primary); box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
 
 /* ── TREE VIEW (indented vertical cards) ────────────────────── */
-.tree-view {
-  background: #f8fafc;
-  border: 1px solid #dddddd;
+.rbac-departments .tree-view  {
+  background: var(--app-surface-sunken);
+  border: 1px solid var(--app-border-default);
   border-radius: 12px;
   padding: 16px;
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-.dept-group { display: flex; flex-direction: column; gap: 12px; }
-.dept-group .dept-group { padding-left: calc(28px + var(--depth, 0) * 4px); }
+.rbac-departments .dept-group  { display: flex; flex-direction: column; gap: 12px; }
+.rbac-departments .dept-group .dept-group  { padding-left: calc(28px + var(--depth, 0) * 4px); }
 
-.dept-row {
+.rbac-departments .dept-row  {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   padding-left: calc(var(--depth, 0) * 28px);
   position: relative;
 }
-.dept-toggle {
-  background: white; border: 1px solid #e0e2e6; font-size: 13px;
+.rbac-departments .dept-toggle  {
+  background: white; border: 1px solid var(--app-border-subtle); font-size: 13px;
   width: 26px; height: 26px;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; color: #41454d;
+  cursor: pointer; color: var(--app-text-secondary);
   border-radius: 6px;
   flex-shrink: 0;
   margin-top: 10px;
 }
-.dept-toggle:hover:not(.invisible) { background: #181d26; color: white; border-color: #181d26; }
-.dept-toggle.invisible { visibility: hidden; }
+.rbac-departments .dept-toggle:hover:not(.invisible)  { background: var(--app-accent); color: var(--app-text-inverse); border-color: var(--app-accent); }
+.rbac-departments .dept-toggle.invisible  { visibility: hidden; }
 
 /* ── Department CARD (the visual cell) ───────────────────── */
-.dept-card {
+.rbac-departments .dept-card  {
   flex: 1;
   background: white;
-  border: 1px solid #e0e2e6;
+  border: 1px solid var(--app-border-subtle);
   border-radius: 10px;
   display: flex;
   overflow: hidden;
@@ -602,62 +602,62 @@ function avatarColor(name: string): string {
   transition: all 0.15s;
   box-shadow: 0 1px 2px rgba(24,29,38,0.04);
 }
-.dept-card:hover {
+.rbac-departments .dept-card:hover  {
   border-color: var(--accent);
   box-shadow: 0 4px 14px rgba(24,29,38,0.1);
   transform: translateY(-1px);
 }
-.dept-card-accent { width: 4px; flex: 0 0 4px; background: var(--accent); }
-.dept-card-body { flex: 1; padding: 12px 16px 14px; min-width: 0; }
+.rbac-departments .dept-card-accent  { width: 4px; flex: 0 0 4px; background: var(--accent); }
+.rbac-departments .dept-card-body  { flex: 1; padding: 12px 16px 14px; min-width: 0; }
 
-.dept-card-head {
+.rbac-departments .dept-card-head  {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 12px;
   margin-bottom: 10px;
   padding-bottom: 10px;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--app-surface-hover);
 }
-.dept-name-wrap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
-.dept-name {
+.rbac-departments .dept-name-wrap  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.rbac-departments .dept-name  {
   font-size: 15px;
   font-weight: 600;
-  color: #181d26;
+  color: var(--app-text-primary);
   line-height: 1.3;
 }
-.dept-depth-tag {
+.rbac-departments .dept-depth-tag  {
   font-size: 9px;
   font-weight: 600;
   padding: 2px 7px;
-  background: #f0f1f3;
+  background: var(--app-surface-hover);
   color: #6b7280;
   border-radius: 9999px;
   text-transform: uppercase;
   letter-spacing: 0.4px;
 }
-.dept-quick-actions {
+.rbac-departments .dept-quick-actions  {
   display: flex; gap: 4px;
   opacity: 0.6;
   transition: opacity 0.15s;
   flex-shrink: 0;
 }
-.dept-card:hover .dept-quick-actions { opacity: 1; }
-.btn-quick {
-  background: white; border: 1px solid #dddddd;
+.rbac-departments .dept-card:hover .dept-quick-actions  { opacity: 1; }
+.rbac-departments .btn-quick  {
+  background: white; border: 1px solid var(--app-border-default);
   padding: 4px 10px; border-radius: 6px;
   font-size: 11px; font-weight: 500;
-  cursor: pointer; color: #41454d;
+  cursor: pointer; color: var(--app-text-secondary);
   white-space: nowrap;
   transition: all 0.1s;
 }
-.btn-quick:hover { background: #181d26; color: white; border-color: #181d26; }
-.btn-quick-add { color: #0a2e0e; border-color: #c8d8c9; }
-.btn-quick-add:hover { background: #0a2e0e; color: white; border-color: #0a2e0e; }
+.rbac-departments .btn-quick:hover  { background: var(--app-accent); color: var(--app-text-inverse); border-color: var(--app-accent); }
+.rbac-departments .btn-quick-add  { color: #0a2e0e; border-color: #c8d8c9; }
+.rbac-departments .btn-quick-add:hover  { background: #0a2e0e; color: white; border-color: #0a2e0e; }
 
 /* ── 3-row layout inside card ────────────────────────────── */
-.dept-rows { display: flex; flex-direction: column; gap: 6px; }
-.dept-info-row {
+.rbac-departments .dept-rows  { display: flex; flex-direction: column; gap: 6px; }
+.rbac-departments .dept-info-row  {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -665,39 +665,39 @@ function avatarColor(name: string): string {
   padding: 4px 0;
   min-height: 24px;
 }
-.info-ico { font-size: 14px; flex-shrink: 0; width: 22px; text-align: center; }
-.info-label {
+.rbac-departments .info-ico  { font-size: 14px; flex-shrink: 0; width: 22px; text-align: center; }
+.rbac-departments .info-label  {
   font-weight: 500;
-  color: #41454d;
+  color: var(--app-text-secondary);
   font-size: 12px;
   min-width: 96px;
   flex-shrink: 0;
 }
-.info-name {
+.rbac-departments .info-name  {
   font-weight: 500;
-  color: #181d26;
+  color: var(--app-text-primary);
   font-size: 13px;
 }
-.info-empty {
-  color: #9297a0;
+.rbac-departments .info-empty  {
+  color: var(--app-text-muted);
   font-style: italic;
   font-size: 12px;
 }
-.info-count {
+.rbac-departments .info-count  {
   font-weight: 600;
-  color: #181d26;
+  color: var(--app-text-primary);
   font-size: 13px;
-  background: #f0f1f3;
+  background: var(--app-surface-hover);
   padding: 2px 10px;
   border-radius: 9999px;
   min-width: 28px;
   text-align: center;
 }
-.dept-info-row-members { gap: 8px; }
-.btn-expand-members {
+.rbac-departments .dept-info-row-members  { gap: 8px; }
+.rbac-departments .btn-expand-members  {
   background: white;
-  border: 1px solid #dddddd;
-  color: #41454d;
+  border: 1px solid var(--app-border-default);
+  color: var(--app-text-secondary);
   width: 22px;
   height: 22px;
   border-radius: 6px;
@@ -710,34 +710,34 @@ function avatarColor(name: string): string {
   line-height: 1;
   margin-left: 4px;
 }
-.btn-expand-members:hover { background: #181d26; color: white; border-color: #181d26; }
+.rbac-departments .btn-expand-members:hover  { background: var(--app-accent); color: var(--app-text-inverse); border-color: var(--app-accent); }
 
 /* Inline member list (expanded under +/- button) */
-.inline-member-list {
+.rbac-departments .inline-member-list  {
   list-style: none;
   padding: 6px 0 0 30px;
   margin: 4px 0 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-top: 1px dashed #e0e2e6;
+  border-top: 1px dashed var(--app-border-subtle);
   margin-top: 6px;
 }
-.inline-member {
+.rbac-departments .inline-member  {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
-  background: #f8fafc;
+  background: var(--app-surface-sunken);
   border-radius: 6px;
 }
-.inline-member-empty {
+.rbac-departments .inline-member-empty  {
   font-size: 11px;
-  color: #9297a0;
+  color: var(--app-text-muted);
   font-style: italic;
   padding: 6px 8px;
 }
-.inline-avatar {
+.rbac-departments .inline-avatar  {
   width: 24px;
   height: 24px;
   border-radius: 50%;
@@ -749,157 +749,178 @@ function avatarColor(name: string): string {
   justify-content: center;
   flex-shrink: 0;
 }
-.inline-info { min-width: 0; flex: 1; }
-.inline-name { font-size: 12px; font-weight: 500; color: #181d26; line-height: 1.2; }
-.inline-email { font-size: 10px; color: #9297a0; line-height: 1.2; }
+.rbac-departments .inline-info  { min-width: 0; flex: 1; }
+.rbac-departments .inline-name  { font-size: 12px; font-weight: 500; color: var(--app-text-primary); line-height: 1.2; }
+.rbac-departments .inline-email  { font-size: 10px; color: var(--app-text-muted); line-height: 1.2; }
 
 /* ── ORG CHART VIEW (vertical visual) ──────────────────── */
-.org-chart {
-  background: #f8fafc;
-  border: 1px solid #dddddd;
+.rbac-departments .org-chart  {
+  background: var(--app-surface-sunken);
+  border: 1px solid var(--app-border-default);
   border-radius: 12px;
   padding: 32px 16px;
   overflow-x: auto;
 }
-.org-canvas {
+.rbac-departments .org-canvas  {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0;
   min-width: 100%;
 }
-.org-node {
+.rbac-departments .org-node  {
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
 }
-.org-card-wrap {
+.rbac-departments .org-card-wrap  {
   min-width: 280px;
   max-width: 320px;
 }
-.org-connector-down {
+.rbac-departments .org-connector-down  {
   width: 2px;
   height: 24px;
-  background: #9297a0;
+  background: var(--app-text-muted);
 }
-.org-children {
+.rbac-departments .org-children  {
   display: flex;
   flex-direction: column;
   align-items: center;
 }
-.org-children-row {
+.rbac-departments .org-children-row  {
   display: flex;
   gap: 28px;
   position: relative;
   padding-top: 0;
 }
-.org-children-row::before {
+.rbac-departments .org-children-row::before  {
   content: '';
   position: absolute;
   top: 0;
   left: 50%;
   width: calc(100% - 280px);
   height: 2px;
-  background: #9297a0;
+  background: var(--app-text-muted);
   transform: translateX(-50%);
 }
-.org-children-row:has(> :only-child)::before { display: none; }
-.org-child-wrap {
+.rbac-departments .org-children-row:has(> :only-child)::before  { display: none; }
+.rbac-departments .org-child-wrap  {
   display: flex;
   flex-direction: column;
   align-items: center;
   position: relative;
 }
-.org-connector-up {
+.rbac-departments .org-connector-up  {
   width: 2px;
   height: 24px;
-  background: #9297a0;
+  background: var(--app-text-muted);
 }
 
 /* Loading & empty */
-.loading-state { display: flex; flex-direction: column; gap: 8px; }
-.skel-card { height: 110px; background: linear-gradient(90deg, #f0f1f3 0%, #e0e2e6 50%, #f0f1f3 100%); background-size: 200% 100%; border-radius: 10px; animation: skel 1.4s ease-in-out infinite; }
+.rbac-departments .loading-state  { display: flex; flex-direction: column; gap: 8px; }
+.rbac-departments .skel-card  { height: 110px; background: linear-gradient(90deg, var(--app-surface-hover) 0%, var(--app-border-subtle) 50%, var(--app-surface-hover) 100%); background-size: 200% 100%; border-radius: 10px; animation: skel 1.4s ease-in-out infinite; }
 @keyframes skel { 0%, 100% { background-position: 0% 0%; } 50% { background-position: -200% 0%; } }
-.empty-state {
-  background: #f8fafc; border: 2px dashed #dddddd; border-radius: 12px;
+.rbac-departments .empty-state  {
+  background: var(--app-surface-sunken); border: 2px dashed var(--app-border-default); border-radius: 12px;
   padding: 64px 24px; text-align: center;
 }
-.empty-icon { font-size: 48px; margin-bottom: 16px; }
-.empty-state h3 { font-size: 20px; font-weight: 500; margin: 0 0 8px; color: #181d26; }
-.empty-state p { font-size: 13px; color: #41454d; margin: 0 0 24px; }
+.rbac-departments .empty-icon  { font-size: 48px; margin-bottom: 16px; }
+.rbac-departments .empty-state h3  { font-size: 20px; font-weight: 500; margin: 0 0 8px; color: var(--app-text-primary); }
+.rbac-departments .empty-state p  { font-size: 13px; color: var(--app-text-secondary); margin: 0 0 24px; }
 
 /* Buttons */
-.btn-primary {
-  background: #181d26; color: white; border: 0;
+.rbac-departments .btn-primary  {
+  background: var(--app-accent); color: var(--app-text-inverse); border: 0;
   padding: 9px 16px; border-radius: 10px;
   font-size: 13px; font-weight: 500;
   cursor: pointer;
   display: inline-flex; align-items: center; gap: 6px;
   transition: background 0.1s;
 }
-.btn-primary:hover { background: #0d1218; }
-.btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
-.btn-icon { font-size: 16px; }
-.btn-ghost {
-  background: white; border: 1px solid #dddddd;
+.rbac-departments .btn-primary:hover  { background: #0d1218; }
+.rbac-departments .btn-primary:disabled  { opacity: 0.4; cursor: not-allowed; }
+.rbac-departments .btn-icon  { font-size: 16px; }
+.rbac-departments .btn-ghost  {
+  background: white; border: 1px solid var(--app-border-default);
   padding: 9px 16px; border-radius: 10px;
   font-size: 13px; font-weight: 500;
-  cursor: pointer; color: #41454d;
+  cursor: pointer; color: var(--app-text-secondary);
 }
-.btn-ghost:hover { background: #f8fafc; }
+.rbac-departments .btn-ghost:hover  { background: var(--app-surface-sunken); }
 
 /* Modal */
-.modal-backdrop {
+.rbac-departments .modal-backdrop  {
   position: fixed; inset: 0;
   background: rgba(24, 29, 38, 0.45);
   display: flex; align-items: center; justify-content: center;
   z-index: 9999;
   backdrop-filter: blur(4px);
 }
-.modal-card {
+.rbac-departments .modal-card  {
   background: white; border-radius: 14px;
   width: 440px; max-width: 92vw; overflow: hidden;
   box-shadow: 0 24px 60px rgba(24,29,38,0.25);
 }
-.modal-head {
+.rbac-departments .modal-head  {
   padding: 18px 22px 14px;
   display: flex; justify-content: space-between; align-items: center;
-  border-bottom: 1px solid #f0f1f3;
+  border-bottom: 1px solid var(--app-surface-hover);
 }
-.modal-head h3 { margin: 0; font-size: 16px; font-weight: 500; color: #181d26; }
-.modal-close {
-  background: none; border: 0; font-size: 22px; color: #9297a0;
+.rbac-departments .modal-head h3  { margin: 0; font-size: 16px; font-weight: 500; color: var(--app-text-primary); }
+.rbac-departments .modal-close  {
+  background: none; border: 0; font-size: 22px; color: var(--app-text-muted);
   cursor: pointer; width: 30px; height: 30px;
   border-radius: 6px; line-height: 1;
 }
-.modal-close:hover { background: #f0f1f3; color: #181d26; }
-.modal-body { padding: 18px 22px; }
-.modal-foot {
+.rbac-departments .modal-close:hover  { background: var(--app-surface-hover); color: var(--app-text-primary); }
+.rbac-departments .modal-body  { padding: 18px 22px; }
+.rbac-departments .modal-foot  {
   padding: 14px 22px 18px;
   display: flex; justify-content: flex-end; gap: 8px;
-  border-top: 1px solid #f0f1f3;
-  background: #f8fafc;
+  border-top: 1px solid var(--app-surface-hover);
+  background: var(--app-surface-sunken);
 }
-.parent-hint {
-  font-size: 12px; color: #41454d; margin: 0 0 14px;
+.rbac-departments .parent-hint  {
+  font-size: 12px; color: var(--app-text-secondary); margin: 0 0 14px;
   padding: 8px 12px; background: #fdf3df;
   border-radius: 6px; border-left: 3px solid #d9a441;
 }
-.hint-label { font-weight: 500; margin-right: 6px; }
-.form-label {
+.rbac-departments .hint-label  { font-weight: 500; margin-right: 6px; }
+.rbac-departments .form-label  {
   display: block; font-size: 11px; font-weight: 500;
   text-transform: uppercase; letter-spacing: 0.5px;
-  color: #41454d; margin-bottom: 6px;
+  color: var(--app-text-secondary); margin-bottom: 6px;
 }
-.form-input {
+.rbac-departments .form-input  {
   width: 100%; padding: 9px 12px;
-  border: 1px solid #dddddd; border-radius: 6px;
+  border: 1px solid var(--app-border-default); border-radius: 6px;
   font-size: 13px; font-family: inherit;
-  color: #181d26; background: white;
+  color: var(--app-text-primary); background: white;
 }
-.form-input:focus { outline: none; border-color: #181d26; box-shadow: 0 0 0 3px rgba(24,29,38,0.08); }
-.form-error { color: #aa2d00; font-size: 12px; margin: 12px 0 0; padding: 8px 10px; background: #fbe6dc; border-radius: 6px; }
+.rbac-departments .form-input:focus  { outline: none; border-color: var(--app-accent); box-shadow: 0 0 0 3px rgba(24,29,38,0.08); }
+.rbac-departments .form-error  { color: #aa2d00; font-size: 12px; margin: 12px 0 0; padding: 8px 10px; background: #fbe6dc; border-radius: 6px; }
+
+/* Responsive containment — không scope component vì DeptTreeNode/OrgChartNode được
+   dựng bằng recursive render functions; root class đã namespace toàn bộ selector. */
+@media (max-width: 960px) {
+  .rbac-departments .stats-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rbac-departments .page-hero { align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-3); }
+  .rbac-departments .toolbar { align-items: stretch; }
+  .rbac-departments .search-box { max-width: none; min-width: min(100%, 220px); }
+  .rbac-departments .org-chart { overflow-x: auto; }
+  .rbac-departments .org-canvas { min-width: 720px; }
+}
+@media (max-width: 600px) {
+  .rbac-departments .stats-row { grid-template-columns: 1fr; }
+  .rbac-departments .view-toggle { width: 100%; }
+  .rbac-departments .view-toggle button { flex: 1; padding-inline: 8px; }
+  .rbac-departments .tree-view { padding: var(--app-space-2); }
+  .rbac-departments .dept-card-body { padding: 10px 12px; }
+  .rbac-departments .dept-card-head { align-items: flex-start; gap: 8px; }
+  .rbac-departments .dept-quick-actions { opacity: 1; }
+  .rbac-departments .modal-card { width: calc(100vw - 32px); }
+}
 
 .modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.15s; }
 .modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }

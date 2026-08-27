@@ -50,6 +50,15 @@ export interface MappedPosCustomer {
   phone: string | null;
   email: string | null;
   address: string | null;
+  /** Tên công ty (POS `organization`) — chỉ khách tổ chức mới có. */
+  organization?: string | null;
+  taxCode?: string | null;
+  /** POS `type`: 1 = tổ chức/hộ KD, 0 = cá nhân, thiếu = không rõ. */
+  isOrganization?: boolean | null;
+  /** Nhóm khách hàng chính tách từ `groups` (Khách buôn, Khách lẻ…). */
+  segment?: string | null;
+  /** Mã sale POS tách từ `groups` (vd "phuongnt") — map sang user CRM ở lớp hiển thị. */
+  posSaleCode?: string | null;
 }
 
 function firstString(...vals: unknown[]): string | null {
@@ -57,6 +66,72 @@ function firstString(...vals: unknown[]): string | null {
     if (typeof v === 'string' && v.trim()) return v.trim();
   }
   return null;
+}
+
+/* ── groups: "nhóm khách hàng" của POS ──────────────────────────────────────
+ * Public API trả groups là MỘT CHUỖI phân tách bằng '|', trộn hai loại token:
+ *   "Khách buôn|phuongnt"        → nhãn nhóm + mã sale
+ *   "Khách lẻ|phuongnt|Hiển Setup" → nhiều nhãn + mã sale
+ * (SDK MCP cũ trả mảng [{name}] — parser giữ tương thích cả hai dạng.)
+ *
+ * Phân loại token theo HÌNH THỨC, không theo danh sách cứng:
+ *   mã sale  = username ascii thường ("phuongnt", "anhmtv", "tranglt")
+ *   nhãn nhóm= phần còn lại (luôn chứa hoa/khoảng trắng/dấu tiếng Việt)
+ * Token lạ giữ nguyên trong tags — không vứt dữ liệu. Việc mã sale này là ai
+ * do bảng PosSaleMapping quyết định ở lớp hiển thị, storage chỉ giữ mã thô.
+ */
+
+/** Username ascii thường ≥3 ký tự → coi là mã sale POS. */
+export function looksLikePosSaleCode(token: string): boolean {
+  return /^[a-z][a-z0-9._]{2,}$/.test(token);
+}
+
+export interface ParsedPosGroups {
+  /** Nhóm khách hàng đại diện (theo thứ tự ưu tiên nghiệp vụ). */
+  segment: string | null;
+  /** Mã sale đầu tiên tìm thấy, nếu có. */
+  saleCode: string | null;
+  labels: string[];
+  saleCodes: string[];
+  /** Toàn bộ token gốc — luôn lưu đủ vào tags. */
+  tags: string[];
+}
+
+const SEGMENT_PRIORITY = [
+  'khách vip cty',
+  'đại lý',
+  'khách hàng chiến lược',
+  'khách chuỗi',
+  'khách buôn',
+  'khách lẻ',
+];
+
+function pickSegment(labels: string[]): string | null {
+  for (const p of SEGMENT_PRIORITY) {
+    const hit = labels.find((l) => l.toLowerCase().includes(p));
+    if (hit) return hit;
+  }
+  return labels[0] ?? null;
+}
+
+export function parseCustomerGroups(raw: unknown): ParsedPosGroups {
+  let tokens: unknown[] = [];
+  if (typeof raw === 'string') tokens = raw.split('|');
+  else if (Array.isArray(raw)) tokens = raw;
+
+  const cleaned = tokens
+    .map((t) => (typeof t === 'string' ? t : (t as any)?.name ?? ''))
+    .map((t: string) => t.trim())
+    .filter(Boolean);
+
+  const saleCodes: string[] = [];
+  const labels: string[] = [];
+  for (const t of cleaned) {
+    if (looksLikePosSaleCode(t)) saleCodes.push(t);
+    else labels.push(t);
+  }
+
+  return { segment: pickSegment(labels), saleCode: saleCodes[0] ?? null, labels, saleCodes, tags: cleaned };
 }
 
 /** POS trả số tiền dạng string ("127050") → parse an toàn, rác/null = 0. */
@@ -78,6 +153,21 @@ export function isEngagedCustomer(raw: Record<string, unknown>): boolean {
   return hasPoints && hasFinancialTrace;
 }
 
+/**
+ * KH còn hoạt động phía POS.
+ *
+ * Chỉ loại khi `isActive === false` TƯỜNG MINH. Thiếu field / null / undefined
+ * vẫn coi là còn hoạt động: payload POS không phải lúc nào cũng kèm `isActive`
+ * (endpoint phụ, webhook), mà mặc định "false" ở đây sẽ chặn sạch dữ liệu.
+ *
+ * Đây là LỚP PHÒNG THỦ, không phải bộ lọc chính. Bộ lọc chính là không gửi
+ * `includeInactive=true` khi gọi Public API — POS tự loại bản ghi ngừng hoạt
+ * động ở server (doc mục 3), rẻ hơn nhiều so với kéo về rồi bỏ.
+ */
+export function isPosCustomerActive(raw: Record<string, unknown>): boolean {
+  return raw.isActive !== false;
+}
+
 /** Map record POS → field CRM. Field name verify từ payload sandbox thật (id 69248). */
 export function extractCustomer(raw: Record<string, unknown>): MappedPosCustomer {
   const idRaw = raw.id ?? raw.customerId;
@@ -92,7 +182,20 @@ export function extractCustomer(raw: Record<string, unknown>): MappedPosCustomer
   const address = firstString(
     addresses.find((a) => a?.isDefault)?.address,
     addresses[0]?.address,
+    raw.invoiceAddress,
     raw.address,
   );
-  return { posCustomerId, posCustomerCode, name, phone, email, address };
+  // POS `type`: 0 = cá nhân, 1 = tổ chức/hộ KD. Verify 500 khách thật:
+  // 61/61 khách type=1 đều có organization + taxCode, type=0 thì không có.
+  const isOrganization = raw.type === 1 ? true : raw.type === 0 ? false : null;
+  const parsedGroups = parseCustomerGroups(raw.groups);
+
+  return {
+    posCustomerId, posCustomerCode, name, phone, email, address,
+    organization: firstString(raw.organization),
+    taxCode: firstString(raw.taxCode),
+    isOrganization,
+    segment: parsedGroups.segment,
+    posSaleCode: parsedGroups.saleCode,
+  };
 }

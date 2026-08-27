@@ -1,16 +1,23 @@
 <template>
-  <div style="width: 280px;">
-    <v-text-field
+  <div class="global-search">
+    <Search class="global-search-icon" :size="17" :stroke-width="1.9" aria-hidden="true" />
+    <input
       v-model="query"
+      class="global-search-input"
+      type="search"
       placeholder="Tìm kiếm..."
-      prepend-inner-icon="mdi-magnify"
-      variant="solo-filled"
-      density="compact"
-      hide-details
-      rounded="xl"
-      clearable
-      @update:model-value="debouncedSearch"
+      aria-label="Tìm kiếm toàn hệ thống"
+      @input="onInput"
     />
+    <button
+      v-if="query"
+      type="button"
+      class="global-search-clear"
+      aria-label="Xóa tìm kiếm"
+      @click="clearSearch"
+    >
+      <X :size="15" :stroke-width="2" />
+    </button>
     <v-menu
       v-model="showResults"
       activator="parent"
@@ -79,6 +86,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { useRouter } from 'vue-router';
+import { Search, X } from 'lucide-vue-next';
 import { api } from '@/api/index';
 import { getOrgParts } from '@/composables/use-org-timezone';
 
@@ -144,6 +152,16 @@ function debouncedSearch(val: string | null) {
   }, 300);
 }
 
+function onInput(event: Event) {
+  debouncedSearch((event.target as HTMLInputElement).value);
+}
+
+function clearSearch() {
+  query.value = '';
+  showResults.value = false;
+  clearTimeout(timeout);
+}
+
 function goTo(path: string, _id?: string) {
   showResults.value = false;
   query.value = '';
@@ -160,3 +178,55 @@ function formatDate(d: string): string {
   return `${String(p.day).padStart(2, '0')}/${String(p.month).padStart(2, '0')}`;
 }
 </script>
+
+<style scoped>
+/* Native input on purpose: Vuetify solo-filled always paints theme.surface,
+   which produced the large white block in the dark app header. */
+.global-search {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, .10);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, .08);
+  color: var(--shell-ink-2, #a8b0c0);
+  transition: background .14s ease, border-color .14s ease, box-shadow .14s ease;
+}
+.global-search:hover { background: rgba(255, 255, 255, .11); }
+.global-search:focus-within {
+  background: rgba(255, 255, 255, .12);
+  border-color: color-mix(in srgb, var(--nav-accent, #0068ff) 70%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--nav-accent, #0068ff) 28%, transparent);
+}
+.global-search-icon { flex: none; color: inherit; }
+.global-search-input {
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--shell-ink, #f2f4f8);
+  font: inherit;
+  font-size: 12.5px;
+}
+.global-search-input::placeholder { color: var(--shell-ink-2, #a8b0c0); }
+.global-search-input::-webkit-search-cancel-button { display: none; }
+.global-search-clear {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+}
+.global-search-clear:hover { color: var(--shell-ink, #f2f4f8); background: rgba(255,255,255,.10); }
+</style>

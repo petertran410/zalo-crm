@@ -339,22 +339,6 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         },
       });
 
-      // Phase 6 — apply scoring signal cho mọi Friend của contact (per-pair).
-      // Sale có thể book lịch cho 1 nick cụ thể, nhưng signal apply lên all Friend
-      // vì appointment thuộc Contact-level (KH lớn), aggregate sẽ MAX về Contact.
-      void (async () => {
-        try {
-          const friends = await prisma.friend.findMany({
-            where: { contactId: appointment.contactId, orgId: user.orgId },
-            select: { id: true },
-          });
-          const { onAppointmentCreate } = await import('../scoring/scoring-hooks.js');
-          for (const f of friends) onAppointmentCreate(user.orgId, f.id);
-        } catch {
-          /* silent */
-        }
-      })();
-
       // 2026-06-16 — đẩy Nhắc hẹn Zalo (nick hệ thống) cho sale: tin báo + createReminder.
       // Fire-and-forget, lỗi Zalo KHÔNG ảnh hưởng tạo lịch (service tự nuốt lỗi).
       void import('./appointment-zalo-service.js')
@@ -441,21 +425,6 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
           details: { appointmentId: updated.id, oldStatus: existing.status, newStatus: body.status, notes: body.notes },
         });
 
-        // Phase 6 — appointment_complete trigger scoring signal (+35 Intent)
-        if (body.status === 'completed' && updated.contactId) {
-          void (async () => {
-            try {
-              const friends = await prisma.friend.findMany({
-                where: { contactId: updated.contactId, orgId: user.orgId },
-                select: { id: true },
-              });
-              const { onAppointmentComplete } = await import('../scoring/scoring-hooks.js');
-              for (const f of friends) onAppointmentComplete(user.orgId, f.id);
-            } catch {
-              /* silent */
-            }
-          })();
-        }
       } else if (dateChanging) {
         logActivity({
           orgId: user.orgId,

@@ -73,7 +73,8 @@ export async function enqueuePendingFlush(accountId: string, opts?: { delayMs?: 
     logger.warn(`[zalo-pending-send] enqueue skipped (no Redis) accountId=${accountId}`);
     return;
   }
-  const jobId = `flush:${accountId}`;
+  // BullMQ cấm ':' trong jobId (ký tự phân cách namespace Redis key) → dùng '-'.
+  const jobId = `flush-${accountId}`;
   const existing = await q.getJob(jobId);
   if (existing) {
     const state = await existing.getState();

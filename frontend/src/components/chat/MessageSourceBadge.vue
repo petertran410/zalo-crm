@@ -49,7 +49,7 @@ const emit = defineEmits<{
 // Derive kind từ sentVia + metadata.sender
 // ✨ Anh chốt 2026-06-02: hợp nhất user_native vào user_crm (icon 🔄 trailing).
 // Variants còn lại: user_crm (CRM hoặc Native sync) | bot_automation | bot_ai | bot_system.
-type BadgeKind = 'user_crm' | 'bridge' | 'bot_automation' | 'bot_ai' | 'bot_system' | null;
+type BadgeKind = 'user_crm' | 'bot_automation' | 'bot_ai' | 'bot_system' | null;
 
 const badgeKind = computed<BadgeKind>(() => {
   // ── Fix 2026-06-03 (Anh báo bug ảnh 2 chat nhóm + Minh Pháp) ──
@@ -218,14 +218,6 @@ const labelData = computed(() => {
         clickable: false,
         showSyncIcon: false,
       };
-    case 'bridge':
-      return {
-        icon: '📱',
-        label: `Telegram · ${name}`,
-        tooltip: 'Tin sale gửi từ Telegram (qua cầu Zalo↔Telegram)',
-        clickable: false,
-        showSyncIcon: false,
-      };
     default:
       return null;
   }
@@ -346,10 +338,4 @@ function handleClick(): void {
   border-color: rgba(156, 163, 175, 0.5);
 }
 
-/* 6. Telegram bridge — xanh Telegram (tin sale gửi từ Telegram qua cầu) */
-.source-badge--bridge {
-  color: #0369a1;
-  background: rgba(224, 242, 254, 0.8);
-  border-color: rgba(56, 189, 248, 0.45);
-}
 </style>

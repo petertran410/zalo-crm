@@ -12,7 +12,6 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
-import { parseAppointmentFromText } from '../ai/ai-service.js';
 import { assertContactVisible } from './contact-scope.js';
 
 const NOTE_INCLUDE = {
@@ -106,13 +105,6 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
         include: NOTE_INCLUDE,
       });
 
-      // Phase 6 polish P2 quick win — note dài (>100 chars) → +engagement signal
-      // Chỉ trigger với root note (không trigger với reply trong thread, tránh inflate)
-      if (!parentNoteId && body.length >= 100) {
-        const { onNoteAdded } = await import('../scoring/scoring-hooks.js');
-        onNoteAdded(user.orgId, contactId, body);
-      }
-
       return reply.status(201).send({ note });
     } catch (err) {
       logger.error('[notes] Create error:', err);
@@ -189,28 +181,6 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
     } catch (err) {
       logger.error('[notes] Reaction error:', err);
       return reply.status(500).send({ error: 'Failed to toggle reaction' });
-    }
-  });
-
-  // ── POST /api/v1/notes/:id/ai-parse ───────────────────────────────────────
-  // Run AI extract on note body → return parsed appointment proposal.
-  // KHÔNG tạo appointment ở đây — frontend hiện dialog với prefilled values,
-  // user confirm sau thì gọi POST /appointments riêng.
-  app.post('/api/v1/notes/:id/ai-parse', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    try {
-      const user = request.user!;
-      const note = await prisma.note.findFirst({ where: { id: request.params.id, orgId: user.orgId }, select: { id: true, body: true } });
-      if (!note) return reply.status(404).send({ error: 'Note not found' });
-
-      const parsed = await parseAppointmentFromText({ orgId: user.orgId, text: note.body });
-      if (!parsed || !parsed.hasIntent) {
-        return { parsed: null, reason: 'Không phát hiện ý định hẹn rõ ràng trong ghi chú này' };
-      }
-      return { parsed, source: parsed.source };
-    } catch (err) {
-      logger.error('[notes] AI parse error:', err);
-      const msg = err instanceof Error ? err.message : 'Failed to parse note';
-      return reply.status(500).send({ error: msg });
     }
   });
 

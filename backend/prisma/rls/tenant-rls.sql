@@ -1,6 +1,7 @@
 -- ============================================================================
 -- tenant-rls.sql — Phase 1a Postgres Row-Level Security (Bảo mật xác thực)
--- Sinh từ DB thật (information_schema): 62 bảng có cột org_id.
+-- Sinh từ schema.prisma: 103 bảng có cột org_id (62 bảng đợt đầu + 34 bảng bổ
+-- sung 2026-08-24 + 7 bảng thêm giữa 2 đợt).
 -- ============================================================================
 -- BIÊN GIỚI CHÍNH cô lập tenant (T1-A). Bắt MỌI query shape kể cả raw SQL,
 -- updateMany, nested write — thứ Prisma extension dễ sót.
@@ -578,5 +579,283 @@ ALTER TABLE "zalo_lead_events" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "zalo_lead_events" FORCE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS tenant_isolation ON "zalo_lead_events";
 CREATE POLICY tenant_isolation ON "zalo_lead_events"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- ============================================================================
+-- BỔ SUNG 2026-08-24 — 34 bảng có org_id bị sót ở lần sinh trước.
+-- Gồm toàn bộ nhóm POS (pos_orders, pos_invoices, pos_customer_debts...),
+-- tasks, tickets, sync_jobs, workspace_sessions.
+-- ============================================================================
+
+-- appointment_action_links
+ALTER TABLE "appointment_action_links" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "appointment_action_links" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "appointment_action_links";
+CREATE POLICY tenant_isolation ON "appointment_action_links"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- care_sessions
+ALTER TABLE "care_sessions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "care_sessions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "care_sessions";
+CREATE POLICY tenant_isolation ON "care_sessions"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- chat_archives
+ALTER TABLE "chat_archives" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "chat_archives" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "chat_archives";
+CREATE POLICY tenant_isolation ON "chat_archives"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- devices
+ALTER TABLE "devices" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "devices" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "devices";
+CREATE POLICY tenant_isolation ON "devices"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- facebook_app_configs
+ALTER TABLE "facebook_app_configs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "facebook_app_configs" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "facebook_app_configs";
+CREATE POLICY tenant_isolation ON "facebook_app_configs"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- facebook_form_mappings
+ALTER TABLE "facebook_form_mappings" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "facebook_form_mappings" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "facebook_form_mappings";
+CREATE POLICY tenant_isolation ON "facebook_form_mappings"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- facebook_lead_events
+ALTER TABLE "facebook_lead_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "facebook_lead_events" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "facebook_lead_events";
+CREATE POLICY tenant_isolation ON "facebook_lead_events"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- facebook_page_connections
+ALTER TABLE "facebook_page_connections" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "facebook_page_connections" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "facebook_page_connections";
+CREATE POLICY tenant_isolation ON "facebook_page_connections"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- group_members
+ALTER TABLE "group_members" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "group_members" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "group_members";
+CREATE POLICY tenant_isolation ON "group_members"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- group_scans
+ALTER TABLE "group_scans" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "group_scans" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "group_scans";
+CREATE POLICY tenant_isolation ON "group_scans"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- lead_notify_acks
+ALTER TABLE "lead_notify_acks" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "lead_notify_acks" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "lead_notify_acks";
+CREATE POLICY tenant_isolation ON "lead_notify_acks"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- lead_pool_distributions
+ALTER TABLE "lead_pool_distributions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "lead_pool_distributions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "lead_pool_distributions";
+CREATE POLICY tenant_isolation ON "lead_pool_distributions"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- media_shares
+ALTER TABLE "media_shares" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "media_shares" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "media_shares";
+CREATE POLICY tenant_isolation ON "media_shares"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- media_usage_events
+ALTER TABLE "media_usage_events" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "media_usage_events" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "media_usage_events";
+CREATE POLICY tenant_isolation ON "media_usage_events"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- message_template_folders
+ALTER TABLE "message_template_folders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "message_template_folders" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "message_template_folders";
+CREATE POLICY tenant_isolation ON "message_template_folders"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_billing_drafts
+ALTER TABLE "pos_billing_drafts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_billing_drafts" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_billing_drafts";
+CREATE POLICY tenant_isolation ON "pos_billing_drafts"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_branch_inventory
+ALTER TABLE "pos_branch_inventory" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_branch_inventory" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_branch_inventory";
+CREATE POLICY tenant_isolation ON "pos_branch_inventory"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_customer_debts
+ALTER TABLE "pos_customer_debts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_customer_debts" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_customer_debts";
+CREATE POLICY tenant_isolation ON "pos_customer_debts"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_customers
+ALTER TABLE "pos_customers" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_customers" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_customers";
+CREATE POLICY tenant_isolation ON "pos_customers"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_invoices
+ALTER TABLE "pos_invoices" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_invoices" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_invoices";
+CREATE POLICY tenant_isolation ON "pos_invoices"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_orders
+ALTER TABLE "pos_orders" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_orders" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_orders";
+CREATE POLICY tenant_isolation ON "pos_orders"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_product_images
+ALTER TABLE "pos_product_images" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_product_images" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_product_images";
+CREATE POLICY tenant_isolation ON "pos_product_images"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_products
+ALTER TABLE "pos_products" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_products" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_products";
+CREATE POLICY tenant_isolation ON "pos_products"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- pos_webhook_logs
+ALTER TABLE "pos_webhook_logs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "pos_webhook_logs" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "pos_webhook_logs";
+CREATE POLICY tenant_isolation ON "pos_webhook_logs"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- sale_assignment_states
+ALTER TABLE "sale_assignment_states" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sale_assignment_states" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "sale_assignment_states";
+CREATE POLICY tenant_isolation ON "sale_assignment_states"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- sync_jobs
+ALTER TABLE "sync_jobs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "sync_jobs" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "sync_jobs";
+CREATE POLICY tenant_isolation ON "sync_jobs"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- tasks
+ALTER TABLE "tasks" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tasks" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "tasks";
+CREATE POLICY tenant_isolation ON "tasks"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- telegram_bridge_config
+ALTER TABLE "telegram_bridge_config" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "telegram_bridge_config" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "telegram_bridge_config";
+CREATE POLICY tenant_isolation ON "telegram_bridge_config"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- telegram_user_link
+ALTER TABLE "telegram_user_link" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "telegram_user_link" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "telegram_user_link";
+CREATE POLICY tenant_isolation ON "telegram_user_link"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- tickets
+ALTER TABLE "tickets" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tickets" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "tickets";
+CREATE POLICY tenant_isolation ON "tickets"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- tiktok_advertiser_connections
+ALTER TABLE "tiktok_advertiser_connections" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tiktok_advertiser_connections" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "tiktok_advertiser_connections";
+CREATE POLICY tenant_isolation ON "tiktok_advertiser_connections"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- tiktok_app_configs
+ALTER TABLE "tiktok_app_configs" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "tiktok_app_configs" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "tiktok_app_configs";
+CREATE POLICY tenant_isolation ON "tiktok_app_configs"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- work_item_attachments
+ALTER TABLE "work_item_attachments" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "work_item_attachments" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "work_item_attachments";
+CREATE POLICY tenant_isolation ON "work_item_attachments"
+  USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
+  WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');
+
+-- workspace_sessions
+ALTER TABLE "workspace_sessions" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "workspace_sessions" FORCE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS tenant_isolation ON "workspace_sessions";
+CREATE POLICY tenant_isolation ON "workspace_sessions"
   USING ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on')
   WITH CHECK ("org_id" = current_setting('app.current_org', true) OR current_setting('app.bypass_rls', true) = 'on');

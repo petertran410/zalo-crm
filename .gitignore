@@ -12,6 +12,8 @@ backups/
 .DS_Store
 .gstack/
 
+ui-smax
+
 # Local dev artifacts — không commit
 .backfill*.sql
 .diag.sql

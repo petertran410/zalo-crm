@@ -5,7 +5,6 @@
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { safeContactUpdate, safeContactCreate } from '../../shared/database/safe-contact-write.js';
-import { publishMessagePersisted } from '../../shared/bridge-bus.js';
 import { randomUUID } from 'node:crypto';
 import { emitWebhook } from '../api/webhook-service.js';
 import { runAutomationRules } from '../../shared/ee-registry/automation.js';
@@ -14,7 +13,6 @@ import { applyContactAggregateFromMessage, applyContactInteraction, applyFriendA
 import { followMergedInto } from '../contacts/resolve-contact.js';
 import { findExistingUserConversation } from './conversation-resolver.js';
 import { captureZaloProfile } from '../contacts/zalo-profile-capture.js';
-import { onInboundMessage as onInboundScoring, onOutboundMessage as onOutboundScoring } from '../scoring/scoring-hooks.js';
 import { syncReminderFromMessage } from '../contacts/reminder-sync.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
 import { compressImage } from '../media/media-service.js';
@@ -323,12 +321,6 @@ export async function handleIncomingMessage(
           },
         });
         if (claimed.count > 0) {
-          // 2026-06-19 Cầu Telegram: echo media OUTBOUND từ CRM → mirror sang Telegram (lấy
-          // id row vừa claim theo zaloMsgId).
-          const claimedRow = await prisma.message
-            .findFirst({ where: { conversationId: conversation.id, zaloMsgId: msg.msgId }, select: { id: true } })
-            .catch(() => null);
-          if (claimedRow) publishMessagePersisted({ messageId: claimedRow.id, conversationId: conversation.id });
           logger.debug(`[message-handler] Skipping self echo: claimed placeholder (album=${msg.albumKey ?? 'none'} idx=${msg.albumIndex})`);
           return null;
         }
@@ -358,11 +350,6 @@ export async function handleIncomingMessage(
               data: { zaloCliMsgId: msg.cliMsgId },
             }).catch(() => {});
           }
-          // 2026-06-19 Cầu Telegram: đây là echo của tin OUTBOUND gửi từ CRM (sale web /
-          // automation / hệ thống / bridge). Đường này return TRƯỚC nhánh create nên phải bắn
-          // publishMessagePersisted Ở ĐÂY để cầu mirror sang Telegram. Tin sentVia='bridge'
-          // (gốc Telegram) sẽ bị forwarder bỏ qua (chống lặp).
-          publishMessagePersisted({ messageId: recentDupe.id, conversationId: conversation.id });
           logger.debug('[message-handler] Skipping self echo: content match within 30s');
           return null;
         }
@@ -433,16 +420,6 @@ export async function handleIncomingMessage(
             data: { zaloCliMsgId: msg.cliMsgId },
           }).catch(() => {});
         }
-        // 2026-06-19 Cầu Telegram: tin OUTBOUND gửi từ CRM (sale web / automation / hệ thống /
-        // bridge) tạo row TRƯỚC → echo selfListen hit P2002 ở đây. Bắn publishMessagePersisted
-        // (tin SELF) để cầu mirror các tin đó sang Telegram. CHỈ self → tránh re-forward tin KH
-        // khi Zalo gửi trùng. Tin sentVia='bridge' (gốc Telegram) sẽ bị forwarder bỏ qua.
-        if (msg.isSelf && msg.msgId) {
-          const existing = await prisma.message
-            .findFirst({ where: { conversationId: conversation.id, zaloMsgId: msg.msgId }, select: { id: true } })
-            .catch(() => null);
-          if (existing) publishMessagePersisted({ messageId: existing.id, conversationId: conversation.id });
-        }
         logger.debug(`[message-handler] Skipping duplicate zaloMsgId=${msg.msgId} (cliMsgId backfill attempted)`);
         return null;
       }
@@ -450,10 +427,6 @@ export async function handleIncomingMessage(
     }
 
     await updateConversationAfterMessage(conversation.id, sentAt, msg.isSelf);
-
-    // 2026-06-18 — Cầu Telegram (Phase 0): phát sự kiện hậu-commit để bridge mirror sang
-    // Telegram. Fire-and-forget; subscriber (Phase 1) tự lọc nick bắc cầu + chống lặp theo msgId.
-    publishMessagePersisted({ messageId: message.id, conversationId: conversation.id });
 
     // Update Contact aggregate fields (last*, total*) — fire-and-forget,
     // best-effort. Skipped for group threads inside the helper.
@@ -520,53 +493,6 @@ export async function handleIncomingMessage(
           });
         } catch (err) {
           // silent — engagement is best-effort
-        }
-      })();
-    }
-
-    // Phase 6 — Lead scoring hook (fire-and-forget).
-    // Resolve friendId by (zaloAccountId, externalThreadId) sau aggregate đã chạy.
-    // Nếu Friend chưa exist (lần đầu chat), aggregate sẽ tạo row → hook sẽ chạy ở message kế.
-    if (msg.threadType !== 'group' && msg.threadId) {
-      void (async () => {
-        try {
-          const friend = await prisma.friend.findUnique({
-            where: {
-              zaloAccountId_zaloUidInNick: {
-                zaloAccountId: msg.accountId,
-                zaloUidInNick: msg.threadId,
-              },
-            },
-            select: { id: true, lastInboundAt: true, lastOutboundAt: true },
-          });
-          if (!friend) return;
-
-          const content = String(message.content || '');
-          const sentAtMs = message.sentAt.getTime();
-
-          if (msg.isSelf) {
-            // Outbound — chỉ check slow_response_self
-            if (friend.lastInboundAt) {
-              const secs = Math.max(0, (sentAtMs - friend.lastInboundAt.getTime()) / 1000);
-              onOutboundScoring(account.orgId, friend.id, { responseSecondsFromLastInbound: secs });
-            }
-          } else {
-            // Inbound — full keyword + engagement scoring
-            const responseSecs = friend.lastOutboundAt
-              ? Math.max(0, (sentAtMs - friend.lastOutboundAt.getTime()) / 1000)
-              : null;
-            const isVoiceOrCall =
-              message.contentType === 'voice' ||
-              message.contentType === 'audio' ||
-              message.contentType === 'call';
-            onInboundScoring(account.orgId, friend.id, content, {
-              contentLength: content.length,
-              isVoiceOrCall,
-              responseSecondsFromLastOutbound: responseSecs,
-            });
-          }
-        } catch {
-          // silent — scoring is best-effort
         }
       })();
     }

@@ -275,17 +275,48 @@
         </div>
       </div>
     </div>
+
+    <ConnectNickWizard
+      v-if="qrWizardOpen"
+      v-model:step="qrWizardStep"
+      :qr-image="qrImage"
+      :qr-scanned="qrScanned"
+      :scanned-name="scannedName"
+      :qr-error="qrError"
+      :qr-session-dead="qrSessionDead"
+      :connected-nick-name="connectedNickName"
+      @retry-qr="retryQrLogin"
+      @close="closeQrWizard"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useToast } from '@/composables/use-toast';
 import { useChannelConnections, type ChannelAccount } from '@/composables/use-channel-connections';
+import { useZaloAccounts } from '@/composables/use-zalo-accounts';
+import ConnectNickWizard from '@/components/zalo-accounts/ConnectNickWizard.vue';
 import { api } from '@/api/index';
 
 const toast = useToast();
 const { groups, accounts: channels, loading, fetchAll, totalChannels, connectedCount, errorCount, lastFetch } = useChannelConnections();
+const {
+  showQRDialog,
+  qrImage,
+  qrScanned,
+  scannedName,
+  qrError,
+  qrSessionDead,
+  currentLoginAccountId,
+  loginAccount,
+  cancelQR,
+  setupSocket,
+} = useZaloAccounts({ onStatusChange: fetchAll });
+
+const qrWizardOpen = ref(false);
+const qrWizardStep = ref<'phone' | 'confirm' | 'qr' | 'done'>('qr');
+const connectedNickName = ref<string | null>(null);
 
 // ── State ──
 const searchQuery = ref('');
@@ -328,8 +359,22 @@ async function loadStaffOptions() {
 }
 
 onMounted(() => {
+  setupSocket();
   fetchAll();
   loadStaffOptions();
+});
+
+onUnmounted(() => cancelQR());
+
+watch(showQRDialog, async (open, was) => {
+  if (!(was && !open && qrWizardOpen.value && qrWizardStep.value === 'qr')) return;
+  const accountId = currentLoginAccountId.value;
+  await fetchAll();
+  const account = channels.value.find((channel) => channel.id === accountId);
+  if (account?.liveStatus === 'connected') {
+    connectedNickName.value = scannedName.value || account.displayName || null;
+    qrWizardStep.value = 'done';
+  }
 });
 
 // ── Computed ──
@@ -424,14 +469,26 @@ async function showReconnectAll() {
   toast.push('Chức năng làm mới hàng loạt đang hoạt động ngầm thông qua hệ thống dọn dẹp', 'info');
 }
 
+function openQrFor(accountId: string, displayName?: string | null) {
+  connectedNickName.value = displayName ?? null;
+  qrWizardStep.value = 'qr';
+  qrWizardOpen.value = true;
+  return loginAccount(accountId);
+}
+
+function closeQrWizard() {
+  qrWizardOpen.value = false;
+  cancelQR();
+  fetchAll();
+}
+
+function retryQrLogin() {
+  const accountId = currentLoginAccountId.value;
+  if (accountId) loginAccount(accountId);
+}
+
 async function reconnectChannel(ch: any) {
-  try {
-    await api.post(`/zalo-accounts/${ch.id}/reconnect`);
-    toast.push(`Đang kết nối lại "${ch.displayName || 'Zalo'}"`, 'info');
-    fetchAll();
-  } catch (err: any) {
-    toast.push('Kết nối lại thất bại: ' + (err.response?.data?.error || err.message), 'error');
-  }
+  await openQrFor(ch.id, ch.displayName);
 }
 
 function toggleVisible(ch: any) {
@@ -474,10 +531,13 @@ async function onAddChannel() {
         permission: 'admin'
       }).catch(() => {});
     }
-    toast.push('Đã khởi tạo kênh kết nối mới. Hãy thực hiện quét QR để hoàn tất.', 'success');
+    toast.push('Đã khởi tạo kênh kết nối mới. Hãy quét QR để hoàn tất.', 'success');
     showAddDialog.value = false;
+    const newAccountId = res.data?.id;
+    const newDisplayName = addForm.value.displayName;
     addForm.value = { staffId: '', platform: 'zalo', accountInfo: '', displayName: '' };
     fetchAll();
+    if (newAccountId) await openQrFor(newAccountId, newDisplayName);
   } catch (err: any) {
     toast.push('Không thể thêm kênh: ' + (err.response?.data?.error || err.message), 'error');
   }

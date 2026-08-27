@@ -33,10 +33,6 @@ vi.mock('../src/shared/event-buffer.js', () => ({
   getIo: vi.fn().mockReturnValue(null),
 }));
 
-vi.mock('../src/shared/mcp/mcp-client.js', () => ({
-  getPosMcpClient: vi.fn().mockReturnValue({}),
-}));
-
 beforeEach(() => {
   vi.clearAllMocks();
   mockPrisma.$executeRawUnsafe.mockResolvedValue(5000);

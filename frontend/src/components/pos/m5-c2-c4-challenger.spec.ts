@@ -233,77 +233,20 @@ describe('Milestone 5 (M5) Criteria 2 & 4 Empirical Challenger Verification Suit
   });
 
   // ════════════════════════════════════════════════════════════════════════
-  // Criterion 4: Socket.IO Live Updates & Interactive Toast Notifications
+  // Criterion 4: Toast POS webhook đã TẮT — không còn popup toàn cục
   // ════════════════════════════════════════════════════════════════════════
-  describe('Criterion 4 — Socket.IO Live Updates & Toast Notifications', () => {
-    it('4.1 usePosNotification: triggers interactive Toast with action link on pos:data:updated event', () => {
-      let registeredSocketHandler: ((payload: any) => void) | null = null;
-      vi.spyOn(usePosSocket, 'usePosSocket' as any).mockImplementation((handler: any) => {
-        registeredSocketHandler = handler;
-        return { socket: {} as any };
-      });
-
+  describe('Criterion 4 — POS webhook toast đã tắt', () => {
+    it('4.1 usePosNotification là no-op: không đăng ký socket, không bắn toast', () => {
+      const spy = vi.spyOn(usePosSocket, 'usePosSocket' as any);
       usePosNotification();
-
-      expect(registeredSocketHandler).not.toBeNull();
-
-      // Simulate incoming POS webhook event for an Order
-      registeredSocketHandler!({
-        type: 'order',
-        action: 'synced',
-        orgId: 'org-123',
-        timestamp: new Date().toISOString(),
-        summary: 'Đã cập nhật đơn hàng #HD0005',
-        data: { posOrderId: 105 }
-      });
-
-      expect(mockPushWithAction).toHaveBeenCalledWith(
-        'Đã cập nhật đơn hàng #HD0005',
-        expect.objectContaining({
-          label: 'Xem đơn hàng',
-          handler: expect.any(Function)
-        }),
-        'success',
-        6000
-      );
-
-      // Execute toast action handler to verify router navigation
-      const actionConfig = mockPushWithAction.mock.calls[0][1];
-      actionConfig.handler();
-      expect(mockRouterPush).toHaveBeenCalledWith('/pos?tab=orders&id=105');
+      expect(spy).not.toHaveBeenCalled();
+      expect(mockPushWithAction).not.toHaveBeenCalled();
     });
 
-    it('4.2 usePosNotification: handles Debt event with warning toast and route parameter', () => {
-      let registeredSocketHandler: ((payload: any) => void) | null = null;
-      vi.spyOn(usePosSocket, 'usePosSocket' as any).mockImplementation((handler: any) => {
-        registeredSocketHandler = handler;
-        return { socket: {} as any };
-      });
-
+    it('4.2 sự kiện debt cũng không bắn toast', () => {
       usePosNotification();
-
-      registeredSocketHandler!({
-        type: 'debt',
-        action: 'synced',
-        orgId: 'org-123',
-        timestamp: new Date().toISOString(),
-        summary: 'Đã cập nhật công nợ KH Nguyễn Văn B',
-        data: { posCustomerId: 2002 }
-      });
-
-      expect(mockPushWithAction).toHaveBeenCalledWith(
-        'Đã cập nhật công nợ KH Nguyễn Văn B',
-        expect.objectContaining({
-          label: 'Xem công nợ',
-          handler: expect.any(Function)
-        }),
-        'warning',
-        6000
-      );
-
-      const actionConfig = mockPushWithAction.mock.calls[mockPushWithAction.mock.calls.length - 1][1];
-      actionConfig.handler();
-      expect(mockRouterPush).toHaveBeenCalledWith('/pos?tab=customers&id=2002');
+      expect(mockPushWithAction).not.toHaveBeenCalled();
+      expect(mockRouterPush).not.toHaveBeenCalled();
     });
   });
 });

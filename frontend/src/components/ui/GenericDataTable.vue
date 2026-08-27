@@ -88,7 +88,7 @@
           class="nav-btn text-capitalize"
           @click="$emit('prev')"
         >
-          <v-icon left size="16">mdi-chevron-left</v-icon>Trước
+          <v-icon start size="16">mdi-chevron-left</v-icon>Trước
         </v-btn>
         <v-btn
           :disabled="!hasNext"

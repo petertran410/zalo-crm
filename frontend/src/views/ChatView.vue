@@ -3,6 +3,8 @@
   <div v-else class="smax-chat-grid">
     <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
     <ConversationFilterSidebar
+      class="smax-filter-rail"
+      :compact-rail="true"
       :filters="inboxFilters"
       :workspace-name="workspaceName"
       :current-user-name="currentUserName"
@@ -74,19 +76,15 @@
       :conversation="selectedConv"
       :messages="messages"
       :loading="loadingMsgs"
-      :sending="sendingMsg"
-      :ai-suggestion="aiSuggestion"
-      :ai-suggestion-loading="aiSuggestionLoading"
-      :ai-suggestion-error="aiSuggestionError"
-      :all-conversations="conversations"
+       :sending="sendingMsg"
+       :all-conversations="conversations"
       :replying-to="replyingTo"
       :editing-message="editingMessage"
       :typing-users="currentTypers"
       :show-contact-panel="showContactPanel"
       class="smax-msg-col"
-      @send="sendMessage"
-      @ask-ai="generateAiSuggestion"
-      @open-media-tab="onOpenMediaTab"
+       @send="sendMessage"
+       @open-media-tab="onOpenMediaTab"
       @toggle-contact-panel="showContactPanel = !showContactPanel"
       @add-reaction="onAddReaction"
       @remove-reaction="onRemoveReaction"
@@ -125,14 +123,8 @@
       :friend-id="selectedConv.friendship?.id ?? null"
       :conversation-id="selectedConv.id ?? null"
       :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
-      :ai-summary="aiSummary"
-      :ai-summary-loading="aiSummaryLoading"
-      :ai-sentiment="aiSentiment"
-      :ai-sentiment-loading="aiSentimentLoading"
       :current-role="currentRole"
       class="smax-info-col"
-      @refresh-ai-summary="generateAiSummary"
-      @refresh-ai-sentiment="generateAiSentiment"
       @close="showContactPanel = false"
       @saved="fetchConversations()"
       @status-changed="onPanelStatusChanged"
@@ -169,10 +161,7 @@ const router = useRouter();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  aiSuggestion, aiSuggestionLoading, aiSuggestionError,
-  aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
-  fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
-  generateAiSuggestion, generateAiSummary, generateAiSentiment,
+  fetchConversations, fetchMessages, selectConversation, sendMessage,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -691,7 +680,6 @@ onMounted(async () => {
     fetchConversations();
     void fetchPriorityUnread(); // badge đậm tab Ưu tiên — load NGAY lúc mount (không debounce)
     void fetchFollowingPairs(); // theo dõi — Set để cột 2 hiện chuông (anh chốt 2026-06-15)
-    fetchAiConfig();
     initSocket();
     registerSocketListeners(getSocket());
     // 2026-06-06 (Anh chốt): listen 'friend:updated' để sync realtime giai đoạn KH
@@ -771,27 +759,29 @@ watch(searchQuery, () => {
    toggle localStorage. Grid template column 1 thay đổi theo. */
 .smax-chat-grid {
   display: grid;
-  grid-template-columns: 290px 380px 1fr 350px;
+  grid-template-columns: 76px 410px 1fr;
   height: calc(100vh - var(--smax-topnav-h));
   overflow: hidden;
-  background: var(--smax-grey-100);
+  background: var(--app-surface-canvas);
 }
 
-/* Khi info-panel đóng, col 4 collapse → grid auto-adjust */
-.smax-chat-grid:has(.smax-info-col:not(:empty)) { /* presence query placeholder */ }
+/* Desktop inbox follows the Smax shell: compact action rail + fixed conversation pane + workspace. */
+.smax-filter-rail { grid-column: 1; }
+.smax-conv-col { grid-column: 2; }
+.smax-msg-col { grid-column: 3; }
+.smax-info-col { grid-column: 4; }
+
+/* 4-column layout when info panel is visible */
+.smax-chat-grid:has(.smax-info-col) {
+  grid-template-columns: 76px 410px minmax(0, 1fr) 340px;
+}
+
+/* 3-column layout when info panel is hidden */
 .smax-chat-grid:not(:has(.smax-info-col)) {
-  grid-template-columns: 290px 380px 1fr;
+  grid-template-columns: 76px 410px minmax(0, 1fr);
 }
-/* Khi filter rail collapsed → col 1 = 56px (cả new sidebar lẫn legacy) */
-.smax-chat-grid:has(.filter-rail.collapsed),
-.smax-chat-grid:has(.filter-sidebar.collapsed) {
-  grid-template-columns: 56px 380px 1fr 350px;
-}
-.smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)),
-.smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-  grid-template-columns: 56px 380px 1fr;
-}
+/* Filter rail is always the compact Smax action rail — collapse state no longer
+   changes column 1 width. */
 
 .smax-conv-col,
 .smax-msg-col,
@@ -802,8 +792,17 @@ watch(searchQuery, () => {
 }
 
 .smax-conv-col {
-  border-right: 1px solid var(--smax-grey-200);
-  background: var(--smax-bg);
+  border-right: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-panel);
+}
+
+/* Bốn cột là các vùng làm việc liền mạch, nên kẻ ranh giới nhẹ thay vì để mỗi
+   cột là một card rời. Neo vào class thật, KHÔNG dùng :nth-child: cột 1 và cột 4
+   đều render có điều kiện (FolderManagePopup cũng là con của grid), nên chỉ số
+   con không ổn định. */
+.smax-info-col {
+  border-left: 1px solid var(--app-border-subtle);
+  background: var(--app-surface-panel);
 }
 
 /* work-scope 2026-06-15 — 1 DÒNG "N tin ở M nick khác" ở đầu cột 2 (anh chốt: gọn) */
@@ -812,18 +811,19 @@ watch(searchQuery, () => {
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 12px;
-  background: #eff6ff;
+  padding: 7px 12px;
+  background: var(--app-accent-soft);
   border: none;
-  border-bottom: 1px solid #bfdbfe;
-  font-size: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--app-accent) 22%, var(--app-surface-panel));
+  font-size: var(--smax-font-small);
   font-weight: 600;
-  color: #1e40af;
+  color: var(--app-text-link);
   cursor: pointer;
   text-align: left;
+  transition: background .14s ease;
 }
-.out-of-scope-bar:hover { background: #dbeafe; }
-.out-of-scope-bar .oos-icon { color: #1e40af; }
+.out-of-scope-bar:hover { background: color-mix(in srgb, var(--app-accent) 14%, var(--app-surface-panel)); }
+.out-of-scope-bar .oos-icon { color: var(--app-text-link); }
 .out-of-scope-bar .oos-text { line-height: 1.2; }
 
 /* FIX socket-chết v2 — banner mất kết nối realtime ở đầu cột 2 */
@@ -831,9 +831,9 @@ watch(searchQuery, () => {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 12px;
-  font-size: 12px;
-  font-weight: 500;
+  padding: 7px 12px;
+  font-size: var(--smax-font-small);
+  font-weight: 600;
   color: #92400e;
   background: #fef3c7;
   border-bottom: 1px solid #fde68a;
@@ -842,7 +842,7 @@ watch(searchQuery, () => {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #f59e0b;
+  background: var(--app-warning);
   animation: rt-pulse 1.2s ease-in-out infinite;
 }
 @keyframes rt-pulse {
@@ -851,82 +851,54 @@ watch(searchQuery, () => {
 }
 
 .smax-msg-col {
-  background: var(--smax-grey-100);
+  background: #cfd1dc;
 }
 
-/* HD+ compact: thu nhỏ chút để thread có thêm space */
-@media (max-width: 1700px) {
-  .smax-chat-grid { grid-template-columns: 260px 340px 1fr 310px; }
+/* ── Responsive: rail stays 76px, conversation list + info panel shrink ──
+   Smax keeps the same shell at every desktop width; only the fixed panes
+   narrow so the thread never collapses. */
+@media (max-width: 1600px) {
+  .smax-chat-grid:has(.smax-info-col) {
+    grid-template-columns: 76px 360px minmax(0, 1fr) 320px;
+  }
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 260px 340px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 340px 1fr 310px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 340px 1fr;
+    grid-template-columns: 76px 360px minmax(0, 1fr);
   }
 }
-/* Tight: filter rail vẫn show nhưng compact */
 @media (max-width: 1440px) {
-  .smax-chat-grid { grid-template-columns: 240px 320px 1fr 280px; }
+  .smax-chat-grid:has(.smax-info-col) {
+    grid-template-columns: 76px 320px minmax(0, 1fr) 300px;
+  }
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 240px 320px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 320px 1fr 280px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 320px 1fr;
+    grid-template-columns: 76px 320px minmax(0, 1fr);
   }
 }
-/* HD 1366 — target chính sale VN. Chèn 2026-06-06 (/plan-design-review), giữ :has() động đủ 4 trạng thái. */
-@media (max-width: 1366px) {
-  .smax-chat-grid { grid-template-columns: 220px 296px 1fr 288px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 220px 296px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 296px 1fr 288px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 296px 1fr;
-  }
-}
-/* 1280 — XGA, vẫn giữ 4 cột, thread giữa ~450px đủ rộng. */
 @media (max-width: 1280px) {
-  .smax-chat-grid { grid-template-columns: 208px 280px 1fr 280px; }
+  .smax-chat-grid:has(.smax-info-col) {
+    grid-template-columns: 76px 280px minmax(0, 1fr) 288px;
+  }
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 208px 280px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 280px 1fr 280px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 280px 1fr;
+    grid-template-columns: 76px 280px minmax(0, 1fr);
   }
 }
-/* < 1200: drop filter rail */
+/* < 1200: drop the action rail */
 @media (max-width: 1200px) {
-  .smax-chat-grid { grid-template-columns: 0 320px 1fr 280px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 0 320px 1fr;
+  .smax-chat-grid:has(.smax-info-col) {
+    grid-template-columns: 0 300px minmax(0, 1fr) 280px;
   }
-  .smax-chat-grid > :first-child { display: none; }
+  .smax-chat-grid:not(:has(.smax-info-col)) {
+    grid-template-columns: 0 300px minmax(0, 1fr);
+  }
+  .smax-filter-rail { display: none; }
 }
 /* < 1024: drop info panel too — chỉ còn conv list + thread */
 @media (max-width: 1024px) {
-  .smax-chat-grid { grid-template-columns: 320px 1fr; }
-  .smax-chat-grid > :first-child,
-  .smax-chat-grid > :nth-child(4) { display: none; }
+  .smax-chat-grid:has(.smax-info-col),
+  .smax-chat-grid:not(:has(.smax-info-col)) {
+    grid-template-columns: 0 320px minmax(0, 1fr);
+  }
+  .smax-filter-rail,
+  .smax-info-col { display: none; }
 }
 
 </style>

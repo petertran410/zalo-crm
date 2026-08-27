@@ -5,11 +5,16 @@
  * endpoint luôn sẵn sàng + xử lý retry/dedup + signature verify, rủi ro drift khi
  * server down lúc POS bắn event. Poll rẻ hơn nhiều so với độ phức tạp đó.
  *
- * ── Chỉ sync KH CÓ TƯƠNG TÁC THẬT ──────────────────────────────────────────
- * Bộ lọc = isEngagedCustomer() (hisweetie-customer-mapper.ts — xem file đó để biết
- * vì sao 4 tín hiệu, không phải isActive): 50.446 KH POS → 6.125 KH engaged.
- * POS KHÔNG lọc server-side theo mấy field này → phải kéo hết 101 page rồi lọc
- * client-side. Chấp nhận được: đọc 50k/đêm nhưng chỉ ghi ~6k.
+ * ── Chỉ sync KH CÒN HOẠT ĐỘNG và CÓ TƯƠNG TÁC THẬT ────────────────────────
+ * Hai tầng lọc:
+ *   1. Còn hoạt động — không gửi `includeInactive` nên POS tự loại bản ghi đã
+ *      ngừng hoạt động ở server (PUBLIC-API.md mục 3); isPosCustomerActive() là
+ *      lớp phòng thủ phía CRM.
+ *   2. Có tương tác thật — isEngagedCustomer() (hisweetie-customer-mapper.ts —
+ *      xem file đó để biết vì sao 4 tín hiệu, không phải isActive):
+ *      50.446 KH POS → 6.125 KH engaged.
+ * POS KHÔNG lọc server-side theo mấy field tương tác này → phải kéo hết 101 page
+ * rồi lọc client-side. Chấp nhận được: đọc 50k/đêm nhưng chỉ ghi ~6k.
  *
  * ── Rate limit (verify live) ────────────────────────────────────────────────
  * POS bắn `rate_limit_exceeded` khi paging liên tục — scan thật chết ở ~30.500
@@ -28,15 +33,16 @@ import cron from 'node-cron';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
-import { getHisweetieClient, isHisweetieMcpConfigured } from './hisweetie-mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from './hisweetie-public-api-client.js';
 import { asItemArray } from './hisweetie-mcp-routes.js';
-import { extractCustomer, isEngagedCustomer } from './hisweetie-customer-mapper.js';
+import { extractCustomer, isEngagedCustomer, isPosCustomerActive } from './hisweetie-customer-mapper.js';
 
 // 01:00 VN — trước interaction-cron (02:00) / engagement (02:30) / contact-profile-sync
 // (03:00) / media-trash-gc (03:30), không tranh tài nguyên DB cùng lúc.
 const CRON_SCHEDULE = '0 1 * * *';
-// 500 verify POS có honour (trả đủ 500/page) → 101 page thay vì 253.
-const PAGE_SIZE = 500;
+// Public API hiện giới hạn pageSize tối đa 100; dùng cùng kích thước cho MCP để
+// checkpoint `currentItem` luôn tăng đúng, không bỏ qua bản ghi khi đổi transport.
+const PAGE_SIZE = 100;
 // 700ms verify đủ thoát rate limit khi scan hết 101 page. 300ms cũ → chết ở ~30.5k.
 const PAGE_THROTTLE_MS = 700;
 const MAX_RETRY = 6;
@@ -86,7 +92,7 @@ async function listWithRetry(
   attempt = 0,
 ): Promise<unknown> {
   try {
-    return await getHisweetieClient().customers.list(args);
+    return await getHisweetiePublicApiClient().listCustomers(args as any);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     const rateLimited = msg.includes('rate_limit') || msg.includes('429');
@@ -111,10 +117,11 @@ interface ExistingContact {
 
 async function runCycle(opts: { maxPages?: number } = {}): Promise<void> {
   const maxPages = opts.maxPages ?? MAX_PAGES;
-  if (!isHisweetieMcpConfigured()) {
-    logger.info('[hisweetie-sync] MCP not configured, skip cycle');
+  if (!isPublicApiSyncEnabled()) {
+    logger.info('[hisweetie-sync] POS sync transport is not configured, skip cycle');
     return;
   }
+  logger.info('[hisweetie-sync] Using Public API transport');
 
   // Deployment hiện tại single-org (verify 2026-07-15). Nếu sau này multi-org,
   // cần map POS customer → org qua branchId hoặc field riêng — hiện chưa có.
@@ -167,6 +174,7 @@ async function runCycle(opts: { maxPages?: number } = {}): Promise<void> {
       if (seenPosIds.has(c.posCustomerId)) continue;
       seenPosIds.add(c.posCustomerId);
 
+      if (!isPosCustomerActive(item)) continue;
       if (!isEngagedCustomer(item)) continue;
       engaged++;
 
