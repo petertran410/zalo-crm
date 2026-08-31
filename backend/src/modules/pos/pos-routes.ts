@@ -1,8 +1,9 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { PosPaginationService } from '../../shared/mcp/pos-pagination-service.js';
-import { syncPosCustomersFromMcp, syncPosProductsFromMcp } from '../../shared/mcp/pos-sync-service.js';
+import { syncPosProductsFromMcp } from '../../shared/mcp/pos-sync-service.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
+import { syncCustomerCohort } from '../integrations/pos-customer-import-service.js';
 import { withPosSyncLock } from './pos-sync-lock.js';
 import { logger } from '../../shared/utils/logger.js';
 import { commandDispatcher } from '../../shared/commands/command-dispatcher.js';
@@ -192,7 +193,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       // Chạy tuần tự và có khoá: POS giới hạn 5000 request/giờ cho mỗi client,
       // hai lần bấm đồng bộ chồng nhau là chạm trần ngay.
       await withPosSyncLock(user.orgId, 'Product', () => syncPosProductsFromMcp(user.orgId));
-      await withPosSyncLock(user.orgId, 'Customer', () => syncPosCustomersFromMcp(user.orgId));
+      await withPosSyncLock(user.orgId, 'Customer', () => syncCustomerCohort(user.orgId));
       return { success: true };
     } catch (err: any) {
       logger.error('[pos-routes] Manual sync failed:', err);
