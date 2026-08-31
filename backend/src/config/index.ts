@@ -85,7 +85,7 @@ export const config = {
   hisweetiePublicApiClientId: envValue('HISWEETIE_PUBLIC_API_CLIENT_ID') || '',
   hisweetiePublicApiClientSecret: envValue('HISWEETIE_PUBLIC_API_CLIENT_SECRET') || '',
   hisweetiePublicApiMinIntervalMs: Math.max(720, parseInt(envValue('HISWEETIE_PUBLIC_API_MIN_INTERVAL_MS') || '800', 10) || 800),
-  hisweetieSyncTransport: (envValue('HISWEETIE_SYNC_TRANSPORT') || 'mcp') === 'public_api' ? 'public_api' : 'mcp',
+  hisweetieSyncTransport: (envValue('HISWEETIE_SYNC_TRANSPORT') || 'public_api') === 'mcp' ? 'mcp' : 'public_api',
 
   /* Legacy keys (kept for backward compat) */
   anthropicApiKey: envValue('ANTHROPIC_API_KEY') || envValue('ANTHROPIC_AUTH_TOKEN') || '',
