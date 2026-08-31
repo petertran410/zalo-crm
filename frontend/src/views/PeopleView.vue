@@ -436,11 +436,16 @@
                 </select>
               </div>
               <div class="ppl-input-box">
-                <span class="ppl-input-l">Giới tính</span>
-                <select v-model="draft.gender" @change="dirty = true">
-                  <option :value="null">— chưa rõ —</option>
-                  <option v-for="g in GENDER_OPTIONS" :key="g.value" :value="g.value">{{ g.text }}</option>
-                </select>
+                <span class="ppl-input-l">Sản phẩm quan tâm</span>
+                <input v-model="careFields.productInterest" placeholder="+ thêm" />
+              </div>
+              <div class="ppl-input-box">
+                <span class="ppl-input-l">Workshop đã tham gia</span>
+                <input v-model="careFields.workshopsAttended" placeholder="+ thêm" />
+              </div>
+              <div class="ppl-input-box">
+                <span class="ppl-input-l">Phàn nàn</span>
+                <input v-model="careFields.complaints" placeholder="+ thêm" />
               </div>
             </div>
           </div>
@@ -659,7 +664,6 @@ import { api } from '@/api/index';
 import {
   useContacts,
   SOURCE_OPTIONS,
-  GENDER_OPTIONS,
   type Contact,
 } from '@/composables/use-contacts';
 import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-friend-socket';
@@ -1340,13 +1344,17 @@ const loadingNotes = ref(false);
 const noteDraft = ref('');
 const savingNote = ref(false);
 
+const careFields = reactive({
+  productInterest: '',
+  workshopsAttended: '',
+  complaints: '',
+});
+
 const personalFields = [
-  { key: 'crmName', label: 'Tên CRM', ph: 'Tên gọi nội bộ' },
   { key: 'fullName', label: 'Tên đầy đủ', ph: 'Theo hồ sơ' },
   { key: 'birthYear', label: 'Năm sinh', ph: 'YYYY' },
   { key: 'phone', label: 'SĐT chính', ph: '09…' },
   { key: 'email', label: 'Email', ph: '+ thêm' },
-  { key: 'occupation', label: 'Nghề nghiệp', ph: '+ thêm' },
   { key: 'province', label: 'Tỉnh / Thành', ph: '+ thêm' },
   { key: 'district', label: 'Quận / Huyện', ph: '+ thêm' },
 ];
@@ -1369,13 +1377,16 @@ async function openDrawer(row: Contact) {
 function hydrateDraft(c: Contact) {
   Object.keys(draft).forEach((k) => delete draft[k]);
   Object.assign(draft, {
-    crmName: c.crmName ?? '', fullName: c.fullName ?? '', birthYear: c.birthYear ?? '',
-    phone: c.phone ?? '', email: c.email ?? '', occupation: c.occupation ?? '',
+    fullName: c.fullName ?? '', birthYear: c.birthYear ?? '',
+    phone: c.phone ?? '', email: c.email ?? '',
     province: c.province ?? '', district: c.district ?? '',
     assignedUserId: c.assignedUserId ?? null, statusId: c.statusId ?? null,
-    source: c.source ?? null, gender: c.gender ?? null,
-    tags: [...(c.tags || [])],
+    source: c.source ?? null, tags: [...(c.tags || [])],
   });
+  // These fields are UI-only until their backend model is implemented.
+  careFields.productInterest = '';
+  careFields.workshopsAttended = '';
+  careFields.complaints = '';
   dirty.value = false;
 }
 function closeDrawer() {
@@ -1426,18 +1437,15 @@ async function saveContact() {
   saving.value = true;
   try {
     const payload: Record<string, unknown> = {
-      crmName: draft.crmName || null,
       fullName: draft.fullName || null,
       birthYear: draft.birthYear ? Number(draft.birthYear) : null,
       phone: draft.phone || null,
       email: draft.email || null,
-      occupation: draft.occupation || null,
       province: draft.province || null,
       district: draft.district || null,
       assignedUserId: draft.assignedUserId || null,
       statusId: draft.statusId || null,
       source: draft.source || null,
-      gender: draft.gender || null,
       tags: draft.tags,
     };
     await updateContact(detail.value.id, payload as Partial<Contact>);
