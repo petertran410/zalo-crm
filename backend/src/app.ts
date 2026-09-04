@@ -44,6 +44,7 @@ import { customer360Routes } from './modules/contacts/customer-360-routes.js';
 import { contactPosRoutes } from './modules/contacts/contact-pos-routes.js';
 import { statusRoutes } from './modules/contacts/status-routes.js';
 import { contactSubResourceRoutes } from './modules/contacts/contact-sub-resource-routes.js';
+import { contactCareRoutes } from './modules/contacts/contact-care-routes.js';
 import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
 import { appointmentPublicRoutes } from './modules/contacts/appointment-public-routes.js';
@@ -293,6 +294,7 @@ async function bootstrap() {
   await app.register(customer360Routes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
+  await app.register(contactCareRoutes);
   await app.register(cockpitRoutes);
   await app.register(appointmentRoutes);
   await app.register(appointmentPublicRoutes); // 2026-06-16 — public action link (no auth)
