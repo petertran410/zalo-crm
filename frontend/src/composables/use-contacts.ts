@@ -8,6 +8,28 @@ import { ref, reactive } from 'vue';
 import { api } from '@/api/index';
 import { getOrgParts, orgDayKey, formatInOrgTz } from '@/composables/use-org-timezone';
 
+export interface ContactCareEntry {
+  id: string;
+  value: string;
+  createdByUserId: string | null;
+  createdAt: string;
+}
+
+export interface ContactWorkshopCareEntry extends ContactCareEntry {
+  attendedAt: string | null;
+}
+
+export interface ContactCareFields {
+  productInterests: ContactCareEntry[];
+  workshopsAttended: ContactWorkshopCareEntry[];
+  complaints: ContactCareEntry[];
+  current: {
+    productInterest: string;
+    workshopsAttended: string;
+    complaints: string;
+  };
+}
+
 export interface Contact {
   id: string;
   fullName: string | null;

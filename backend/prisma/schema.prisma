@@ -36,8 +36,11 @@ model Organization {
 
   teams                       Team[]
   users                       User[]
-  zaloAccounts                ZaloAccount[]
   contacts                    Contact[]
+  careProductInterests       ContactProductInterest[]
+  careWorkshopAttendances    ContactWorkshopAttendance[]
+  careComplaints             ContactComplaint[]
+  zaloAccounts                ZaloAccount[]
   contactAccess               ContactAccess[]
   conversations               Conversation[]
   appointments                Appointment[]
@@ -287,7 +290,10 @@ model User {
   zaloAccounts              ZaloAccount[]
   zaloAccess                ZaloAccountAccess[]
   assignedContacts          Contact[]                    @relation("AssignedContacts")
-  archivedContacts          Contact[]                    @relation("ContactArchivedBy")
+  archivedContacts           Contact[]                    @relation("ContactArchivedBy")
+  authoredCareProductInterests ContactProductInterest[]   @relation("CareProductInterestAuthor")
+  authoredCareWorkshops      ContactWorkshopAttendance[] @relation("CareWorkshopAuthor")
+  authoredCareComplaints     ContactComplaint[]          @relation("CareComplaintAuthor")
   contactAccess             ContactAccess[]
   appointments              Appointment[]
   statusChangedAppointments Appointment[]                @relation("AppointmentStatusChanger")
@@ -682,6 +688,9 @@ model Contact {
   // bảng này thay vì chỉ assignedUserId.
   contactAccess     ContactAccess[]
   contactNotes      Note[]
+  careProductInterests    ContactProductInterest[]
+  careWorkshopAttendances ContactWorkshopAttendance[]
+  careComplaints          ContactComplaint[]
   // Công việc (Task V1) 2026-07-07 — to-do link KH, SetNull khi purge KH
   tasks             Task[]
   // Ticket V1 2026-07-09 — ticket link KH, SetNull khi purge KH
@@ -1140,6 +1149,59 @@ model SystemNotification {
   @@index([targetUserId, createdAt(sort: Desc)])
   @@index([orgId, status, createdAt(sort: Desc)])
   @@map("system_notifications")
+}
+
+// Contact care data is append-only in V1 so the simple drawer inputs do not erase history.
+model ContactProductInterest {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  value           String   @db.Text
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareProductInterestAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_product_interests")
+}
+
+model ContactWorkshopAttendance {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  contactId       String    @map("contact_id")
+  value           String    @db.Text
+  attendedAt      DateTime? @map("attended_at")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareWorkshopAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_workshop_attendances")
+}
+
+model ContactComplaint {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  value           String   @db.Text
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareComplaintAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_complaints")
 }
 
 // Appointment scheduled for a contact

@@ -68,3 +68,9 @@ backend/uploads/
 # Artifact của phiên AI khác
 claude_todo/
 run.bat
+
+# Scoping/inventory docs — local research artifacts, không commit
+DASHBOARD_FRONTEND_INVENTORY.md
+DASHBOARD_REMAINING_CORE_FEATURES.md
+FRIENDS_CONTACTS_INVENTORY.md
+ONBOARDING.md

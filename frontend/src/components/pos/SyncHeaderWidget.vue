@@ -51,9 +51,53 @@
       </div>
       <div class="panel-divider" />
 
-      <!-- Trigger Sync Actions Bar -->
+      <!-- Customer initialization is intentionally separate from ordinary sync:
+           preview has no writes, while the first owner import archives contacts reversibly. -->
+      <div class="customer-cohort-actions">
+        <button
+          type="button"
+          class="sync-action-btn sync-action-btn--preview"
+          :disabled="hasRunningJob"
+          title="Quét cohort khách POS, không ghi dữ liệu"
+          @click="triggerCustomerPreview"
+        >
+          Xem trước KH
+        </button>
+        <button
+          v-if="authStore.isOwner && customerCohortState?.import.status !== 'completed'"
+          type="button"
+          class="sync-action-btn sync-action-btn--initial-import"
+          :disabled="hasRunningJob || !hasFreshCustomerPreview"
+          :title="hasFreshCustomerPreview
+            ? 'Archive mềm Contact hiện có rồi nhập cohort POS đã xem trước'
+            : 'Cần xem trước cohort thành công trong 24 giờ trước'"
+          @click="triggerCustomerInitialImport"
+        >
+          Nhập KH lần đầu
+        </button>
+        <span v-if="customerCohortState?.preview" class="customer-cohort-summary">
+          {{ customerCohortState.preview.stats.eligibleCustomers.toLocaleString() }} KH đã chọn
+        </span>
+        <span
+          class="customer-cohort-status"
+          :class="{
+            'customer-cohort-status--ready': customerCohortState?.import.status === 'completed',
+            'customer-cohort-status--error': customerCohortState?.import.status === 'failed',
+          }"
+        >
+          {{ customerCohortStatusText }}
+        </span>
+      </div>
       <div class="actions-bar">
-        <button type="button" class="sync-action-btn sync-action-btn--primary" :disabled="hasRunningJob" @click="triggerSync('Customer')">
+        <button
+          type="button"
+          class="sync-action-btn sync-action-btn--primary"
+          :disabled="hasRunningJob || customerCohortState?.import.status !== 'completed'"
+          :title="customerCohortState?.import.status === 'completed'
+            ? 'Đồng bộ cohort khách hàng POS'
+            : 'Hoàn tất nhập khách hàng POS lần đầu trước'"
+          @click="triggerSync('Customer')"
+        >
           KH
         </button>
         <button type="button" class="sync-action-btn sync-action-btn--secondary" :disabled="hasRunningJob" @click="triggerSync('Product')">
@@ -65,7 +109,15 @@
         <button type="button" class="sync-action-btn sync-action-btn--warning" :disabled="hasRunningJob" @click="triggerSync('BranchInventory')">
           Tồn kho
         </button>
-        <button type="button" class="sync-action-btn sync-action-btn--success" :disabled="hasRunningJob" @click="triggerSync('All')">
+        <button
+          type="button"
+          class="sync-action-btn sync-action-btn--success"
+          :disabled="hasRunningJob || customerCohortState?.import.status !== 'completed'"
+          :title="customerCohortState?.import.status === 'completed'
+            ? 'Đồng bộ toàn bộ dữ liệu POS'
+            : 'Hoàn tất nhập khách hàng POS lần đầu trước'"
+          @click="triggerSync('All')"
+        >
           Tất cả
         </button>
       </div>
@@ -220,14 +272,27 @@
  */
 import { ref, computed, onMounted, onUnmounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { RefreshCw, CloudSync, Clock, RotateCcw, Square } from 'lucide-vue-next';
-import { useSync, getJobStats } from '@/composables/useSync';
+import { useSync, getJobStats, type CustomerCohortState } from '@/composables/useSync';
 import { useAuthStore } from '@/stores/auth';
 
 const menuOpen = ref(false);
 const menuRoot = ref<HTMLElement | null>(null);
 const activator = ref<HTMLButtonElement | null>(null);
 const authStore = useAuthStore();
-const { activeJobs, syncHistory, isFetching, hasLoadedOnce, fetchJobs, startSync, cancelJob, retryJob } = useSync();
+const {
+  activeJobs,
+  syncHistory,
+  isFetching,
+  hasLoadedOnce,
+  fetchJobs,
+  startSync,
+  startCustomerPreview,
+  startCustomerInitialImport,
+  fetchCustomerCohortState,
+  cancelJob,
+  retryJob,
+} = useSync();
+const customerCohortState = ref<CustomerCohortState | null>(null);
 const cancelling = ref(false);
 
 const now = ref(Date.now());
@@ -266,6 +331,7 @@ onMounted(() => {
   tickerInterval = setInterval(() => {
     now.value = Date.now();
   }, 1000);
+  void loadCustomerCohortState();
 });
 
 onUnmounted(() => {
@@ -286,6 +352,25 @@ const pendingJob = computed(() => {
 });
 
 const hasRunningJob = computed(() => !!runningJob.value || !!pendingJob.value);
+
+const hasFreshCustomerPreview = computed(() => {
+  // The preview expires while this panel can remain open for hours.
+  void now.value;
+  const completedAt = customerCohortState.value?.preview?.completedAt;
+  if (!completedAt) return false;
+  const completedMs = new Date(completedAt).getTime();
+  return Number.isFinite(completedMs) && Date.now() - completedMs <= 24 * 60 * 60 * 1000;
+});
+
+const customerCohortStatusText = computed(() => {
+  const status = customerCohortState.value?.import.status;
+  if (status === 'completed') return 'Đã nhập — đồng bộ thường kỳ sẵn sàng';
+  if (status === 'failed') return 'Lần nhập trước thất bại — cần chạy lại';
+  if (status === 'archiving' || status === 'projecting') return 'Đang nhập cohort khách hàng';
+  if (hasFreshCustomerPreview.value) return 'Preview còn hiệu lực 24 giờ';
+  if (customerCohortState.value?.preview) return 'Preview đã hết hạn — cần quét lại';
+  return 'Preview chỉ đọc trước khi nhập lần đầu';
+});
 
 const hasKnownTotal = computed(() => {
   const job = runningJob.value;
@@ -321,6 +406,31 @@ const triggerSync = async (entity: 'Customer' | 'Product' | 'Order' | 'Invoice' 
   }
 };
 
+const triggerCustomerPreview = async () => {
+  try {
+    await startCustomerPreview();
+  } catch (err: any) {
+    console.error('[SyncHeaderWidget] Customer preview failed to start:', err);
+  }
+};
+
+const triggerCustomerInitialImport = async () => {
+  if (!hasFreshCustomerPreview.value) return;
+  try {
+    await startCustomerInitialImport();
+  } catch (err: any) {
+    console.error('[SyncHeaderWidget] Initial customer import failed to start:', err);
+  }
+};
+
+async function loadCustomerCohortState() {
+  try {
+    customerCohortState.value = (await fetchCustomerCohortState()) ?? null;
+  } catch (err: any) {
+    console.error('[SyncHeaderWidget] Failed to fetch customer cohort state:', err);
+  }
+}
+
 const cancelSync = async (jobId: string) => {
   if (cancelling.value) return;
   cancelling.value = true;
@@ -340,6 +450,13 @@ const retrySync = async (jobId: string) => {
     console.error('[SyncHeaderWidget] Retry job failed:', err);
   }
 };
+
+watch(
+  () => activeJobs.value.length,
+  (length, previousLength) => {
+    if (previousLength > 0 && length === 0) void loadCustomerCohortState();
+  },
+);
 
 function getEntityName(entity: string): string {
   switch (entity) {
@@ -502,6 +619,56 @@ function translateStatus(status: string) {
 .panel-divider {
   height: 1px;
   background: var(--app-border-subtle, #e2e8f0);
+}
+
+.customer-cohort-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px 4px;
+  background: #f8fafc;
+}
+
+.customer-cohort-actions .sync-action-btn {
+  flex: 0 0 auto;
+}
+
+.sync-action-btn--preview {
+  background: color-mix(in srgb, #0f766e 14%, #fff);
+  color: #0f766e;
+}
+
+.sync-action-btn--initial-import {
+  background: color-mix(in srgb, #c2410c 14%, #fff);
+  color: #c2410c;
+}
+
+.customer-cohort-summary,
+.customer-cohort-status {
+  font-size: 0.7rem;
+  line-height: 1.3;
+}
+
+.customer-cohort-summary {
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-weight: 700;
+}
+
+.customer-cohort-status {
+  flex-basis: 100%;
+  color: #64748b;
+}
+
+.customer-cohort-status--ready {
+  color: #15803d;
+}
+
+.customer-cohort-status--error {
+  color: #b91c1c;
 }
 
 .actions-bar {

@@ -413,6 +413,7 @@
 
           <div class="ppl-grp">
             <div class="ppl-grp-t">Thông tin chăm sóc</div>
+            <div v-if="careLoading" class="ppl-inline-load">Đang tải thông tin chăm sóc…</div>
             <div class="ppl-grid2">
               <div class="ppl-input-box">
                 <span class="ppl-input-l">Sale phụ trách</span>
@@ -436,11 +437,16 @@
                 </select>
               </div>
               <div class="ppl-input-box">
-                <span class="ppl-input-l">Giới tính</span>
-                <select v-model="draft.gender" @change="dirty = true">
-                  <option :value="null">— chưa rõ —</option>
-                  <option v-for="g in GENDER_OPTIONS" :key="g.value" :value="g.value">{{ g.text }}</option>
-                </select>
+                <span class="ppl-input-l">Sản phẩm quan tâm</span>
+                <input v-model="careFields.productInterest" placeholder="+ thêm" @change="dirtyCare = true" />
+              </div>
+              <div class="ppl-input-box">
+                <span class="ppl-input-l">Workshop đã tham gia</span>
+                <input v-model="careFields.workshopsAttended" placeholder="+ thêm" @change="dirtyCare = true" />
+              </div>
+              <div class="ppl-input-box">
+                <span class="ppl-input-l">Phàn nàn</span>
+                <input v-model="careFields.complaints" placeholder="+ thêm" @change="dirtyCare = true" />
               </div>
             </div>
           </div>
@@ -464,7 +470,7 @@
           </div>
 
           <div class="ppl-save-bar">
-            <button class="ppl-btn-primary sm" :disabled="!dirty || saving" @click="saveContact">
+            <button class="ppl-btn-primary sm" :disabled="(!dirty && !dirtyCare) || saving || careLoading" @click="saveContact">
               {{ saving ? 'Đang lưu…' : 'Lưu thay đổi' }}
             </button>
           </div>
@@ -659,8 +665,8 @@ import { api } from '@/api/index';
 import {
   useContacts,
   SOURCE_OPTIONS,
-  GENDER_OPTIONS,
   type Contact,
+  type ContactCareFields,
 } from '@/composables/use-contacts';
 import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-friend-socket';
 import { useContactPhoneSearch, candidateDisplayName, candidateKey, type PosLinkCandidate } from '@/composables/use-contact-phone-search';
@@ -1327,6 +1333,7 @@ const selectedId = ref<string | null>(null);
 const detail = ref<Contact | null>(null);
 const tab = ref('over');
 const dirty = ref(false);
+const dirtyCare = ref(false);
 const saving = ref(false);
 const draft = reactive<Record<string, unknown>>({});
 const tagDraft = ref('');
@@ -1340,13 +1347,20 @@ const loadingNotes = ref(false);
 const noteDraft = ref('');
 const savingNote = ref(false);
 
+const careFields = reactive({
+  productInterest: '',
+  workshopsAttended: '',
+  complaints: '',
+});
+const careHistory = ref<ContactCareFields | null>(null);
+const careLoading = ref(false);
+const careSaving = ref(false);
+
 const personalFields = [
-  { key: 'crmName', label: 'Tên CRM', ph: 'Tên gọi nội bộ' },
   { key: 'fullName', label: 'Tên đầy đủ', ph: 'Theo hồ sơ' },
   { key: 'birthYear', label: 'Năm sinh', ph: 'YYYY' },
   { key: 'phone', label: 'SĐT chính', ph: '09…' },
   { key: 'email', label: 'Email', ph: '+ thêm' },
-  { key: 'occupation', label: 'Nghề nghiệp', ph: '+ thêm' },
   { key: 'province', label: 'Tỉnh / Thành', ph: '+ thêm' },
   { key: 'district', label: 'Quận / Huyện', ph: '+ thêm' },
 ];
@@ -1361,6 +1375,7 @@ async function openDrawer(row: Contact) {
     if (res.data && selectedId.value === row.id) {
       detail.value = res.data;
       hydrateDraft(res.data);
+      await loadCareFields(row.id);
     }
   } catch (err) {
     console.error('[PeopleView] load detail failed:', err);
@@ -1369,14 +1384,37 @@ async function openDrawer(row: Contact) {
 function hydrateDraft(c: Contact) {
   Object.keys(draft).forEach((k) => delete draft[k]);
   Object.assign(draft, {
-    crmName: c.crmName ?? '', fullName: c.fullName ?? '', birthYear: c.birthYear ?? '',
-    phone: c.phone ?? '', email: c.email ?? '', occupation: c.occupation ?? '',
+    fullName: c.fullName ?? '', birthYear: c.birthYear ?? '',
+    phone: c.phone ?? '', email: c.email ?? '',
     province: c.province ?? '', district: c.district ?? '',
     assignedUserId: c.assignedUserId ?? null, statusId: c.statusId ?? null,
-    source: c.source ?? null, gender: c.gender ?? null,
-    tags: [...(c.tags || [])],
+    source: c.source ?? null, tags: [...(c.tags || [])],
   });
+  // These fields are loaded separately because each category keeps append-only history.
+  careHistory.value = null;
+  careFields.productInterest = '';
+  careFields.workshopsAttended = '';
+  careFields.complaints = '';
+  dirtyCare.value = false;
   dirty.value = false;
+}
+async function loadCareFields(contactId: string) {
+  careLoading.value = true;
+  careHistory.value = null;
+  try {
+    const res = await api.get<ContactCareFields>(`/contacts/${contactId}/care-fields`);
+    if (selectedId.value !== contactId) return;
+    careHistory.value = res.data;
+    careFields.productInterest = res.data.current.productInterest;
+    careFields.workshopsAttended = res.data.current.workshopsAttended;
+    careFields.complaints = res.data.current.complaints;
+    dirtyCare.value = false;
+  } catch (err) {
+    console.error('[PeopleView] load care fields failed:', err);
+    toast.error('Không tải được thông tin chăm sóc');
+  } finally {
+    careLoading.value = false;
+  }
 }
 function closeDrawer() {
   drawerOpen.value = false;
@@ -1402,6 +1440,7 @@ async function openDrawerById(id: string) {
     drawerOpen.value = true;
     detail.value = res.data;
     hydrateDraft(res.data);
+    await loadCareFields(id);
   } catch (err) {
     console.error('[PeopleView] deep-link load failed:', err);
     toast.error('Không mở được hồ sơ khách hàng');
@@ -1422,29 +1461,37 @@ function removeTag(t: string) {
 }
 
 async function saveContact() {
-  if (!detail.value || !dirty.value) return;
+  if (!detail.value || (!dirty.value && !dirtyCare.value)) return;
   saving.value = true;
   try {
-    const payload: Record<string, unknown> = {
-      crmName: draft.crmName || null,
+    if (dirty.value) {
+      const payload: Record<string, unknown> = {
       fullName: draft.fullName || null,
       birthYear: draft.birthYear ? Number(draft.birthYear) : null,
       phone: draft.phone || null,
       email: draft.email || null,
-      occupation: draft.occupation || null,
       province: draft.province || null,
       district: draft.district || null,
       assignedUserId: draft.assignedUserId || null,
       statusId: draft.statusId || null,
       source: draft.source || null,
-      gender: draft.gender || null,
       tags: draft.tags,
-    };
-    await updateContact(detail.value.id, payload as Partial<Contact>);
+      };
+      await updateContact(detail.value.id, payload as Partial<Contact>);
+      const i = rawRows.value.findIndex((r) => r.id === detail.value!.id);
+      if (i >= 0) rawRows.value[i] = { ...rawRows.value[i], ...(payload as Partial<Contact>) };
+    }
+    if (dirtyCare.value) {
+      await api.put(`/contacts/${detail.value.id}/care-fields`, {
+        productInterest: careFields.productInterest,
+        workshopsAttended: careFields.workshopsAttended,
+        complaints: careFields.complaints,
+      });
+      await loadCareFields(detail.value.id);
+      dirtyCare.value = false;
+    }
     dirty.value = false;
     showToast('Đã lưu thay đổi');
-    const i = rawRows.value.findIndex((r) => r.id === detail.value!.id);
-    if (i >= 0) rawRows.value[i] = { ...rawRows.value[i], ...(payload as Partial<Contact>) };
   } catch (err) {
     console.error('[PeopleView] save failed:', err);
     toast.error('Lưu thất bại');
@@ -1911,6 +1958,7 @@ onBeforeUnmount(() => {
   position: relative; overflow: hidden;
   background: var(--pp-bg); color: var(--pp-fg);
   font-family: var(--pp-body);
+  font-weight: 500;
 }
 .people * { box-sizing: border-box; }
 .people input, .people select, .people textarea, .people button { font-family: inherit; }

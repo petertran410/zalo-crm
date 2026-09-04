@@ -4,6 +4,9 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { runBackgroundSync } from './sync-worker.js';
 import { getIo } from '../../shared/event-buffer.js';
+import {
+  getCustomerCohortState,
+} from '../integrations/pos-customer-import-service.js';
 
 export async function syncRoutes(app: FastifyInstance): Promise<void> {
   // Require authentication for all sync routes
@@ -18,7 +21,92 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
     }
   };
 
-  // GET /api/v1/sync/jobs — list sync jobs (admin only)
+  const requireOwner = async (request: FastifyRequest, reply: FastifyReply) => {
+    if ((request.authCtx?.role ?? '') !== 'owner') {
+      logger.warn(`[sync-routes] Non-owner attempted initial POS customer import`);
+      return reply.status(403).send({
+        error: 'Chỉ owner mới có quyền chuẩn bị nhập khách hàng POS lần đầu',
+        code: 'OWNER_ONLY',
+      });
+    }
+  };
+
+  app.get(
+    '/api/v1/sync/customer-cohort',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        return await getCustomerCohortState(request.authCtx!.orgId);
+      } catch (err) {
+        logger.error('[sync-routes] Get customer cohort state failed:', err);
+        return reply.status(500).send({ error: 'Failed to fetch customer cohort state' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/sync/customer-cohort/preview',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        const activeJob = await prisma.syncJob.findFirst({
+          where: {
+            orgId,
+            entity: { in: ['Customer', 'CustomerPreview', 'CustomerInitialImport'] },
+            status: { in: ['Pending', 'Running'] },
+          },
+        });
+        if (activeJob) {
+          return reply.status(409).send({ error: 'Đang có tiến trình khách hàng POS chạy.', jobId: activeJob.id });
+        }
+        const job = await prisma.syncJob.create({
+          data: { orgId, userId, entity: 'CustomerPreview', status: 'Pending' },
+        });
+        void runBackgroundSync(orgId, job.id).catch((err) => {
+          logger.error(`[sync-routes] Customer preview failed to start for ${job.id}:`, err);
+        });
+        return { jobId: job.id, status: 'Pending', readOnly: true };
+      } catch (err) {
+        logger.error('[sync-routes] Start customer preview failed:', err);
+        return reply.status(500).send({ error: 'Failed to start customer preview' });
+      }
+    },
+  );
+
+  app.post(
+    '/api/v1/sync/customer-cohort/initial-import',
+    { preHandler: [requireOwner] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        const activeJob = await prisma.syncJob.findFirst({
+          where: {
+            orgId,
+            entity: { in: ['Customer', 'CustomerPreview', 'CustomerInitialImport'] },
+            status: { in: ['Pending', 'Running'] },
+          },
+        });
+        if (activeJob) {
+          return reply.status(409).send({ error: 'Đang có tiến trình khách hàng POS chạy.', jobId: activeJob.id });
+        }
+        const state = await getCustomerCohortState(orgId);
+        if (state.import.status === 'completed') {
+          return reply.status(409).send({ error: 'Nhập khách hàng POS lần đầu đã hoàn tất.', code: 'ALREADY_COMPLETED' });
+        }
+        const job = await prisma.syncJob.create({
+          data: { orgId, userId, entity: 'CustomerInitialImport', status: 'Pending' },
+        });
+        void runBackgroundSync(orgId, job.id).catch((err) => {
+          logger.error(`[sync-routes] Initial customer import failed to start for ${job.id}:`, err);
+        });
+        return { jobId: job.id, status: 'Pending', ownerOnly: true };
+      } catch (err) {
+        logger.error('[sync-routes] Start initial customer import failed:', err);
+        return reply.status(500).send({ error: 'Failed to start initial customer import' });
+      }
+    },
+  );
   app.get(
     '/api/v1/sync/jobs',
     { preHandler: [requireAdmin] },
@@ -28,14 +116,14 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
         const jobs = await prisma.syncJob.findMany({
           where: { orgId },
           orderBy: { createdAt: 'desc' },
-          take: 30, // return recent 30 jobs
+          take: 30,
         });
         return jobs;
       } catch (err: any) {
         logger.error('[sync-routes] Fetch sync jobs failed:', err);
         return reply.status(500).send({ error: 'Failed to fetch sync jobs' });
       }
-    }
+    },
   );
 
   // POST /api/v1/sync/customers — start background customer sync (admin only)
@@ -217,6 +305,13 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
     async (request: FastifyRequest, reply: FastifyReply) => {
       try {
         const { orgId, userId } = request.authCtx!;
+        const cohortState = await getCustomerCohortState(orgId);
+        if (cohortState.import.status !== 'completed') {
+          return reply.status(409).send({
+            error: 'Hãy hoàn tất nhập khách hàng POS lần đầu trước khi chạy toàn bộ dữ liệu.',
+            code: 'CUSTOMER_INITIAL_IMPORT_REQUIRED',
+          });
+        }
         return await triggerEntitySync(orgId, userId, 'All', reply);
       } catch (err: any) {
         logger.error('[sync-routes] Start all sync failed:', err);
@@ -297,6 +392,15 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
 
         if (!targetJob || targetJob.orgId !== orgId) {
           return reply.status(404).send({ error: 'Không tìm thấy Sync Job' });
+        }
+
+        // Import đầu tiên có quyền owner-only ngay từ lúc khởi tạo; giữ nguyên
+        // ranh giới đó khi retry để admin không thể kích hoạt archive/import hộ owner.
+        if (targetJob.entity === 'CustomerInitialImport' && (request.authCtx?.role ?? '') !== 'owner') {
+          return reply.status(403).send({
+            error: 'Chỉ owner mới có quyền chạy lại nhập khách hàng POS lần đầu',
+            code: 'OWNER_ONLY',
+          });
         }
 
         // Job bị hủy giữa chừng cũng cần chạy lại được, không chỉ job lỗi.

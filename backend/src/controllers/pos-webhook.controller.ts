@@ -12,6 +12,8 @@ import {
   batchUpsertBranchInventory,
   emitPosDataUpdated,
 } from '../shared/mcp/pos-sync-service.js';
+import { customerPhone, isInvoiceBackedCustomer } from '../modules/integrations/hisweetie-customer-cohort.js';
+import { getCustomerCohortState } from '../modules/integrations/pos-customer-import-service.js';
 import { notifyAdminsOfIncidentAsync } from '../modules/system-notifications/system-notify-service.js';
 
 export interface VerifySignatureResult {
@@ -110,13 +112,40 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
       });
     } else if (eventType.includes('customer')) {
       const customerList = Array.isArray(entityData) ? entityData : [entityData];
-      await batchUpsertCustomers(orgId, customerList);
-      emitPosDataUpdated(orgId, {
-        type: 'customer',
-        action: 'synced',
-        summary: `Đã cập nhật dữ liệu POS từ Webhook (Khách hàng ${customerList[0]?.name || customerList[0]?.code || ''})`,
-        data: customerList[0],
-      });
+      const cohortState = await getCustomerCohortState(orgId);
+      if (cohortState.import.status !== 'completed') {
+        logger.warn(
+          `[pos-webhook-controller] Ignoring customer webhook before initial cohort import for org ${orgId}`,
+        );
+      } else {
+        const eligibleCustomers: Record<string, any>[] = [];
+        for (const customer of customerList) {
+          const customerId = Number(customer?.id ?? customer?.customerId);
+          if (!Number.isInteger(customerId) || customerId <= 0 || !customerPhone(customer)) {
+            continue;
+          }
+          const invoice = await prisma.posInvoice.findFirst({
+            where: { orgId, posCustomerId: customerId },
+            select: { posCustomerId: true },
+          });
+          if (invoice && isInvoiceBackedCustomer(customer, new Set([customerId]))) {
+            eligibleCustomers.push(customer);
+          }
+        }
+        if (eligibleCustomers.length > 0) {
+          await batchUpsertCustomers(orgId, eligibleCustomers);
+          emitPosDataUpdated(orgId, {
+            type: 'customer',
+            action: 'synced',
+            summary: `Đã cập nhật dữ liệu POS từ Webhook (Khách hàng ${eligibleCustomers[0]?.name || eligibleCustomers[0]?.code || ''})`,
+            data: eligibleCustomers[0],
+          });
+        } else {
+          logger.info(
+            `[pos-webhook-controller] Customer webhook contained no eligible cohort records for org ${orgId}`,
+          );
+        }
+      }
     } else if (eventType.includes('product')) {
       const productList = Array.isArray(entityData) ? entityData : [entityData];
       await batchUpsertProducts(orgId, productList);

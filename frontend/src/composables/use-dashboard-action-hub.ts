@@ -203,6 +203,12 @@ export function useDashboardActionHub() {
   const loadingTeam = ref(false);
   const loadingSystem = ref(false);
 
+  // Per-section failure, so one dead endpoint renders a retry instead of a screen of zeroes.
+  // 'forbidden' is a permission answer, not an outage — the section hides rather than erroring.
+  const errMe = ref<'error' | null>(null);
+  const errTeam = ref<'error' | 'forbidden' | null>(null);
+  const errSystem = ref<'error' | 'forbidden' | null>(null);
+
   // Role gating — section render quyết định ở component, đây chỉ helper.
   // 2026-06-11 Dashboard v4: /profile giờ trả deptRole + canViewAll → auth.isManager
   // (leader/deputy/admin/grant view_all) quyết tab "Quản lý team". /team + /system
@@ -213,14 +219,16 @@ export function useDashboardActionHub() {
 
   async function fetchMe(asUserId?: string | null) {
     loadingMe.value = true;
+    errMe.value = null;
     try {
       const params = asUserId ? { asUserId } : {};
       const res = await api.get('/dashboard/action-hub/me', { params });
       me.value = res.data;
       viewAsUserId.value = asUserId ?? null;
     } catch (err: any) {
+      // Rethrowing here also rejected fetchAll's Promise.all and aborted the sibling sections.
       console.error('[dashboard-hub] fetchMe error:', err?.response?.data ?? err);
-      throw err;
+      errMe.value = 'error';
     } finally {
       loadingMe.value = false;
     }
@@ -228,6 +236,7 @@ export function useDashboardActionHub() {
 
   async function fetchTeam(deptIds?: string[]) {
     loadingTeam.value = true;
+    errTeam.value = null;
     try {
       const params = deptIds && deptIds.length > 0 ? { deptIds: deptIds.join(',') } : {};
       const res = await api.get('/dashboard/action-hub/team', { params });
@@ -235,8 +244,11 @@ export function useDashboardActionHub() {
       selectedDeptIds.value = deptIds ?? [];
     } catch (err: any) {
       // 403 nếu user không có quyền — silent fail, không crash UI
-      if (err?.response?.status !== 403) {
+      if (err?.response?.status === 403) {
+        errTeam.value = 'forbidden';
+      } else {
         console.error('[dashboard-hub] fetchTeam error:', err?.response?.data ?? err);
+        errTeam.value = 'error';
       }
       team.value = null;
     } finally {
@@ -246,12 +258,16 @@ export function useDashboardActionHub() {
 
   async function fetchSystem() {
     loadingSystem.value = true;
+    errSystem.value = null;
     try {
       const res = await api.get('/dashboard/action-hub/system');
       system.value = res.data;
     } catch (err: any) {
-      if (err?.response?.status !== 403) {
+      if (err?.response?.status === 403) {
+        errSystem.value = 'forbidden';
+      } else {
         console.error('[dashboard-hub] fetchSystem error:', err?.response?.data ?? err);
+        errSystem.value = 'error';
       }
       system.value = null;
     } finally {
@@ -304,6 +320,9 @@ export function useDashboardActionHub() {
     loadingMe,
     loadingTeam,
     loadingSystem,
+    errMe,
+    errTeam,
+    errSystem,
     isAdmin,
     hasTeamSection,
     hasSystemSection,

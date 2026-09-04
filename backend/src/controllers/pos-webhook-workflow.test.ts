@@ -159,6 +159,13 @@ describe('Empirical Verification: POS Webhook Logging, 3x Retry Mechanism & Sock
       vi.spyOn(prisma.posWebhookLog, 'update').mockResolvedValue({} as any);
       vi.spyOn(posSyncService, 'batchUpsertOrders').mockResolvedValue(1);
       vi.spyOn(posSyncService, 'batchUpsertCustomers').mockResolvedValue(1);
+      vi.spyOn(prisma.appSetting, 'findUnique').mockResolvedValue({
+        valuePlain: JSON.stringify({
+          rule: 'active_phone_invoice_v1',
+          import: { status: 'completed' },
+        }),
+      } as any);
+      vi.spyOn(prisma.posInvoice, 'findFirst').mockResolvedValue({ posCustomerId: 202 } as any);
 
       const processedCount = await runPosWebhookRetrySweep();
 
@@ -257,7 +264,7 @@ describe('Empirical Verification: POS Webhook Logging, 3x Retry Mechanism & Sock
         eventType: 'customer.updated',
         payload: {
           event: 'customer.updated',
-          data: { id: 88, name: 'Nguyễn Văn A', phone: '0901234567' },
+          data: { id: 88, name: 'Nguyễn Văn A', phone: '0901234567', isActive: true },
         },
         status: 'PENDING',
         attempts: 0,
@@ -266,6 +273,13 @@ describe('Empirical Verification: POS Webhook Logging, 3x Retry Mechanism & Sock
       vi.spyOn(prisma.posWebhookLog, 'findUnique').mockResolvedValue(customerLog as any);
       vi.spyOn(prisma.posWebhookLog, 'update').mockResolvedValue({} as any);
       vi.spyOn(posSyncService, 'batchUpsertCustomers').mockResolvedValue(1);
+      vi.spyOn(prisma.appSetting, 'findUnique').mockResolvedValue({
+        valuePlain: JSON.stringify({
+          rule: 'active_phone_invoice_v1',
+          import: { status: 'completed' },
+        }),
+      } as any);
+      vi.spyOn(prisma.posInvoice, 'findFirst').mockResolvedValue({ posCustomerId: 88 } as any);
 
       await processPosWebhookLog('log-cust');
 

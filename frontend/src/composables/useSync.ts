@@ -17,6 +17,24 @@ export interface SyncJob {
   endTime: string | null;
 }
 
+export interface CustomerCohortState {
+  rule: string;
+  preview?: {
+    completedAt: string;
+    stats: {
+      eligibleCustomers: number;
+      debtPositive: number;
+      debtNotPositive: number;
+    };
+    invoiceTimestamp: string | null;
+    customerTimestamp: string | null;
+  };
+  import: {
+    status: 'not_started' | 'archiving' | 'projecting' | 'completed' | 'failed';
+    lastError?: string;
+  };
+}
+
 const activeJobs = ref<SyncJob[]>([]);
 const syncHistory = ref<SyncJob[]>([]);
 const isFetching = ref(false);
@@ -97,6 +115,26 @@ export function useSync() {
       console.error('[useSync] Start sync failed:', err);
       throw err;
     }
+  };
+
+  const startCustomerPreview = async () => {
+    if (!authStore.isAdmin) return;
+    const res = await api.post('/sync/customer-cohort/preview');
+    await fetchJobs();
+    return res.data;
+  };
+
+  const startCustomerInitialImport = async () => {
+    if (!authStore.isOwner) return;
+    const res = await api.post('/sync/customer-cohort/initial-import');
+    await fetchJobs();
+    return res.data;
+  };
+
+  const fetchCustomerCohortState = async (): Promise<CustomerCohortState | undefined> => {
+    if (!authStore.isAdmin) return undefined;
+    const res = await api.get('/sync/customer-cohort');
+    return res.data as CustomerCohortState;
   };
 
   const cancelJob = async (jobId: string) => {
@@ -276,6 +314,9 @@ export function useSync() {
     overallRunningJob,
     fetchJobs,
     startSync,
+    startCustomerPreview,
+    startCustomerInitialImport,
+    fetchCustomerCohortState,
     cancelJob,
     retryJob
   };

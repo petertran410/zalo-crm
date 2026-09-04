@@ -248,9 +248,6 @@ export async function batchUpsertProducts(orgId: string, products: any[]): Promi
 export async function batchUpsertCustomers(orgId: string, customers: any[]): Promise<number> {
   if (!customers || customers.length === 0) return 0;
 
-  const twoYearsAgo = new Date();
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-
   const posIds: number[] = [];
   const names: string[] = [];
   const codes: (string | null)[] = [];
@@ -272,16 +269,6 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
     // record inactive vẫn lọt vào (payload webhook, hoặc caller lỡ bật
     // includeInactive) — bộ lọc chính nằm ở tham số gọi POS.
     if (!isPosCustomerActive(cust)) continue;
-
-    const hasFinancial = Number(cust.totalPurchased || 0) > 0 ||
-                         Number(cust.totalRevenue || 0) > 0 ||
-                         Number(cust.totalDebt || 0) !== 0;
-
-    const isRecent = cust.updatedAt ? new Date(cust.updatedAt) >= twoYearsAgo : false;
-
-    if (!hasFinancial || !isRecent) {
-      continue;
-    }
 
     const phone = cust.phone || cust.contactNumber || null;
     const address = cust.addresses?.[0]?.address || cust.invoiceAddress || cust.address || null;
@@ -1134,170 +1121,6 @@ export async function syncPosProductsFromMcp(
 
     emitProgress(orgId, { table: 'products', phase: isCancel ? 'done' : 'error', current: totalSynced, total: isCancel ? totalSynced : 0, message: isCancel ? `Đã hủy ở ${totalSynced} sản phẩm` : (err.message || 'Lỗi đồng bộ sản phẩm') });
     logger.error('[pos-sync] Sync products failed:', err.message || err);
-    throw err;
-  }
-}
-
-/**
- * Mốc để đồng bộ tăng dần cho khách hàng.
- *
- * Ưu tiên `posTimestamp` — mốc do CHÍNH máy chủ POS trả về trong response
- * (doc mục 4). Dùng thẳng, không trừ hao: `lastModifiedFrom` so sánh `>=` và
- * mốc đến từ đúng đồng hồ đã đóng dấu `updatedAt`, nên không có khe hở.
- *
- * Fallback `endTime − 5 phút` cho job cũ chưa có `posTimestamp` và cho đường
- * MCP: mốc đó là giờ máy CRM, lệch đồng hồ với POS nên phải lùi lại cho chắc.
- *
- * Chưa từng đồng bộ xong lần nào → null nghĩa là phải quét toàn bộ.
- */
-export async function getCustomerSyncSince(orgId: string): Promise<Date | null> {
-  const lastCompleted = await prisma.syncJob.findFirst({
-    where: { orgId, entity: 'Customer', status: 'Completed' },
-    orderBy: { endTime: 'desc' },
-    select: { endTime: true, posTimestamp: true },
-  });
-  if (lastCompleted?.posTimestamp) return lastCompleted.posTimestamp;
-  if (!lastCompleted?.endTime) return null;
-  return new Date(lastCompleted.endTime.getTime() - 5 * 60 * 1000);
-}
-
-/**
- * Mốc server đọc từ response Public API. Lấy của trang ĐẦU TIÊN, không phải
- * trang cuối: bản ghi đổi trong lúc đang quét sẽ được lần chạy sau nhặt lại,
- * còn lấy trang cuối thì phần đổi giữa chừng rơi vào vùng đã bỏ qua.
- */
-export function readServerTimestamp(res: unknown): Date | null {
-  const raw = (res as { timestamp?: unknown } | null)?.timestamp;
-  if (typeof raw !== 'string') return null;
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
-}
-
-export async function syncPosCustomersFromMcp(
-  orgId: string,
-  opts: { since?: Date | null; shouldCancel?: ShouldCancel } = {},
-): Promise<void> {
-  const shouldCancel = opts.shouldCancel;
-  // Chỉ dùng Public API khi được bật rõ ràng bằng HISWEETIE_SYNC_TRANSPORT=public_api
-  // và đã có đủ cấu hình; mặc định vẫn giữ nguyên đường MCP đang chạy.
-  const publicApi = getHisweetiePublicApiClient();
-
-  // Đồng bộ tăng dần: chỉ lấy khách đổi sau mốc `since`. Kéo lại toàn bộ ~50k
-  // khách cho mỗi lần chạy là nguyên nhân chính chạm trần 5000 request/giờ.
-  const since = opts.since ?? null;
-  // KHÔNG gửi `includeInactive`: mặc định của POS là false → chỉ trả khách CÒN
-  // HOẠT ĐỘNG.
-  const fetchCustomerPage = (args: { currentItem: number; pageSize: number }) =>
-    publicApi.listCustomers({
-      ...args,
-      ...(since ? { lastModifiedFrom: since.toISOString() } : {}),
-    });
-
-  logger.info(
-    `[pos-sync] Syncing customers for org ${orgId} via Public API`
-    + (since ? ` (delta từ ${since.toISOString()})` : ' (toàn bộ)'),
-  );
-  emitProgress(orgId, { table: 'customers', phase: 'fetching', current: 0, total: -1 });
-
-  const lastJob = await prisma.syncJob.findFirst({
-    where: { orgId, entity: 'Customer' },
-    orderBy: { createdAt: 'desc' }
-  });
-
-  let currentItem = 0;
-  let totalSynced = 0;
-
-  // Delta sync bắt đầu lại từ đầu danh sách đã lọc; chỉ resume khi quét toàn bộ.
-  if (!since && lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
-    currentItem = lastJob.processed;
-    totalSynced = lastJob.processed;
-    logger.info(`[pos-sync] Resuming manual customer sync from offset ${currentItem}`);
-  }
-
-  const job = await prisma.syncJob.create({
-    data: {
-      orgId,
-      entity: 'Customer',
-      status: 'Running',
-      processed: totalSynced,
-      currentPage: Math.floor(currentItem / 100),
-      startTime: new Date()
-    }
-  });
-
-  try {
-    const pageSize = 100;
-    let hasMore = true;
-    let serverTimestamp: Date | null = null;
-
-    while (hasMore) {
-      if (await shouldCancel?.()) throw new SyncCancelledError();
-      const res = await fetchWithRetry(() => fetchCustomerPage({ currentItem, pageSize }));
-      const customers = (res as any).data || [];
-
-      // Mốc của trang đầu tiên là mốc an toàn cho lần delta kế tiếp.
-      if (serverTimestamp === null) serverTimestamp = readServerTimestamp(res);
-
-      if (customers.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      emitProgress(orgId, { table: 'customers', phase: 'saving', current: totalSynced, total: -1, message: `Đang lưu trang ${Math.floor(currentItem / pageSize) + 1}...` });
-      await batchUpsertCustomers(orgId, customers);
-
-      totalSynced += customers.length;
-
-      await prisma.syncJob.update({
-        where: { id: job.id },
-        data: {
-          processed: totalSynced,
-          currentPage: Math.floor(currentItem / pageSize) + 1
-        }
-      });
-
-      emitProgress(orgId, { table: 'customers', phase: 'fetching', current: totalSynced, total: -1, message: `Đã đồng bộ ${totalSynced} khách hàng` });
-      logger.info(`[pos-sync] Synced ${customers.length} customers. Total: ${totalSynced}`);
-
-      if (customers.length < pageSize) {
-        hasMore = false;
-      } else {
-        currentItem += pageSize;
-        if (currentItem > 50000) {
-          logger.warn(`[pos-sync] Đã chạm giới hạn tối đa 50,000 khách hàng từ POS MCP Server. Dừng đồng bộ để tránh lỗi offset.`);
-          hasMore = false;
-        } else {
-          await sleep(800);
-        }
-      }
-    }
-
-    await prisma.syncJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'Completed',
-        endTime: new Date(),
-        // Chỉ ghi khi POS thật sự trả mốc; null thì getCustomerSyncSince tự lùi
-        // về fallback endTime−5 phút.
-        ...(serverTimestamp ? { posTimestamp: serverTimestamp } : {}),
-      }
-    });
-
-    emitProgress(orgId, { table: 'customers', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất ${totalSynced} khách hàng` });
-    logger.info(`[pos-sync] Sync completed. Total synced customers: ${totalSynced}`);
-  } catch (err: any) {
-    const isCancel = err instanceof SyncCancelledError;
-    await prisma.syncJob.update({
-      where: { id: job.id },
-      data: {
-        status: isCancel ? 'Cancelled' : 'Failed',
-        endTime: new Date(),
-        lastError: isCancel ? 'Người dùng hủy thủ công' : (err.message || String(err))
-      }
-    });
-
-    emitProgress(orgId, { table: 'customers', phase: isCancel ? 'done' : 'error', current: totalSynced, total: isCancel ? totalSynced : 0, message: isCancel ? `Đã hủy ở ${totalSynced} khách hàng` : (err.message || 'Lỗi đồng bộ khách hàng') });
-    logger.error('[pos-sync] Sync customers failed:', err.message || err);
     throw err;
   }
 }

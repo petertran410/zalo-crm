@@ -370,6 +370,11 @@ const conversationCounts = computed(() => {
   return { unread, unanswered, stuck, ready, individual, group };
 });
 
+// Deep-link: /chat?unreplied=1, ?unread=1, ?lastMessageWithin=>7d — Dashboard KPI mở
+// thẳng đúng tập hội thoại nó vừa đếm. PHẢI chạy trước buildQueryParams() bên dưới,
+// không thì fetch đầu tiên đi không kèm filter rồi mới refetch (list nháy 1 nhịp).
+inboxFilters.hydrateFromQuery(route.query);
+
 // Apply inbox filter state → extraFilters → refetch.
 // Sync ngay extraFilters trên mount để first fetch dùng đúng default tab
 // (Cá nhân → threadType=user) thay vì load tất cả conv.

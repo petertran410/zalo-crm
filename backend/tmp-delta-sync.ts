@@ -1,15 +1,12 @@
-import { getCustomerSyncSince, syncPosCustomersFromMcp } from './src/shared/mcp/pos-sync-service.ts';
+import { syncCustomerCohort } from './src/modules/integrations/pos-customer-import-service.ts';
 import { withPosSyncLock } from './src/modules/pos/pos-sync-lock.ts';
 import { prisma } from './src/shared/database/prisma-client.ts';
 
 const org = await prisma.organization.findFirst({ select: { id: true } });
 if (!org) throw new Error('No organization');
 
-const since = await getCustomerSyncSince(org.id);
-console.log('since =', since?.toISOString() ?? '(full scan)');
-
 const t0 = Date.now();
-await withPosSyncLock(org.id, 'Customer', () => syncPosCustomersFromMcp(org.id, { since }));
+await withPosSyncLock(org.id, 'Customer', () => syncCustomerCohort(org.id));
 console.log('elapsed ms =', Date.now() - t0);
 
 const job = await prisma.syncJob.findFirst({ where: { orgId: org.id, entity: 'Customer' }, orderBy: { createdAt: 'desc' } });
