@@ -1,3 +1,5 @@
+version: "3.8"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Development overlay — docker compose -f docker-compose.yml -f docker-compose.dev.yml
 # Overrides `app` to run tsx watch (hot-reload backend) and adds `frontend`
@@ -15,7 +17,7 @@ services:
       dockerfile: docker/Dockerfile.dev
     container_name: zalo-crm-app-dev
     restart: on-failure
-    command: sh -c "npx prisma db push --accept-data-loss && npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
+    command: sh -c "npx nodemon -L --watch src -e ts --exec tsx src/app.ts"
     environment:
       - NODE_ENV=development
       - DATABASE_URL=postgresql://${DB_USER:-crmuser}:${DB_PASSWORD}@db:5432/${DB_NAME:-zalocrm}

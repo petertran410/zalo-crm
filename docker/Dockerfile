@@ -1,5 +1,5 @@
 # ── Stage 1: Build frontend ──────────────────────────────────────────────────
-FROM node:22-alpine AS frontend-builder
+FROM node:20-alpine AS frontend-builder
 WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --legacy-peer-deps
@@ -7,7 +7,7 @@ COPY frontend/ ./
 RUN npm run build
 
 # ── Stage 2: Build backend ───────────────────────────────────────────────────
-FROM node:22-alpine AS backend-builder
+FROM node:20-alpine AS backend-builder
 WORKDIR /app/backend
 # sharp (nén ảnh + watermark Media): trên alpine/musl cần libvips. Cài vips-dev + build tools
 # để sharp có thể build từ source nếu prebuild musl không tải được (mạng/registry chặn).
@@ -22,7 +22,7 @@ RUN DATABASE_URL="postgresql://build:build@localhost:5432/build" npx prisma gene
 RUN npm run build
 
 # ── Stage 3: Production image ────────────────────────────────────────────────
-FROM node:22-alpine
+FROM node:20-alpine
 # tzdata = zoneinfo data cho Asia/Ho_Chi_Minh (memory feedback_timezone_vietnam.md).
 # Trước đây alpine không có → Node process fallback UTC → log + new Date() lệch 7h vs giờ VN.
 # vips = thư viện nền runtime cho sharp (nén ảnh + watermark Media). THIẾU vips → sharp
