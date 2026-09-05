@@ -29,6 +29,34 @@ export interface UpdateInterestParams {
   status?: string;
 }
 
+export interface RelatedProductPreviewItem {
+  posId: number;
+  code: string;
+  name: string;
+  basePrice: number | null;
+  imageUrl: string | null;
+  initials: string;
+  totalAvailable: number;
+}
+
+/**
+ * Rút gọn tên sản phẩm thành 2-3 ký tự viết tắt đại diện
+ * Ví dụ: "Mứt Boduo Bưởi Hồng" -> "MB", "Nước mắm Phú Quốc" -> "NM"
+ */
+function getProductInitials(name: string): string {
+  if (!name || !name.trim()) return 'SP';
+  const cleaned = name
+    .replace(/\(.*?\)/g, '')
+    .replace(/\[.*?\]/g, '')
+    .replace(/\b\d+(?:kg|g|ml|l|lon|chai|hộp|bao|thùng|cái)\b/gi, '')
+    .trim();
+
+  const words = cleaned.split(/\s+/).filter((w) => w.length > 0 && !/^\d+$/.test(w));
+  if (words.length === 0) return 'SP';
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase();
+  return (words[0][0] + words[1][0]).toUpperCase();
+}
+
 export class ProductInterestService {
   /**
    * Quét và trích xuất nhu cầu sản phẩm từ hội thoại chat của khách hàng
@@ -239,7 +267,137 @@ export class ProductInterestService {
   }
 
   /**
+   * Tìm kiếm sản phẩm POS đối soát theo tên/từ khóa
+   */
+  async findMatchingPosProducts(keyword: string, orgId?: string, limit: number = 15) {
+    if (!keyword || !keyword.trim()) return [];
+    const trimmed = keyword.trim();
+    const whereOrg = orgId ? { orgId } : {};
+
+    // Stop words tiếng Việt phổ biến trong câu hỏi mua hàng
+    const stopWords = new Set(['nước', 'đồ', 'loại', 'các', 'của', 'cho', 'hàng', 'cái', 'dạng', 'gói', 'hộp', 'lon', 'thùng']);
+
+    // Tầng 1: Khớp chính xác cụm từ (Exact phrase match)
+    let products = await prisma.posProduct.findMany({
+      where: {
+        ...whereOrg,
+        OR: [
+          { name: { contains: trimmed, mode: 'insensitive' } },
+          { code: { contains: trimmed, mode: 'insensitive' } },
+        ],
+      },
+      take: limit,
+      orderBy: { name: 'asc' },
+    });
+
+    // Tầng 2: Fallback tìm kiếm theo từ khóa có ý nghĩa (bỏ stop words)
+    if (products.length === 0) {
+      const words = trimmed
+        .split(/\s+/)
+        .map((w) => w.trim())
+        .filter((w) => w.length >= 2 && !stopWords.has(w.toLowerCase()));
+
+      if (words.length > 0) {
+        // Tất cả các từ quan trọng phải xuất hiện trong tên sản phẩm (AND)
+        products = await prisma.posProduct.findMany({
+          where: {
+            ...whereOrg,
+            AND: words.map((word) => ({
+              name: { contains: word, mode: 'insensitive' },
+            })),
+          },
+          take: limit,
+          orderBy: { name: 'asc' },
+        });
+      }
+    }
+
+    if (products.length === 0) return [];
+
+    const posIds = products.map((p) => p.posId);
+
+    // Lấy hình ảnh từ pos_product_images
+    const images = await prisma.posProductImage.findMany({
+      where: { posProductId: { in: posIds } },
+      select: { posProductId: true, localUrl: true, originalUrl: true },
+    });
+    const imageMap = new Map<number, string>();
+    for (const img of images) {
+      if (!imageMap.has(img.posProductId)) {
+        imageMap.set(img.posProductId, img.localUrl || img.originalUrl);
+      }
+    }
+
+    // Lấy tồn kho từng chi nhánh từ pos_branch_inventory
+    const inventoryRecords = await prisma.posBranchInventory.findMany({
+      where: { posProductId: { in: posIds } },
+      select: {
+        posProductId: true,
+        branchId: true,
+        branchName: true,
+        onHand: true,
+        available: true,
+        status: true,
+      },
+      orderBy: { branchName: 'asc' },
+    });
+
+    const inventoryMap = new Map<number, Array<{ branchId: number; branchName: string; onHand: number; available: number; status: string }>>();
+    for (const inv of inventoryRecords) {
+      if (!inventoryMap.has(inv.posProductId)) {
+        inventoryMap.set(inv.posProductId, []);
+      }
+      inventoryMap.get(inv.posProductId)!.push({
+        branchId: inv.branchId,
+        branchName: inv.branchName,
+        onHand: inv.onHand,
+        available: inv.available ?? (inv.onHand - 0),
+        status: inv.status || 'InStock',
+      });
+    }
+
+    return products.map((p) => {
+      const branches = inventoryMap.get(p.posId) || [];
+      const totalAvailable = branches.reduce((sum, b) => sum + b.available, 0);
+      const totalOnHand = branches.reduce((sum, b) => sum + b.onHand, 0);
+      const status = branches.length === 0
+        ? 'Unknown'
+        : totalAvailable <= 0
+          ? 'OutOfStock'
+          : branches.some((b) => b.status === 'LowStock')
+            ? 'LowStock'
+            : 'InStock';
+
+      return {
+        posId: p.posId,
+        code: p.code,
+        name: p.name,
+        basePrice: p.basePrice,
+        imageUrl: imageMap.get(p.posId) || null,
+        initials: getProductInitials(p.name),
+        totalAvailable,
+        totalOnHand,
+        status,
+        branches,
+      };
+    });
+  }
+
+  /**
+   * Tra cứu chi tiết tồn kho & giá bán sản phẩm POS phục vụ Popup
+   */
+  async checkPosInventory(keyword: string, orgId?: string, limit: number = 15) {
+    const items = await this.findMatchingPosProducts(keyword, orgId, limit);
+    return {
+      success: true,
+      keyword,
+      items,
+    };
+  }
+
+  /**
    * Lấy danh sách sản phẩm đang quan tâm của một khách hàng
+   * Kèm danh sách ảnh mini xem trước các sản phẩm liên quan trong kho
    */
   async listProductInterests(contactId: string, orgId?: string) {
     const where: any = {
@@ -253,6 +411,28 @@ export class ProductInterestService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Gắn kèm danh sách sản phẩm liên quan xem trước (tối đa 4 sản phẩm) cho mỗi thẻ
+    const itemsWithPreview = await Promise.all(
+      items.map(async (item) => {
+        const matches = await this.findMatchingPosProducts(item.productName, orgId, 5);
+        const hasMoreRelated = matches.length > 4;
+        const relatedProductsPreview: RelatedProductPreviewItem[] = matches.slice(0, 4).map((m) => ({
+          posId: m.posId,
+          code: m.code,
+          name: m.name,
+          basePrice: m.basePrice,
+          imageUrl: m.imageUrl,
+          initials: m.initials,
+          totalAvailable: m.totalAvailable,
+        }));
+        return {
+          ...item,
+          relatedProductsPreview,
+          hasMoreRelated,
+        };
+      })
+    );
+
     // Lấy thông tin lần quét cuối cùng (kể cả đã xóa) để hiển thị thời gian & người quét
     const lastScan = await prisma.customerProductInterest.findFirst({
       where: orgId ? { contactId, orgId } : { contactId },
@@ -265,8 +445,8 @@ export class ProductInterestService {
     });
 
     return {
-      items,
-      total: items.length,
+      items: itemsWithPreview,
+      total: itemsWithPreview.length,
       lastScanInfo: lastScan
         ? {
             scannedAt: lastScan.scannedAt,

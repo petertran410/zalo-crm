@@ -192,4 +192,33 @@ export async function productInterestRoutes(app: FastifyInstance): Promise<void>
       }
     },
   );
+
+  // ── 5. GET /api/v1/contacts/product-interests/check-inventory ──────────────
+  app.get(
+    '/api/v1/contacts/product-interests/check-inventory',
+    async (
+      request: FastifyRequest<{
+        Querystring: { keyword?: string; limit?: string };
+      }>,
+      reply: FastifyReply,
+    ) => {
+      try {
+        const user = request.user!;
+        const keyword = (request.query?.keyword || '').trim();
+        const limit = parseInt(request.query?.limit || '15', 10) || 15;
+
+        if (!keyword) {
+          return reply.send({ success: true, keyword: '', items: [] });
+        }
+
+        const result = await productInterestService.checkPosInventory(keyword, user.orgId, limit);
+        return reply.send(result);
+      } catch (err: any) {
+        logger.error('[productInterestRoutes] Check inventory error:', err);
+        return reply.status(500).send({
+          error: 'Không thể tra cứu tồn kho sản phẩm POS.',
+        });
+      }
+    },
+  );
 }

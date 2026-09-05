@@ -6,13 +6,11 @@
    Legacy navy/cyan glass effects retained only behind .v-theme--legacy-dark.
    ════════════════════════════════════════════════════════════ */
 
-html,
-body {
+html, body {
   margin: 0;
   padding: 0;
   height: 100%;
-  overflow: hidden;
-  /* khoá cuộn cấp trang — chỉ vùng tin nhắn/list bên trong cuộn (fix 2026-06-14) */
+  overflow: hidden; /* khoá cuộn cấp trang — chỉ vùng tin nhắn/list bên trong cuộn (fix 2026-06-14) */
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Plus Jakarta Sans", Roboto, sans-serif;
   scroll-behavior: smooth;
   background: var(--app-surface-canvas);
@@ -23,9 +21,7 @@ body {
   text-rendering: optimizeLegibility;
 }
 
-#app {
-  height: 100%;
-}
+#app { height: 100%; }
 
 /* ════════ Smax light theme — defaults for v-* components ════════ */
 /* Các override này là “baseline” cho mọi màn Vuetify. Selector luôn neo vào
@@ -44,22 +40,15 @@ body {
   backdrop-filter: none;
 }
 
-.v-theme--hsLight .v-dialog>.v-overlay__content,
-.v-theme--smax-light .v-dialog>.v-overlay__content {
+.v-theme--hsLight .v-dialog > .v-overlay__content,
+.v-theme--smax-light .v-dialog > .v-overlay__content {
   box-shadow: var(--app-shadow-lg);
 }
 
 .v-theme--hsLight ::-webkit-scrollbar,
-.v-theme--smax-light ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
+.v-theme--smax-light ::-webkit-scrollbar { width: 8px; height: 8px; }
 .v-theme--hsLight ::-webkit-scrollbar-track,
-.v-theme--smax-light ::-webkit-scrollbar-track {
-  background: transparent;
-}
-
+.v-theme--smax-light ::-webkit-scrollbar-track { background: transparent; }
 .v-theme--hsLight ::-webkit-scrollbar-thumb,
 .v-theme--smax-light ::-webkit-scrollbar-thumb {
   background: var(--smax-grey-300);
@@ -67,17 +56,13 @@ body {
   border: 2px solid transparent;
   background-clip: padding-box;
 }
-
 .v-theme--hsLight ::-webkit-scrollbar-thumb:hover,
-.v-theme--smax-light ::-webkit-scrollbar-thumb:hover {
-  background-color: var(--smax-grey-700);
-}
+.v-theme--smax-light ::-webkit-scrollbar-thumb:hover { background-color: var(--smax-grey-700); }
 
 .v-theme--hsLight .v-list-item:hover,
 .v-theme--smax-light .v-list-item:hover {
   background: var(--app-surface-hover) !important;
 }
-
 .v-theme--hsLight .v-list-item--active,
 .v-theme--smax-light .v-list-item--active {
   background: var(--app-surface-active) !important;
@@ -90,22 +75,14 @@ body {
   border-radius: var(--app-radius-md) !important;
   background: var(--app-surface-panel);
 }
-
 .v-theme--hsLight .v-field__outline,
-.v-theme--smax-light .v-field__outline {
-  --v-field-border-opacity: 1;
-  color: var(--app-border-default);
-}
-
+.v-theme--smax-light .v-field__outline { --v-field-border-opacity: 1; color: var(--app-border-default); }
 .v-theme--hsLight .v-field--focused,
 .v-theme--smax-light .v-field--focused {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-accent) 14%, transparent);
 }
-
 .v-theme--hsLight .v-field--focused .v-field__outline,
-.v-theme--smax-light .v-field--focused .v-field__outline {
-  color: var(--app-border-focus);
-}
+.v-theme--smax-light .v-field--focused .v-field__outline { color: var(--app-border-focus); }
 
 /* Buttons — flat, cùng bán kính/control height; không uppercase. */
 .v-theme--hsLight .v-btn--variant-flat,
@@ -115,11 +92,8 @@ body {
   letter-spacing: normal;
   box-shadow: none;
 }
-
 .v-theme--hsLight .v-btn--variant-tonal,
-.v-theme--smax-light .v-btn--variant-tonal {
-  border-radius: var(--app-radius-md) !important;
-}
+.v-theme--smax-light .v-btn--variant-tonal { border-radius: var(--app-radius-md) !important; }
 
 /* Chips, menus and data table — surfaces phẳng, đường kẻ nhẹ, mật độ CRM. */
 .v-theme--hsLight .v-chip,
@@ -127,27 +101,21 @@ body {
   border-radius: var(--app-radius-pill) !important;
   font-weight: 600;
 }
-
-.v-theme--hsLight .v-menu>.v-overlay__content,
-.v-theme--smax-light .v-menu>.v-overlay__content {
+.v-theme--hsLight .v-menu > .v-overlay__content,
+.v-theme--smax-light .v-menu > .v-overlay__content {
   border: 1px solid var(--app-border-subtle);
   border-radius: var(--app-radius-lg);
   box-shadow: var(--app-shadow-md);
   overflow: hidden;
 }
-
 .v-theme--hsLight .v-data-table,
-.v-theme--smax-light .v-data-table {
-  background: transparent !important;
-}
-
+.v-theme--smax-light .v-data-table { background: transparent !important; }
 .v-theme--hsLight .v-data-table .v-table__wrapper,
 .v-theme--smax-light .v-data-table .v-table__wrapper {
   background: var(--app-surface-panel);
   border-radius: var(--app-radius-lg);
   border: 1px solid var(--app-border-subtle);
 }
-
 .v-theme--hsLight .v-data-table thead th,
 .v-theme--smax-light .v-data-table thead th {
   background: var(--app-surface-sunken);
@@ -164,7 +132,6 @@ body {
   padding: var(--app-space-5);
   background: var(--app-surface-canvas);
 }
-
 .app-page-header {
   min-height: var(--app-page-header-h);
   display: flex;
@@ -173,7 +140,6 @@ body {
   gap: var(--app-space-3);
   margin-bottom: var(--app-space-4);
 }
-
 .app-page-title {
   margin: 0;
   color: var(--app-text-primary);
@@ -181,7 +147,6 @@ body {
   font-weight: 700;
   letter-spacing: -.02em;
 }
-
 .app-page-subtitle {
   margin: var(--app-space-1) 0 0;
   color: var(--app-text-secondary);
@@ -189,26 +154,14 @@ body {
 }
 
 /* Status dot animation */
-.status-dot {
-  box-shadow: 0 0 8px currentColor;
-}
+.status-dot { box-shadow: 0 0 8px currentColor; }
 
 /* Fade slide for messages (carry-over from old, applies to both themes) */
 @keyframes fade-slide-up {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
-
-.message-bubble {
-  animation: fade-slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
+.message-bubble { animation: fade-slide-up 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
 
 /* ════════ Legacy dark theme (kept for fallback) ════════ */
 .v-theme--legacy-dark {
@@ -225,33 +178,15 @@ body {
   background-size: 400% 400% !important;
   animation: flow-bg 15s ease infinite;
 }
-
 @keyframes flow-bg {
-  0% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-
-  100% {
-    background-position: 0% 50%;
-  }
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
 }
-
 @keyframes liquid-morph {
-
-  0%,
-  100% {
-    border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%;
-  }
-
-  50% {
-    border-radius: 30% 60% 70% 30% / 50% 60% 30% 50%;
-  }
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  50% { border-radius: 30% 60% 70% 30% / 50% 60% 30% 50%; }
 }
-
 .v-theme--legacy-dark .ai-core-orb {
   animation: liquid-morph 8s infinite var(--liquid-ease);
   box-shadow: 0 0 30px rgba(0, 242, 255, 0.2);
@@ -262,38 +197,21 @@ body {
   border: 1px solid var(--border-glow) !important;
   backdrop-filter: blur(12px);
 }
-
-.v-theme--legacy-dark ::-webkit-scrollbar {
-  width: 4px;
-}
-
+.v-theme--legacy-dark ::-webkit-scrollbar { width: 4px; }
 .v-theme--legacy-dark ::-webkit-scrollbar-thumb {
-  background: rgba(0, 242, 255, 0.2);
-  border-radius: 10px;
+  background: rgba(0, 242, 255, 0.2); border-radius: 10px;
 }
-
-.v-theme--legacy-dark ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 242, 255, 0.4);
-}
-
-.v-theme--legacy-dark .v-list-item:hover {
-  background: rgba(0, 242, 255, 0.05) !important;
-}
-
+.v-theme--legacy-dark ::-webkit-scrollbar-thumb:hover { background: rgba(0, 242, 255, 0.4); }
+.v-theme--legacy-dark .v-list-item:hover { background: rgba(0, 242, 255, 0.05) !important; }
 .v-theme--legacy-dark .v-list-item--active {
   background: rgba(0, 242, 255, 0.08) !important;
   border-left: 3px solid var(--cyan-electric);
 }
-
-.v-theme--legacy-dark .v-field {
-  border-radius: 16px !important;
-}
-
+.v-theme--legacy-dark .v-field { border-radius: 16px !important; }
 .v-theme--legacy-dark .v-field--focused {
   border-color: var(--cyan-electric) !important;
   box-shadow: 0 0 12px rgba(0, 242, 255, 0.15);
 }
-
 .v-theme--legacy-dark .v-btn--variant-flat:hover {
   box-shadow: 0 0 16px rgba(0, 242, 255, 0.2);
   transform: translateY(-1px);

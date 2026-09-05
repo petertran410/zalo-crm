@@ -11,6 +11,37 @@ import { ref, computed } from 'vue';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 
+export interface RelatedProductPreviewItem {
+  posId: number;
+  code: string;
+  name: string;
+  basePrice: number | null;
+  imageUrl: string | null;
+  initials: string;
+  totalAvailable: number;
+}
+
+export interface PosBranchStockItem {
+  branchId: number;
+  branchName: string;
+  onHand: number;
+  available: number;
+  status: string;
+}
+
+export interface PosDetailedProductItem {
+  posId: number;
+  code: string;
+  name: string;
+  basePrice: number | null;
+  imageUrl: string | null;
+  initials: string;
+  totalAvailable: number;
+  totalOnHand: number;
+  status: string;
+  branches: PosBranchStockItem[];
+}
+
 export interface ProductInterestItem {
   id: string;
   orgId?: string | null;
@@ -24,6 +55,8 @@ export interface ProductInterestItem {
   status: string; // 'inquiring' | 'quoted' | 'converted' | 'deleted'
   isDeleted: boolean;
   salesDeleteNote?: string | null;
+  relatedProductsPreview?: RelatedProductPreviewItem[];
+  hasMoreRelated?: boolean;
   scannedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -156,6 +189,19 @@ export function useProductInterests(getContactId: () => string | null | undefine
     }
   }
 
+  async function checkPosInventory(keyword: string): Promise<PosDetailedProductItem[]> {
+    if (!keyword || !keyword.trim()) return [];
+    try {
+      const { data } = await api.get('/contacts/product-interests/check-inventory', {
+        params: { keyword: keyword.trim(), limit: 15 },
+      });
+      return data.items || [];
+    } catch (err: any) {
+      console.error('[useProductInterests] Check POS inventory error:', err);
+      return [];
+    }
+  }
+
   return {
     items,
     lastScanInfo,
@@ -167,5 +213,6 @@ export function useProductInterests(getContactId: () => string | null | undefine
     scanInterests,
     updateInterest,
     deleteInterest,
+    checkPosInventory,
   };
 }
