@@ -48,6 +48,7 @@ import { cockpitRoutes } from './modules/contacts/cockpit-routes.js';
 import { appointmentRoutes } from './modules/contacts/appointment-routes.js';
 import { appointmentPublicRoutes } from './modules/contacts/appointment-public-routes.js';
 import { notesRoutes } from './modules/contacts/notes-routes.js';
+import { productInterestRoutes } from './modules/contacts/product-interest-routes.js';
 import { tasksRoutes } from './modules/tasks/task-routes.js';
 import { ticketsRoutes } from './modules/tickets/ticket-routes.js';
 import {
@@ -297,6 +298,7 @@ async function bootstrap() {
   await app.register(appointmentRoutes);
   await app.register(appointmentPublicRoutes); // 2026-06-16 — public action link (no auth)
   await app.register(notesRoutes);
+  await app.register(productInterestRoutes);
   await app.register(tasksRoutes); // Công việc (Task V1) 2026-07-07
   await app.register(ticketsRoutes); // Ticket V1 2026-07-09
   await app.register(facebookWebhookRoutes); // Multi-channel Phase 2 — Meta webhook (public, no auth)
