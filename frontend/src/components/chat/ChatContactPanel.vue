@@ -615,6 +615,14 @@
             <button class="sp-c360-retry" @click="salesTab = 'notes'">Xem timeline đầy đủ</button>
           </section>
 
+          <!-- ── Sản phẩm đang quan tâm (AI Chat Extraction) ── -->
+          <div class="my-3">
+            <ChatProductInterestsSection
+              :contact-id="props.contactId"
+              :contact-name="props.contact?.fullName || headerFullName"
+            />
+          </div>
+
           <!-- ── Customer 360 POS Widgets (Debt & Branch Inventory) ── -->
           <div class="my-3">
             <CustomerDebtWidget
@@ -1064,6 +1072,14 @@
             </template>
           </div>
         </section>
+
+        <!-- ── Sản phẩm đang quan tâm (Manager view) ── -->
+        <div v-if="props.contactId" class="px-2 my-2">
+          <ChatProductInterestsSection
+            :contact-id="props.contactId"
+            :contact-name="props.contact?.fullName || headerFullName"
+          />
+        </div>
       </div>
 
       <PosCustomerForm
@@ -1095,6 +1111,7 @@ import PosCustomerForm from "@/components/pos/PosCustomerForm.vue";
 import PosLinkSearchDialog from "@/components/pos/PosLinkSearchDialog.vue";
 import CustomerDebtWidget from "@/components/pos/CustomerDebtWidget.vue";
 import BranchInventoryWidget from "@/components/pos/BranchInventoryWidget.vue";
+import ChatProductInterestsSection from "./ChatProductInterestsSection.vue";
 import AutomationCardList from "./AutomationCardList.vue";
 import AddFlowModal from "./AddFlowModal.vue";
 import MediaTabPanel from "./MediaTabPanel.vue";

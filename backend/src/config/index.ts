@@ -102,6 +102,7 @@ export const config = {
   geminiAuthToken: envValue('GEMINI_AUTH_TOKEN') || envValue('GEMINI_API_KEY') || '',
   geminiDefaultProModel: envValue('GEMINI_DEFAULT_PRO_MODEL') || '',
   geminiDefaultFlashModel: envValue('GEMINI_DEFAULT_FLASH_MODEL') || '',
+  geminiModel: envValue('GEMINI_MODEL') || envValue('GEMINI_DEFAULT_FLASH_MODEL') || 'gemini-3.6-flash',
 
   openaiBaseUrl: envValue('OPENAI_BASE_URL') || 'https://api.openai.com',
   openaiAuthToken: envValue('OPENAI_AUTH_TOKEN') || '',
