@@ -2672,6 +2672,28 @@ async function consumeDraftFromQuery() {
 onMounted(() => { void consumeDraftFromQuery(); });
 watch(() => _draftRoute.query.draft, () => { void consumeDraftFromQuery(); });
 
+// 2026-09-05: Realtime highlight các tin nhắn khách hàng trong đợt quét của AI
+function onAiScanned(e: Event) {
+  const { contactId, scannedMessageIds } = (e as CustomEvent).detail || {};
+  const currentContactId = props.conversation?.contact?.id || (props.conversation as any)?.contactId;
+  if ((!contactId || currentContactId === contactId) && Array.isArray(scannedMessageIds)) {
+    const idSet = new Set(scannedMessageIds);
+    for (const m of props.messages) {
+      if (idSet.has(m.id)) {
+        m.metadata = { ...(m.metadata || {}), aiScanned: true };
+      } else if (m.metadata?.aiScanned) {
+        m.metadata = { ...(m.metadata || {}), aiScanned: false };
+      }
+    }
+  }
+}
+onMounted(() => {
+  window.addEventListener('chat:ai-scanned', onAiScanned);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('chat:ai-scanned', onAiScanned);
+});
+
 // Vị trí "/" mở popup — lưu để khi chọn mẫu chỉ cắt từ ĐÚNG dấu "/" này (không lastIndexOf
 // toàn chuỗi, tránh cắt nhầm URL/giá kiểu "50tr/m2"). Reset khi đóng popup.
 const slashTriggerPos = ref(-1);

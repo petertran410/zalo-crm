@@ -4711,3 +4711,27 @@ model WorkspaceSession {
   @@index([orgId, userId])
   @@map("workspace_sessions")
 }
+
+// Bảng độc lập lưu sản phẩm khách quan tâm trích xuất từ chat
+model CustomerProductInterest {
+  id              String    @id @default(uuid())
+  orgId           String?   @map("org_id")
+  contactId       String    @map("contact_id")          // ID khách hàng được quét
+  customerName    String?   @map("customer_name")       // Tên khách hàng tại thời điểm quét
+  scannedByUserId String?   @map("scanned_by_user_id")  // ID nhân viên Sale đã bấm quét
+  scannedByName   String?   @map("scanned_by_name")     // Tên nhân viên Sale đã bấm quét
+  productName     String    @map("product_name")        // Tên sản phẩm AI bóc tách
+  intent          String?   @map("intent")              // Ý định: Hỏi giá, xin mẫu, tư vấn, tồn kho...
+  notes           String?   @db.Text                    // Tóm tắt ngữ cảnh từ câu chat
+  status          String    @default("inquiring")       // inquiring | quoted | converted | deleted
+  isDeleted       Boolean   @default(false) @map("is_deleted")
+  salesDeleteNote String?   @map("sales_delete_note") @db.Text // Note từ Sales khi xóa sản phẩm
+  scannedAt       DateTime  @default(now()) @map("scanned_at") // Thời gian quét
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([contactId, isDeleted])
+  @@index([scannedAt])
+  @@map("customer_product_interests")
+}
+

@@ -19,7 +19,7 @@
       <!-- Bubble -->
       <div
         class="message-bubble"
-        :class="{ 'is-self': isSelf, 'is-other': !isSelf }"
+        :class="{ 'is-self': isSelf, 'is-other': !isSelf, 'is-ai-scanned': isAiScanned }"
         @contextmenu.prevent="emit('contextmenu', $event)"
       >
         <!-- Tên người gửi cho tin INBOUND — Anh chốt 2026-06-03 (4 case):
@@ -832,6 +832,11 @@ function isReminderMessage(msg: Message): boolean {
   } catch { return false; }
 }
 
+// Đánh dấu tin nhắn khách hàng trong đợt quét phân tích của AI (nền cầu vồng pastel)
+const isAiScanned = computed(() => {
+  return !props.isSelf && Boolean((props.message.metadata as any)?.aiScanned);
+});
+
 // Call message detection (Zalo lưu dưới content_type contact_card với action recommened.*)
 const isCallMessage = computed(() => {
   const p = safeParse(props.message.content);
@@ -1026,6 +1031,13 @@ async function openFile(href: string, name?: string) {
   color: var(--smax-text, #212121);
   border-radius: 4px 15px 15px 15px;
   border: 1px solid var(--smax-grey-200, #ebedf0);
+}
+
+/* Đánh dấu tin nhắn của khách hàng trong đoạn chat đã gửi quét AI (nền cầu vồng pastel nhẹ nhàng) */
+.message-bubble.is-other.is-ai-scanned {
+  background: linear-gradient(135deg, #fff1f2 0%, #fef3c7 25%, #ecfdf5 50%, #eff6ff 75%, #faf5ff 100%) !important;
+  border: 1px solid rgba(216, 180, 254, 0.75) !important;
+  box-shadow: 0 1px 4px rgba(216, 180, 254, 0.25) !important;
 }
 .message-bubble.is-self {
   background: var(--smax-bubble-self, #d7ecf7);
