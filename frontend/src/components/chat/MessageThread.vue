@@ -152,47 +152,16 @@
                Function fireWebhook() + state webhookLoading vẫn giữ trong file
                để bật lại sau bằng cách un-comment block button trên. -->
 
-          <!-- Header overflow menu is rendered locally to avoid Vuetify overlay teleporting out of the chat shell. -->
-          <div ref="headerMoreRef" class="header-more-wrap">
-            <button
-              class="icon-btn"
-              type="button"
-              title="Thêm"
-              aria-label="Thêm thao tác hội thoại"
-              :aria-expanded="headerMoreOpen"
-              @click.stop="headerMoreOpen = !headerMoreOpen"
-            ><MoreVerticalIcon :size="16" :stroke-width="2" /></button>
-
-            <div v-if="headerMoreOpen" class="header-more-menu" role="menu">
-              <button type="button" role="menuitem" @click="toggleContactPanelFromMenu">
-                <v-icon :icon="showContactPanel ? 'mdi-information' : 'mdi-information-outline'" size="20" />
-                {{ showContactPanel ? 'Ẩn thông tin KH (cột phải)' : 'Hiện thông tin KH (cột phải)' }}
-              </button>
-              <span class="header-more-divider" />
-              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Lịch sử hội thoại')">
-                <v-icon icon="mdi-history" size="20" />Lịch sử hội thoại
-              </button>
-              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Tìm trong hội thoại')">
-                <v-icon icon="mdi-magnify" size="20" />Tìm trong hội thoại
-              </button>
-              <button type="button" role="menuitem" @click="openNoteFromMenu">
-                <v-icon icon="mdi-note-edit-outline" size="20" />Ghi chú nhanh
-              </button>
-              <template v-if="conversation.contact">
-                <span class="header-more-divider" />
-                <button type="button" role="menuitem" @click="openMergeFromMenu">
-                  <v-icon icon="mdi-merge" size="20" />Gắn vào KH Cha (merge)
-                </button>
-              </template>
-              <span class="header-more-divider" />
-              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Tắt thông báo')">
-                <v-icon icon="mdi-bell-off-outline" size="20" />Tắt thông báo
-              </button>
-              <button type="button" role="menuitem" @click="onUnavailableMenuAction('Báo cáo')">
-                <v-icon icon="mdi-flag-outline" size="20" />Báo cáo
-              </button>
-            </div>
-          </div>
+          <!-- Nút toggle thông tin KH 360 cột phải (trực quan, dễ bật/tắt) -->
+          <button
+            class="icon-btn ch-info-toggle-btn"
+            :class="{ 'is-active': showContactPanel }"
+            type="button"
+            :title="showContactPanel ? 'Ẩn thông tin KH 360 (cột phải)' : 'Hiện thông tin KH 360 (cột phải)'"
+            @click="$emit('toggle-contact-panel')"
+          >
+            <v-icon :icon="showContactPanel ? 'mdi-information' : 'mdi-information-outline'" size="18" />
+          </button>
         </div>
       </header>
 
@@ -729,13 +698,7 @@
       @synced="(p) => emit('profile-synced', p)"
     />
 
-    <!-- Link parent dialog -->
-    <LinkParentDialog
-      v-if="conversation?.contact"
-      v-model="showLinkParentDialog"
-      :child-contact-id="conversation.contact.id"
-      @linked="onLinkedParent"
-    />
+
 
     <!-- Friend invite dialog: nhập lời chào gửi kèm lời mời kết bạn -->
     <FriendInviteDialog
@@ -884,7 +847,6 @@ function onComposerLockClick() {
 }
 import StickerPicker from '@/components/chat/StickerPicker.vue';
 import ZaloUserInfoDialog from '@/components/chat/ZaloUserInfoDialog.vue';
-import LinkParentDialog from '@/components/chat/LinkParentDialog.vue';
 import MessageContextMenu from '@/components/chat/message-context-menu.vue';
 import WorkItemEditor from '@/components/work/WorkItemEditor.vue';
 import BillingDraftEditor from '@/components/chat/BillingDraftEditor.vue';
@@ -1162,12 +1124,6 @@ function onBillingFromMessageCreated() {
 }
 const contextPos = ref({ x: 0, y: 0 });
 const showForwardDialog = ref(false);
-const showLinkParentDialog = ref(false);
-
-async function onLinkedParent() {
-  toast.success('Đã merge KH này vào KH Cha — conversations + friends đã chuyển');
-  emit('refresh-thread');
-}
 const editorRef = ref<InstanceType<typeof RichTextEditor> | null>(null);
 const editorWrapRef = ref<HTMLElement | null>(null); // anchor cho QuickTemplatePopup (Teleport ra body)
 const templatePopupRef = ref<InstanceType<typeof QuickTemplatePopup> | null>(null);
@@ -2162,27 +2118,7 @@ async function onAcceptInvite() {
     actionLoading.value = false;
   }
 }
-function onUnavailableMenuAction(label: string) {
-  headerMoreOpen.value = false;
-  toast.push(`${label}: chưa triển khai`);
-}
-function toggleContactPanelFromMenu() {
-  headerMoreOpen.value = false;
-  emit('toggle-contact-panel');
-}
-function openNoteFromMenu() {
-  headerMoreOpen.value = false;
-  onOpenNote();
-}
-function openMergeFromMenu() {
-  headerMoreOpen.value = false;
-  showLinkParentDialog.value = true;
-}
-function onOpenNote() {
-  // Open right info panel + scroll to note footer
-  if (!props.showContactPanel) emit('toggle-contact-panel');
-  toast.push('Mở ghi chú nhanh ở panel bên phải');
-}
+
 const inputPlaceholder = computed(() => {
   // T11 2026-06-20: nick đã xóa → placeholder khóa
   if (isArchivedNick.value) {
@@ -3144,67 +3080,38 @@ watch(() => props.editingMessage?.id, async (id) => {
   right: 17px;
 }
 
-/* Local overflow menu: it stays inside the header stacking context and cannot
-   trigger Vuetify's teleported overlay/scroll-lock behaviour. */
-.header-more-wrap {
-  position: relative;
-  display: inline-flex;
-  z-index: 30;
-}
-.header-more-menu {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  width: 272px;
-  padding: 6px 0;
-  background: var(--app-surface-panel, #fff);
-  border: 1px solid var(--app-border-subtle, #e2e8f0);
-  border-radius: 10px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, .18);
-  overflow: hidden;
-  z-index: 40;
-}
-.header-more-menu button {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 40px;
-  padding: 8px 13px;
-  border: 0;
-  background: transparent;
-  color: var(--app-text-primary, #1e293b);
-  font: inherit;
-  font-size: 13px;
-  line-height: 1.35;
-  text-align: left;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.header-more-menu button:hover,
-.header-more-menu button:focus-visible {
-  background: var(--app-surface-hover, #f1f5f9);
-  outline: none;
-}
-.header-more-menu button :deep(.v-icon) {
-  flex: 0 0 20px;
-  color: var(--app-text-secondary, #64748b);
-}
-.header-more-divider {
-  display: block;
-  height: 1px;
-  margin: 5px 0;
-  background: var(--app-border-subtle, #e2e8f0);
-}
 /* Gom 2 dòng 2026-06-06 (Anh chốt):
    Dòng 1 (.ch-row-1) = tên + gender + deal-stage, chừa chỗ phải cho actions cluster.
    Dòng 2 (.ch-row-chips) = cùng-chăm + tag Zalo + nick + số tin + online — 1 hàng, wrap có kiểm soát. */
 .ch-row-1 {
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding-right: 200px; /* chừa chỗ cho .ch-actions (friendship + ⋮ + ⓘ) */
+  padding-right: 130px; /* chừa chỗ cho .ch-actions (friendship + ⓘ) */
   min-width: 0;
+}
+
+.ch-info-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 33px;
+  height: 33px;
+  border-radius: 8px;
+  border: 1px solid var(--app-border-subtle, #e2e8f0);
+  background: var(--app-surface-panel, #fff);
+  color: var(--app-text-secondary, #64748b);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+.ch-info-toggle-btn:hover {
+  background: var(--app-surface-hover, #f1f5f9);
+  color: #2563eb;
+  border-color: #93c5fd;
+}
+.ch-info-toggle-btn.is-active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  color: #2563eb;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.15);
 }
 
 /* Row 2 — gom tất cả meta còn lại, cho phép wrap nếu hẹp (1366/1280). */

@@ -1,69 +1,6 @@
 <template>
   <v-app class="sl-app">
-    <!-- ════════ TOP HEADER — Glassmorphic Floating Bar ════════ -->
-    <header class="sl-topbar">
-      <!-- Left: Search — tìm kiếm trong danh sách hội thoại (local, không phải global search) -->
-      <div class="sl-topbar-search">
-        <div class="sl-conv-search">
-          <svg class="sl-conv-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>
-          </svg>
-          <input
-            v-model="salesSearch.query.value"
-            class="sl-conv-search__input"
-            placeholder="Tìm khách hàng..."
-            type="search"
-          />
-          <button v-if="salesSearch.query.value" class="sl-conv-search__clear" @click="salesSearch.query.value = ''" title="Xóa">×</button>
-        </div>
-      </div>
 
-      <!-- Center: Workspace Title -->
-      <div class="sl-workspace-title">
-        Sales Workspace
-      </div>
-
-      <!-- Right: Trailing actions -->
-      <div class="sl-topbar-actions">
-        <SyncHeaderWidget />
-        <WorkspaceSwitcher v-if="canSwitchWorkspace" />
-
-        <!-- User Avatar + Menu -->
-        <v-menu v-model="userMenu" :close-on-content-click="true" location="bottom end">
-          <template #activator="{ props: act }">
-            <button class="sl-avatar-btn" v-bind="act" :title="authStore.user?.fullName || 'Tài khoản'">
-              <span class="sl-avatar-ring">
-                <Avatar
-                  :src="authStore.user?.avatarUrl"
-                  :name="authStore.user?.fullName || 'U'"
-                  :size="34"
-                  :platform="null"
-                />
-              </span>
-            </button>
-          </template>
-          <v-list density="compact" min-width="220" rounded="lg">
-            <v-list-item
-              :title="authStore.user?.fullName || ''"
-              :subtitle="authStore.user?.email || authStore.user?.phone || ''"
-            />
-            <v-divider />
-            <v-list-item
-              to="/settings/personal/profile"
-              title="Hồ sơ của tôi"
-              prepend-icon="mdi-account-circle-outline"
-            />
-            <v-divider />
-            <v-list-item
-              @click="logout"
-              title="Đăng xuất"
-              prepend-icon="mdi-logout"
-              class="text-error"
-            />
-          </v-list>
-        </v-menu>
-      </div>
-    </header>
 
     <!-- Simulation Mode Banner -->
     <div v-if="workspaceStore.isSimulationMode" class="sl-sim-banner">
@@ -107,15 +44,79 @@
           </RouterLink>
         </div>
 
-        <!-- Footer: Logout -->
+        <!-- Footer: POS Sync + Avatar Profile Menu -->
         <div class="sl-nav-footer">
-          <button class="sl-nav-item sl-nav-logout" @click="handleLogout">
-            <div class="sl-nav-icon-wrap">
-              <span class="sl-nav-icon material-symbols-outlined">logout</span>
+          <!-- POS Sync Widget (Admin only) -->
+          <div v-if="authStore.isAdmin" class="sl-nav-sync-wrap" title="Trung tâm đồng bộ POS">
+            <SyncHeaderWidget />
+          </div>
+
+          <WorkspaceSwitcher v-if="canSwitchWorkspace" />
+
+          <!-- User Avatar + Menu (Profile & Logout) — Inline Panel tránh VOverlay trắng màn hình -->
+          <div ref="userMenuRef" class="sl-nav-user-wrap">
+            <button
+              class="sl-nav-item sl-nav-user-btn"
+              :title="authStore.user?.fullName || 'Tài khoản'"
+              @click.stop="toggleUserMenu"
+            >
+              <div class="sl-nav-icon-wrap">
+                <span class="sl-avatar-ring">
+                  <Avatar
+                    :src="authStore.user?.avatarUrl"
+                    :name="authStore.user?.fullName || 'U'"
+                    :size="30"
+                    :platform="null"
+                  />
+                </span>
+              </div>
+              <span class="sl-nav-label sl-user-name-label">
+                {{ authStore.user?.fullName || 'Tài khoản' }}
+              </span>
+              <div v-if="!userMenuOpen" class="sl-nav-tooltip">{{ authStore.user?.fullName || 'Tài khoản' }}</div>
+            </button>
+
+            <!-- Inline Profile Popup — Không dùng v-menu/VOverlay tránh trắng màn hình -->
+            <div
+              v-if="userMenuOpen"
+              class="sl-user-menu-panel"
+              @click.stop
+            >
+              <div class="sl-user-menu-header">
+                <Avatar
+                  :src="authStore.user?.avatarUrl"
+                  :name="authStore.user?.fullName || 'U'"
+                  :size="34"
+                  :platform="null"
+                />
+                <div class="sl-user-menu-info">
+                  <div class="sl-user-menu-name">{{ authStore.user?.fullName || '' }}</div>
+                  <div class="sl-user-menu-sub">{{ authStore.user?.email || authStore.user?.phone || '' }}</div>
+                </div>
+              </div>
+
+              <div class="sl-user-menu-divider" />
+
+              <RouterLink
+                to="/settings/personal/profile"
+                class="sl-user-menu-item"
+                @click="userMenuOpen = false"
+              >
+                <span class="material-symbols-outlined sl-menu-icon">account_circle</span>
+                <span>Hồ sơ của tôi</span>
+              </RouterLink>
+
+              <div class="sl-user-menu-divider" />
+
+              <button
+                class="sl-user-menu-item text-error"
+                @click="logout"
+              >
+                <span class="material-symbols-outlined sl-menu-icon">logout</span>
+                <span>Đăng xuất</span>
+              </button>
             </div>
-            <span class="sl-nav-label">Đăng xuất</span>
-            <div class="sl-nav-tooltip">Đăng xuất</div>
-          </button>
+          </div>
         </div>
       </nav>
 
@@ -145,13 +146,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useTheme } from 'vuetify';
 import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/workspaces/resolver';
 import type { MenuItemConfig } from '@/workspaces/types';
-import { useSalesSearch } from '@/composables/use-sales-search';
+
 import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -169,9 +170,32 @@ const router = useRouter();
 const authStore = useAuthStore();
 const workspaceStore = useWorkspaceStore();
 
-const userMenu = ref(false);
+const userMenuOpen = ref(false);
+const userMenuRef = ref<HTMLElement | null>(null);
 const isSidebarExpanded = ref(false);
-const salesSearch = useSalesSearch();
+
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value;
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (!userMenuRef.value?.contains(event.target as Node)) {
+    userMenuOpen.value = false;
+  }
+}
+
+watch(userMenuOpen, (isOpen) => {
+  if (isOpen) {
+    document.addEventListener('pointerdown', onDocumentPointerDown);
+  } else {
+    document.removeEventListener('pointerdown', onDocumentPointerDown);
+  }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+});
+
 
 
 function onSidebarClick(event: MouseEvent) {
@@ -228,7 +252,7 @@ function sweepStuckOverlays() {
 }
 
 function cleanupAfterNav() {
-  userMenu.value = false;
+  userMenuOpen.value = false;
   isSidebarExpanded.value = false;
   sweepStuckOverlays();
 }
@@ -338,119 +362,147 @@ function logout() {
   overflow: hidden;
 }
 
-/* ── TOP BAR ────────────────────────────────────────────── */
-.sl-topbar {
+/* ── NAV FOOTER ACTIONS (Sync & User Profile) ───────────── */
+.sl-nav-sync-wrap {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 20px;
-  margin: 12px 16px 0;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 4px 20px 0 rgba(0, 50, 150, 0.08);
-  flex-shrink: 0;
-  gap: 12px;
-  position: relative;
-  z-index: 50;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
 }
 
-.sl-topbar-search {
-  width: 260px;
-  flex-shrink: 0;
-}
-
-/* Inline conv-list search — thay GlobalSearch, tìm trong danh sách KH */
-.sl-conv-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-.sl-conv-search__icon {
-  position: absolute;
-  left: 12px;
-  width: 16px;
-  height: 16px;
+.sl-nav-sync-wrap :deep(.sync-trigger-btn) {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   color: #64748b;
-  pointer-events: none;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
-.sl-conv-search__input {
-  width: 100%;
-  padding: 8px 32px 8px 36px;
-  border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.6);
-  font-size: 13.5px;
-  color: #1e293b;
-  outline: none;
-  transition: border-color 0.15s, background 0.15s;
-  font-family: inherit;
-  /* Xóa nút X mặc định của type=search trên Safari/Chrome */
-  -webkit-appearance: none;
-}
-.sl-conv-search__input::placeholder { color: #94a3b8; }
-.sl-conv-search__input:focus {
-  border-color: #0068FF;
-  background: rgba(255, 255, 255, 0.9);
-}
-.sl-conv-search__clear {
-  position: absolute;
-  right: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  color: #94a3b8;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 50%;
-  transition: color 0.15s;
-}
-.sl-conv-search__clear:hover { color: #1e293b; }
 
-
-/* Workspace Title center block */
-.sl-workspace-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 15px;
-  font-weight: 700;
+.sl-nav-sync-wrap :deep(.sync-trigger-btn:hover) {
+  background: rgba(0, 104, 255, 0.08);
   color: #0068FF;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: linear-gradient(135deg, #0068FF 0%, #0046b8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-family: 'Outfit', sans-serif;
 }
 
-@media (max-width: 768px) {
-  .sl-workspace-title { display: none; }
+.sl-nav-sync-wrap :deep(.sync-center-card) {
+  position: fixed !important;
+  left: 86px !important;
+  bottom: 24px !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: 2200 !important;
 }
 
-/* Trailing actions (right side of topbar) */
-.sl-topbar-actions {
+.sl-nav-user-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.sl-user-menu-panel {
+  position: fixed;
+  left: 86px;
+  bottom: 20px;
+  min-width: 230px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 8px 0;
+  z-index: 2500;
+  animation: slMenuFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sl-user-menu-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  gap: 10px;
+  padding: 8px 14px 10px;
 }
 
-/* User avatar button */
-.sl-avatar-btn {
+.sl-user-menu-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.sl-user-menu-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-user-menu-sub {
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.sl-user-menu-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 4px 0;
+}
+
+.sl-user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #334155;
+  text-decoration: none;
   background: none;
   border: none;
+  width: 100%;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.sl-user-menu-item:hover {
+  background: #f8fafc;
+  color: #0068ff;
+}
+
+.sl-user-menu-item.text-error {
+  color: #ef4444;
+}
+
+.sl-user-menu-item.text-error:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.sl-menu-icon {
+  font-size: 18px !important;
+  color: inherit;
+}
+
+.sl-nav-user-btn {
   padding: 0;
-  display: flex;
-  align-items: center;
-  margin-left: 4px;
 }
 
 .sl-avatar-ring {
@@ -458,6 +510,12 @@ function logout() {
   padding: 2px;
   border-radius: 50%;
   background: linear-gradient(45deg, #ff9a9e, #fecfef, #a1c4fd);
+}
+
+.sl-user-name-label {
+  font-weight: 600;
+  color: #334155;
+  font-size: 13px;
 }
 
 /* ── SIMULATION BANNER ──────────────────────────────────── */

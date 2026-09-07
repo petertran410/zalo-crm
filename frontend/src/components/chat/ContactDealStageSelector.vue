@@ -14,6 +14,8 @@
     v-else
     v-model="open"
     :close-on-content-click="true"
+    scroll-strategy="none"
+    :scrim="false"
     location="bottom start"
   >
     <template #activator="{ props: act }">
