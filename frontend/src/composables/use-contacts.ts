@@ -28,6 +28,16 @@ export interface ContactCareFields {
     workshopsAttended: string;
     complaints: string;
   };
+  // Suy diễn từ hoá đơn POS — chỉ đọc, không bao giờ ghi vào lịch sử append.
+  derived: {
+    productInterests: string[];
+    // 'quantity' khi đơn gần nhất có >= 5 sản phẩm khác nhau, còn lại 'recency'.
+    rankedBy: 'recency' | 'quantity';
+    latestOrderProductCount: number;
+    source: string;
+    windowMonths: number;
+    asOf: string;
+  };
 }
 
 export interface Contact {
