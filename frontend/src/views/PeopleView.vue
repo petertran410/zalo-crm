@@ -288,6 +288,16 @@
               <span class="ppl-nm-line">
                 <span class="ppl-nm" :class="{ unnamed: !hasName(r) }">{{ displayNameOf(r) }}</span>
                 <span v-if="r.id === flashId" class="ppl-new">Vừa cập nhật</span>
+                <span
+                  v-if="r.posCustomerId != null"
+                  class="ppl-pos-tag"
+                  :class="{ copied: copiedPosId === r.posCustomerId }"
+                  :title="`POS ID: ${r.posCustomerId} — click để copy`"
+                  @click.stop="copyPosId(r.posCustomerId)"
+                >
+                  POS {{ r.posCustomerId }}
+                  <span v-if="copiedPosId === r.posCustomerId" class="ppl-pos-ok">✓</span>
+                </span>
               </span>
               <span class="ppl-sub2">
                 <span>{{ genderLabel(r.gender) }}</span>
@@ -438,7 +448,15 @@
               </div>
               <div class="ppl-input-box">
                 <span class="ppl-input-l">Sản phẩm quan tâm</span>
-                <input v-model="careFields.productInterest" placeholder="+ thêm" @change="dirtyCare = true" />
+                <input
+                  v-model="careFields.productInterest"
+                  placeholder="+ thêm"
+                  @input="productInterestDerived = false"
+                  @change="dirtyCare = true"
+                />
+                <span v-if="productInterestDerived" class="ppl-field-hint">
+                  Từ hoá đơn POS — {{ careHistory?.derived.windowMonths ?? 2 }} tháng gần nhất<template v-if="careHistory?.derived.rankedBy === 'quantity'"> · xếp theo số lượng mua</template>
+                </span>
               </div>
               <div class="ppl-input-box">
                 <span class="ppl-input-l">Workshop đã tham gia</span>
@@ -1338,6 +1356,7 @@ const saving = ref(false);
 const draft = reactive<Record<string, unknown>>({});
 const tagDraft = ref('');
 const copiedCode = ref<string | null>(null);
+const copiedPosId = ref<number | null>(null);
 const chanEdit = reactive<Record<string, { alias?: string; statusId?: string }>>({});
 
 const timeline = ref<Array<{ title: string; desc: string; when: string }>>([]);
@@ -1355,6 +1374,7 @@ const careFields = reactive({
 const careHistory = ref<ContactCareFields | null>(null);
 const careLoading = ref(false);
 const careSaving = ref(false);
+const productInterestDerived = ref(false);
 
 const personalFields = [
   { key: 'fullName', label: 'Tên đầy đủ', ph: 'Theo hồ sơ' },
@@ -1395,6 +1415,7 @@ function hydrateDraft(c: Contact) {
   careFields.productInterest = '';
   careFields.workshopsAttended = '';
   careFields.complaints = '';
+  productInterestDerived.value = false;
   dirtyCare.value = false;
   dirty.value = false;
 }
@@ -1408,6 +1429,10 @@ async function loadCareFields(contactId: string) {
     careFields.productInterest = res.data.current.productInterest;
     careFields.workshopsAttended = res.data.current.workshopsAttended;
     careFields.complaints = res.data.current.complaints;
+    // Giá trị nhập tay thắng; chỉ khi trống mới đổ danh sách suy diễn từ POS vào.
+    const derived = res.data.derived?.productInterests ?? [];
+    productInterestDerived.value = !careFields.productInterest && derived.length > 0;
+    if (productInterestDerived.value) careFields.productInterest = derived.join(', ');
     dirtyCare.value = false;
   } catch (err) {
     console.error('[PeopleView] load care fields failed:', err);
@@ -1653,6 +1678,11 @@ function copyVar(code: string) {
   copiedCode.value = code;
   try { navigator.clipboard?.writeText(code); } catch { /* ignore */ }
   setTimeout(() => { if (copiedCode.value === code) copiedCode.value = null; }, 1400);
+}
+function copyPosId(posId: number) {
+  copiedPosId.value = posId;
+  try { navigator.clipboard?.writeText(String(posId)); } catch { /* ignore */ }
+  setTimeout(() => { if (copiedPosId.value === posId) copiedPosId.value = null; }, 1400);
 }
 
 // Lịch sử + ghi chú (lazy theo tab)
@@ -2264,6 +2294,15 @@ onBeforeUnmount(() => {
   background: var(--pp-chip); color: var(--pp-good);
   font-size: 9.5px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase;
 }
+.ppl-pos-tag {
+  flex: none; display: inline-flex; align-items: center; gap: 3px;
+  padding: 1px 7px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--pp-line); background: transparent; color: var(--pp-muted);
+  font-family: var(--mono); font-size: 10.5px; font-weight: 700; white-space: nowrap;
+}
+.ppl-pos-tag:hover { border-color: var(--pp-accent); color: var(--pp-fg); }
+.ppl-pos-tag.copied { border-color: var(--pp-good); color: var(--pp-good); }
+.ppl-pos-ok { font-size: 9px; }
 .ppl-sub2 { font-size: 12px; color: var(--pp-muted); display: flex; align-items: center; gap: 8px; white-space: nowrap; }
 .ppl-dot { width: 3px; height: 3px; border-radius: 50%; background: currentColor; opacity: .5; }
 
@@ -2413,6 +2452,7 @@ onBeforeUnmount(() => {
 .ppl-input-box:hover { border-color: var(--pp-accent); }
 .ppl-input-box.flat:hover { border-color: transparent; }
 .ppl-input-l { display: block; font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; color: var(--pp-muted); font-weight: 800; margin-bottom: 2px; }
+.ppl-field-hint { display: block; font-size: 11px; color: var(--pp-faint); margin-top: 3px; }
 .ppl-input-box input, .ppl-input-box select {
   width: 100%; border: 0; background: transparent; color: var(--pp-fg);
   font-size: 13.5px; font-weight: 600; padding: 0; cursor: pointer;
