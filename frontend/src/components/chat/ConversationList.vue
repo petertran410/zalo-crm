@@ -1364,7 +1364,7 @@ function onPatternLeave() {
 }
 
 .conv-item {
-  padding: 10px 13px;
+  padding: 10px 12px;
   display: flex;
   gap: 11px;
   align-items: flex-start;

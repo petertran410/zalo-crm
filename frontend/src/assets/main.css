@@ -80,10 +80,30 @@ html, body {
 /* ════════ Smax light theme — defaults for v-* components ════════ */
 /* Các override này là “baseline” cho mọi màn Vuetify. Selector luôn neo vào
    .v-theme--hsLight/.v-theme--smax-light để không làm vỡ SalesLayout legacy. */
-.v-theme--hsLight,
-.v-theme--smax-light {
+/* Theme background applies to the application root container, NOT overlays */
+.v-application.v-theme--hsLight,
+.v-application.v-theme--smax-light {
   color: var(--app-text-primary);
   background: var(--app-surface-canvas);
+}
+
+/* Vuetify overlays must NEVER have an opaque background on their container */
+.v-overlay {
+  background: transparent !important;
+}
+
+/* For v-menu overlays specifically, prevent dimming or blocking the screen */
+.v-menu > .v-overlay__scrim {
+  display: none !important;
+}
+
+/* Prevent Vuetify from making html fixed position, which causes whiteout/layout collapse in Sales canvas */
+html.v-overlay-scroll-blocked {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  width: auto !important;
+  height: 100% !important;
 }
 
 .v-theme--hsLight .v-card,

@@ -1,344 +1,267 @@
 <template>
   <aside class="info-panel">
-    <!-- Close button for Sales/CS workspace -->
-    <button
-      v-if="currentRole && currentRole !== 'manager'"
-      class="ip-close"
-      title="Đóng"
-      @click="$emit('close')">
-      ×
-    </button>
     <!-- ════════ ROLE-BASED WORKSPACE: Sales & Customer Service ════════ -->
     <template v-if="currentRole && currentRole !== 'manager'">
       <!-- ══════════════════════════════════════════
-           SP PROFILE HEADER — Glass Card Premium
+           SP COMPACT HEADER — Glass Minimalist
            ══════════════════════════════════════════ -->
-      <div class="sp-header">
-        <!-- Top row: Avatar + Name + UID -->
-        <div class="sp-header-top">
+      <div class="sp-compact-header">
+        <!-- Top Row: Avatar (38px) + Info Block (Row 1: Name + Actions, Row 2: Phone + UID) -->
+        <div class="sp-compact-main">
           <div class="sp-avatar-wrap">
             <Avatar
               :src="props.contact?.avatarUrl"
               :name="headerFullName"
-              :size="56"
+              :size="38"
               :gradient-seed="props.contact?.id || headerFullName"
               class="sp-avatar" />
-            <!-- VIP ring indicator -->
             <span
               v-if="customerType === 'VIP'"
-              class="sp-vip-ring"
+              class="sp-vip-ring-mini"
               title="Khách VIP"></span>
           </div>
-          <div class="sp-name-block">
-            <input
-              v-model="form.fullName"
-              placeholder="Tên Zalo"
-              class="sp-name-input"
-              @blur="saveContact" />
-            <div v-if="props.contact?.zaloUid" class="sp-uid-row">
-              <span class="sp-uid-badge">Id: {{ props.contact.zaloUid }}</span>
+
+          <div class="sp-compact-info">
+            <!-- Row 1: Name + Integrated Actions Cluster ([POS] [⋮] [✕]) -->
+            <div class="sp-compact-top-row">
+              <input
+                v-model="form.fullName"
+                placeholder="Tên Zalo"
+                class="sp-name-input-compact"
+                @blur="saveContact" />
+
+              <!-- Right Actions Cluster: [ ⋮ Menu ] [ ✕ Close ] -->
+              <div class="sp-header-actions">
+                <!-- Menu thao tác tập trung cho Khách hàng & POS — Inline DOM Panel tránh mọi lỗi VOverlay -->
+                <div ref="posMenuRef" class="sp-pos-menu-wrap">
+                  <button
+                    class="sp-action-icon-btn"
+                    :class="{ 'is-active': posMenuOpen }"
+                    type="button"
+                    title="Tùy chọn khách hàng & POS"
+                    @click.stop="posMenuOpen = !posMenuOpen">
+                    <span class="material-symbols-outlined">more_vert</span>
+                  </button>
+
+                  <div v-if="posMenuOpen" class="sp-pos-menu-panel" @click.stop>
+                    <!-- Nhóm 1: Quản trị POS -->
+                    <div class="sp-pos-menu-group-label">KiotViet POS</div>
+                    <template v-if="posLinkStatus.linked">
+                      <button
+                        type="button"
+                        class="sp-pos-menu-item"
+                        @click="posMenuOpen = false; openEditCustomerForm()">
+                        <span class="material-symbols-outlined text-primary">edit</span>
+                        <span>Sửa thông tin POS</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="sp-pos-menu-item"
+                        @click="posMenuOpen = false; posLinkSearchOpen = true">
+                        <span class="material-symbols-outlined text-primary">sync_alt</span>
+                        <span>Đổi liên kết POS</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="sp-pos-menu-item text-error"
+                        :disabled="unlinking"
+                        @click="posMenuOpen = false; performUnlink()">
+                        <span class="material-symbols-outlined text-error">link_off</span>
+                        <span>Hủy liên kết POS</span>
+                      </button>
+                    </template>
+                    <template v-else>
+                      <button
+                        type="button"
+                        class="sp-pos-menu-item"
+                        @click="posMenuOpen = false; posLinkSearchOpen = true">
+                        <span class="material-symbols-outlined text-primary">search</span>
+                        <span>Tìm & liên kết POS</span>
+                      </button>
+                      <button
+                        type="button"
+                        class="sp-pos-menu-item"
+                        @click="posMenuOpen = false; openCreateCustomerForm()">
+                        <span class="material-symbols-outlined text-success">person_add</span>
+                        <span>Tạo khách mới trên POS</span>
+                      </button>
+                    </template>
+
+                    <!-- Nhóm 2: Hồ sơ & Hội thoại CRM -->
+                    <div class="sp-pos-menu-divider" />
+                    <div class="sp-pos-menu-group-label">Quản trị Khách hàng</div>
+                    <button
+                      v-if="props.contactId"
+                      type="button"
+                      class="sp-pos-menu-item"
+                      @click="posMenuOpen = false; showLinkParentDialog = true">
+                      <span class="material-symbols-outlined text-purple">merge</span>
+                      <span>Gắn vào KH Cha (Merge)</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="sp-pos-menu-item"
+                      @click="posMenuOpen = false; openQuickNote()">
+                      <span class="material-symbols-outlined text-amber">edit_note</span>
+                      <span>Ghi chú nhanh</span>
+                    </button>
+                  </div>
+                </div>
+
+                <!-- Nút đóng Sidebar tích hợp thẳng vào action cluster -->
+                <button
+                  class="sp-action-icon-btn sp-close-btn"
+                  title="Đóng bảng thông tin"
+                  @click="$emit('close')">
+                  <span class="material-symbols-outlined">close</span>
+                </button>
+              </div>
             </div>
-            <div class="sp-pos-badge-row">
+
+            <!-- Row 2: Micro-context (Giai đoạn deal + SĐT + Ô POS) -->
+            <div class="sp-compact-sub-row">
+              <ContactDealStageSelector
+                v-if="props.contactId"
+                :contact-id="props.contactId"
+                :current-status-id="(props.contact as any)?.statusId ?? null"
+                :org-id="orgId"
+                @updated="onDealStageUpdatedPanel" />
+
+              <div class="sp-compact-phone" title="Số điện thoại khách hàng">
+                <span class="material-symbols-outlined sp-phone-icon">call</span>
+                <input
+                  v-model="form.phone"
+                  placeholder="Chưa có SĐT"
+                  class="sp-phone-input-compact"
+                  @blur="saveContact" />
+              </div>
+
+              <!-- POS Status & Code Pill: Kéo xuống cùng hàng Row 2 -->
               <span
-                v-if="posLinkStatus.linked"
-                class="sp-pos-badge sp-pos-badge-linked"
-                :title="
-                  posLinkStatus.posCustomerCode
-                    ? `Mã KH: ${posLinkStatus.posCustomerCode}`
-                    : undefined
-                ">
-                <span class="material-symbols-outlined sp-pos-badge-icon"
-                  >verified</span
-                >
-                Đã liên kết POS
+                v-if="posLinkStatus.linked || displayPosCode"
+                class="sp-pos-code-badge linked"
+                :title="displayPosCode ? `Mã KiotViet: ${displayPosCode} (Click để sao chép)` : (posLinkStatus.posCustomerCode ? `POS: ${posLinkStatus.posCustomerCode}` : 'Đã liên kết POS')"
+                @click="copyPosCode">
+                <span class="material-symbols-outlined sp-pos-icon">verified</span>
+                <span class="sp-pos-prefix">POS</span>
+                <span v-if="displayPosCode" class="sp-pos-code-text">{{ displayPosCode }}</span>
               </span>
+
               <span
                 v-else-if="posLinkStatus.autoSuggest"
-                class="sp-pos-badge sp-pos-badge-suggest">
-                <span class="material-symbols-outlined sp-pos-badge-icon"
-                  >find_replace</span
-                >
-                Trùng SĐT trên POS
+                class="sp-pos-chip-sub suggest"
+                title="Tìm thấy trùng SĐT trên POS (Click để liên kết)"
+                @click="performQuickLink">
+                <span class="material-symbols-outlined sp-pos-icon">find_replace</span>
+                <span>Gợi ý POS</span>
               </span>
-              <span v-else class="sp-pos-badge sp-pos-badge-unlinked">
-                <span class="material-symbols-outlined sp-pos-badge-icon"
-                  >link_off</span
-                >
-                Chưa liên kết POS
+
+              <span
+                v-else
+                class="sp-pos-chip-sub unlinked"
+                title="Chưa liên kết POS (Click để tìm và liên kết)"
+                @click="posLinkSearchOpen = true">
+                <span class="material-symbols-outlined sp-pos-icon">link_off</span>
+                <span>Link POS</span>
               </span>
             </div>
           </div>
         </div>
 
-        <!-- Detail grid: SĐT / Giới tính -->
-        <div class="sp-detail-grid">
-          <div class="sp-field">
-            <span class="sp-field-icon">📞</span>
-            <span class="sp-field-label">SĐT</span>
-            <input
-              v-model="form.phone"
-              placeholder="Chưa có"
-              class="sp-field-input"
-              @blur="saveContact" />
-          </div>
-          <div class="sp-field">
-            <span class="sp-field-icon">⚧</span>
-            <span class="sp-field-label">Giới tính</span>
-            <select
-              v-model="form.gender"
-              class="sp-field-select"
-              @change="saveContact">
-              <option :value="null">Không rõ</option>
-              <option value="female">Nữ</option>
-              <option value="male">Nam</option>
-              <option value="other">Khác</option>
-            </select>
-          </div>
+        <!-- Banner Auto Suggest nếu có trùng SĐT -->
+        <div v-if="posLinkStatus.autoSuggest && posLinkStatus.posCustomer && !posLinkStatus.linked" class="sp-compact-suggest-bar">
+          <span class="sp-suggest-text">Trùng SĐT: <strong>{{ posLinkStatus.posCustomer.name }}</strong></span>
+          <button class="sp-btn-link-now" @click="performQuickLink" :disabled="linking">Liên kết</button>
         </div>
 
-        <!-- ── POS Status Block (Header) ── -->
-        <section v-if="props.contactId" class="sp-pos-overview-block mt-2">
-          <!-- Loading -->
-          <div v-if="loadingStatus" class="sp-pos-loading">
-            <v-progress-circular
-              indeterminate
-              size="14"
-              width="2"
-              color="primary" />
-            <span>Đang kiểm tra POS...</span>
-          </div>
-
-          <!-- Đã liên kết -->
-          <template
-            v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer">
-            <div class="sp-pos-linked-row">
-              <div class="sp-pos-linked-info">
-                <div class="sp-pos-linked-name">
-                  {{ posLinkStatus.posCustomer.name }}
-                </div>
-                <div class="sp-pos-linked-meta">
-                  <span class="sp-pos-code-chip">{{
-                    posLinkStatus.posCustomerCode
-                  }}</span>
-                  <span
-                    v-if="
-                      posLinkStatus.posCustomer.phone ||
-                      posLinkStatus.posCustomer.contactNumber
-                    ">
-                    ·
-                    {{
-                      posLinkStatus.posCustomer.phone ||
-                      posLinkStatus.posCustomer.contactNumber
-                    }}
-                  </span>
-                </div>
-                <div
-                  v-if="posLinkStatus.posCustomer.address"
-                  class="sp-pos-address">
-                  📍 {{ posLinkStatus.posCustomer.address }}
-                </div>
-              </div>
-              <div class="sp-pos-linked-actions">
-                <v-btn
-                  size="x-small"
-                  variant="tonal"
-                  color="primary"
-                  density="comfortable"
-                  class="text-none font-weight-medium"
-                  @click="openEditCustomerForm">
-                  <span
-                    class="material-symbols-outlined mr-1"
-                    style="font-size: 13px"
-                    >edit</span
-                  >
-                  Sửa
-                </v-btn>
-
-                <v-menu location="bottom end">
-                  <template #activator="{ props: menuProps }">
-                    <v-btn
-                      icon
-                      size="x-small"
-                      variant="text"
-                      color="grey-darken-1"
-                      density="comfortable"
-                      v-bind="menuProps"
-                      title="Thao tác khác"
-                      class="ml-1">
-                      <span
-                        class="material-symbols-outlined"
-                        style="font-size: 18px"
-                        >more_vert</span
-                      >
-                    </v-btn>
-                  </template>
-                  <v-list
-                    density="compact"
-                    class="py-1 rounded-lg shadow-md"
-                    style="min-width: 140px">
-                    <v-list-item
-                      @click="posLinkSearchOpen = true"
-                      class="text-caption">
-                      <template #prepend>
-                        <span
-                          class="material-symbols-outlined mr-2 text-primary"
-                          style="font-size: 16px"
-                          >sync_alt</span
-                        >
-                      </template>
-                      <v-list-item-title class="font-weight-medium"
-                        >Đổi liên kết</v-list-item-title
-                      >
-                    </v-list-item>
-
-                    <v-divider class="my-1" />
-
-                    <v-list-item
-                      @click="performUnlink"
-                      :disabled="unlinking"
-                      class="text-caption text-error">
-                      <template #prepend>
-                        <span
-                          class="material-symbols-outlined mr-2 text-error"
-                          style="font-size: 16px"
-                          >link_off</span
-                        >
-                      </template>
-                      <v-list-item-title class="font-weight-medium"
-                        >Hủy liên kết</v-list-item-title
-                      >
-                    </v-list-item>
-                  </v-list>
-                </v-menu>
-              </div>
-            </div>
-          </template>
-
-          <!-- Auto-suggest: tìm thấy trùng SĐT -->
-          <template
-            v-else-if="posLinkStatus.autoSuggest && posLinkStatus.posCustomer">
-            <div class="sp-pos-suggest-banner">
-              <div class="sp-pos-suggest-text">
-                Tìm thấy trùng SĐT trên POS:
-                <strong>{{ posLinkStatus.posCustomer.name }}</strong>
-                ({{ posLinkStatus.posCustomer.code }})
-              </div>
-              <div class="sp-pos-suggest-actions">
-                <v-btn
-                  size="x-small"
-                  color="primary"
-                  variant="flat"
-                  class="text-none"
-                  @click="performQuickLink"
-                  :loading="linking">
-                  Liên kết ngay
-                </v-btn>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  color="primary"
-                  class="text-none"
-                  @click="posLinkSearchOpen = true">
-                  Tìm khách khác
-                </v-btn>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  color="grey-darken-1"
-                  class="text-none"
-                  @click="openCreateCustomerForm">
-                  Tạo mới
-                </v-btn>
-              </div>
-            </div>
-          </template>
-
-          <!-- Chưa liên kết -->
-          <template v-else>
-            <div class="sp-pos-unlinked">
-              <span class="sp-pos-unlinked-text">Chưa có trên POS</span>
-              <div class="sp-pos-unlinked-actions">
-                <v-btn
-                  size="x-small"
-                  color="primary"
-                  variant="flat"
-                  class="text-none"
-                  @click="posLinkSearchOpen = true">
-                  🔍 Liên kết KH
-                </v-btn>
-                <v-btn
-                  size="x-small"
-                  color="grey"
-                  variant="outlined"
-                  class="text-none"
-                  @click="openCreateCustomerForm">
-                  ➕ Tạo mới
-                </v-btn>
-              </div>
-            </div>
-          </template>
-        </section>
-
-        <!-- ── CTA chính: Tạo đơn hàng ── -->
+        <!-- Action Row: Slim CTA "Tạo đơn hàng" (luôn click được; nếu chưa link POS thì prompt tìm/tạo POS) -->
         <button
-          class="sp-cta-primary mt-3"
-          :disabled="!posLinkStatus.linked || !orderDraftStore.canOpenNew"
+          class="sp-compact-cta"
+          :disabled="!orderDraftStore.canOpenNew"
           :class="{
-            'sp-cta-disabled':
-              !posLinkStatus.linked || !orderDraftStore.canOpenNew,
+            'sp-cta-disabled': !orderDraftStore.canOpenNew,
           }"
           :title="
             !orderDraftStore.canOpenNew
               ? !orderDraftStore.drafts.some((d) => !d.isMinimized)
                 ? 'Hàng đợi đầy (tối đa 3 đơn). Xóa một đơn để tiếp tục.'
                 : 'Hãy thu nhỏ đơn hiện tại trước'
-              : ''
+              : !posLinkStatus.linked
+              ? 'Chưa liên kết POS - bấm để tìm/tạo khách POS và lập đơn'
+              : 'Mở bảng tạo đơn hàng'
           "
           @click="openOrderForContact">
-          <span class="material-symbols-outlined sp-cta-icon"
-            >add_shopping_cart</span
-          >
-          Tạo đơn hàng
+          <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
+          <span>Tạo đơn hàng</span>
         </button>
       </div>
 
       <!-- ══════════════════════════════════════════
-           SP PILL TABS — bo tròn pill-style
+           SP GRID LAUNCHER (2 hàng x 3 cột)
            ══════════════════════════════════════════ -->
-      <!-- ══ SP PILL TABS — Material Symbols ══ -->
-      <nav class="sp-pill-nav">
-        <div class="sp-pill-tabs">
+      <nav class="sp-launcher-nav">
+        <div class="sp-launcher-grid">
           <button
-            class="sp-pill-tab"
+            class="sp-launcher-btn"
             :class="{ active: salesTab === 'overview' }"
             @click="salesTab = 'overview'">
-            <span class="material-symbols-outlined sp-tab-icon">dashboard</span>
-            Overview
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">dashboard</span>
+            </div>
+            <span class="sp-launcher-label">Tổng quan</span>
           </button>
           <button
-            class="sp-pill-tab"
+            class="sp-launcher-btn"
+            :class="{ active: salesTab === 'inventory' }"
+            @click="salesTab = 'inventory'">
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">inventory_2</span>
+            </div>
+            <span class="sp-launcher-label">Tồn kho</span>
+          </button>
+          <button
+            class="sp-launcher-btn"
             :class="{ active: salesTab === 'orders' }"
             @click="salesTab = 'orders'">
-            <span class="material-symbols-outlined sp-tab-icon"
-              >receipt_long</span
-            >
-            Đơn hàng
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">receipt_long</span>
+              <span v-if="contactOrders.length > 0" class="sp-launcher-badge sp-launcher-badge-count">{{ contactOrders.length }}</span>
+            </div>
+            <span class="sp-launcher-label">Đơn hàng</span>
           </button>
           <button
-            class="sp-pill-tab"
+            class="sp-launcher-btn"
+            :class="{ active: salesTab === 'debt' }"
+            @click="salesTab = 'debt'">
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">account_balance_wallet</span>
+              <span
+                v-if="displayDebtAmount != null"
+                class="sp-launcher-badge sp-launcher-badge-debt"
+                :class="displayDebtAmount > 0 ? 'is-debt' : 'is-clean'">
+                {{ fmtVnd(displayDebtAmount) }}
+              </span>
+            </div>
+            <span class="sp-launcher-label">Công nợ</span>
+          </button>
+          <button
+            class="sp-launcher-btn"
             :class="{ active: salesTab === 'appointment' }"
             @click="salesTab = 'appointment'">
-            <span class="material-symbols-outlined sp-tab-icon"
-              >calendar_month</span
-            >
-            Lịch hẹn
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">calendar_month</span>
+              <span v-if="contactAppointments?.length > 0" class="sp-launcher-dot" title="Có lịch hẹn"></span>
+            </div>
+            <span class="sp-launcher-label">Lịch hẹn</span>
           </button>
           <button
-            class="sp-pill-tab"
+            class="sp-launcher-btn"
             :class="{ active: salesTab === 'notes' }"
             @click="salesTab = 'notes'">
-            <span class="material-symbols-outlined sp-tab-icon">edit_note</span>
-            Ghi chú
+            <div class="sp-launcher-icon-wrap">
+              <span class="material-symbols-outlined sp-launcher-icon">edit_note</span>
+            </div>
+            <span class="sp-launcher-label">Ghi chú</span>
           </button>
         </div>
       </nav>
@@ -348,14 +271,67 @@
            ══════════════════════════════════════════ -->
       <div class="sp-tab-content">
         <!-- ─── OVERVIEW TAB ─── -->
-        <div v-show="salesTab === 'overview'" class="sp-pane">
-          <!-- ── Customer 360: section header ── -->
-          <div class="sp-section-header">
-            <span class="material-symbols-outlined sp-section-icon"
-              >monitoring</span
-            >
-            <span class="sp-section-title">Customer 360</span>
+        <div v-show="salesTab === 'overview'" class="sp-pane sp-overview-pane">
+          <!-- Dãy Icon tròn mini có nhãn chữ (5 Sub-items) -->
+          <div class="sp-sub-circle-nav">
+            <button
+              class="sp-circle-item"
+              :class="{ active: overviewSubTab === '360' }"
+              title="Chỉ số 360 & Hồ sơ"
+              @click="overviewSubTab = '360'">
+              <span class="sp-circle-btn">
+                <span class="material-symbols-outlined">monitoring</span>
+              </span>
+              <span class="sp-circle-label">360</span>
+            </button>
+            <button
+              class="sp-circle-item"
+              :class="{ active: overviewSubTab === 'purchased' }"
+              title="Sản phẩm đã mua"
+              @click="overviewSubTab = 'purchased'">
+              <span class="sp-circle-btn">
+                <span class="material-symbols-outlined">shopping_bag</span>
+              </span>
+              <span class="sp-circle-label">Đã mua</span>
+            </button>
+            <button
+              class="sp-circle-item"
+              :class="{ active: overviewSubTab === 'journey' }"
+              title="Tín hiệu hành trình"
+              @click="overviewSubTab = 'journey'">
+              <span class="sp-circle-btn">
+                <span class="material-symbols-outlined">timeline</span>
+              </span>
+              <span class="sp-circle-label">Hành trình</span>
+            </button>
+            <button
+              class="sp-circle-item"
+              :class="{ active: overviewSubTab === 'ai_interests' }"
+              title="Sản phẩm quan tâm (AI)"
+              @click="overviewSubTab = 'ai_interests'">
+              <span class="sp-circle-btn">
+                <span class="material-symbols-outlined">psychology</span>
+              </span>
+              <span class="sp-circle-label">AI</span>
+            </button>
+            <button
+              class="sp-circle-item"
+              :class="{ active: overviewSubTab === 'activity' }"
+              title="Lịch sử hoạt động gần đây"
+              @click="overviewSubTab = 'activity'">
+              <span class="sp-circle-btn">
+                <span class="material-symbols-outlined">history</span>
+              </span>
+              <span class="sp-circle-label">Nhật ký</span>
+            </button>
           </div>
+
+          <!-- 1. SUB-VIEW: CHỈ SỐ 360 & HỒ SƠ -->
+          <div v-show="overviewSubTab === '360'" class="sp-sub-pane">
+            <div class="sp-section-header">
+              <span class="material-symbols-outlined sp-section-icon">monitoring</span>
+              <span class="sp-section-title">Chỉ số 360 & Hồ sơ</span>
+            </div>
 
           <div v-if="customer360Loading" class="sp-c360-loading">
             <v-progress-circular indeterminate size="18" width="2" color="primary" />
@@ -525,127 +501,147 @@
               Liên kết khách hàng POS để xem thống kê đơn hàng
             </div>
           </div>
+        </div>
+        <!-- 1. /SUB-VIEW 360 -->
 
-          <!-- Sản phẩm đã mua: dùng read model Customer 360, không gọi POS riêng lẻ. -->
-          <section v-if="customer360?.commerce.purchasedProducts.items.length" class="sp-purchased-products">
-            <div class="sp-section-header">
-              <span class="material-symbols-outlined sp-section-icon">inventory_2</span>
-              <span class="sp-section-title">Sản phẩm đã mua</span>
-            </div>
-            <div class="sp-product-list">
-              <div v-for="product in customer360.commerce.purchasedProducts.items" :key="product.key" class="sp-product-row">
-                <div class="sp-product-name">
-                  {{ product.productName }}
-                  <span v-if="product.orderCount > 1" class="sp-repeat-badge">Mua lại</span>
-                </div>
-                <div class="sp-product-meta">
-                  {{ product.quantity }} SP · {{ fmtVnd(product.grossRevenue) }} · {{ shortDate(product.lastPurchasedAt) }}
+          <!-- 2. SUB-VIEW: SẢN PHẨM ĐÃ MUA -->
+          <div v-show="overviewSubTab === 'purchased'" class="sp-sub-pane">
+            <section v-if="customer360?.commerce.purchasedProducts.items.length" class="sp-purchased-products">
+              <div class="sp-section-header">
+                <span class="material-symbols-outlined sp-section-icon">inventory_2</span>
+                <span class="sp-section-title">Sản phẩm đã mua</span>
+              </div>
+              <div class="sp-product-list">
+                <div v-for="product in customer360.commerce.purchasedProducts.items" :key="product.key" class="sp-product-row">
+                  <div class="sp-product-name">
+                    {{ product.productName }}
+                    <span v-if="product.orderCount > 1" class="sp-repeat-badge">Mua lại</span>
+                  </div>
+                  <div class="sp-product-meta">
+                    {{ product.quantity }} SP · {{ fmtVnd(product.grossRevenue) }} · {{ shortDate(product.lastPurchasedAt) }}
+                  </div>
                 </div>
               </div>
-            </div>
-            <div v-if="customer360.commerce.purchasedProducts.truncated" class="sp-c360-sublabel">
-              Hiển thị theo 200 đơn gần nhất
-            </div>
-          </section>
-
-          <!-- ── Tín hiệu hành trình: tự tính từ đơn hàng, không ai nhập tay ── -->
-          <section v-if="customer360?.journey" class="sp-purchased-products">
-            <div class="sp-section-header">
-              <span class="material-symbols-outlined sp-section-icon">timeline</span>
-              <span class="sp-section-title">Tín hiệu hành trình</span>
-            </div>
-
-            <!-- Thâm niên + nhịp mua 2 tháng gần nhất -->
-            <div v-if="customer360.journey.firstOrderAt" class="sp-journey-line">
-              <span class="material-symbols-outlined sp-timeline-icon">flag</span>
-              <span>
-                Khách từ {{ monthYear(customer360.journey.firstOrderAt) }} · {{ customer360.journey.tenureDays }} ngày
-                <template v-if="journeyTrendText(customer360.journey)"> · {{ journeyTrendText(customer360.journey) }}</template>
-              </span>
-            </div>
-
-            <!-- Đã ngưng mua >30 ngày dù từng mua đều — cơ hội gọi lại -->
-            <div v-if="customer360.journey.churnedProducts.length" class="sp-product-list sp-churn-list">
-              <div v-for="p in customer360.journey.churnedProducts.slice(0, 3)" :key="'c' + p.productName" class="sp-product-row">
-                <div class="sp-product-name">
-                  {{ p.productName }}
-                  <span class="sp-churn-badge">{{ p.quietDays }} ngày chưa mua</span>
-                </div>
-                <div class="sp-product-meta">Từng mua {{ p.orderCount }} đơn · lần cuối {{ shortDate(p.lastPurchasedAt) }}</div>
+              <div v-if="customer360.commerce.purchasedProducts.truncated" class="sp-c360-sublabel">
+                Hiển thị theo 200 đơn gần nhất
               </div>
+            </section>
+            <div v-else class="sp-c360-empty-sub">
+              <span class="material-symbols-outlined">shopping_bag</span>
+              <span>Chưa có dữ liệu sản phẩm đã mua</span>
             </div>
-
-            <!-- Mới bắt đầu mua trong 90 ngày -->
-            <div v-if="customer360.journey.newProducts.length" class="sp-product-list sp-churn-list">
-              <div v-for="p in customer360.journey.newProducts.slice(0, 3)" :key="'n' + p.productName" class="sp-product-row">
-                <div class="sp-product-name">
-                  {{ p.productName }}
-                  <span class="sp-new-badge">Mới quan tâm</span>
-                </div>
-                <div class="sp-product-meta">Bắt đầu {{ shortDate(p.firstPurchasedAt) }} · {{ p.orderCount }} đơn</div>
-              </div>
-            </div>
-
-            <!-- Tuổi nợ — thứ kế toán cần để đòi nợ -->
-            <div v-if="customer360.journey.debtAging.length" class="sp-journey-line">
-              <span class="material-symbols-outlined sp-timeline-icon">schedule</span>
-              <span>
-                Tuổi nợ:
-                <template v-for="(b, i) in customer360.journey.debtAging" :key="b.bucket">
-                  <template v-if="i > 0"> · </template>{{ b.bucket }} ngày {{ fmtVnd(b.debt) }} ({{ b.invoices }} HĐ)
-                </template>
-              </span>
-            </div>
-          </section>
-
-          <section v-if="customer360?.service.recentTimeline.length" class="sp-recent-timeline">
-            <div class="sp-section-header">
-              <span class="material-symbols-outlined sp-section-icon">history</span>
-              <span class="sp-section-title">Hoạt động gần đây</span>
-            </div>
-            <div class="sp-timeline-list">
-              <div v-for="item in customer360.service.recentTimeline.slice(0, 5)" :key="`${item.type}:${item.id}`" class="sp-timeline-row">
-                <span class="material-symbols-outlined sp-timeline-icon">{{ customerTimelineIcon(item.type) }}</span>
-                <div class="sp-timeline-copy">
-                  <span>{{ item.title }}</span>
-                  <small>{{ customerTimelineLabel(item.type, item.status) }} · {{ shortDate(item.occurredAt) }}</small>
-                </div>
-              </div>
-            </div>
-            <button class="sp-c360-retry" @click="salesTab = 'notes'">Xem timeline đầy đủ</button>
-          </section>
-
-          <!-- ── Sản phẩm đang quan tâm (AI Chat Extraction) ── -->
-          <div class="my-3">
-            <ChatProductInterestsSection
-              :contact-id="props.contactId"
-              :contact-name="props.contact?.fullName || headerFullName"
-            />
           </div>
 
-          <!-- ── Customer 360 POS Widgets (Debt & Branch Inventory) ── -->
-          <div class="my-3">
-            <CustomerDebtWidget
-              :contact-id="props.contactId"
-              :customer-name="props.contact?.fullName || headerFullName"
-              :is-pos-linked="posLinkStatus.linked"
-              @insert-debt-reminder="onInsertSuggestionText" />
+          <!-- 3. SUB-VIEW: TÍN HIỆU HÀNH TRÌNH -->
+          <div v-show="overviewSubTab === 'journey'" class="sp-sub-pane">
+            <section v-if="customer360?.journey" class="sp-purchased-products">
+              <div class="sp-section-header">
+                <span class="material-symbols-outlined sp-section-icon">timeline</span>
+                <span class="sp-section-title">Tín hiệu hành trình</span>
+              </div>
+
+              <!-- Thâm niên + nhịp mua 2 tháng gần nhất -->
+              <div v-if="customer360.journey.firstOrderAt" class="sp-journey-line">
+                <span class="material-symbols-outlined sp-timeline-icon">flag</span>
+                <span>
+                  Khách từ {{ monthYear(customer360.journey.firstOrderAt) }} · {{ customer360.journey.tenureDays }} ngày
+                  <template v-if="journeyTrendText(customer360.journey)"> · {{ journeyTrendText(customer360.journey) }}</template>
+                </span>
+              </div>
+
+              <!-- Đã ngưng mua >30 ngày dù từng mua đều -->
+              <div v-if="customer360.journey.churnedProducts.length" class="sp-product-list sp-churn-list">
+                <div v-for="p in customer360.journey.churnedProducts.slice(0, 5)" :key="'c' + p.productName" class="sp-product-row">
+                  <div class="sp-product-name">
+                    {{ p.productName }}
+                    <span class="sp-churn-badge">{{ p.quietDays }} ngày chưa mua</span>
+                  </div>
+                  <div class="sp-product-meta">Từng mua {{ p.orderCount }} đơn · lần cuối {{ shortDate(p.lastPurchasedAt) }}</div>
+                </div>
+              </div>
+
+              <!-- Mới bắt đầu mua trong 90 ngày -->
+              <div v-if="customer360.journey.newProducts.length" class="sp-product-list sp-churn-list">
+                <div v-for="p in customer360.journey.newProducts.slice(0, 5)" :key="'n' + p.productName" class="sp-product-row">
+                  <div class="sp-product-name">
+                    {{ p.productName }}
+                    <span class="sp-new-badge">Mới quan tâm</span>
+                  </div>
+                  <div class="sp-product-meta">Bắt đầu {{ shortDate(p.firstPurchasedAt) }} · {{ p.orderCount }} đơn</div>
+                </div>
+              </div>
+
+              <!-- Tuổi nợ -->
+              <div v-if="customer360.journey.debtAging.length" class="sp-journey-line">
+                <span class="material-symbols-outlined sp-timeline-icon">schedule</span>
+                <span>
+                  Tuổi nợ:
+                  <template v-for="(b, i) in customer360.journey.debtAging" :key="b.bucket">
+                    <template v-if="i > 0"> · </template>{{ b.bucket }} ngày {{ fmtVnd(b.debt) }} ({{ b.invoices }} HĐ)
+                  </template>
+                </span>
+              </div>
+            </section>
+            <div v-else class="sp-c360-empty-sub">
+              <span class="material-symbols-outlined">timeline</span>
+              <span>Chưa có tín hiệu hành trình</span>
+            </div>
           </div>
 
-          <div class="my-3">
-            <BranchInventoryWidget
-              @insert-inventory-info="onInsertSuggestionText" />
+          <!-- 4. SUB-VIEW: SẢN PHẨM QUAN TÂM (AI) -->
+          <div v-show="overviewSubTab === 'ai_interests'" class="sp-sub-pane">
+            <div class="sp-section-header">
+              <span class="material-symbols-outlined sp-section-icon">psychology</span>
+              <span class="sp-section-title">Sản phẩm quan tâm (AI)</span>
+            </div>
+            <div class="my-2">
+              <ChatProductInterestsSection
+                :contact-id="props.contactId"
+                :contact-name="props.contact?.fullName || headerFullName"
+              />
+            </div>
           </div>
 
-          <!-- ── Coming Soon: 1 dòng xám nhạt ── -->
-          <div class="sp-future-hint">
-            <span class="material-symbols-outlined sp-future-icon"
-              >auto_awesome</span
-            >
-            Customer Intelligence · Timeline — Sắp ra mắt
+          <!-- 5. SUB-VIEW: HOẠT ĐỘNG GẦN ĐÂY -->
+          <div v-show="overviewSubTab === 'activity'" class="sp-sub-pane">
+            <section v-if="customer360?.service.recentTimeline.length" class="sp-recent-timeline">
+              <div class="sp-section-header">
+                <span class="material-symbols-outlined sp-section-icon">history</span>
+                <span class="sp-section-title">Hoạt động gần đây</span>
+              </div>
+              <div class="sp-timeline-list">
+                <div v-for="item in customer360.service.recentTimeline.slice(0, 5)" :key="`${item.type}:${item.id}`" class="sp-timeline-row">
+                  <span class="material-symbols-outlined sp-timeline-icon">{{ customerTimelineIcon(item.type) }}</span>
+                  <div class="sp-timeline-copy">
+                    <span>{{ item.title }}</span>
+                    <small>{{ customerTimelineLabel(item.type, item.status) }} · {{ shortDate(item.occurredAt) }}</small>
+                  </div>
+                </div>
+              </div>
+              <button class="sp-c360-retry" @click="salesTab = 'notes'">Xem timeline đầy đủ</button>
+            </section>
+            <div v-else class="sp-c360-empty-sub">
+              <span class="material-symbols-outlined">history</span>
+              <span>Chưa có hoạt động gần đây</span>
+            </div>
           </div>
         </div>
         <!-- /OVERVIEW TAB -->
+
+        <!-- ─── INVENTORY TAB ─── -->
+        <div v-show="salesTab === 'inventory'" class="sp-pane sp-pane-padded">
+          <BranchInventoryWidget
+            @insert-inventory-info="onInsertSuggestionText" />
+        </div>
+
+        <!-- ─── DEBT TAB ─── -->
+        <div v-show="salesTab === 'debt'" class="sp-pane sp-pane-padded">
+          <CustomerDebtWidget
+            :contact-id="props.contactId"
+            :customer-name="props.contact?.fullName || headerFullName"
+            :is-pos-linked="posLinkStatus.linked"
+            @insert-debt-reminder="onInsertSuggestionText" />
+        </div>
 
         <!-- ─── ORDERS TAB ─── -->
         <div v-show="salesTab === 'orders'" class="sp-pane sp-pane-padded">
@@ -851,6 +847,13 @@
          :contact-phone="props.contact?.phone || undefined"
         @linked="onPosLinked"
         @create-new="openCreateCustomerForm" />
+
+      <!-- Link Parent Dialog (Gắn vào KH Cha / Merge) -->
+      <LinkParentDialog
+        v-if="props.contactId"
+        v-model="showLinkParentDialog"
+        :child-contact-id="props.contactId"
+        @linked="onLinkedParent" />
 
       <!-- Order Detail Modal -->
       <OrderDetailModal
@@ -1118,6 +1121,7 @@ import MediaTabPanel from "./MediaTabPanel.vue";
 import Avatar from "@/components/ui/Avatar.vue";
 import ContactDealStageSelector from "@/components/chat/ContactDealStageSelector.vue";
 import OrderDetailModal from "./OrderDetailModal.vue";
+import LinkParentDialog from "@/components/chat/LinkParentDialog.vue";
 import { useOrderDraftStore } from "@/stores/use-workspace-sessions";
 
 const orderDraftStore = useOrderDraftStore();
@@ -1179,12 +1183,20 @@ const {
 
 // ════════ KiotViet POS Integration ════════
 const { getLinkStatus, linkContactToPos, unlinkContact } = usePosCommands();
-// Dùng chung biến toast đã khai báo ở bên dưới
+const toast = useToast();
 const loadingStatus = ref(false);
 const linking = ref(false);
 const unlinking = ref(false);
 const customerFormOpen = ref(false);
 const posLinkSearchOpen = ref(false);
+const posMenuRef = ref<HTMLElement | null>(null);
+const posMenuOpen = ref(false);
+
+function onDocClickForPosMenu(e: MouseEvent) {
+  if (posMenuOpen.value && posMenuRef.value && !posMenuRef.value.contains(e.target as Node)) {
+    posMenuOpen.value = false;
+  }
+}
 const posLinkStatus = ref<{
   linked: boolean;
   autoSuggest: boolean;
@@ -1192,6 +1204,39 @@ const posLinkStatus = ref<{
   posCustomerCode?: string;
   posCustomer?: any;
 }>({ linked: false, autoSuggest: false });
+
+const displayPosCode = computed(() => {
+  return (
+    posLinkStatus.value.posCustomerCode ||
+    (props.contact as any)?.posCustomerCode ||
+    null
+  );
+});
+
+function copyPosCode() {
+  if (!displayPosCode.value) {
+    openEditCustomerForm();
+    return;
+  }
+  navigator.clipboard
+    .writeText(displayPosCode.value)
+    .then(() => {
+      toast.success(`Đã sao chép mã POS: ${displayPosCode.value}`);
+    })
+    .catch(() => {});
+}
+
+const showLinkParentDialog = ref(false);
+
+function onLinkedParent() {
+  toast.success('Đã merge KH này vào KH Cha — conversations + friends đã chuyển');
+  emit('saved');
+}
+
+function openQuickNote() {
+  salesTab.value = 'notes';
+  toast.push('Đã chuyển sang tab Ghi chú');
+}
 
 const selectedPosCustomer = ref<any>(null);
 
@@ -1230,6 +1275,9 @@ watch(
   (newId) => {
     if (newId) {
       checkPosStatus();
+      salesTab.value = "overview";
+      overviewSubTab.value = "360";
+      posMenuOpen.value = false;
     }
   },
   { immediate: true }
@@ -1390,13 +1438,20 @@ const mainTab = ref<"profile" | "media" | "followup">("profile");
 const activeTab = ref<"profile" | "crm" | "activity">("profile");
 
 // Sales & Customer Service Workspace Optimization state:
-const salesTab = ref<"overview" | "orders" | "appointment" | "notes">(
-  "overview"
-);
+const salesTab = ref<
+  "overview" | "inventory" | "orders" | "debt" | "appointment" | "notes"
+>("overview");
+const overviewSubTab = ref<
+  "360" | "purchased" | "journey" | "ai_interests" | "activity"
+>("360");
 // showCreateOrderDialog is now managed by orderDraftStore
 
 function openOrderForContact() {
-  if (!posLinkStatus.value.linked) return;
+  if (!posLinkStatus.value.linked) {
+    posLinkSearchOpen.value = true;
+    toast.info("Vui lòng liên kết khách hàng với POS để lập đơn");
+    return;
+  }
   const avatar =
     props.contact?.avatarUrl || activeFriend.value?.zaloAvatarUrl || undefined;
   orderDraftStore.openDraft({
@@ -1410,6 +1465,20 @@ function openOrderForContact() {
   });
 }
 const customerType = ref<string | null>("VIP");
+
+const displayDebtAmount = computed<number | null>(() => {
+  if (customer360.value?.commerce?.debt?.totalDebt != null) {
+    return customer360.value.commerce.debt.totalDebt;
+  }
+  if (orderSummary.value?.actualDebt != null) {
+    return orderSummary.value.actualDebt;
+  }
+  if (posLinkStatus.value?.posCustomer?.debt != null) {
+    const d = Number(posLinkStatus.value.posCustomer.debt);
+    return isNaN(d) ? null : d;
+  }
+  return null;
+});
 
 // Order list from local Read Model
 interface OrderListItem {
@@ -1659,12 +1728,14 @@ function onAppointmentCreated() {
 function onGlobalAppointmentCreated() {
   onAppointmentCreated();
 }
-onMounted(() =>
-  window.addEventListener("appointment-created", onGlobalAppointmentCreated)
-);
+onMounted(() => {
+  window.addEventListener("appointment-created", onGlobalAppointmentCreated);
+  window.addEventListener("click", onDocClickForPosMenu);
+});
 onBeforeUnmount(() => {
   clearCollapseTimer();
   window.removeEventListener("appointment-created", onGlobalAppointmentCreated);
+  window.removeEventListener("click", onDocClickForPosMenu);
 });
 
 // ════════ Relations data (friends per nick = KH Con) — fetch khi đổi contact ═══
@@ -1803,7 +1874,6 @@ const activeFriend = computed<FriendItem | null>(() => {
   );
 });
 
-const toast = useToast();
 const router = useRouter();
 
 // Khi đổi sang contact mới, reset về tab Hồ sơ + refetch relations
@@ -3700,63 +3770,585 @@ function onInsertSuggestionText(text: string) {
   width: 100%;
 }
 
-/* ── Pill Tabs — Material Symbols ── */
-.sp-pill-nav {
-  background: #fff;
+/* ── SP COMPACT HEADER ── */
+.sp-compact-header {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid #e8eaef;
-  padding: 8px 10px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   flex-shrink: 0;
 }
-.sp-pill-tabs {
+.sp-compact-main {
   display: flex;
-  gap: 3px;
-  background: #f4f5f7;
-  border-radius: 10px;
-  padding: 3px;
+  align-items: center;
+  gap: 10px;
 }
-.sp-pill-tab {
+.sp-vip-ring-mini {
+  position: absolute;
+  inset: -2px;
+  border-radius: 50%;
+  border: 2px solid #8b5cf6;
+  pointer-events: none;
+}
+.sp-compact-info {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.sp-compact-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.sp-name-input-compact {
+  font-size: 14px;
+  font-weight: 700;
+  color: #1e293b;
   background: transparent;
   border: none;
-  border-radius: 8px;
-  padding: 5px 2px;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  padding: 0;
+  flex: 1;
+  min-width: 0;
+  transition: border-color 0.15s ease;
+}
+.sp-name-input-compact:hover {
+  border-bottom-color: #cbd5e1;
+}
+.sp-name-input-compact:focus {
+  border-bottom-color: #2563eb;
+}
+.sp-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.sp-action-icon-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+.sp-action-icon-btn:hover,
+.sp-action-icon-btn.is-active {
+  background: #f1f5f9;
+  color: #1e293b;
+}
+.sp-action-icon-btn.is-active {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.sp-action-icon-btn .material-symbols-outlined {
+  font-size: 16px !important;
+}
+
+/* ── POS QUICK ACTIONS INLINE MENU PANEL ── */
+.sp-pos-menu-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.sp-pos-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  min-width: 200px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.06);
+  padding: 4px;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: spPosMenuIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.sp-pos-menu-group-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #94a3b8;
+  padding: 5px 8px 2px;
+}
+.sp-pos-menu-item .text-purple {
+  color: #8b5cf6 !important;
+}
+.sp-pos-menu-item .text-amber {
+  color: #d97706 !important;
+}
+@keyframes spPosMenuIn {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.sp-pos-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: #334155;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+  white-space: nowrap;
+}
+.sp-pos-menu-item:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+.sp-pos-menu-item .material-symbols-outlined {
+  font-size: 16px !important;
+}
+.sp-pos-menu-item.text-error {
+  color: #dc2626;
+}
+.sp-pos-menu-item.text-error:hover:not(:disabled) {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+.sp-pos-menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sp-pos-menu-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 3px 0;
+}
+.sp-close-btn:hover {
+  background: #fee2e2 !important;
+  color: #ef4444 !important;
+}
+.sp-uid-pill {
+  font-size: 10px;
+  font-family: monospace;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.sp-compact-sub-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+.sp-compact-phone {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #475569;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+.sp-compact-phone:focus-within {
+  border-color: #3b82f6;
+  background: #ffffff;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.12);
+}
+.sp-phone-icon {
+  font-size: 12px !important;
+  color: #64748b;
+  flex-shrink: 0;
+}
+.sp-phone-input-compact {
+  font-size: 11px;
+  font-weight: 500;
+  color: #334155;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  width: 82px;
+  font-family: inherit;
+}
+.sp-phone-input-compact::placeholder {
+  color: #94a3b8;
+  font-style: italic;
+}
+.sp-pos-code-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #059669;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  user-select: all;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+.sp-pos-code-badge:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
+}
+.sp-pos-code-badge .sp-pos-icon {
+  font-size: 13px !important;
+  color: #059669;
+  flex-shrink: 0;
+}
+.sp-pos-prefix {
+  font-weight: 700;
+  font-size: 11px;
+}
+.sp-pos-code-text {
+  font-family: ui-monospace, monospace;
+}
+.sp-pos-chip-sub {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.sp-pos-chip-sub .sp-pos-icon {
+  font-size: 13px !important;
+  flex-shrink: 0;
+}
+.sp-pos-chip-sub.suggest {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+  animation: pulse 2s infinite;
+}
+.sp-pos-chip-sub.suggest:hover {
+  background: #fef3c7;
+  border-color: #f59e0b;
+}
+.sp-pos-chip-sub.unlinked {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.sp-pos-chip-sub.unlinked:hover {
+  background: #e2e8f0;
+  color: #334155;
+}
+.sp-pos-chip-mini {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   font-size: 10px;
   font-weight: 600;
-  color: #7a869a;
+  padding: 2px 6px;
+  border-radius: 6px;
   cursor: pointer;
-  transition: all 0.18s ease;
-  white-space: nowrap;
-  outline: none;
+  transition: all 0.15s ease;
+}
+.sp-pos-chip-mini .material-symbols-outlined {
+  font-size: 12px !important;
+}
+.sp-pos-chip-mini.linked {
+  background: #ecfdf5;
+  color: #059669;
+  border: 1px solid #a7f3d0;
+}
+.sp-pos-chip-mini.suggest {
+  background: #fffbeb;
+  color: #d97706;
+  border: 1px solid #fde68a;
+  animation: pulse 2s infinite;
+}
+.sp-pos-chip-mini.unlinked {
+  background: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+.sp-compact-suggest-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: #92400e;
+}
+.sp-btn-link-now {
+  background: #d97706;
+  color: #fff;
+  border: none;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.sp-compact-cta {
+  width: 100%;
+  height: 32px;
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 3px rgba(37, 99, 235, 0.25);
+  font-family: inherit;
+}
+.sp-compact-cta:hover:not(:disabled) {
+  background: #1d4ed8;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.35);
+  transform: translateY(-1px);
+}
+.sp-compact-cta:active:not(:disabled) {
+  transform: translateY(0);
+}
+.sp-compact-cta:disabled,
+.sp-compact-cta.sp-cta-disabled {
+  background: #cbd5e1 !important;
+  color: #94a3b8 !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+.sp-compact-cta .sp-cta-icon {
+  font-size: 16px !important;
+}
+
+/* ── SP GRID LAUNCHER (2 hàng x 3 cột) ── */
+.sp-launcher-nav {
+  background: #ffffff;
+  border-bottom: 1px solid #e8eaef;
+  padding: 6px 8px;
+  flex-shrink: 0;
+}
+.sp-launcher-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+}
+.sp-launcher-btn {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   gap: 2px;
+  padding: 6px 2px;
+  border-radius: 9px;
+  border: 1px solid #e8eaef;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  outline: none;
   font-family: inherit;
 }
-.sp-pill-tab:hover {
-  background: #fff;
-  color: #2f6fed;
+.sp-launcher-btn:hover {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
 }
-.sp-pill-tab.active {
-  background: #2f6fed;
+.sp-launcher-btn.active {
+  background: #eff6ff;
+  border-color: #3b82f6;
+  box-shadow: 0 1px 4px rgba(59, 130, 246, 0.18);
+}
+.sp-launcher-icon-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.sp-launcher-badge {
+  position: absolute;
+  top: -4px;
+  right: -9px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: #2563eb;
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+}
+.sp-launcher-badge-debt {
+  top: -6px;
+  right: -13px;
+  font-size: 8px;
+  padding: 1px 4px;
+  border-radius: 4px;
+  line-height: 1.1;
+}
+.sp-launcher-badge-debt.is-debt {
+  background: #ef4444;
   color: #ffffff;
-  box-shadow: 0 1px 4px rgba(47, 111, 237, 0.28);
 }
-.sp-tab-icon {
-  font-size: 16px !important;
-  font-variation-settings:
-    "FILL" 0,
-    "wght" 400,
-    "GRAD" 0,
-    "opsz" 20;
+.sp-launcher-badge-debt.is-clean {
+  background: #10b981;
+  color: #ffffff;
+}
+.sp-launcher-dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f59e0b;
+  border: 1.5px solid #fff;
+}
+.sp-launcher-icon {
+  font-size: 18px !important;
+  color: #64748b;
+  transition: color 0.18s ease;
   line-height: 1;
 }
-.sp-pill-tab.active .sp-tab-icon {
-  font-variation-settings:
-    "FILL" 1,
-    "wght" 500,
-    "GRAD" 0,
-    "opsz" 20;
+.sp-launcher-btn.active .sp-launcher-icon {
+  color: #2563eb;
+  font-variation-settings: 'FILL' 1;
+}
+.sp-launcher-label {
+  font-size: 10px;
+  font-weight: 600;
+  color: #475569;
+  line-height: 1.2;
+}
+.sp-launcher-btn.active .sp-launcher-label {
+  color: #1d4ed8;
+  font-weight: 700;
+}
+
+/* ── SUB-CIRCLE NAV (Overview 5 sub-icons with labels) ── */
+.sp-sub-circle-nav {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 8px;
+  padding: 2px 2px 8px;
+  margin-bottom: 6px;
+  border-bottom: 1px dashed #e2e8f0;
+}
+.sp-circle-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 6px;
+  outline: none;
+  transition: all 0.15s ease;
+}
+.sp-circle-item .sp-circle-label {
+  font-size: 9.5px;
+  color: #64748b;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: color 0.15s ease;
+}
+.sp-circle-item:hover .sp-circle-label,
+.sp-circle-item.active .sp-circle-label {
+  color: #2563eb;
+  font-weight: 600;
+}
+.sp-circle-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  padding: 0;
+}
+.sp-circle-btn .material-symbols-outlined {
+  font-size: 15px !important;
+  line-height: 1;
+}
+.sp-circle-item:hover .sp-circle-btn {
+  background: #e2e8f0;
+  color: #1e293b;
+  transform: translateY(-1px);
+}
+.sp-circle-item.active .sp-circle-btn {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+  transform: translateY(-1px);
+}
+.sp-sub-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.sp-c360-empty-sub {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 36px 16px;
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+}
+.sp-c360-empty-sub .material-symbols-outlined {
+  font-size: 28px !important;
+  color: #cbd5e1;
 }
 
 /* ── Tab Content — neutral Smax canvas ── */

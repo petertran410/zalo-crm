@@ -909,12 +909,12 @@ const gridStyle = computed(() => {
   if (hasInfo) {
     return {
       gridTemplateColumns: `${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
-      gap: '5px',
+      gap: '8px',
     };
   }
   return {
     gridTemplateColumns: `${convColWidth.value}px 6px 1fr`,
-    gap: '5px',
+    gap: '8px',
   };
 });
 </script>
@@ -931,7 +931,7 @@ const gridStyle = computed(() => {
   width: 100%;
   overflow: hidden;
   background: transparent;
-  gap: 5px;
+  gap: 8px;
 }
 
 /* Khi info-panel đóng, col 4 collapse → grid auto-adjust */
@@ -967,7 +967,7 @@ const gridStyle = computed(() => {
   min-width: 0; min-height: 0;
   height: 100%;
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.72) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -976,7 +976,7 @@ const gridStyle = computed(() => {
 }
 
 :deep(.filter-sidebar) {
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.5) !important;
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
 }
