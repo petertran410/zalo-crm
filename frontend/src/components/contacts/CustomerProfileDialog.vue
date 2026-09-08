@@ -87,7 +87,11 @@
                 <div class="cpd-card">
                   <h4>👤 Thông tin cá nhân</h4>
                   <div class="kv">
-                    <span class="k">Tên khách</span>
+                    <span class="k">Tên POS</span>
+                    <span class="v"><input v-model="form.posName" class="cpd-in" readonly /></span>
+                  </div>
+                  <div class="kv">
+                    <span class="k">Tên đầy đủ</span>
                     <span class="v"><input v-model="form.fullName" class="cpd-in" /></span>
                   </div>
                   <div class="kv">
@@ -367,9 +371,10 @@
                     <span class="s-av" :style="{ background: friendBg(f) }">{{ friendInitials(f) }}</span>
                     <span class="nm">{{ friendName(f) }}</span>
                     <span v-if="f.isWinner" class="winb">🏆 Nick chính</span>
-                    <span class="kb" :class="kbChipClass(f.relationshipKind)">{{ kbLabel(f.relationshipKind) }}</span>
-                    <span class="chatdot" :class="{ off: !f.hasConversation }">
-                      {{ f.hasConversation ? '💬 đang chat' : 'ø chưa chat' }}
+      // Use the shared display name chain for the visible 'Tên đầy đủ' but ignore
+      // the stored Contact.fullName (which we're using for POS name). This keeps
+      // the display logic as crmName → Zalo → alias → UID.
+      fullName: displayCustomerName({ contact: { crmName: ct.crmName, fullName: null } }, ''),
                     </span>
                     <span class="s-right">
                       <span class="s-score" :class="friendScoreClass(f.leadScore)">{{ f.leadScore || 0 }}</span>
@@ -459,6 +464,7 @@ import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { formatRecentDateTime, cleanPreview } from '@/composables/use-contacts';
+import { displayCustomerName } from '@/composables/use-friend-display';
 import PrivateBlur from '@/components/privacy/PrivateBlur.vue';
 import TagCrmBar from '@/components/chat/TagCrmBar.vue';
 import CustomerDebtWidget from '@/components/pos/CustomerDebtWidget.vue';
@@ -545,6 +551,7 @@ const allUsers = ref<Array<{ id: string; fullName: string }>>([]);
 
 // ── Form state (field cấp Contact sửa được) ──
 const form = ref({
+  posName: '' as string | null,
   fullName: '' as string | null,
   gender: null as string | null,
   birthYear: '' as string | number | null,
@@ -561,7 +568,8 @@ const newTag = ref('');
 
 function hydrateForm(ct: Contact) {
   form.value = {
-    fullName: ct.fullName || ct.crmName || '',
+    posName: ct.fullName || (ct as any).posCustomerName || (ct as any).posCustomer?.name || '',
+    fullName: displayCustomerName({ contact: ct }, ''),
     gender: ct.gender ?? null,
     birthYear: ct.birthYear ?? (ct.birthDate ? new Date(ct.birthDate).getFullYear() : ''),
     phone: ct.phone || '',
@@ -577,7 +585,7 @@ function hydrateForm(ct: Contact) {
 
 function emptyForm() {
   form.value = {
-    fullName: '', gender: null, birthYear: '', phone: '', extraPhones: [],
+    posName: '', fullName: '', gender: null, birthYear: '', phone: '', extraPhones: [],
     email: '', occupation: '', addressLine: '', source: '', assignedUserId: null, tags: [],
   };
 }
@@ -1036,7 +1044,8 @@ async function copyAttr(code: string) {
 .empty { color: var(--smax-grey-400); }
 
 /* Overview grid */
-.cpd-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.cpd-grid2 { display: grid; grid-template-columns: 1fr; gap: 18px; }
+/* keep mobile rule for compatibility */
 @media (max-width: 880px) { .cpd-grid2 { grid-template-columns: 1fr; } }
 .cpd-card { border: 1px solid var(--smax-grey-200); border-radius: 9px; overflow: hidden; }
 .cpd-card h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--smax-grey-700); font-weight: 700; padding: 9px 13px; background: var(--smax-grey-50); border-bottom: 1px solid var(--smax-grey-200); }

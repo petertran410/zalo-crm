@@ -11,6 +11,7 @@ dist/
 backups/
 .DS_Store
 .gstack/
+compare/
 
 ui-smax
 

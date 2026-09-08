@@ -416,7 +416,12 @@
             <div class="ppl-grid2">
               <label v-for="fd in personalFields" :key="fd.key" class="ppl-input-box">
                 <span class="ppl-input-l">{{ fd.label }}</span>
-                <input v-model="(draft as any)[fd.key]" :placeholder="fd.ph" @change="dirty = true" />
+                <input
+                  v-model="(draft as any)[fd.key]"
+                  :placeholder="fd.ph"
+                  :readonly="fd.key === 'posName'"
+                  @change="fd.key !== 'posName' && (dirty = true)"
+                />
               </label>
             </div>
           </div>
@@ -447,24 +452,23 @@
                 </select>
               </div>
               <div class="ppl-input-box">
-                <span class="ppl-input-l">Sản phẩm quan tâm</span>
-                <input
-                  v-model="careFields.productInterest"
-                  placeholder="+ thêm"
-                  @input="productInterestDerived = false"
-                  @change="dirtyCare = true"
-                />
-                <span v-if="productInterestDerived" class="ppl-field-hint">
-                  Từ hoá đơn POS — {{ careHistory?.derived.windowMonths ?? 2 }} tháng gần nhất<template v-if="careHistory?.derived.rankedBy === 'quantity'"> · xếp theo số lượng mua</template>
-                </span>
-              </div>
-              <div class="ppl-input-box">
                 <span class="ppl-input-l">Workshop đã tham gia</span>
                 <input v-model="careFields.workshopsAttended" placeholder="+ thêm" @change="dirtyCare = true" />
               </div>
               <div class="ppl-input-box">
                 <span class="ppl-input-l">Phàn nàn</span>
                 <input v-model="careFields.complaints" placeholder="+ thêm" @change="dirtyCare = true" />
+              </div>
+              <div class="ppl-input-box">
+                <span class="ppl-input-l">Sản phẩm quan tâm</span>
+                <textarea
+                  ref="productInterestEl"
+                  v-model="productInterestLines"
+                  placeholder="+ thêm (mỗi dòng một sản phẩm)"
+                  @input="onProductInterestInput"
+                  @change="dirtyCare = true"
+                ></textarea>
+                
               </div>
             </div>
           </div>
@@ -677,7 +681,7 @@
  * lastActivity, và sort chỉ nhận "score" nên sắp xếp theo cột khác phải làm client-side trên
  * các dòng đã tải.
  */
-import { ref, reactive, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { ref, reactive, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { api } from '@/api/index';
 import {
@@ -1376,7 +1380,42 @@ const careLoading = ref(false);
 const careSaving = ref(false);
 const productInterestDerived = ref(false);
 
+// Expose product interests as newline-separated lines in the UI while keeping
+// storage as a comma-separated string for compatibility with existing APIs.
+const productInterestLines = computed<string>({
+  get() {
+    const v = String(careFields.productInterest || '');
+    const parts = v.split(',').map((s) => s.trim()).filter(Boolean);
+    return parts.join('\n');
+  },
+  set(val: string) {
+    const parts = String(val || '').split('\n').map((s) => s.trim()).filter(Boolean);
+    careFields.productInterest = parts.join(', ');
+    dirtyCare.value = true;
+    productInterestDerived.value = false;
+  },
+});
+
+// Auto-resize textarea: keep a ref to the element and resize on input / mount.
+const productInterestEl = ref<HTMLElement | null>(null);
+function resizeProductInterest() {
+  const el = productInterestEl.value as HTMLTextAreaElement | null;
+  if (!el) return;
+  el.style.height = 'auto';
+  // Add small padding to ensure caret isn't at the very bottom
+  el.style.height = Math.max(el.scrollHeight, 120) + 'px';
+}
+function onProductInterestInput() {
+  productInterestDerived.value = false;
+  // let v-model update first
+  nextTick(resizeProductInterest);
+}
+
+onMounted(() => nextTick(resizeProductInterest));
+watch(productInterestLines, () => nextTick(resizeProductInterest));
+
 const personalFields = [
+  { key: 'posName', label: 'Tên POS', ph: '' },
   { key: 'fullName', label: 'Tên đầy đủ', ph: 'Theo hồ sơ' },
   { key: 'birthYear', label: 'Năm sinh', ph: 'YYYY' },
   { key: 'phone', label: 'SĐT chính', ph: '09…' },
@@ -1404,7 +1443,16 @@ async function openDrawer(row: Contact) {
 function hydrateDraft(c: Contact) {
   Object.keys(draft).forEach((k) => delete draft[k]);
   Object.assign(draft, {
-    fullName: c.fullName ?? '', birthYear: c.birthYear ?? '',
+    // Move existing stored fullName (often used for POS name) into `posName`.
+    posName: c.fullName || (c as any).posCustomerName || (c as any).posCustomer?.name || '',
+    // Compute displayed fullName using shared fallback chain but IGNORE the stored
+    // `fullName` (which we now repurpose for POS). This forces the chain to
+    // prefer `crmName` → Zalo display → alias → UID instead of the stored value.
+    fullName: (() => {
+      const fl = toFriendLike(c);
+      if (fl.contact) fl.contact.fullName = null;
+      return displayCustomerName(fl, '');
+    })(),
     phone: c.phone ?? '', email: c.email ?? '',
     province: c.province ?? '', district: c.district ?? '',
     assignedUserId: c.assignedUserId ?? null, statusId: c.statusId ?? null,
@@ -2155,7 +2203,7 @@ onBeforeUnmount(() => {
 }
 .ppl-seg-i.on { background: var(--pp-accent); color: var(--pp-onAccent); }
 
-.ppl-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 11px; }
+.ppl-grid2 { display: grid; grid-template-columns: 1fr; gap: 11px; }
 .ppl-field { display: flex; flex-direction: column; gap: 6px; }
 .ppl-field.grow { flex: 1; }
 .ppl-field-l { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--pp-muted); font-weight: 800; }
@@ -2459,6 +2507,12 @@ onBeforeUnmount(() => {
 }
 .ppl-input-box input { cursor: text; }
 .ppl-input-box input.mono { font-family: var(--mono); font-size: 13px; }
+
+.ppl-input-box textarea {
+  width: 100%; border: 0; background: transparent; color: var(--pp-fg);
+  font-size: 13.5px; font-weight: 600; padding: 8px 0; cursor: text;
+  min-height: 120px; resize: vertical; line-height: 1.6; white-space: pre-wrap;
+}
 
 .ppl-vars { max-height: 250px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 3px; }
 .ppl-var { display: flex; align-items: center; gap: 11px; padding: 8px 12px; border-radius: 11px; background: var(--pp-card); cursor: pointer; font-size: 12px; }
