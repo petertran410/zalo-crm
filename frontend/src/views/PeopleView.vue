@@ -378,10 +378,10 @@
               <h2 :class="{ unnamed: !hasName(detail) }">{{ displayNameOf(detail) }}</h2>
               <span v-if="statusNameOf(detail)" class="ppl-dr-status">{{ statusNameOf(detail) }}</span>
             </div>
-            <div class="ppl-dr-meta">{{ genderAgeOf(detail) }} · {{ detail.phone || 'Chưa có SĐT' }} · {{ locationOf(detail) || 'Chưa có địa chỉ' }}</div>
+            <div v-if="metaLine(detail)" class="ppl-dr-meta">{{ metaLine(detail) }}</div>
             <div class="ppl-dr-pills">
-              <span class="ppl-dr-pill"><span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(detail)) }"></span>{{ relLabel(primaryRelOf(detail)) }}</span>
-              <span class="ppl-dr-pill">{{ detail.email || 'Chưa có email' }}</span>
+              <span v-if="relLabel(primaryRelOf(detail))" class="ppl-dr-pill"><span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(detail)) }"></span>{{ relLabel(primaryRelOf(detail)) }}</span>
+              <span v-if="detail.email" class="ppl-dr-pill">{{ detail.email }}</span>
             </div>
           </div>
           <button class="ppl-dr-x" @click="closeDrawer">×</button>
@@ -1303,11 +1303,13 @@ function genderLabel(g?: string | null) {
   if (g === 'male') return 'Nam';
   if (g === 'female') return 'Nữ';
   if (g === 'other') return 'Khác';
-  return '—';
+  return '';
 }
 function genderAgeOf(c: Contact) {
-  const age = c.birthYear ? `${new Date().getFullYear() - c.birthYear} tuổi` : 'chưa rõ tuổi';
-  return `${genderLabel(c.gender)} · ${age}`;
+  const age = c.birthYear ? `${new Date().getFullYear() - c.birthYear} tuổi` : '';
+  const g = genderLabel(c.gender);
+  if (!g && !age) return '';
+  return g && age ? `${g} · ${age}` : (g || age);
 }
 function locationOf(c: Contact) {
   return [c.district, c.province].filter(Boolean).join(', ');
@@ -1339,7 +1341,16 @@ function primaryRelOf(c: Contact) {
   return c.friends?.[0]?.relationshipKind || '';
 }
 function relLabel(kind: string) {
-  return REL_OPTIONS.find((r) => r.value === kind)?.label || 'Chưa có kênh';
+  return REL_OPTIONS.find((r) => r.value === kind)?.label || '';
+}
+function metaLine(c: Contact) {
+  const parts: string[] = [];
+  const ga = genderAgeOf(c);
+  if (ga) parts.push(ga);
+  if (c.phone) parts.push(c.phone);
+  const loc = locationOf(c);
+  if (loc) parts.push(loc);
+  return parts.join(' · ');
 }
 function relColor(kind: string) {
   if (kind === 'friend') return 'var(--pp-good)';

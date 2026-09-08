@@ -267,12 +267,12 @@
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">UID</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
                         <td class="attr-val"><span class="dim">per-nick → xem bảng trên / tab "Nick chăm"</span></td>
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Có Zalo?</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
                         <td class="attr-val"><span class="zpill" :class="zaloPillClass">{{ zaloPillText }}</span></td>
                       </tr>
                       <tr class="attr-itrow">
@@ -294,27 +294,27 @@
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Tổng lịch hẹn</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
                         <td class="attr-val">{{ cc.totalAppointments ?? 0 }}</td>
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Tạo lúc</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
-                        <td class="attr-val"><span v-if="cc.createdAt">{{ formatDate(cc.createdAt) }}</span><span v-else class="dim">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
+                        <td class="attr-val"><span v-if="cc.createdAt">{{ formatDate(cc.createdAt) }}</span></td>
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Cập nhật</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
-                        <td class="attr-val"><span v-if="cc.updatedAt">{{ formatDate(cc.updatedAt) }}</span><span v-else class="dim">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
+                        <td class="attr-val"><span v-if="cc.updatedAt">{{ formatDate(cc.updatedAt) }}</span></td>
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Liên hệ đầu</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
-                        <td class="attr-val"><span v-if="cc.firstContactDate">{{ formatDate(cc.firstContactDate) }}</span><span v-else class="dim">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
+                        <td class="attr-val"><span v-if="cc.firstContactDate">{{ formatDate(cc.firstContactDate) }}</span></td>
                       </tr>
                       <tr class="attr-itrow">
                         <td class="attr-lbl">Vào pool</td>
-                        <td class="attr-code"><span class="nocode">—</span></td>
+                        <td class="attr-code"><span class="nocode"></span></td>
                         <td class="attr-val">{{ cc.pooledCount ?? 0 }} lần</td>
                       </tr>
                     </tbody>
@@ -371,10 +371,6 @@
                     <span class="s-av" :style="{ background: friendBg(f) }">{{ friendInitials(f) }}</span>
                     <span class="nm">{{ friendName(f) }}</span>
                     <span v-if="f.isWinner" class="winb">🏆 Nick chính</span>
-      // Use the shared display name chain for the visible 'Tên đầy đủ' but ignore
-      // the stored Contact.fullName (which we're using for POS name). This keeps
-      // the display logic as crmName → Zalo → alias → UID.
-      fullName: displayCustomerName({ contact: { crmName: ct.crmName, fullName: null } }, ''),
                     </span>
                     <span class="s-right">
                       <span class="s-score" :class="friendScoreClass(f.leadScore)">{{ f.leadScore || 0 }}</span>
