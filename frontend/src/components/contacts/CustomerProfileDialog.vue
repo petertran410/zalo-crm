@@ -371,7 +371,6 @@
                     <span class="s-av" :style="{ background: friendBg(f) }">{{ friendInitials(f) }}</span>
                     <span class="nm">{{ friendName(f) }}</span>
                     <span v-if="f.isWinner" class="winb">🏆 Nick chính</span>
-                    </span>
                     <span class="s-right">
                       <span class="s-score" :class="friendScoreClass(f.leadScore)">{{ f.leadScore || 0 }}</span>
                     </span>
