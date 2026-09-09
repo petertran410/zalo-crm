@@ -1,5 +1,5 @@
 <template>
-  <v-app class="sl-app">
+  <v-app class="sl-app" :class="workspaceStore.activeConfig.themeClass">
 
 
     <!-- Simulation Mode Banner -->

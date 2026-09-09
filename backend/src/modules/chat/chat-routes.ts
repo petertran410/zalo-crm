@@ -7,7 +7,7 @@ import { Prisma } from '@prisma/client';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { requireGrant } from '../rbac/rbac-middleware.js';
-import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
+import { requireZaloAccess, hasZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { DISPLAYABLE_NICK_WHERE } from '../zalo/zalo-scope.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
@@ -1653,10 +1653,19 @@ export async function chatRoutes(app: FastifyInstance) {
     if (conversation.zaloAccount.privacyMode === 'main') {
       const senderUserId = (user as any).userId ?? user.id;
       if (conversation.zaloAccount.ownerUserId !== senderUserId) {
-        return reply.status(403).send({
-          error: 'Nick này đang bật Riêng tư — chỉ chính chủ mới gửi tin nhắn được. Vui lòng nhờ chủ nick gửi.',
-          code: 'PRIVACY_LOCKED',
+        const canChat = await hasZaloAccess({
+          userId: senderUserId,
+          orgId: user.orgId,
+          role: user.role,
+          zaloAccountId: conversation.zaloAccountId,
+          minPermission: 'chat',
         });
+        if (!canChat) {
+          return reply.status(403).send({
+            error: 'Nick này đang bật Riêng tư — chỉ chính chủ hoặc người được cấp quyền mới gửi tin nhắn được.',
+            code: 'PRIVACY_LOCKED',
+          });
+        }
       }
     }
 
@@ -1834,6 +1843,10 @@ export async function chatRoutes(app: FastifyInstance) {
       // Set metadata.sender.name ngay để socket emit đủ dữ liệu, FE render được badge tên sale mà
       // không phải đợi tải lại trang.
       let message;
+      const senderUserId = (user as any).userId ?? user.id;
+      const isDelegatedSend = Boolean(
+        conversation.zaloAccount.ownerUserId && conversation.zaloAccount.ownerUserId !== senderUserId,
+      );
       try {
         message = await prisma.message.create({
           data: {
@@ -1854,6 +1867,14 @@ export async function chatRoutes(app: FastifyInstance) {
             clientEchoId: echoId,
             metadata: {
               sender: { kind: 'user_crm', name: await getUserFullName(user.id) },
+              ...(isDelegatedSend
+                ? {
+                    delegated: {
+                      operatorUserId: senderUserId,
+                      salesOwnerUserId: conversation.zaloAccount.ownerUserId,
+                    },
+                  }
+                : {}),
               // 2026-06-24 — tin gửi THẤT BẠI (Zalo từ chối): lưu theo schema Bug B 2026-06-22
               // (message-bubble đọc metadata.sendStatus + failReason) → hiện "Gửi thất bại: <lý do>".
               ...(sendFail
@@ -1863,6 +1884,26 @@ export async function chatRoutes(app: FastifyInstance) {
           },
           include: { repliedBy: { select: { id: true, fullName: true, email: true } } },
         });
+
+        if (isDelegatedSend) {
+          void Promise.resolve(
+            prisma.activityLog.create({
+              data: {
+                orgId: user.orgId,
+                userId: user.id,
+                actorType: 'user',
+                action: 'message.send_as_delegate',
+                entityType: 'conversation',
+                entityId: id,
+                details: {
+                  zaloAccountId: conversation.zaloAccountId,
+                  salesOwnerUserId: conversation.zaloAccount.ownerUserId,
+                  messageId: message.id,
+                },
+              },
+            }),
+          ).catch((logErr) => logger.warn('[chat] ActivityLog delegate error:', logErr));
+        }
       } catch (createErr) {
         // 2026-06-15 IDEMPOTENCY RACE: 2 request cùng echoId chạy ~đồng thời → create
         // thứ 2 ném P2002 (unique violation conversationId_clientEchoId). Đã gửi Zalo
@@ -1977,14 +2018,23 @@ export async function chatRoutes(app: FastifyInstance) {
     const instance = zaloPool.getInstance(conversation.zaloAccountId);
     if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
 
-    // Gate 4: privacy (nick 'main' chỉ chính chủ gửi)
+    // Gate 4: privacy (nick 'main' chỉ chính chủ gửi hoặc người có quyền chat)
     if (conversation.zaloAccount.privacyMode === 'main') {
       const senderUserId = (user as any).userId ?? user.id;
       if (conversation.zaloAccount.ownerUserId !== senderUserId) {
-        return reply.status(403).send({
-          error: 'Nick này đang bật Riêng tư — chỉ chính chủ mới gửi tin nhắn được. Vui lòng nhờ chủ nick gửi.',
-          code: 'PRIVACY_LOCKED',
+        const canChat = await hasZaloAccess({
+          userId: senderUserId,
+          orgId: user.orgId,
+          role: user.role,
+          zaloAccountId: conversation.zaloAccountId,
+          minPermission: 'chat',
         });
+        if (!canChat) {
+          return reply.status(403).send({
+            error: 'Nick này đang bật Riêng tư — chỉ chính chủ hoặc người được cấp quyền mới gửi tin nhắn được.',
+            code: 'PRIVACY_LOCKED',
+          });
+        }
       }
     }
 

@@ -1,6 +1,20 @@
 <template>
   <MobileChatView v-if="isMobile" />
-  <div v-else class="smax-chat-grid">
+  <div v-else class="cs-chat-wrapper">
+    <!-- Top Scope Banner when in Delegated Mode -->
+    <div v-if="csWorkspace.isDelegatedMode" class="cs-delegated-top-bar">
+      <div class="cs-delegated-info">
+        <span class="cs-delegated-badge">Đang trực thay Sales</span>
+        <strong class="cs-delegated-name">{{ csWorkspace.activeSalesTarget?.fullName }}</strong>
+        <span class="cs-delegated-nicks">({{ csWorkspace.activeSalesAccountIds.length }} nick Zalo)</span>
+      </div>
+      <button class="cs-delegated-change-btn" @click="returnToCsHome">
+        <v-icon size="14" class="mr-1">mdi-arrow-left</v-icon>
+        <span>Đổi Sales / Về Trang Chủ</span>
+      </button>
+    </div>
+
+    <div class="smax-chat-grid">
     <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
     <ConversationFilterSidebar
       :filters="inboxFilters"
@@ -80,6 +94,7 @@
       :editing-message="editingMessage"
       :typing-users="currentTypers"
       :show-contact-panel="showContactPanel"
+      :delegated-operator-info="delegatedOperatorInfo"
       class="smax-msg-col"
        @send="sendMessage"
        @open-media-tab="onOpenMediaTab"
@@ -127,6 +142,7 @@
       @saved="fetchConversations()"
       @status-changed="onPanelStatusChanged"
     />
+    </div>
   </div>
 </template>
 
@@ -144,6 +160,7 @@ import FolderManagePopup from '@/components/chat/FolderManagePopup.vue';
 import { useChat } from '@/composables/use-chat';
 import { useInboxFilters } from '@/composables/use-inbox-filters';
 import { useAuthStore } from '@/stores/auth';
+import { useCsWorkspaceStore } from '@/stores/use-cs-workspace';
 import { usePrivacyStore } from '@/stores/privacy';
 import { useChatOperations } from '@/composables/use-chat-operations';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
@@ -155,6 +172,19 @@ import { useMobile } from '@/composables/use-mobile';
 const { isMobile } = useMobile();
 const route = useRoute();
 const router = useRouter();
+const csWorkspace = useCsWorkspaceStore();
+
+const delegatedOperatorInfo = computed(() => {
+  if (!csWorkspace.isDelegatedMode || !csWorkspace.activeSalesTarget) return null;
+  return {
+    salesName: csWorkspace.activeSalesTarget.fullName,
+    nickName: selectedConv.value?.zaloAccount?.displayName || undefined,
+  };
+});
+
+function returnToCsHome() {
+  router.push('/cs-home');
+}
 
 const {
   conversations, selectedConvId, selectedConv, messages,
@@ -658,9 +688,12 @@ function onLabelsSynced() {
 onMounted(async () => {
   if (!isMobile.value) {
     await fetchZaloAccounts();
-    // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
-    // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.
-    restoreScope();
+    // Khôi phục scope theo Sales đang chọn nếu đang ở delegated mode, ngược lại khôi phục scope đã lưu
+    if (csWorkspace.isDelegatedMode && csWorkspace.activeSalesAccountIds.length > 0) {
+      workScope.setScope(csWorkspace.activeSalesAccountIds);
+    } else {
+      restoreScope();
+    }
     extraFilters.value = inboxFilters.buildQueryParams();
     fetchConversations();
     void fetchPriorityUnread(); // badge đậm tab Ưu tiên — load NGAY lúc mount (không debounce)
@@ -901,6 +934,75 @@ watch(searchQuery, () => {
   .smax-chat-grid { grid-template-columns: 320px 1fr; }
   .smax-chat-grid > :first-child,
   .smax-chat-grid > :nth-child(4) { display: none; }
+}
+
+/* CS Delegated Top Bar */
+.cs-chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+}
+
+.cs-delegated-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: linear-gradient(90deg, #F0FDFA 0%, #CCFBF1 100%);
+  border-bottom: 1px solid #99F6E4;
+  color: #0F766E;
+  font-size: 13px;
+  flex-shrink: 0;
+  z-index: 20;
+}
+
+.cs-delegated-info {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-delegated-badge {
+  font-size: 11px;
+  font-weight: 700;
+  background: #0D9488;
+  color: #FFFFFF;
+  padding: 2px 8px;
+  border-radius: 999px;
+  text-transform: uppercase;
+}
+
+.cs-delegated-name {
+  color: #0F172A;
+  font-size: 14px;
+}
+
+.cs-delegated-nicks {
+  font-size: 12px;
+  color: #0D9488;
+  font-weight: 500;
+}
+
+.cs-delegated-change-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  background: #FFFFFF;
+  border: 1px solid #99F6E4;
+  border-radius: 8px;
+  color: #0F766E;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.cs-delegated-change-btn:hover {
+  background: #E6FFFA;
+  border-color: #0D9488;
+  color: #0D9488;
 }
 
 </style>

@@ -187,6 +187,17 @@
         </div>
       </div>
 
+      <!-- CSKH Delegated Mode Banner -->
+      <div v-if="delegatedOperatorInfo" class="virtual-banner cskh-delegated-banner">
+        <div class="virtual-banner-icon cskh-icon"><v-icon size="14" color="#FFFFFF">mdi-shield-account</v-icon></div>
+        <div class="virtual-banner-body">
+          <div class="virtual-banner-title">Đang trực thay Sales {{ delegatedOperatorInfo.salesName }}</div>
+          <div class="virtual-banner-sub">
+            Tin nhắn gửi đi sẽ xuất phát từ nick Zalo <strong>{{ delegatedOperatorInfo.nickName || conversation?.zaloAccount?.displayName || 'của Sales' }}</strong>.
+          </div>
+        </div>
+      </div>
+
       <!-- ════════ Messages ════════ -->
       <div ref="messagesContainer" class="messages chat-messages-area" :class="{ 'is-virtual-mode': isVirtualConv }">
         <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-2" />
@@ -884,6 +895,7 @@ const props = defineProps<{
   replyingTo?: Message | null;
   editingMessage?: Message | null;
   typingUsers?: { userId: string; userName: string }[];
+  delegatedOperatorInfo?: { salesName: string; nickName?: string } | null;
 }>();
 
 const emit = defineEmits<{
@@ -3427,6 +3439,19 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .archived-banner .virtual-banner-icon { background: #9ca3af; }
 .archived-banner .virtual-banner-sub { color: #6b7280; }
+
+/* CSKH Delegated Banner */
+.cskh-delegated-banner {
+  background: linear-gradient(90deg, #f0fdfa, #ccfbf1);
+  border-bottom: 1px solid #99f6e4;
+  color: #0f766e;
+}
+.cskh-delegated-banner .cskh-icon {
+  background: #0d9488;
+}
+.cskh-delegated-banner .virtual-banner-sub {
+  color: #0f766e;
+}
 .nick-archived-chip {
   display: inline-flex;
   align-items: center;

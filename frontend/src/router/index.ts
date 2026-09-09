@@ -67,6 +67,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
+    path: "/cs-home",
+    name: "CsHome",
+    component: () => import("@/views/CsHomeView.vue"),
+    meta: { requiresAuth: true, resource: "conversation" },
+  },
+  {
     path: "/cs-chat/:convId?",
     name: "CsChat",
     component: () => import("@/views/CsChatView.vue"),
@@ -537,6 +543,9 @@ router.beforeEach(async (to, _from, next) => {
       if (workspaceStore.activeWorkspaceId === "sales") {
         return next("/sales-chat");
       }
+      if (workspaceStore.activeWorkspaceId === "customer-care") {
+        return next("/cs-home");
+      }
     }
     // RBAC page-level guard 2026-06-08 — chặn theo nhóm quyền (grants).
     // Route khai báo meta.resource → user phải canAccess(resource, action) mới vào.
@@ -581,6 +590,7 @@ const ROUTE_TITLES: Record<string, string> = {
   ChannelConnections: "Kênh Kết Nối",
   Chat: "Hội thoại",
   SalesChat: "Hội thoại (Sales)",
+  CsHome: "Trang chủ điều phối",
   CsChat: "Hội thoại (CS)",
   Contacts: "Khách hàng",
   Media: "Kho lưu trữ",

@@ -1,5 +1,5 @@
 /**
- * Customer Care Workspace — Config Export (STUB Phase 2)
+ * Customer Care Workspace — Config Export
  */
 
 import { defineAsyncComponent } from 'vue';
@@ -11,8 +11,8 @@ export const customerCareWorkspace: WorkspaceConfig = {
   name: 'Chăm sóc KH',
   description: 'Giao diện dành cho bộ phận chăm sóc khách hàng',
   icon: 'mdi-headset',
-  defaultRoute: '/cs-chat',
-  // Phase 2: sẽ tạo CsLayout.vue riêng. Tạm dùng SalesLayout (giao diện gọn nhẹ tương tự).
-  layoutComponent: defineAsyncComponent(() => import('@/layouts/SalesLayout.vue')),
+  defaultRoute: '/cs-home',
+  layoutComponent: defineAsyncComponent(() => import('@/layouts/CsLayout.vue')),
   menu: customerCareMenu,
+  themeClass: 'cskh-theme',
 };
