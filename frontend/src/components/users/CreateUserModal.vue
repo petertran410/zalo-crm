@@ -192,6 +192,13 @@ async function onCreate() {
   creating.value = true;
   createError.value = '';
   try {
+    const selectedGroup = flatGroups.value.find((g: any) => g.id === form.permissionGroupId);
+    const isCskhGroup = selectedGroup && (
+      selectedGroup.name === 'Chăm sóc khách hàng' ||
+      (selectedGroup as any).workspaceId === 'customer-care'
+    );
+    const roleToSend = isCskhGroup ? 'cskh' : 'member';
+
     const { data } = await api.post('/users', {
       fullName: form.fullName.trim(),
       email: form.email.trim().toLowerCase(),
@@ -199,7 +206,7 @@ async function onCreate() {
       phone: form.phone.trim() || null,
       departmentId: form.departmentId || null,
       permissionGroupId: form.permissionGroupId || null,
-      role: 'member',
+      role: roleToSend,
     });
     createResult.value = data as CreatedUser;
     step.value = 2;
