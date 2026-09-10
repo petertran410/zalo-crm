@@ -174,7 +174,8 @@
                     <v-icon size="16">mdi-dots-vertical</v-icon>
                   </button>
                 </template>
-                <v-list density="compact" min-width="200">
+                <v-list density="compact" min-width="220">
+                  <v-list-item title="Phân quyền hỗ trợ / trực thay" prepend-icon="mdi-account-multiple-check-outline" @click="openAccessDialog(ch)" />
                   <v-list-item title="Đổi bộ phận" prepend-icon="mdi-swap-horizontal" @click="changeDept(ch)" />
                   <v-list-item title="Đổi nhân viên sở hữu" prepend-icon="mdi-account-switch-outline" @click="changeOwner(ch)" />
                   <v-list-item title="Chi tiết kết nối" prepend-icon="mdi-information-outline" @click="viewDetail(ch)" />
@@ -288,6 +289,14 @@
       @retry-qr="retryQrLogin"
       @close="closeQrWizard"
     />
+
+    <!-- Dialog phân quyền trực thay / chia sẻ nick cho CSKH / Sales khác -->
+    <ZaloAccessDialog
+      v-model="showAccessDialog"
+      :account-id="accessTargetId"
+      :account-name="accessTargetName"
+      @update:modelValue="fetchAll"
+    />
   </div>
 </template>
 
@@ -297,6 +306,7 @@ import { useToast } from '@/composables/use-toast';
 import { useChannelConnections, type ChannelAccount } from '@/composables/use-channel-connections';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
 import ConnectNickWizard from '@/components/zalo-accounts/ConnectNickWizard.vue';
+import ZaloAccessDialog from '@/components/settings/ZaloAccessDialog.vue';
 import { api } from '@/api/index';
 
 const toast = useToast();
@@ -493,6 +503,16 @@ async function reconnectChannel(ch: any) {
 
 function toggleVisible(ch: any) {
   toast.push('Tính năng hiển thị kênh sẽ được cập nhật trong bản phát hành sau', 'info');
+}
+
+const showAccessDialog = ref(false);
+const accessTargetId = ref('');
+const accessTargetName = ref('');
+
+function openAccessDialog(ch: any) {
+  accessTargetId.value = ch.id;
+  accessTargetName.value = ch.displayName || ch.phone || ch.zaloUid || ch.id;
+  showAccessDialog.value = true;
 }
 
 function changeDept(ch: any) {

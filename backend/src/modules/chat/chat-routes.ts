@@ -417,6 +417,8 @@ export async function chatRoutes(app: FastifyInstance) {
       });
       if (folder && folder.userId === user.id) {
         folderAccountIds = folder.members.map((m) => m.zaloAccountId);
+      } else {
+        folderAccountIds = []; // Folder không tồn tại hoặc không thuộc user -> coi như folder rỗng
       }
     }
 
@@ -711,7 +713,7 @@ export async function chatRoutes(app: FastifyInstance) {
       const displayableIds = zScope2.displayableIds;
       if (accountIdList.length > 0) {
         const allowed = accountIdList.filter(id => displayableIds.includes(id));
-        where.zaloAccountId = allowed.length === 1 ? allowed[0] : { in: allowed };
+        where.zaloAccountId = allowed.length === 1 ? allowed[0] : (allowed.length > 0 ? { in: allowed } : 'NO_ACCESS_EMPTY_MATCH');
       } else {
         // Multi-channel Phase 2 (2026-07-22): scope nick Zalo KHÔNG áp cho hội thoại FB
         // (không có nick) → OR để sale thường vẫn thấy FB. Vẫn org-scoped ở where.orgId.

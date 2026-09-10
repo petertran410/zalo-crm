@@ -260,7 +260,8 @@ const selectedAccountIds = computed(() => workScope.accountIds.value);
 const SCOPE_KEY = 'chat.scope.v1';
 function saveScope(folderId: string | null, accountId: string | null) {
   try {
-    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId, accountId }));
+    const fId = currentRole.value === 'sales' ? null : folderId;
+    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId: fId, accountId }));
   } catch { /* localStorage đầy/chặn → bỏ qua */ }
 }
 function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
@@ -272,13 +273,20 @@ function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
 // Áp scope đã lưu vào state, CÓ validate quyền nick.
 // work-scope migration 2026-06-15: NICK giờ do workScope quản (seed từ chat.workscope.v2).
 // validateAgainst bỏ nick MẤT QUYỀN (bảo mật — KHÔNG vượt quyền server getZaloScope cấp).
-// restoreScope chỉ còn lo FOLDER (chat.scope.v1) — nick đã tách sang workScope.
+// restoreScope: nếu là sales workspace (ẩn folder sidebar) -> ép folderId = null để không kẹt.
 function restoreScope() {
   const accessibleIds = (zaloAccounts.value || []).map(a => a.id);
   workScope.validateAgainst(accessibleIds); // lọc scope đã lưu chỉ còn nick có quyền
-  // Folder: set vào inbox filter (sidebar tự bỏ nếu folder không tồn tại khi render).
-  const saved = loadScopeRaw();
-  inboxFilters.setFolder(saved.folderId);
+  if (currentRole.value === 'sales') {
+    inboxFilters.setFolder(null);
+    const saved = loadScopeRaw();
+    if (saved.folderId) {
+      saveScope(null, saved.accountId);
+    }
+  } else {
+    const saved = loadScopeRaw();
+    inboxFilters.setFolder(saved.folderId);
+  }
 }
 // work-scope 2026-06-15 — tóm tắt "N tin ở M nick khác" (anh chốt: 1 dòng, không liệt kê).
 // CHỈ đếm nick CÓ QUYỀN (join zaloAccounts đã qua getZaloScope) — bảo mật, không lộ/đếm
@@ -416,6 +424,9 @@ const conversationCounts = computed(() => {
 // Apply inbox filter state → extraFilters → refetch.
 // Sync ngay extraFilters trên mount để first fetch dùng đúng default tab
 // (Cá nhân → threadType=user) thay vì load tất cả conv.
+if (currentRole.value === 'sales') {
+  inboxFilters.setFolder(null);
+}
 extraFilters.value = inboxFilters.buildQueryParams();
 
 let filterApplyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -568,13 +579,15 @@ function onTyping() {
 }
 function onFilterAccount(id: string | null) {
   accountFilter.value = id;
-  saveScope(inboxFilters.state.folderId, id); // nhớ Phạm vi xem qua reload
+  const fId = currentRole.value === 'sales' ? null : inboxFilters.state.folderId;
+  saveScope(fId, id); // nhớ Phạm vi xem qua reload
   fetchConversations();
 }
 function onFolderViewApplied(payload: { folderId: string | null; accountId: string | null }) {
-  inboxFilters.setFolder(payload.folderId);
+  const fId = currentRole.value === 'sales' ? null : payload.folderId;
+  inboxFilters.setFolder(fId);
   accountFilter.value = payload.accountId;
-  saveScope(payload.folderId, payload.accountId); // nhớ Phạm vi xem qua reload
+  saveScope(fId, payload.accountId); // nhớ Phạm vi xem qua reload
   fetchConversations();
 }
 function onFiltersUpdate(params: Record<string, string>) {
@@ -708,6 +721,9 @@ function onLabelsSynced() {
 
 onMounted(async () => {
   if (!isMobile.value) {
+    if (currentRole.value === 'sales') {
+      inboxFilters.setFolder(null);
+    }
     await fetchZaloAccounts();
     // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
     // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.

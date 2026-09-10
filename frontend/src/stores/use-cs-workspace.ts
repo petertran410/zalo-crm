@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { useWorkScope } from '@/composables/use-work-scope';
+import { api } from '@/api/index';
 
 export interface DelegatedSalesAccount {
   id: string;
@@ -16,10 +17,32 @@ export interface DelegatedSalesTarget {
   zaloAccounts: DelegatedSalesAccount[];
 }
 
+export interface SalesCardData {
+  salesUser: {
+    id: string;
+    fullName: string;
+    avatarUrl?: string | null;
+    email?: string;
+  };
+  zaloAccounts: Array<{
+    id: string;
+    displayName: string;
+    avatarUrl?: string | null;
+    isOnline: boolean;
+  }>;
+  totalGroups: number;
+  pendingMessages: number;
+  unreadMessages: number;
+  status: 'online' | 'offline';
+}
+
 const STORAGE_KEY = 'cskh.active_sales_target.v1';
 
 export const useCsWorkspaceStore = defineStore('csWorkspace', () => {
   const activeSalesTarget = ref<DelegatedSalesTarget | null>(null);
+  const delegatedSalesList = ref<SalesCardData[]>([]);
+  const loadingDelegated = ref(false);
+  const hasFetchedDelegated = ref(false);
 
   // Khôi phục từ sessionStorage khi F5
   try {
@@ -37,6 +60,22 @@ export const useCsWorkspaceStore = defineStore('csWorkspace', () => {
     if (!activeSalesTarget.value) return [];
     return activeSalesTarget.value.zaloAccounts.map((a) => a.id);
   });
+
+  async function fetchDelegatedSales(force = false) {
+    if (hasFetchedDelegated.value && !force) return;
+    loadingDelegated.value = true;
+    try {
+      const res = await api.get<{ cskh: any; sales: SalesCardData[] }>('/cs/delegated-sales');
+      if (res.data?.sales) {
+        delegatedSalesList.value = res.data.sales;
+        hasFetchedDelegated.value = true;
+      }
+    } catch (err) {
+      console.error('Failed to fetch delegated sales list:', err);
+    } finally {
+      loadingDelegated.value = false;
+    }
+  }
 
   function setSalesTarget(sales: DelegatedSalesTarget) {
     activeSalesTarget.value = sales;
@@ -70,6 +109,9 @@ export const useCsWorkspaceStore = defineStore('csWorkspace', () => {
     activeSalesTarget,
     isDelegatedMode,
     activeSalesAccountIds,
+    delegatedSalesList,
+    loadingDelegated,
+    fetchDelegatedSales,
     setSalesTarget,
     clearSalesTarget,
   };

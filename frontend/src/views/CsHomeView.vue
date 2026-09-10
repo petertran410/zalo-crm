@@ -1,275 +1,215 @@
 <template>
   <div class="cs-home-canvas">
-    <!-- ════════ HEADER BAR ════════ -->
-    <header class="cs-home-header">
-      <div class="cs-header-left">
-        <div class="cs-header-badge">
-          <v-icon size="14" class="mr-1">mdi-headset</v-icon>
-          <span>CSKH Workspace</span>
-        </div>
-        <h1 class="cs-header-title">Trang Chủ Điều Phối Đa Sales</h1>
-        <p class="cs-header-subtitle">
-          Theo dõi và hỗ trợ trực chat thay mặt các nhân viên kinh doanh được phân quyền.
-        </p>
+    <!-- ════════ TOP COMMAND HEADER ════════ -->
+    <header class="cs-top-bar">
+      <div class="cs-title-group">
+        <h1 class="cs-page-title">Các Kênh</h1>
       </div>
 
-      <div class="cs-header-actions">
-        <button class="cs-refresh-btn" :disabled="loading" @click="fetchHubData">
-          <v-icon size="16" :class="{ 'spin-anim': loading }">mdi-refresh</v-icon>
-          <span>Làm mới</span>
+      <!-- Right controls: Search & Refresh -->
+      <div class="cs-top-controls">
+        <div class="cs-search-input-wrap">
+          <v-icon size="16" class="cs-search-icon">mdi-magnify</v-icon>
+          <input
+            v-model="searchQuery"
+            type="text"
+            placeholder="Tìm theo tên Sales..."
+            class="cs-search-input"
+          />
+          <button v-if="searchQuery" class="cs-search-clear" @click="searchQuery = ''">
+            <v-icon size="14">mdi-close-circle</v-icon>
+          </button>
+        </div>
+
+        <button
+          class="cs-icon-btn cs-refresh-btn"
+          :disabled="loading"
+          title="Làm mới dữ liệu"
+          @click="fetchHubData"
+        >
+          <v-icon size="18" :class="{ 'spin-anim': loading }">mdi-refresh</v-icon>
         </button>
       </div>
     </header>
 
-    <!-- ════════ METRICS BAR ════════ -->
-    <section class="cs-metrics-grid">
-      <div class="cs-metric-card">
-        <div class="cs-metric-icon-box teal-soft">
-          <v-icon size="24" color="#0D9488">mdi-account-tie</v-icon>
-        </div>
-        <div class="cs-metric-info">
-          <span class="cs-metric-label">Sales Phụ Trách</span>
-          <span class="cs-metric-val">{{ salesList.length }}</span>
-        </div>
+    <!-- ════════ SMART FILTER PILLS (Replaces old bulky KPI cards) ════════ -->
+    <div class="cs-filter-bar">
+      <div class="cs-pills-group">
+        <button
+          class="cs-filter-pill"
+          :class="{ active: activeFilter === 'all' }"
+          @click="activeFilter = 'all'"
+        >
+          <span>Tất cả</span>
+          <span class="cs-pill-badge">{{ salesList.length }}</span>
+        </button>
+
+        <button
+          class="cs-filter-pill urgent-pill"
+          :class="{ active: activeFilter === 'urgent', 'has-urgent': urgentSalesCount > 0 }"
+          @click="activeFilter = 'urgent'"
+        >
+          <v-icon size="14" class="mr-1">mdi-lightning-bolt</v-icon>
+          <span>Cần hỗ trợ gấp</span>
+          <span class="cs-pill-badge urgent-badge">{{ urgentSalesCount }}</span>
+        </button>
+
+        <button
+          class="cs-filter-pill"
+          :class="{ active: activeFilter === 'online' }"
+          @click="activeFilter = 'online'"
+        >
+          <span class="cs-dot-indicator online" />
+          <span>Đang online</span>
+          <span class="cs-pill-badge">{{ onlineSalesCount }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ════════ BENTO GRID (Actionable Deck) ════════ -->
+    <div class="cs-grid-container">
+      <!-- Loading state -->
+      <div v-if="loading && salesList.length === 0" class="cs-loading-deck">
+        <v-progress-circular indeterminate color="#0D9488" size="36" />
+        <span>Đang nạp dữ liệu điều phối...</span>
       </div>
 
-      <div class="cs-metric-card">
-        <div class="cs-metric-icon-box blue-soft">
-          <v-icon size="24" color="#0284C7">mdi-forum-outline</v-icon>
-        </div>
-        <div class="cs-metric-info">
-          <span class="cs-metric-label">Tổng Nhóm Điều Phối</span>
-          <span class="cs-metric-val">{{ totalDelegatedGroups }}</span>
-        </div>
-      </div>
-
-      <div class="cs-metric-card">
-        <div class="cs-metric-icon-box amber-soft">
-          <v-icon size="24" color="#D97706">mdi-clock-alert-outline</v-icon>
-        </div>
-        <div class="cs-metric-info">
-          <span class="cs-metric-label">Tin Chờ Phản Hồi</span>
-          <span class="cs-metric-val" :class="{ 'warn-text': totalPendingMessages > 0 }">
-            {{ totalPendingMessages }}
-          </span>
-        </div>
-      </div>
-
-      <div class="cs-metric-card">
-        <div class="cs-metric-icon-box purple-soft">
-          <v-icon size="24" color="#7C3AED">mdi-cellphone-link</v-icon>
-        </div>
-        <div class="cs-metric-info">
-          <span class="cs-metric-label">Nick Sales Đã Kết Nối</span>
-          <span class="cs-metric-val">{{ connectedNicksCount }} / {{ totalSalesNicksCount }}</span>
-        </div>
-      </div>
-    </section>
-
-    <!-- ════════ MAIN CONTENT ════════ -->
-    <div class="cs-home-body">
-      <!-- SECTION 1: CSKH CHUNG (Nick cá nhân của CSKH) -->
-      <section class="cs-section">
-        <div class="cs-section-header">
-          <div class="cs-section-title-wrap">
-            <h2 class="cs-section-title">Không Gian CSKH Chung</h2>
-            <span class="cs-section-badge">Không gian riêng của bạn</span>
-          </div>
-        </div>
-
-        <div class="cs-cskh-own-card">
-          <div class="cs-own-left">
-            <div class="cs-own-avatar-ring">
-              <v-icon size="28" color="#0D9488">mdi-account-supervisor-circle</v-icon>
+      <div v-else class="cs-bento-grid">
+        <!-- ── LEAD HERO CARD: HỘP THƯ CỦA TÔI (Hiển thị khi ở tab 'Tất cả') ── -->
+        <div
+          v-if="activeFilter === 'all' && !searchQuery"
+          class="cs-sales-card cs-lead-card"
+          title="Bấm để vào Hộp thư cá nhân CSKH"
+          @click="enterCskhWorkspace"
+        >
+          <div class="cs-card-header">
+            <div class="cs-avatar-wrap">
+              <img
+                v-if="authStore.user?.avatarUrl"
+                :src="authStore.user.avatarUrl"
+                :alt="authStore.user.fullName"
+                class="cs-avatar-img"
+              />
+              <div v-else class="cs-avatar-fallback teal-fallback">
+                {{ authStore.user?.fullName?.charAt(0)?.toUpperCase() || 'CS' }}
+              </div>
+              <span class="cs-status-dot status-online" />
             </div>
-            <div class="cs-own-info">
-              <h3 class="cs-own-name">Chăm Sóc Khách Hàng Chung</h3>
-              <p class="cs-own-desc">
-                Sử dụng các nick Zalo cá nhân của bạn để tiếp nhận và phản hồi khách hàng theo phân luồng chung.
-              </p>
-              <div class="cs-own-chips">
-                <span class="cs-own-chip">
-                  <v-icon size="14" class="mr-1">mdi-cellphone</v-icon>
-                  {{ cskhData.totalAccounts }} nick Zalo của bạn
-                </span>
-                <span class="cs-own-chip">
-                  <v-icon size="14" class="mr-1">mdi-forum</v-icon>
-                  {{ cskhData.totalGroups }} nhóm
-                </span>
-                <span v-if="cskhData.pendingMessages > 0" class="cs-own-chip warn">
-                  <v-icon size="14" class="mr-1">mdi-alert-circle</v-icon>
-                  {{ cskhData.pendingMessages }} tin chờ rep
-                </span>
+
+            <div class="cs-user-meta">
+              <div class="cs-name-row">
+                <h2 class="cs-card-name" :title="authStore.user?.fullName || 'Khoa CSKH'">
+                  {{ authStore.user?.fullName || 'Khoa CSKH' }}
+                </h2>
+                <span class="cs-owner-pill">Tôi</span>
               </div>
             </div>
           </div>
 
-          <div class="cs-own-actions">
-            <button class="cs-btn-enter-own" @click="enterCskhWorkspace">
-              <v-icon size="16" class="mr-1">mdi-chat-processing-outline</v-icon>
-              <span>Vào Tin Nhắn CSKH</span>
-            </button>
-          </div>
-        </div>
-      </section>
+          <div class="cs-card-footer">
+            <div v-if="cskhData.pendingMessages > 0" class="cs-urgent-badge">
+              <v-icon size="13" class="mr-1">mdi-fire</v-icon>
+              <span>{{ cskhData.pendingMessages }} tin chưa rep</span>
+            </div>
+            <div v-else class="cs-empty-placeholder" />
 
-      <!-- SECTION 2: DANH SÁCH SALES ĐƯỢC ỦY QUYỀN HỖ TRỢ -->
-      <section class="cs-section">
-        <div class="cs-section-header">
-          <div class="cs-section-title-wrap">
-            <h2 class="cs-section-title">Danh Sách Sales Cần Hỗ Trợ</h2>
-            <span class="cs-section-count">{{ filteredSalesList.length }} Sales</span>
-          </div>
-
-          <!-- Search Filter -->
-          <div class="cs-search-box">
-            <v-icon size="18" class="cs-search-icon">mdi-magnify</v-icon>
-            <input
-              v-model="searchQuery"
-              type="text"
-              placeholder="Tìm theo tên Sales hoặc email..."
-              class="cs-search-input"
-            />
-            <button v-if="searchQuery" class="cs-search-clear" @click="searchQuery = ''">
-              <v-icon size="14">mdi-close-circle</v-icon>
-            </button>
+            <div class="cs-action-hint">
+              <span>Vào chat</span>
+              <v-icon size="15" class="action-arrow">mdi-arrow-right</v-icon>
+            </div>
           </div>
         </div>
 
-        <!-- Loading State -->
-        <div v-if="loading" class="cs-loading-wrap">
-          <v-progress-circular indeterminate color="#0D9488" size="36" />
-          <span>Đang tải danh sách Sales điều phối...</span>
-        </div>
-
-        <!-- Empty State -->
-        <div v-else-if="filteredSalesList.length === 0" class="cs-empty-card">
-          <v-icon size="48" color="#94A3B8" class="mb-2">mdi-account-search-outline</v-icon>
-          <div class="cs-empty-title">
-            {{ searchQuery ? 'Không tìm thấy Sales phù hợp' : 'Chưa có Sales nào được phân quyền cho bạn' }}
-          </div>
-          <p class="cs-empty-desc">
-            {{ searchQuery
-              ? 'Vui lòng kiểm tra lại từ khóa tìm kiếm.'
-              : 'Để hỗ trợ trực chat thay cho Sales, Admin cần phân quyền "chat" trên nick Zalo của Sales tại Cài đặt tài khoản Zalo.' }}
-          </p>
-        </div>
-
-        <!-- Sales Grid -->
-        <div v-else class="cs-sales-grid">
-          <div
-            v-for="sales in filteredSalesList"
-            :key="sales.salesUser.id"
-            class="cs-sales-card"
-            :class="{ 'has-pending': sales.pendingMessages > 0 }"
-          >
-            <!-- Card Header: Avatar & Info -->
-            <div class="cs-card-top">
-              <div class="cs-avatar-wrap">
-                <img
-                  v-if="sales.salesUser.avatarUrl"
-                  :src="sales.salesUser.avatarUrl"
-                  :alt="sales.salesUser.fullName"
-                  class="cs-sales-avatar"
-                />
-                <div v-else class="cs-avatar-fallback">
-                  {{ sales.salesUser.fullName?.charAt(0)?.toUpperCase() || 'S' }}
-                </div>
-                <span
-                  class="cs-status-dot"
-                  :class="sales.status === 'online' ? 'status-online' : 'status-offline'"
-                  :title="sales.status === 'online' ? 'Đang online' : 'Đang offline'"
-                />
+        <!-- ── SALES CARDS (Full-card Clickable) ── -->
+        <div
+          v-for="sales in filteredSalesList"
+          :key="sales.salesUser.id"
+          class="cs-sales-card"
+          :class="{
+            'is-urgent': sales.pendingMessages > 0,
+            'is-offline': sales.status === 'offline'
+          }"
+          :title="`Bấm để trực thay Sales ${sales.salesUser.fullName}`"
+          @click="startSupportingSales(sales)"
+        >
+          <!-- Card Top: Avatar, Name -->
+          <div class="cs-card-header">
+            <div class="cs-avatar-wrap">
+              <img
+                v-if="sales.salesUser.avatarUrl"
+                :src="sales.salesUser.avatarUrl"
+                :alt="sales.salesUser.fullName"
+                class="cs-avatar-img"
+              />
+              <div v-else class="cs-avatar-fallback">
+                {{ sales.salesUser.fullName?.charAt(0)?.toUpperCase() || 'S' }}
               </div>
-
-              <div class="cs-card-user-info">
-                <h3 class="cs-card-username" :title="sales.salesUser.fullName">
-                  {{ sales.salesUser.fullName }}
-                </h3>
-                <span class="cs-card-email" :title="sales.salesUser.email">
-                  {{ sales.salesUser.email }}
-                </span>
-              </div>
-
               <span
-                class="cs-presence-badge"
-                :class="sales.status === 'online' ? 'badge-online' : 'badge-offline'"
-              >
-                {{ sales.status === 'online' ? 'Online' : 'Offline' }}
-              </span>
+                class="cs-status-dot"
+                :class="sales.status === 'online' ? 'status-online' : 'status-offline'"
+              />
             </div>
 
-            <!-- Nick List -->
-            <div class="cs-card-nicks">
-              <span class="cs-nicks-label">Nick Zalo phụ trách:</span>
-              <div class="cs-nicks-list">
-                <div
-                  v-for="nick in sales.zaloAccounts"
-                  :key="nick.id"
-                  class="cs-nick-chip"
-                  :title="nick.displayName || 'Nick Zalo'"
-                >
-                  <img
-                    v-if="nick.avatarUrl"
-                    :src="nick.avatarUrl"
-                    class="cs-nick-avatar"
-                  />
-                  <span
-                    class="cs-nick-dot"
-                    :class="nick.isOnline ? 'online' : 'offline'"
-                  />
-                  <span class="cs-nick-name">{{ nick.displayName || 'Nick Zalo' }}</span>
-                </div>
-              </div>
+            <div class="cs-user-meta">
+              <h3 class="cs-card-name" :title="sales.salesUser.fullName">
+                {{ sales.salesUser.fullName }}
+              </h3>
             </div>
+          </div>
 
-            <!-- Metrics row -->
-            <div class="cs-card-metrics">
-              <div class="cs-card-stat">
-                <span class="cs-stat-num">{{ sales.totalGroups }}</span>
-                <span class="cs-stat-text">Nhóm KH</span>
-              </div>
-
-              <div class="cs-card-stat-divider" />
-
-              <div class="cs-card-stat">
-                <span class="cs-stat-num" :class="{ 'text-warn': sales.pendingMessages > 0 }">
-                  {{ sales.pendingMessages }}
-                </span>
-                <span class="cs-stat-text">Chưa phản hồi</span>
-              </div>
-
-              <div class="cs-card-stat-divider" />
-
-              <div class="cs-card-stat">
-                <span class="cs-stat-num">{{ sales.unreadMessages }}</span>
-                <span class="cs-stat-text">Tin chưa đọc</span>
-              </div>
+          <!-- Card Bottom: Urgent Badge (left) & Direct Action (right) -->
+          <div class="cs-card-footer">
+            <div v-if="sales.pendingMessages > 0" class="cs-urgent-badge">
+              <v-icon size="13" class="mr-1">mdi-fire</v-icon>
+              <span>{{ sales.pendingMessages }} tin chưa rep</span>
             </div>
+            <div v-else class="cs-empty-placeholder" />
 
-            <!-- Card Action Footer -->
-            <div class="cs-card-footer">
-              <button
-                class="cs-btn-delegate-start"
-                @click="startSupportingSales(sales)"
-              >
-                <v-icon size="16" class="mr-1">mdi-headset</v-icon>
-                <span>Hỗ Trợ Sales {{ sales.salesUser.fullName.split(' ').pop() }}</span>
-              </button>
+            <div class="cs-action-hint">
+              <span>Vào chat</span>
+              <v-icon size="15" class="action-arrow">mdi-arrow-right</v-icon>
             </div>
           </div>
         </div>
-      </section>
+      </div>
+
+      <!-- Empty State -->
+      <div
+        v-if="filteredSalesList.length === 0 && (!loading || activeFilter !== 'all')"
+        class="cs-empty-state"
+      >
+        <v-icon size="44" color="#94A3B8" class="mb-2">mdi-account-search-outline</v-icon>
+        <div class="cs-empty-title">
+          {{ searchQuery ? 'Không tìm thấy Sales phù hợp' : 'Không có Sales nào trong danh mục này' }}
+        </div>
+        <p class="cs-empty-desc">
+          {{
+            searchQuery
+              ? 'Vui lòng kiểm tra lại từ khóa tìm kiếm.'
+              : activeFilter === 'urgent'
+              ? 'Hiện tại không có Sales nào có tin nhắn khách bị tồn đọng. Tất cả đều đã được phản hồi!'
+              : 'Chưa có Sales nào được phân quyền cho bạn.'
+          }}
+        </p>
+        <button
+          v-if="activeFilter !== 'all' || searchQuery"
+          class="cs-btn-reset-filter"
+          @click="activeFilter = 'all'; searchQuery = ''"
+        >
+          Xem tất cả Sales
+        </button>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onActivated } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { useCsWorkspaceStore, type DelegatedSalesTarget } from '@/stores/use-cs-workspace';
+import { useAuthStore } from '@/stores/auth';
 
 interface SalesCardData {
   salesUser: {
@@ -307,9 +247,11 @@ interface CskhOwnData {
 const router = useRouter();
 const toast = useToast();
 const csWorkspace = useCsWorkspaceStore();
+const authStore = useAuthStore();
 
 const loading = ref(false);
 const searchQuery = ref('');
+const activeFilter = ref<'all' | 'urgent' | 'online'>('all');
 
 const cskhData = ref<CskhOwnData>({
   totalAccounts: 0,
@@ -321,7 +263,7 @@ const cskhData = ref<CskhOwnData>({
 
 const salesList = ref<SalesCardData[]>([]);
 
-// Thống kê tổng hợp
+// Thống kê tổng hợp cho Toolbar
 const totalDelegatedGroups = computed(() =>
   salesList.value.reduce((sum, s) => sum + s.totalGroups, 0),
 );
@@ -330,27 +272,43 @@ const totalPendingMessages = computed(() =>
   salesList.value.reduce((sum, s) => sum + s.pendingMessages, 0) + cskhData.value.pendingMessages,
 );
 
-const totalSalesNicksCount = computed(() =>
-  salesList.value.reduce((sum, s) => sum + s.zaloAccounts.length, 0),
+const urgentSalesCount = computed(() =>
+  salesList.value.filter((s) => s.pendingMessages > 0).length,
 );
 
-const connectedNicksCount = computed(() =>
-  salesList.value.reduce(
-    (sum, s) => sum + s.zaloAccounts.filter((n) => n.isOnline).length,
-    0,
-  ),
+const onlineSalesCount = computed(() =>
+  salesList.value.filter((s) => s.status === 'online').length,
 );
 
-// Lọc theo search
+// Lọc kết hợp Search + Filter Pill, ưu tiên khẩn cấp lên đầu
 const filteredSalesList = computed(() => {
+  let list = salesList.value;
+
+  if (activeFilter.value === 'urgent') {
+    list = list.filter((s) => s.pendingMessages > 0);
+  } else if (activeFilter.value === 'online') {
+    list = list.filter((s) => s.status === 'online');
+  }
+
   const q = searchQuery.value.trim().toLowerCase();
-  if (!q) return salesList.value;
-  return salesList.value.filter(
-    (s) =>
-      s.salesUser.fullName.toLowerCase().includes(q) ||
-      s.salesUser.email.toLowerCase().includes(q) ||
-      s.zaloAccounts.some((a) => (a.displayName || '').toLowerCase().includes(q)),
-  );
+  if (q) {
+    list = list.filter(
+      (s) =>
+        s.salesUser.fullName.toLowerCase().includes(q) ||
+        s.zaloAccounts.some((a) => (a.displayName || '').toLowerCase().includes(q)),
+    );
+  }
+
+  // Sắp xếp: Sales có tin chờ rep lên đầu (nhiều hơn lên trước), sau đó đến Online, sau đó theo tên
+  return [...list].sort((a, b) => {
+    if (b.pendingMessages !== a.pendingMessages) {
+      return b.pendingMessages - a.pendingMessages;
+    }
+    if (a.status !== b.status) {
+      return a.status === 'online' ? -1 : 1;
+    }
+    return a.salesUser.fullName.localeCompare(b.salesUser.fullName);
+  });
 });
 
 async function fetchHubData() {
@@ -377,8 +335,16 @@ async function fetchHubData() {
   }
 }
 
-function enterCskhWorkspace() {
-  const ownIds = cskhData.value.zaloAccounts.map((a) => a.id);
+async function enterCskhWorkspace() {
+  let ownIds = cskhData.value.zaloAccounts.map((a) => a.id);
+  if (ownIds.length === 0) {
+    try {
+      const res = await api.get('/zalo-accounts');
+      const accs = res.data?.accounts || res.data || [];
+      const myId = authStore.user?.id;
+      ownIds = accs.filter((a: any) => a.ownerUserId === myId || a.isOwnedByMe).map((a: any) => a.id);
+    } catch {}
+  }
   csWorkspace.clearSalesTarget(ownIds);
   router.push('/cs-chat');
 }
@@ -401,14 +367,26 @@ function startSupportingSales(sales: SalesCardData) {
   router.push('/cs-chat');
 }
 
+function resetHomeDelegatedState() {
+  const ownIds = cskhData.value.zaloAccounts.map((a) => a.id);
+  csWorkspace.clearSalesTarget(ownIds);
+}
+
 onMounted(() => {
   void fetchHubData();
+  resetHomeDelegatedState();
+});
+
+onActivated(() => {
+  void fetchHubData();
+  resetHomeDelegatedState();
 });
 </script>
 
 <style scoped>
 /* ══════════════════════════════════════════════════════════
-   CSKH Home View — Neo-SaaS Care Teal Styling
+   CSKH Home View — Neo-SaaS Bento Command Center
+   Aesthetics: Clean Slate, Linear.app minimalism, Anti-slop
    ══════════════════════════════════════════════════════════ */
 .cs-home-canvas {
   display: flex;
@@ -418,285 +396,47 @@ onMounted(() => {
   padding: 24px 32px;
   overflow-y: auto;
   box-sizing: border-box;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 24px;
+  box-shadow: 0 4px 20px 0 rgba(31, 38, 135, 0.06);
   font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* ── HEADER ────────────────────────────────────────────── */
-.cs-home-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  margin-bottom: 24px;
-}
-
-.cs-header-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  background: rgba(13, 148, 136, 0.1);
-  color: #0D9488;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 700;
-  margin-bottom: 8px;
-}
-
-.cs-header-title {
-  margin: 0 0 6px;
-  font-size: 26px;
-  font-weight: 800;
-  color: #0F172A;
-  letter-spacing: -0.02em;
-}
-
-.cs-header-subtitle {
-  margin: 0;
-  font-size: 14px;
-  color: #64748B;
-  font-weight: 400;
-}
-
-.cs-refresh-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  border-radius: 10px;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
-  transition: all 0.2s ease;
-}
-
-.cs-refresh-btn:hover {
-  background: #F8FAFC;
-  border-color: #CBD5E1;
   color: #0F172A;
 }
 
-.spin-anim {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
-/* ── METRICS GRID ──────────────────────────────────────── */
-.cs-metrics-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 16px;
-  margin-bottom: 28px;
-}
-
-.cs-metric-card {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 18px 20px;
-  background: #FFFFFF;
-  border: 1px solid rgba(226, 232, 240, 0.8);
-  border-radius: 16px;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.02);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-}
-
-.cs-metric-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.05);
-}
-
-.cs-metric-icon-box {
-  width: 48px;
-  height: 48px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.teal-soft { background: rgba(13, 148, 136, 0.12); }
-.blue-soft { background: rgba(2, 132, 199, 0.12); }
-.amber-soft { background: rgba(217, 119, 6, 0.12); }
-.purple-soft { background: rgba(124, 58, 237, 0.12); }
-
-.cs-metric-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.cs-metric-label {
-  font-size: 13px;
-  color: #64748B;
-  font-weight: 500;
-  margin-bottom: 2px;
-}
-
-.cs-metric-val {
-  font-size: 24px;
-  font-weight: 800;
-  color: #0F172A;
-  line-height: 1.1;
-}
-
-.cs-metric-val.warn-text {
-  color: #D97706;
-}
-
-/* ── SECTIONS ─────────────────────────────────────────── */
-.cs-home-body {
-  display: flex;
-  flex-direction: column;
-  gap: 32px;
-}
-
-.cs-section {
-  display: flex;
-  flex-direction: column;
-}
-
-.cs-section-header {
+/* ── TOP BAR ────────────────────────────────────────────── */
+.cs-top-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 16px;
 }
 
-.cs-section-title-wrap {
+.cs-title-group {
   display: flex;
   align-items: center;
-  gap: 10px;
 }
 
-.cs-section-title {
+.cs-page-title {
   margin: 0;
-  font-size: 18px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   color: #0F172A;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
 }
 
-.cs-section-badge {
-  font-size: 12px;
-  font-weight: 600;
-  color: #0D9488;
-  background: rgba(13, 148, 136, 0.1);
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
-.cs-section-count {
-  font-size: 12px;
-  font-weight: 700;
-  color: #64748B;
-  background: #F1F5F9;
-  padding: 3px 10px;
-  border-radius: 999px;
-}
-
-/* ── CSKH OWN CARD ─────────────────────────────────────── */
-.cs-cskh-own-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 20px 24px;
-  background: linear-gradient(135deg, #FFFFFF 0%, #F0FDFA 100%);
-  border: 1px solid #99F6E4;
-  border-radius: 16px;
-  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.06);
-}
-
-.cs-own-left {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-}
-
-.cs-own-avatar-ring {
-  width: 54px;
-  height: 54px;
-  border-radius: 50%;
-  background: rgba(13, 148, 136, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.cs-own-info {
-  display: flex;
-  flex-direction: column;
-}
-
-.cs-own-name {
-  margin: 0 0 4px;
-  font-size: 17px;
-  font-weight: 700;
-  color: #0F172A;
-}
-
-.cs-own-desc {
-  margin: 0 0 10px;
-  font-size: 13px;
-  color: #64748B;
-}
-
-.cs-own-chips {
+.cs-top-controls {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.cs-own-chip {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  background: #FFFFFF;
-  border: 1px solid #CCFBF1;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 600;
-  color: #0F766E;
-}
-
-.cs-own-chip.warn {
-  background: #FFFBEB;
-  border-color: #FDE68A;
-  color: #D97706;
-}
-
-.cs-btn-enter-own {
-  display: inline-flex;
-  align-items: center;
-  padding: 10px 20px;
-  background: #0D9488;
-  color: #FFFFFF;
-  border: none;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25);
-  transition: all 0.2s ease;
-}
-
-.cs-btn-enter-own:hover {
-  background: #0F766E;
-  box-shadow: 0 6px 16px rgba(13, 148, 136, 0.35);
-  transform: translateY(-1px);
-}
-
-/* ── SEARCH BOX ────────────────────────────────────────── */
-.cs-search-box {
+.cs-search-input-wrap {
   position: relative;
-  width: 280px;
+  width: 240px;
 }
 
 .cs-search-icon {
@@ -710,15 +450,17 @@ onMounted(() => {
 
 .cs-search-input {
   width: 100%;
-  padding: 8px 32px 8px 36px;
+  height: 38px;
+  padding: 0 32px 0 36px;
   background: #FFFFFF;
   border: 1px solid #CBD5E1;
-  border-radius: 10px;
+  border-radius: 12px;
   font-size: 13px;
   color: #0F172A;
   outline: none;
   font-family: inherit;
-  transition: border-color 0.2s;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
 }
 
 .cs-search-input:focus {
@@ -736,42 +478,204 @@ onMounted(() => {
   color: #94A3B8;
   cursor: pointer;
   padding: 2px;
-}
-
-/* ── SALES GRID ────────────────────────────────────────── */
-.cs-sales-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
-}
-
-.cs-sales-card {
   display: flex;
-  flex-direction: column;
+}
+
+.cs-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #FFFFFF;
+  border: 1px solid #CBD5E1;
+  border-radius: 12px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+.cs-icon-btn:hover {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-color: #94A3B8;
+}
+
+.spin-anim {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ── SMART FILTER PILLS BAR ────────────────────────────── */
+.cs-filter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 22px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.cs-pills-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-filter-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
   background: #FFFFFF;
   border: 1px solid #E2E8F0;
-  border-radius: 16px;
-  padding: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
-  transition: all 0.2s ease;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
-.cs-sales-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.06);
+.cs-filter-pill:hover {
+  background: #F1F5F9;
   border-color: #CBD5E1;
+  color: #0F172A;
 }
 
-.cs-sales-card.has-pending {
-  border-color: #FCD34D;
-  background: linear-gradient(180deg, #FFFFFF 0%, #FFFDF5 100%);
+.cs-filter-pill.active {
+  background: #0F172A;
+  border-color: #0F172A;
+  color: #FFFFFF;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.18);
 }
 
-.cs-card-top {
+.cs-pill-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 7px;
+  background: #F1F5F9;
+  color: #475569;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.cs-filter-pill.active .cs-pill-badge {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+/* Urgent Pill Style */
+.cs-filter-pill.urgent-pill.has-urgent {
+  border-color: #FDE68A;
+  color: #B45309;
+}
+
+.cs-filter-pill.urgent-pill.has-urgent .urgent-badge {
+  background: #FEF3C7;
+  color: #D97706;
+}
+
+.cs-filter-pill.urgent-pill.active {
+  background: #D97706;
+  border-color: #D97706;
+  color: #FFFFFF;
+}
+
+.cs-filter-pill.urgent-pill.active .urgent-badge {
+  background: rgba(255, 255, 255, 0.25);
+  color: #FFFFFF;
+}
+
+.cs-dot-indicator {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.cs-dot-indicator.online { background-color: #10B981; }
+
+
+/* ── BENTO GRID CONTAINER ──────────────────────────────── */
+.cs-grid-container {
+  flex: 1;
+}
+
+.cs-bento-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(310px, 1fr));
+  gap: 16px;
+}
+
+/* ── CARD ANATOMY ──────────────────────────────────────── */
+.cs-sales-card,
+.cs-lead-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 20px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02), 0 4px 12px rgba(0, 0, 0, 0.02);
+  cursor: pointer;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.cs-sales-card:hover,
+.cs-lead-card:hover {
+  transform: translateY(-2px);
+  border-color: #CBD5E1;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06);
+}
+
+.cs-sales-card:active,
+.cs-lead-card:active {
+  transform: translateY(0);
+}
+
+/* ── LEAD HERO CARD STYLING ── */
+.cs-lead-card {
+  background: linear-gradient(145deg, #FFFFFF 0%, #F0FDFA 100%);
+  border: 1.5px solid #99F6E4;
+  box-shadow: 0 2px 10px rgba(13, 148, 136, 0.05);
+}
+
+.cs-lead-card:hover {
+  border-color: #5EEAD4;
+  box-shadow: 0 8px 24px rgba(13, 148, 136, 0.12);
+}
+
+/* ── SALES CARD STYLING ── */
+.cs-sales-card.is-urgent {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FFFDF7 100%);
+  border: 1.5px solid #FCD34D;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.06);
+}
+
+.cs-sales-card.is-urgent:hover {
+  border-color: #F59E0B;
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.14);
+}
+
+.cs-sales-card.is-offline {
+  opacity: 0.85;
+}
+
+.cs-card-header {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .cs-avatar-wrap {
@@ -781,7 +685,7 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-.cs-sales-avatar {
+.cs-avatar-img {
   width: 100%;
   height: 100%;
   border-radius: 50%;
@@ -798,15 +702,19 @@ onMounted(() => {
   align-items: center;
   justify-content: center;
   font-weight: 700;
-  font-size: 17px;
+  font-size: 16px;
+}
+
+.cs-avatar-fallback.teal-fallback {
+  background: linear-gradient(135deg, #0F766E 0%, #0D9488 100%);
 }
 
 .cs-status-dot {
   position: absolute;
   bottom: 0;
   right: 0;
-  width: 12px;
-  height: 12px;
+  width: 11px;
+  height: 11px;
   border-radius: 50%;
   border: 2px solid #FFFFFF;
 }
@@ -814,14 +722,21 @@ onMounted(() => {
 .status-online { background-color: #10B981; }
 .status-offline { background-color: #94A3B8; }
 
-.cs-card-user-info {
+.cs-user-meta {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-width: 0;
 }
 
-.cs-card-username {
+.cs-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cs-card-name {
   margin: 0;
   font-size: 15px;
   font-weight: 700;
@@ -829,172 +744,87 @@ onMounted(() => {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: -0.01em;
 }
 
-.cs-card-email {
-  font-size: 12px;
-  color: #64748B;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cs-presence-badge {
+.cs-owner-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: rgba(13, 148, 136, 0.12);
+  border: 1px solid rgba(13, 148, 136, 0.25);
+  color: #0F766E;
+  border-radius: 999px;
   font-size: 11px;
   font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 6px;
+  letter-spacing: 0.02em;
   flex-shrink: 0;
 }
 
-.badge-online {
-  background: rgba(16, 185, 129, 0.12);
-  color: #059669;
-}
-
-.badge-offline {
-  background: #F1F5F9;
-  color: #64748B;
-}
-
-/* Nicks list */
-.cs-card-nicks {
-  margin-bottom: 14px;
-}
-
-.cs-nicks-label {
-  font-size: 11px;
-  font-weight: 600;
-  color: #94A3B8;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  display: block;
-  margin-bottom: 6px;
-}
-
-.cs-nicks-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.cs-nick-chip {
+/* Urgent Badge */
+.cs-urgent-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px;
-  background: #F8FAFC;
-  border: 1px solid #E2E8F0;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #334155;
-  font-weight: 500;
-  max-width: 100%;
+  padding: 4px 10px;
+  background: #FEF3C7;
+  border: 1px solid #FDE68A;
+  color: #B45309;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
 }
 
-.cs-nick-avatar {
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.cs-nick-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.cs-nick-dot.online { background-color: #10B981; }
-.cs-nick-dot.offline { background-color: #CBD5E1; }
-
-.cs-nick-name {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* Card metrics */
-.cs-card-metrics {
+/* Card Footer: Action */
+.cs-card-footer {
+  margin-top: auto;
+  padding-top: 10px;
+  border-top: 1px solid rgba(226, 232, 240, 0.6);
   display: flex;
   align-items: center;
-  justify-content: space-around;
-  padding: 12px 8px;
-  background: #F8FAFC;
-  border-radius: 12px;
-  margin-bottom: 16px;
+  justify-content: space-between;
+  gap: 8px;
 }
 
-.cs-card-stat {
-  display: flex;
-  flex-direction: column;
+.cs-empty-placeholder {
+  flex: 1;
+}
+
+.cs-action-hint {
+  display: inline-flex;
   align-items: center;
-  text-align: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0D9488;
+  flex-shrink: 0;
 }
 
-.cs-stat-num {
-  font-size: 16px;
-  font-weight: 800;
-  color: #0F172A;
+.action-arrow {
+  transition: transform 0.2s ease;
 }
 
-.cs-stat-num.text-warn {
+.cs-sales-card:hover .action-arrow {
+  transform: translateX(3px);
+}
+
+.cs-sales-card.is-urgent .cs-action-hint {
   color: #D97706;
 }
 
-.cs-stat-text {
-  font-size: 11px;
-  color: #64748B;
-  font-weight: 500;
-}
-
-.cs-card-stat-divider {
-  width: 1px;
-  height: 24px;
-  background: #E2E8F0;
-}
-
-/* Action button */
-.cs-card-footer {
-  margin-top: auto;
-}
-
-.cs-btn-delegate-start {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 9px 16px;
-  background: #0D9488;
-  color: #FFFFFF;
-  border: none;
-  border-radius: 10px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(13, 148, 136, 0.2);
-  transition: all 0.2s ease;
-  font-family: inherit;
-}
-
-.cs-btn-delegate-start:hover {
-  background: #0F766E;
-  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.35);
-}
-
-/* Loading & Empty */
-.cs-loading-wrap {
+/* ── EMPTY & LOADING STATES ────────────────────────────── */
+.cs-loading-deck {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 48px 0;
+  padding: 64px 0;
   gap: 12px;
   color: #64748B;
   font-size: 14px;
 }
 
-.cs-empty-card {
+.cs-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1002,46 +832,62 @@ onMounted(() => {
   padding: 48px 24px;
   background: #FFFFFF;
   border: 1px dashed #CBD5E1;
-  border-radius: 16px;
+  border-radius: 20px;
+  margin-top: 8px;
 }
 
 .cs-empty-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   color: #334155;
   margin-bottom: 4px;
 }
 
 .cs-empty-desc {
-  margin: 0;
+  margin: 0 0 16px;
   max-width: 440px;
   font-size: 13px;
   color: #64748B;
   line-height: 1.5;
 }
 
-/* ── RESPONSIVE ───────────────────────────────────────── */
-@media (max-width: 1024px) {
-  .cs-metrics-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
+.cs-btn-reset-filter {
+  padding: 7px 16px;
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+  transition: all 0.2s ease;
 }
 
-@media (max-width: 640px) {
+.cs-btn-reset-filter:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+/* ── RESPONSIVE ───────────────────────────────────────── */
+@media (max-width: 768px) {
   .cs-home-canvas {
     padding: 16px;
   }
-  .cs-metrics-grid {
-    grid-template-columns: 1fr;
-  }
-  .cs-cskh-own-card {
+  .cs-top-bar {
     flex-direction: column;
     align-items: flex-start;
-    gap: 16px;
+    gap: 12px;
   }
-  .cs-btn-enter-own {
+  .cs-top-controls {
     width: 100%;
-    justify-content: center;
+  }
+  .cs-search-input-wrap {
+    flex: 1;
+    width: auto;
+  }
+  .cs-filter-bar {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

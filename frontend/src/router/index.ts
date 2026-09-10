@@ -534,17 +534,50 @@ router.beforeEach(async (to, _from, next) => {
       // Không cần gọi workspaceStore.resolveForUser() ở đây.
     }
 
-    // Redirect sales role away from '/' to '/sales-chat'
-    if (to.path === "/") {
-      const workspaceStore = useWorkspaceStore();
-      if (authStore.user) {
-        workspaceStore.resolveForUser(authStore.user);
+    // Redirect sales & cs role away from '/' or other workspace chat views
+    const workspaceStore = useWorkspaceStore();
+    if (authStore.user) {
+      workspaceStore.resolveForUser(authStore.user);
+    }
+    if (workspaceStore.activeWorkspaceId === "customer-care") {
+      if (to.path === "/") {
+        return next("/cs-home");
       }
-      if (workspaceStore.activeWorkspaceId === "sales") {
+      if (to.name === "Chat" || to.path === "/chat" || to.path.startsWith("/chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "CsChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+      if (to.name === "SalesChat" || to.path === "/sales-chat" || to.path.startsWith("/sales-chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "CsChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+    } else if (workspaceStore.activeWorkspaceId === "sales") {
+      if (to.path === "/") {
         return next("/sales-chat");
       }
-      if (workspaceStore.activeWorkspaceId === "customer-care") {
-        return next("/cs-home");
+      if (to.name === "Chat" || to.path === "/chat" || to.path.startsWith("/chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "SalesChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+      if (to.name === "CsChat" || to.name === "CsHome" || to.path.startsWith("/cs-chat") || to.path === "/cs-home") {
+        const convId = to.params.convId;
+        return next({
+          name: "SalesChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
       }
     }
     // RBAC page-level guard 2026-06-08 — chặn theo nhóm quyền (grants).

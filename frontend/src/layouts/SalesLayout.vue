@@ -24,10 +24,13 @@
           <RouterLink
             v-for="tab in visibleTabs"
             :key="tab.key"
+            :ref="(el) => setNavTabRef(tab.key, el)"
             :to="tab.to"
             class="sl-nav-item"
             :class="{ 'sl-nav-item--active': isActive(tab) }"
-            @click="onNavItemClick"
+            @click="onNavItemClick(tab, $event)"
+            @mouseenter="onNavTabMouseEnter(tab, $event)"
+            @mouseleave="onNavTabMouseLeave(tab)"
           >
             <!-- Material Symbol (preferred) or MDI fallback inside icon wrapper -->
             <div class="sl-nav-icon-wrap">
@@ -39,10 +42,28 @@
 
             <span class="sl-nav-label">{{ tab.title }}</span>
 
-            <!-- Tooltip shown when sidebar is collapsed -->
-            <div class="sl-nav-tooltip">{{ tab.title }}</div>
+            <!-- Tooltip shown when sidebar is collapsed (ẩn nếu flyout đang mở) -->
+            <div
+              v-if="!isCsChatFlyoutVisible || tab.key !== 'cs-chat'"
+              class="sl-nav-tooltip"
+            >
+              {{ tab.title }}
+            </div>
           </RouterLink>
         </div>
+
+        <!-- CS Chat Scope Flyout Dock (cho phép chuyển đổi giữa Tôi và Sales được phân công) -->
+        <CsChatScopeFlyout
+          v-if="isCsChatFlyoutVisible"
+          :is-open="isCsChatFlyoutOpen"
+          :is-pinned="isCsChatFlyoutPinned"
+          :target-top="csChatFlyoutTop"
+          :target-left="csChatFlyoutLeft"
+          @mouseenter="onFlyoutMouseEnter"
+          @mouseleave="onFlyoutMouseLeave"
+          @close="closeCsChatFlyout"
+          @unpin="unpinCsChatFlyout"
+        />
 
         <!-- Footer: POS Sync + Avatar Profile Menu -->
         <div class="sl-nav-footer">
@@ -160,6 +181,8 @@ import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
 import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
+import { useCsWorkspaceStore } from '@/stores/use-cs-workspace';
+import CsChatScopeFlyout from '@/components/workspace/CsChatScopeFlyout.vue';
 import '@/assets/sales-theme.css';
 
 const orderDraftStore = useOrderDraftStore();
@@ -169,23 +192,116 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const workspaceStore = useWorkspaceStore();
+const csWorkspace = useCsWorkspaceStore();
 
 const userMenuOpen = ref(false);
 const userMenuRef = ref<HTMLElement | null>(null);
 const isSidebarExpanded = ref(false);
+
+// ── CS Chat Quick Scope Switcher Flyout Dock ────────────────────────────────
+const csChatNavEl = ref<HTMLElement | null>(null);
+const csChatFlyoutTop = ref(120);
+const csChatFlyoutLeft = computed(() => (isSidebarExpanded.value ? 248 : 84));
+
+const isCsChatFlyoutOpen = ref(false);
+const isCsChatFlyoutPinned = ref(false);
+
+const isCsChatFlyoutVisible = computed(() => {
+  return (
+    workspaceStore.activeWorkspaceId === 'customer-care' &&
+    (isCsChatFlyoutOpen.value || isCsChatFlyoutPinned.value)
+  );
+});
+
+function setNavTabRef(key: string, el: any) {
+  if (key === 'cs-chat') {
+    csChatNavEl.value = (el && '$el' in el ? el.$el : el) as HTMLElement | null;
+  }
+}
+
+function updateFlyoutPosition() {
+  if (csChatNavEl.value) {
+    const rect = csChatNavEl.value.getBoundingClientRect();
+    csChatFlyoutTop.value = Math.round(rect.top + rect.height / 2);
+  }
+}
+
+let flyoutOpenTimer: ReturnType<typeof setTimeout> | null = null;
+let flyoutCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onNavTabMouseEnter(tab: MenuItemConfig, _event: MouseEvent) {
+  if (tab.key !== 'cs-chat' || workspaceStore.activeWorkspaceId !== 'customer-care') return;
+  if (flyoutCloseTimer) {
+    clearTimeout(flyoutCloseTimer);
+    flyoutCloseTimer = null;
+  }
+  void csWorkspace.fetchDelegatedSales();
+  updateFlyoutPosition();
+  flyoutOpenTimer = setTimeout(() => {
+    updateFlyoutPosition();
+    isCsChatFlyoutOpen.value = true;
+  }, 160);
+}
+
+function onNavTabMouseLeave(tab: MenuItemConfig) {
+  if (tab.key !== 'cs-chat') return;
+  if (flyoutOpenTimer) {
+    clearTimeout(flyoutOpenTimer);
+    flyoutOpenTimer = null;
+  }
+  if (!isCsChatFlyoutPinned.value) {
+    flyoutCloseTimer = setTimeout(() => {
+      isCsChatFlyoutOpen.value = false;
+    }, 250);
+  }
+}
+
+function onFlyoutMouseEnter() {
+  if (flyoutCloseTimer) {
+    clearTimeout(flyoutCloseTimer);
+    flyoutCloseTimer = null;
+  }
+}
+
+function onFlyoutMouseLeave() {
+  if (!isCsChatFlyoutPinned.value) {
+    flyoutCloseTimer = setTimeout(() => {
+      isCsChatFlyoutOpen.value = false;
+    }, 250);
+  }
+}
+
+function closeCsChatFlyout() {
+  isCsChatFlyoutOpen.value = false;
+  isCsChatFlyoutPinned.value = false;
+}
+
+function unpinCsChatFlyout() {
+  isCsChatFlyoutPinned.value = false;
+  closeCsChatFlyout();
+}
 
 function toggleUserMenu() {
   userMenuOpen.value = !userMenuOpen.value;
 }
 
 function onDocumentPointerDown(event: PointerEvent) {
-  if (!userMenuRef.value?.contains(event.target as Node)) {
+  if (userMenuOpen.value && !userMenuRef.value?.contains(event.target as Node)) {
     userMenuOpen.value = false;
+  }
+  if (isCsChatFlyoutOpen.value || isCsChatFlyoutPinned.value) {
+    const flyoutEl = document.querySelector('.cs-scope-flyout');
+    if (
+      !csChatNavEl.value?.contains(event.target as Node) &&
+      !flyoutEl?.contains(event.target as Node)
+    ) {
+      closeCsChatFlyout();
+    }
   }
 }
 
-watch(userMenuOpen, (isOpen) => {
-  if (isOpen) {
+watch([userMenuOpen, isCsChatFlyoutOpen, isCsChatFlyoutPinned], ([menuOpen, flyoutOpen, flyoutPinned]) => {
+  if (menuOpen || flyoutOpen || flyoutPinned) {
     document.addEventListener('pointerdown', onDocumentPointerDown);
   } else {
     document.removeEventListener('pointerdown', onDocumentPointerDown);
@@ -196,8 +312,6 @@ onBeforeUnmount(() => {
   document.removeEventListener('pointerdown', onDocumentPointerDown);
 });
 
-
-
 function onSidebarClick(event: MouseEvent) {
   const target = event.target as HTMLElement;
   const isNavItem = !!target.closest('.sl-nav-item');
@@ -205,7 +319,6 @@ function onSidebarClick(event: MouseEvent) {
   if (!isSidebarExpanded.value) {
     if (isNavItem) {
       // Nav item khi thu gọn: để RouterLink navigate ngay, đóng sidebar sau khi xong
-      // KHÔNG chặn event — navigation xảy ra tức thì không giật
       isSidebarExpanded.value = false;
       return;
     }
@@ -222,9 +335,23 @@ function onSidebarClick(event: MouseEvent) {
   }
 }
 
-function onNavItemClick() {
+function onNavItemClick(tab?: MenuItemConfig, _event?: MouseEvent) {
   // Đóng sidebar sau mỗi lần chọn tab (cả mở lẫn đóng)
   isSidebarExpanded.value = false;
+  if (tab?.key === 'cs-chat' || tab?.to === '/cs-chat') {
+    if (workspaceStore.activeWorkspaceId === 'customer-care') {
+      // Click vào Tin nhắn CS -> toggle pin thanh flyout dock
+      isCsChatFlyoutPinned.value = !isCsChatFlyoutPinned.value;
+      if (isCsChatFlyoutPinned.value) {
+        updateFlyoutPosition();
+        isCsChatFlyoutOpen.value = true;
+      }
+    } else {
+      if (csWorkspace.isDelegatedMode) {
+        csWorkspace.clearSalesTarget();
+      }
+    }
+  }
 }
 
 
@@ -254,6 +381,7 @@ function sweepStuckOverlays() {
 function cleanupAfterNav() {
   userMenuOpen.value = false;
   isSidebarExpanded.value = false;
+  closeCsChatFlyout();
   sweepStuckOverlays();
 }
 router.afterEach(() => cleanupAfterNav());
@@ -261,6 +389,10 @@ router.onError(() => cleanupAfterNav());
 
 onMounted(() => {
   theme.change('hsLight');
+
+  if (workspaceStore.activeWorkspaceId === 'customer-care') {
+    void csWorkspace.fetchDelegatedSales();
+  }
 
   // Khôi phục các đơn nháp từ localStorage
   orderDraftStore.hydrate();
