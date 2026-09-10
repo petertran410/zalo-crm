@@ -1,5 +1,22 @@
 <template>
-  <MobileChatView v-if="isMobile" />
+  <MobileChatView
+    v-if="isMobile"
+    :conversations="conversations"
+    :selected-conv-id="selectedConvId"
+    :selected-conv="selectedConv"
+    :messages="messages"
+    :loading-convs="loadingConvs"
+    :loading-msgs="loadingMsgs"
+    :sending-msg="sendingMsg"
+    :search-query="searchQuery"
+    :send-message="sendMessage"
+    :send-message-to="sendMessageTo"
+    :fetch-messages="fetchMessages"
+    @select="onSelectConv"
+    @back="onMobileBack"
+    @update:search="searchQuery = $event"
+    @filter-account="onFilterAccount"
+  />
   <div v-else class="smax-chat-grid">
     <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
     <ConversationFilterSidebar
@@ -159,7 +176,7 @@ const router = useRouter();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  fetchConversations, fetchMessages, selectConversation, sendMessage,
+  fetchConversations, fetchMessages, selectConversation, sendMessage, sendMessageTo,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -568,7 +585,7 @@ async function onSwitchToNickConv(convId: string) {
   if (!conversations.value.find(c => c.id === convId)) {
     await fetchConversations();
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: 'CsChat', params: { convId } });
 }
 
 // Auto-show panel khi chọn conv có contact
@@ -595,11 +612,14 @@ function onSelectConv(convId: string) {
     void selectConversation(convId).then(() => refreshPriorityUnread());
     return;
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: 'CsChat', params: { convId } });
 }
 
-// Watch route → select conv khi convId thay đổi (deep-link, back/forward, mới click)
-// work-scope 2026-06-15 — FIX BUG NHẢY NICK: nếu hội thoại mở thuộc nick NGOÀI scope
+function onMobileBack() {
+  router.push({ name: 'CsChat' });
+}
+
+// Watch route → select conv when convId changes (deep-link, back/forward, mới click): nếu hội thoại mở thuộc nick NGOÀI scope
 // (vd từ Friend bấm chat khách nick B trong khi đang khóa nick A) → đặt scope = nick B
 // rồi RELOAD trang (Anh chốt: state sạch). Nick TRONG scope → luồng tự thông (không reload).
 // Đặt adopt-scope Ở ĐÂY (watcher), KHÔNG trong selectConversation (selectConversation có
@@ -607,6 +627,10 @@ function onSelectConv(convId: string) {
 watch(
   () => route.params.convId,
   (id) => {
+    if (!id && selectedConvId.value) {
+      selectedConvId.value = null;
+      return;
+    }
     if (typeof id === 'string' && id && id !== selectedConvId.value) {
       void selectConversation(id).then(() => {
         // Sau resolve: selectedConv đã có (từ list HOẶC selectedConvDetail). Đọc nick của nó.
@@ -656,8 +680,7 @@ function onLabelsSynced() {
 }
 
 onMounted(async () => {
-  if (!isMobile.value) {
-    await fetchZaloAccounts();
+  await fetchZaloAccounts();
     // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
     // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.
     restoreScope();
@@ -713,14 +736,11 @@ onMounted(async () => {
     // "Ưu tiên". Cần vì conv tab Ưu tiên không nằm trong list tab đang xem nên socket
     // không cập nhật được badge tại chỗ. refreshPriorityUnread đã debounce 400ms.
     window.addEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
 });
 onUnmounted(() => {
-  if (!isMobile.value) {
-    destroySocket();
-    window.removeEventListener('zalo-labels-synced', onLabelsSynced);
-    window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
+  destroySocket();
+  window.removeEventListener('zalo-labels-synced', onLabelsSynced);
+  window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
 });
 
 // Đổi trạng thái ở cột 4 (panel) → cập nhật selectedConv.contact.statusId → cột 3 sync (cùng tab).
