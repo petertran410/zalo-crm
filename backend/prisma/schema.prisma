@@ -361,6 +361,7 @@ model User {
   syncJobs                  SyncJob[]                    @relation("SyncJobUser")
   createdPosOrders          PosOrder[]                   @relation("UserPosOrders")
   workspaceSessions         WorkspaceSession[]
+  createdTags               Tag[]                        @relation("TagCreatedBy")
 
   @@map("users")
 }
@@ -1584,6 +1585,11 @@ model Tag {
   isActive   Boolean   @default(true) @map("is_active")
   createdAt  DateTime  @default(now()) @map("created_at")
   updatedAt  DateTime  @updatedAt @map("updated_at")
+
+  // Thẻ riêng tư (cá nhân) vs công khai
+  isPrivate   Boolean   @default(false) @map("is_private")
+  createdById String?   @map("created_by_id")
+  createdBy   User?     @relation("TagCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
 
   org                Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
   group              TagGroup?    @relation(fields: [groupId], references: [id], onDelete: SetNull)

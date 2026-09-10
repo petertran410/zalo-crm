@@ -73,22 +73,42 @@ export async function registerTagRoutes(app: FastifyInstance): Promise<void> {
       ? (req.query.source as TagSource)
       : undefined;
 
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+
+    const andConditions: any[] = [
+      { orgId: user.orgId },
+      { scope },
+      { archivedAt: null },
+    ];
+
+    if (!isOwnerOrAdmin) {
+      andConditions.push({
+        OR: [
+          { isPrivate: false },
+          { isPrivate: true, createdById: user.id },
+        ],
+      });
+    }
+
+    if (sourceFilter) {
+      andConditions.push({ source: sourceFilter });
+    }
+
+    if (req.query.zaloAccountId) {
+      andConditions.push({ zaloAccountId: req.query.zaloAccountId });
+    }
+
+    if (req.query.q) {
+      andConditions.push({
+        OR: [
+          { name: { contains: req.query.q, mode: 'insensitive' } },
+          { slug: { contains: req.query.q } },
+        ],
+      });
+    }
+
     const tags = await prisma.tag.findMany({
-      where: {
-        orgId: user.orgId,
-        scope,
-        archivedAt: null,
-        ...(sourceFilter ? { source: sourceFilter } : {}),
-        ...(req.query.zaloAccountId ? { zaloAccountId: req.query.zaloAccountId } : {}),
-        ...(req.query.q
-          ? {
-              OR: [
-                { name: { contains: req.query.q, mode: 'insensitive' } },
-                { slug: { contains: req.query.q } },
-              ],
-            }
-          : {}),
-      },
+      where: { AND: andConditions },
       orderBy: [{ priority: 'asc' }, { usageCount: 'desc' }, { name: 'asc' }],
       take: limit,
       skip: req.query.cursor ? 1 : 0,
@@ -131,15 +151,31 @@ export async function registerTagRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ accounts });
   });
 
-  app.post('/', async (req: FastifyRequest<{ Body: { name: string; scope: TagScope; source: TagSource; color?: string; emoji?: string; groupId?: string } }>, reply: FastifyReply) => {
+  app.post('/', async (req: FastifyRequest<{ Body: { name: string; scope: TagScope; source: TagSource; color?: string; emoji?: string; groupId?: string; isPrivate?: boolean } }>, reply: FastifyReply) => {
     const user = req.user!;
     const { name, scope, source, color, emoji, groupId } = req.body;
+    let isPrivate = Boolean(req.body.isPrivate);
     if (!name || !scope || !source) return reply.code(400).send({ error: 'MISSING_FIELDS' });
+
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    // Phân quyền: Sale không được tạo thẻ công khai, tự động ép sang riêng tư
+    if (!isPrivate && !isOwnerOrAdmin) {
+      isPrivate = true;
+    }
 
     try {
       const tag = await tenantTransaction(async (tx) => {
         const { findOrCreateTag } = await import('./tag-service.js');
-        return findOrCreateTag(tx, { orgId: user.orgId, scope, source, name, color, emoji });
+        return findOrCreateTag(tx, {
+          orgId: user.orgId,
+          scope,
+          source,
+          name,
+          color,
+          emoji,
+          isPrivate,
+          createdById: user.id,
+        });
       });
       if (groupId) {
         await prisma.tag.update({ where: { id: tag.id }, data: { groupId } });
@@ -156,6 +192,14 @@ export async function registerTagRoutes(app: FastifyInstance): Promise<void> {
     const user = req.user!;
     const tag = await prisma.tag.findUnique({ where: { id: req.params.id } });
     if (!tag || tag.orgId !== user.orgId) return reply.code(404).send({ error: 'TAG_NOT_FOUND' });
+
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    // Phân quyền sửa: Sale chỉ được sửa thẻ riêng tư do mình tạo
+    if (!isOwnerOrAdmin) {
+      if (!tag.isPrivate || tag.createdById !== user.id) {
+        return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không có quyền chỉnh sửa thẻ nhãn này' });
+      }
+    }
 
     const isZaloReal = tag.source === 'zalo_real' && tag.zaloAccountId && tag.sourceZaloLabelId != null;
     const wantsPushZalo = isZaloReal && (req.body.name !== undefined || req.body.color !== undefined || req.body.emoji !== undefined);
@@ -217,6 +261,15 @@ export async function registerTagRoutes(app: FastifyInstance): Promise<void> {
     const user = req.user!;
     const tag = await prisma.tag.findUnique({ where: { id: req.params.id } });
     if (!tag || tag.orgId !== user.orgId) return reply.code(404).send({ error: 'TAG_NOT_FOUND' });
+
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    // Phân quyền xóa: Sale chỉ được xóa thẻ riêng tư do mình tạo
+    if (!isOwnerOrAdmin) {
+      if (!tag.isPrivate || tag.createdById !== user.id) {
+        return reply.code(403).send({ error: 'FORBIDDEN', message: 'Bạn không có quyền xóa thẻ nhãn này' });
+      }
+    }
+
     await prisma.tag.update({ where: { id: tag.id }, data: { archivedAt: new Date() } });
     return reply.send({ ok: true });
   });
@@ -245,12 +298,19 @@ export async function registerFriendTagRoutes(app: FastifyInstance): Promise<voi
   app.addHook('preHandler', authMiddleware);
 
   app.get('/:id/tags', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const friendTags = await getFriendTags(req.params.id);
+    const user = req.user!;
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    const friendTags = await getFriendTags(req.params.id, user.id, isOwnerOrAdmin);
     return reply.send({ friendTags });
   });
 
-  app.post('/:id/tags', async (req: FastifyRequest<{ Params: { id: string }; Body: { tagId?: string; tagSlug?: string; tagName?: string; source: TagSource; autoCreate?: boolean; color?: string } }>, reply: FastifyReply) => {
+  app.post('/:id/tags', async (req: FastifyRequest<{ Params: { id: string }; Body: { tagId?: string; tagSlug?: string; tagName?: string; source: TagSource; autoCreate?: boolean; color?: string; isPrivate?: boolean } }>, reply: FastifyReply) => {
     const user = req.user!;
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    let isPrivate = req.body.isPrivate;
+    if (!isOwnerOrAdmin && isPrivate === false) {
+      isPrivate = true;
+    }
     try {
       const result = await addFriendTag({
         friendId: req.params.id,
@@ -261,6 +321,7 @@ export async function registerFriendTagRoutes(app: FastifyInstance): Promise<voi
         addedBy: user.id,
         autoCreate: req.body.autoCreate,
         color: req.body.color,
+        isPrivate,
       });
       // CareSession 2026-06-07 (anh chốt): gắn friend tag → đóng phiên nếu tag ∈ closeConditions.
       try {
@@ -290,12 +351,19 @@ export async function registerContactCrmTagRoutes(app: FastifyInstance): Promise
   app.addHook('preHandler', authMiddleware);
 
   app.get('/:id/crm-tags', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
-    const contactTags = await getCrmTags(req.params.id);
+    const user = req.user!;
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    const contactTags = await getCrmTags(req.params.id, user.id, isOwnerOrAdmin);
     return reply.send({ contactTags });
   });
 
-  app.post('/:id/crm-tags', async (req: FastifyRequest<{ Params: { id: string }; Body: { tagId?: string; tagSlug?: string; tagName?: string; source: TagSource; autoCreate?: boolean; color?: string } }>, reply: FastifyReply) => {
+  app.post('/:id/crm-tags', async (req: FastifyRequest<{ Params: { id: string }; Body: { tagId?: string; tagSlug?: string; tagName?: string; source: TagSource; autoCreate?: boolean; color?: string; isPrivate?: boolean } }>, reply: FastifyReply) => {
     const user = req.user!;
+    const isOwnerOrAdmin = user.role === 'owner' || user.role === 'admin';
+    let isPrivate = req.body.isPrivate;
+    if (!isOwnerOrAdmin && isPrivate === false) {
+      isPrivate = true;
+    }
     try {
       const result = await addCrmTag({
         contactId: req.params.id,
@@ -306,6 +374,7 @@ export async function registerContactCrmTagRoutes(app: FastifyInstance): Promise
         addedBy: user.id,
         autoCreate: req.body.autoCreate,
         color: req.body.color,
+        isPrivate,
       });
       // CareSession 2026-06-07 (anh chốt): gắn CRM tag → đóng phiên nếu tag ∈ closeConditions.
       try {

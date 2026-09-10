@@ -22,6 +22,8 @@ export interface TagTaxonomyDef {
   emoji: string | null;
   scope: 'friend' | 'crm';
   source: string;
+  isPrivate?: boolean;
+  createdById?: string | null;
 }
 
 // Reactive version counter — bump sau mỗi lần load để computed/displayTags re-evaluate.

@@ -87,6 +87,8 @@ interface FindOrCreateOpts {
   sourceZaloLabelId?: number | null;
   color?: string;
   emoji?: string | null;
+  isPrivate?: boolean;
+  createdById?: string | null;
 }
 
 /**
@@ -102,8 +104,11 @@ export async function findOrCreateTag(
   tx: TxClient,
   opts: FindOrCreateOpts
 ): Promise<Tag> {
-  const slug = slugifyTag(opts.name);
-  if (!slug) throw new Error('TAG_SLUG_EMPTY');
+  const baseSlug = slugifyTag(opts.name);
+  if (!baseSlug) throw new Error('TAG_SLUG_EMPTY');
+  const slug = opts.isPrivate && opts.createdById
+    ? `priv-${opts.createdById.slice(0, 8)}-${baseSlug}`
+    : baseSlug;
 
   // Validate scope+source invariant ở app layer (DB CHECK cũng có nhưng app friendly error)
   const allowed = opts.scope === 'friend' ? FRIEND_SOURCES : CRM_SOURCES;
@@ -145,6 +150,8 @@ export async function findOrCreateTag(
       priority: PRIORITY_MAP[opts.source],
       zaloAccountId: opts.zaloAccountId ?? null,
       sourceZaloLabelId: opts.sourceZaloLabelId ?? null,
+      isPrivate: opts.isPrivate ?? false,
+      createdById: opts.createdById ?? null,
     },
   });
 }
@@ -162,6 +169,7 @@ interface AddFriendTagInput {
   addedBy: string | null;
   autoCreate?: boolean;
   color?: string;
+  isPrivate?: boolean;
 }
 
 export async function addFriendTag(input: AddFriendTagInput): Promise<{ tag: Tag; friendTagId: string }> {
@@ -188,6 +196,8 @@ export async function addFriendTag(input: AddFriendTagInput): Promise<{ tag: Tag
             name: input.tagName,
             color: input.color,
             zaloAccountId: input.source === 'zalo_real' ? friend.zaloAccountId : null,
+            isPrivate: input.isPrivate,
+            createdById: input.addedBy,
           });
         } else if (input.tagSlug) {
           const t = await tx.tag.findFirst({
@@ -358,6 +368,7 @@ interface AddCrmTagInput {
   addedBy: string | null;
   autoCreate?: boolean;
   color?: string;
+  isPrivate?: boolean;
 }
 
 export async function addCrmTag(input: AddCrmTagInput): Promise<{ tag: Tag; contactTagId: string }> {
@@ -382,6 +393,8 @@ export async function addCrmTag(input: AddCrmTagInput): Promise<{ tag: Tag; cont
             source: input.source,
             name: input.tagName,
             color: input.color,
+            isPrivate: input.isPrivate,
+            createdById: input.addedBy,
           });
         } else if (input.tagSlug) {
           const t = await tx.tag.findFirst({
@@ -469,20 +482,24 @@ async function dualWriteLegacyContact(
 // Read APIs
 // ─────────────────────────────────────────────────────────────────────────
 
-export async function getFriendTags(friendId: string) {
-  return prisma.friendTag.findMany({
+export async function getFriendTags(friendId: string, currentUserId?: string, canViewAll = false) {
+  const assignments = await prisma.friendTag.findMany({
     where: { friendId, removedAt: null },
     include: { tag: true },
     orderBy: [{ tag: { priority: 'asc' } }, { addedAt: 'desc' }],
   });
+  if (canViewAll || !currentUserId) return assignments;
+  return assignments.filter((a) => !a.tag.isPrivate || a.tag.createdById === currentUserId);
 }
 
-export async function getCrmTags(contactId: string) {
-  return prisma.contactTag.findMany({
+export async function getCrmTags(contactId: string, currentUserId?: string, canViewAll = false) {
+  const assignments = await prisma.contactTag.findMany({
     where: { contactId, removedAt: null },
     include: { tag: true },
     orderBy: [{ tag: { priority: 'asc' } }, { addedAt: 'desc' }],
   });
+  if (canViewAll || !currentUserId) return assignments;
+  return assignments.filter((a) => !a.tag.isPrivate || a.tag.createdById === currentUserId);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
