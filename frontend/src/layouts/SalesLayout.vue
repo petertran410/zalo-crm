@@ -72,7 +72,7 @@
             <SyncHeaderWidget />
           </div>
 
-          <WorkspaceSwitcher v-if="canSwitchWorkspace" />
+          <WorkspaceSwitcher v-if="canSwitchWorkspace && isSidebarExpanded" class="mb-1" />
 
           <!-- User Avatar + Menu (Profile & Logout) — Inline Panel tránh VOverlay trắng màn hình -->
           <div ref="userMenuRef" class="sl-nav-user-wrap">
@@ -115,6 +115,23 @@
                   <div class="sl-user-menu-sub">{{ authStore.user?.email || authStore.user?.phone || '' }}</div>
                 </div>
               </div>
+
+              <!-- Workspace Switcher in User Menu -->
+              <template v-if="canSwitchWorkspace">
+                <div class="sl-user-menu-divider" />
+                <div class="sl-user-menu-section-title">Giao diện làm việc</div>
+                <button
+                  v-for="ws in workspaceStore.allWorkspaces"
+                  :key="ws.id"
+                  class="sl-user-menu-item"
+                  :class="{ 'sl-user-menu-item--active': ws.id === workspaceStore.activeWorkspaceId }"
+                  @click="onSwitchWorkspace(ws.id)"
+                >
+                  <v-icon size="16" class="sl-menu-icon">{{ ws.icon }}</v-icon>
+                  <span class="sl-menu-ws-label">{{ ws.name }}</span>
+                  <v-icon v-if="ws.id === workspaceStore.activeWorkspaceId" size="14" color="#0068FF">mdi-check</v-icon>
+                </button>
+              </template>
 
               <div class="sl-user-menu-divider" />
 
@@ -172,7 +189,7 @@ import { useTheme } from 'vuetify';
 import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/workspaces/resolver';
-import type { MenuItemConfig } from '@/workspaces/types';
+import type { MenuItemConfig, WorkspaceId } from '@/workspaces/types';
 
 import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
@@ -457,6 +474,14 @@ function isActive(tab: MenuItemConfig): boolean {
 // Sales workspace bị khóa cứng — không bao giờ được switch.
 // Dùng workspace ID thay vì role string để tránh edge case (deptRole, canViewAll...).
 const canSwitchWorkspace = computed(() => workspaceStore.activeWorkspaceId !== 'sales');
+
+function onSwitchWorkspace(targetId: WorkspaceId) {
+  if (targetId === workspaceStore.activeWorkspaceId) return;
+  if (!canSwitchWorkspace.value) return;
+  workspaceStore.switchWorkspace(targetId);
+  userMenuOpen.value = false;
+  router.push(workspaceStore.activeConfig.defaultRoute);
+}
 
 // ── Logout ────────────────────────────────────────────────────────────────────
 function logout() {
@@ -926,11 +951,31 @@ function logout() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-top: 12px;
+  padding-top: 8px;
   width: 100%;
   align-items: center;
   border-top: 1px solid rgba(0,0,0,0.06);
   flex-shrink: 0;
+}
+
+.sl-user-menu-section-title {
+  padding: 6px 14px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.sl-user-menu-item--active {
+  background: #f0fdfa;
+  color: #0d9488;
+  font-weight: 600;
+}
+
+.sl-menu-ws-label {
+  flex: 1;
+  text-align: left;
 }
 
 .sl-sidenav.sl-sidenav--expanded .sl-nav-footer {

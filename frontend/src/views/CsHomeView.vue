@@ -32,36 +32,106 @@
       </div>
     </header>
 
-    <!-- ════════ SMART FILTER PILLS (Replaces old bulky KPI cards) ════════ -->
+    <!-- ════════ CUSTOM GROUPS TAB BAR (Replaces static filter pills) ════════ -->
     <div class="cs-filter-bar">
       <div class="cs-pills-group">
+        <!-- 'Tất cả' Tab -->
         <button
           class="cs-filter-pill"
           :class="{ active: activeFilter === 'all' }"
           @click="activeFilter = 'all'"
         >
           <span>Tất cả</span>
-          <span class="cs-pill-badge">{{ salesList.length }}</span>
+          <span class="cs-pill-badge">{{ totalAllCount }}</span>
         </button>
 
-        <button
-          class="cs-filter-pill urgent-pill"
-          :class="{ active: activeFilter === 'urgent', 'has-urgent': urgentSalesCount > 0 }"
-          @click="activeFilter = 'urgent'"
+        <!-- Custom User Group Tabs -->
+        <div
+          v-for="group in customGroups"
+          :key="group.id"
+          class="cs-group-pill-wrapper"
         >
-          <v-icon size="14" class="mr-1">mdi-lightning-bolt</v-icon>
-          <span>Cần hỗ trợ gấp</span>
-          <span class="cs-pill-badge urgent-badge">{{ urgentSalesCount }}</span>
-        </button>
+          <button
+            class="cs-filter-pill custom-group-pill"
+            :class="{
+              active: activeFilter === group.id,
+              'is-drop-target': dragOverGroupId === group.id
+            }"
+            :title="`Kéo thẻ thả vào đây để thêm vào nhóm ${group.name}`"
+            @click="activeFilter = group.id"
+            @dragover.prevent="onDragOverGroup($event, group.id)"
+            @dragleave="onDragLeaveGroup(group.id)"
+            @drop="onDropIntoGroup($event, group)"
+          >
+            <span class="cs-group-tab-name">{{ group.name }}</span>
+            <span class="cs-pill-badge">{{ getGroupCount(group) }}</span>
+
+            <!-- Actions menu on tab: Rename / Delete -->
+            <v-menu location="bottom end">
+              <template #activator="{ props }">
+                <span
+                  v-bind="props"
+                  class="cs-group-tab-more"
+                  title="Tùy chọn nhóm"
+                  @click.stop
+                >
+                  <v-icon size="13">mdi-dots-vertical</v-icon>
+                </span>
+              </template>
+              <v-list density="compact" class="cs-tab-menu-list">
+                <v-list-item @click="startRenameGroup(group)">
+                  <template #prepend>
+                    <v-icon size="15" class="mr-2">mdi-pencil-outline</v-icon>
+                  </template>
+                  <v-list-item-title>Đổi tên nhóm</v-list-item-title>
+                </v-list-item>
+                <v-list-item class="text-error" @click="deleteGroup(group)">
+                  <template #prepend>
+                    <v-icon size="15" color="error" class="mr-2">mdi-trash-can-outline</v-icon>
+                  </template>
+                  <v-list-item-title class="text-error">Xóa nhóm</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
+          </button>
+        </div>
+
+        <!-- Inline Add Group Input / Button -->
+        <div v-if="isCreatingGroup" class="cs-add-group-form">
+          <input
+            ref="newGroupInputRef"
+            v-model="newGroupName"
+            type="text"
+            placeholder="Tên nhóm mới..."
+            class="cs-new-group-input"
+            maxlength="30"
+            @keyup.enter="confirmCreateGroup"
+            @keyup.esc="cancelCreateGroup"
+          />
+          <button
+            class="cs-group-confirm-btn"
+            title="Lưu (Enter)"
+            @click="confirmCreateGroup"
+          >
+            <v-icon size="14">mdi-check</v-icon>
+          </button>
+          <button
+            class="cs-group-cancel-btn"
+            title="Hủy (Esc)"
+            @click="cancelCreateGroup"
+          >
+            <v-icon size="14">mdi-close</v-icon>
+          </button>
+        </div>
 
         <button
-          class="cs-filter-pill"
-          :class="{ active: activeFilter === 'online' }"
-          @click="activeFilter = 'online'"
+          v-else
+          class="cs-filter-pill add-group-btn"
+          title="Tạo nhóm mới để phân loại Sales"
+          @click="startCreateGroup"
         >
-          <span class="cs-dot-indicator online" />
-          <span>Đang online</span>
-          <span class="cs-pill-badge">{{ onlineSalesCount }}</span>
+          <v-icon size="14">mdi-plus</v-icon>
+          <span>Thêm nhóm</span>
         </button>
       </div>
     </div>
@@ -75,12 +145,16 @@
       </div>
 
       <div v-else class="cs-bento-grid">
-        <!-- ── LEAD HERO CARD: HỘP THƯ CỦA TÔI (Hiển thị khi ở tab 'Tất cả') ── -->
+        <!-- ── LEAD HERO CARD: HỘP THƯ CỦA TÔI ── -->
         <div
-          v-if="activeFilter === 'all' && !searchQuery"
+          v-if="isOwnerCardVisible"
           class="cs-sales-card cs-lead-card"
-          title="Bấm để vào Hộp thư cá nhân CSKH"
-          @click="enterCskhWorkspace"
+          :class="{ 'is-dragging': draggedCardId === 'cskh_me' }"
+          draggable="true"
+          title="Bấm để vào Hộp thư cá nhân CSKH (Kéo thả lên Tab để thêm vào nhóm)"
+          @dragstart="onDragStart($event, 'cskh_me', authStore.user?.fullName || 'Hộp thư của Tôi')"
+          @dragend="onDragEnd"
+          @click="handleLeadCardClick"
         >
           <div class="cs-card-header">
             <div class="cs-avatar-wrap">
@@ -104,6 +178,38 @@
                 <span class="cs-owner-pill">Tôi</span>
               </div>
             </div>
+
+            <!-- Quick Assign Menu Button -->
+            <v-menu location="bottom end" :close-on-content-click="false">
+              <template #activator="{ props }">
+                <button
+                  v-bind="props"
+                  class="cs-card-menu-btn"
+                  title="Gán vào nhóm"
+                  @click.stop
+                >
+                  <v-icon size="16">mdi-folder-outline</v-icon>
+                </button>
+              </template>
+              <div class="cs-card-assign-menu">
+                <div class="cs-assign-menu-title">Gán vào nhóm</div>
+                <div v-if="customGroups.length === 0" class="cs-assign-empty">
+                  Chưa có nhóm nào. Hãy bấm "+ Thêm nhóm" ở thanh trên để tạo.
+                </div>
+                <label
+                  v-for="grp in customGroups"
+                  :key="grp.id"
+                  class="cs-assign-option"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="grp.assignedIds.includes('cskh_me')"
+                    @change="toggleCardInGroup('cskh_me', grp, authStore.user?.fullName || 'Hộp thư của Tôi')"
+                  />
+                  <span>{{ grp.name }}</span>
+                </label>
+              </div>
+            </v-menu>
           </div>
 
           <div class="cs-card-footer">
@@ -111,6 +217,15 @@
               <v-icon size="13" class="mr-1">mdi-fire</v-icon>
               <span>{{ cskhData.pendingMessages }} tin chưa rep</span>
             </div>
+            <button
+              v-else-if="activeFilter !== 'all'"
+              class="cs-btn-remove-from-group"
+              title="Bỏ khỏi nhóm hiện tại"
+              @click.stop="removeCardFromGroup('cskh_me', activeFilter, authStore.user?.fullName || 'Hộp thư của Tôi')"
+            >
+              <v-icon size="13" class="mr-1">mdi-minus-circle-outline</v-icon>
+              <span>Bỏ khỏi nhóm</span>
+            </button>
             <div v-else class="cs-empty-placeholder" />
 
             <div class="cs-action-hint">
@@ -120,19 +235,23 @@
           </div>
         </div>
 
-        <!-- ── SALES CARDS (Full-card Clickable) ── -->
+        <!-- ── SALES CARDS (Full-card Clickable & Draggable) ── -->
         <div
           v-for="sales in filteredSalesList"
           :key="sales.salesUser.id"
           class="cs-sales-card"
           :class="{
             'is-urgent': sales.pendingMessages > 0,
-            'is-offline': sales.status === 'offline'
+            'is-offline': sales.status === 'offline',
+            'is-dragging': draggedCardId === sales.salesUser.id
           }"
-          :title="`Bấm để trực thay Sales ${sales.salesUser.fullName}`"
-          @click="startSupportingSales(sales)"
+          draggable="true"
+          :title="`Bấm để trực thay Sales ${sales.salesUser.fullName} (Kéo thả lên Tab để thêm vào nhóm)`"
+          @dragstart="onDragStart($event, sales.salesUser.id, sales.salesUser.fullName)"
+          @dragend="onDragEnd"
+          @click="handleSalesCardClick(sales)"
         >
-          <!-- Card Top: Avatar, Name -->
+          <!-- Card Top: Avatar, Name & Quick Assign Menu -->
           <div class="cs-card-header">
             <div class="cs-avatar-wrap">
               <img
@@ -155,6 +274,38 @@
                 {{ sales.salesUser.fullName }}
               </h3>
             </div>
+
+            <!-- Quick Assign Menu Button -->
+            <v-menu location="bottom end" :close-on-content-click="false">
+              <template #activator="{ props }">
+                <button
+                  v-bind="props"
+                  class="cs-card-menu-btn"
+                  title="Gán vào nhóm"
+                  @click.stop
+                >
+                  <v-icon size="16">mdi-folder-outline</v-icon>
+                </button>
+              </template>
+              <div class="cs-card-assign-menu">
+                <div class="cs-assign-menu-title">Gán vào nhóm</div>
+                <div v-if="customGroups.length === 0" class="cs-assign-empty">
+                  Chưa có nhóm nào. Hãy bấm "+ Thêm nhóm" ở thanh trên để tạo.
+                </div>
+                <label
+                  v-for="grp in customGroups"
+                  :key="grp.id"
+                  class="cs-assign-option"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="grp.assignedIds.includes(sales.salesUser.id)"
+                    @change="toggleCardInGroup(sales.salesUser.id, grp, sales.salesUser.fullName)"
+                  />
+                  <span>{{ grp.name }}</span>
+                </label>
+              </div>
+            </v-menu>
           </div>
 
           <!-- Card Bottom: Urgent Badge (left) & Direct Action (right) -->
@@ -163,6 +314,15 @@
               <v-icon size="13" class="mr-1">mdi-fire</v-icon>
               <span>{{ sales.pendingMessages }} tin chưa rep</span>
             </div>
+            <button
+              v-else-if="activeFilter !== 'all'"
+              class="cs-btn-remove-from-group"
+              title="Bỏ khỏi nhóm hiện tại"
+              @click.stop="removeCardFromGroup(sales.salesUser.id, activeFilter, sales.salesUser.fullName)"
+            >
+              <v-icon size="13" class="mr-1">mdi-minus-circle-outline</v-icon>
+              <span>Bỏ khỏi nhóm</span>
+            </button>
             <div v-else class="cs-empty-placeholder" />
 
             <div class="cs-action-hint">
@@ -175,20 +335,28 @@
 
       <!-- Empty State -->
       <div
-        v-if="filteredSalesList.length === 0 && (!loading || activeFilter !== 'all')"
+        v-if="!loading && filteredSalesList.length === 0 && !isOwnerCardVisible"
         class="cs-empty-state"
       >
-        <v-icon size="44" color="#94A3B8" class="mb-2">mdi-account-search-outline</v-icon>
+        <v-icon size="44" color="#94A3B8" class="mb-2">
+          {{ activeFilter !== 'all' ? 'mdi-folder-open-outline' : 'mdi-account-search-outline' }}
+        </v-icon>
         <div class="cs-empty-title">
-          {{ searchQuery ? 'Không tìm thấy Sales phù hợp' : 'Không có Sales nào trong danh mục này' }}
+          {{
+            searchQuery
+              ? 'Không tìm thấy Sales phù hợp'
+              : activeFilter !== 'all'
+              ? `Chưa có tài khoản nào trong nhóm "${activeGroupName}"`
+              : 'Chưa có tài khoản nào được phân quyền'
+          }}
         </div>
         <p class="cs-empty-desc">
           {{
             searchQuery
               ? 'Vui lòng kiểm tra lại từ khóa tìm kiếm.'
-              : activeFilter === 'urgent'
-              ? 'Hiện tại không có Sales nào có tin nhắn khách bị tồn đọng. Tất cả đều đã được phản hồi!'
-              : 'Chưa có Sales nào được phân quyền cho bạn.'
+              : activeFilter !== 'all'
+              ? 'Hãy kéo thẻ Sales và thả vào tab nhóm này, hoặc bấm icon thư mục trên thẻ để gán vào nhóm.'
+              : 'Hiện tại bạn chưa được phân quyền phụ trách tài khoản Zalo nào.'
           }}
         </p>
         <button
@@ -196,20 +364,53 @@
           class="cs-btn-reset-filter"
           @click="activeFilter = 'all'; searchQuery = ''"
         >
-          Xem tất cả Sales
+          Xem tất cả ({{ totalAllCount }})
         </button>
       </div>
     </div>
+
+    <!-- ════════ DIALOG ĐỔI TÊN NHÓM ════════ -->
+    <v-dialog v-model="renameDialogVisible" max-width="380">
+      <div class="cs-dialog-card">
+        <div class="cs-dialog-title">Đổi tên nhóm</div>
+        <input
+          v-model="renamingGroupName"
+          type="text"
+          placeholder="Nhập tên mới..."
+          class="cs-dialog-input"
+          maxlength="30"
+          @keyup.enter="confirmRenameGroup"
+        />
+        <div class="cs-dialog-actions">
+          <button class="cs-dialog-btn cancel" @click="renameDialogVisible = false">
+            Hủy
+          </button>
+          <button
+            class="cs-dialog-btn confirm"
+            :disabled="!renamingGroupName.trim()"
+            @click="confirmRenameGroup"
+          >
+            Lưu
+          </button>
+        </div>
+      </div>
+    </v-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onActivated } from 'vue';
+import { ref, computed, onMounted, onActivated, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { useCsWorkspaceStore, type DelegatedSalesTarget } from '@/stores/use-cs-workspace';
 import { useAuthStore } from '@/stores/auth';
+
+export interface CustomGroup {
+  id: string;
+  name: string;
+  assignedIds: string[]; // Sales user IDs or 'cskh_me'
+}
 
 interface SalesCardData {
   salesUser: {
@@ -251,7 +452,26 @@ const authStore = useAuthStore();
 
 const loading = ref(false);
 const searchQuery = ref('');
-const activeFilter = ref<'all' | 'urgent' | 'online'>('all');
+
+// ── CUSTOM GROUPS & FILTERS ──
+const customGroups = ref<CustomGroup[]>([]);
+const activeFilter = ref<string>('all'); // 'all' or group.id
+
+// Inline create group state
+const isCreatingGroup = ref(false);
+const newGroupName = ref('');
+const newGroupInputRef = ref<HTMLInputElement | null>(null);
+
+// Rename dialog state
+const renameDialogVisible = ref(false);
+const renamingGroupId = ref('');
+const renamingGroupName = ref('');
+
+// Drag & drop state
+const draggedCardId = ref<string | null>(null);
+const draggedCardName = ref('');
+const dragOverGroupId = ref<string | null>(null);
+let isDraggingCard = false;
 
 const cskhData = ref<CskhOwnData>({
   totalAccounts: 0,
@@ -263,31 +483,66 @@ const cskhData = ref<CskhOwnData>({
 
 const salesList = ref<SalesCardData[]>([]);
 
-// Thống kê tổng hợp cho Toolbar
-const totalDelegatedGroups = computed(() =>
-  salesList.value.reduce((sum, s) => sum + s.totalGroups, 0),
-);
+// ── LOCAL STORAGE PERSISTENCE ──
+const storageKey = computed(() => `cs_custom_groups_${authStore.user?.id || 'default'}`);
 
-const totalPendingMessages = computed(() =>
-  salesList.value.reduce((sum, s) => sum + s.pendingMessages, 0) + cskhData.value.pendingMessages,
-);
+function loadCustomGroups() {
+  try {
+    const raw = localStorage.getItem(storageKey.value);
+    if (raw) {
+      customGroups.value = JSON.parse(raw);
+    } else {
+      customGroups.value = [];
+    }
+  } catch (e) {
+    console.error('Failed to load custom groups from localStorage', e);
+    customGroups.value = [];
+  }
+}
 
-const urgentSalesCount = computed(() =>
-  salesList.value.filter((s) => s.pendingMessages > 0).length,
-);
+function saveCustomGroups() {
+  try {
+    localStorage.setItem(storageKey.value, JSON.stringify(customGroups.value));
+  } catch (e) {
+    console.error('Failed to save custom groups to localStorage', e);
+  }
+}
 
-const onlineSalesCount = computed(() =>
-  salesList.value.filter((s) => s.status === 'online').length,
-);
+// ── TOTALS & COUNTS ──
+const totalAllCount = computed(() => salesList.value.length + 1);
 
-// Lọc kết hợp Search + Filter Pill, ưu tiên khẩn cấp lên đầu
+function getGroupCount(group: CustomGroup): number {
+  let count = 0;
+  if (group.assignedIds.includes('cskh_me')) count++;
+  count += salesList.value.filter((s) => group.assignedIds.includes(s.salesUser.id)).length;
+  return count;
+}
+
+const activeGroupName = computed(() => {
+  if (activeFilter.value === 'all') return 'Tất cả';
+  const grp = customGroups.value.find((g) => g.id === activeFilter.value);
+  return grp ? grp.name : '';
+});
+
+// Owner card visibility: Shown in 'all' OR when assigned to the active custom group
+const isOwnerCardVisible = computed(() => {
+  if (searchQuery.value) return false;
+  if (activeFilter.value === 'all') return true;
+  const currentGroup = customGroups.value.find((g) => g.id === activeFilter.value);
+  return currentGroup ? currentGroup.assignedIds.includes('cskh_me') : false;
+});
+
+// Lọc kết hợp Search + Group Tab, ưu tiên khẩn cấp lên đầu
 const filteredSalesList = computed(() => {
   let list = salesList.value;
 
-  if (activeFilter.value === 'urgent') {
-    list = list.filter((s) => s.pendingMessages > 0);
-  } else if (activeFilter.value === 'online') {
-    list = list.filter((s) => s.status === 'online');
+  if (activeFilter.value !== 'all') {
+    const currentGroup = customGroups.value.find((g) => g.id === activeFilter.value);
+    if (currentGroup) {
+      list = list.filter((s) => currentGroup.assignedIds.includes(s.salesUser.id));
+    } else {
+      list = [];
+    }
   }
 
   const q = searchQuery.value.trim().toLowerCase();
@@ -311,6 +566,159 @@ const filteredSalesList = computed(() => {
   });
 });
 
+// ── GROUP MANAGEMENT ACTIONS ──
+function startCreateGroup() {
+  isCreatingGroup.value = true;
+  newGroupName.value = '';
+  void nextTick(() => {
+    newGroupInputRef.value?.focus();
+  });
+}
+
+function confirmCreateGroup() {
+  const name = newGroupName.value.trim();
+  if (!name) return;
+
+  const newGroup: CustomGroup = {
+    id: `grp_${Date.now()}`,
+    name,
+    assignedIds: [],
+  };
+
+  customGroups.value.push(newGroup);
+  saveCustomGroups();
+  activeFilter.value = newGroup.id;
+  isCreatingGroup.value = false;
+  newGroupName.value = '';
+  toast.success(`Đã tạo nhóm "${name}"`);
+}
+
+function cancelCreateGroup() {
+  isCreatingGroup.value = false;
+  newGroupName.value = '';
+}
+
+function startRenameGroup(group: CustomGroup) {
+  renamingGroupId.value = group.id;
+  renamingGroupName.value = group.name;
+  renameDialogVisible.value = true;
+}
+
+function confirmRenameGroup() {
+  const name = renamingGroupName.value.trim();
+  if (!name || !renamingGroupId.value) return;
+
+  const grp = customGroups.value.find((g) => g.id === renamingGroupId.value);
+  if (grp) {
+    grp.name = name;
+    saveCustomGroups();
+    toast.success(`Đã đổi tên nhóm thành "${name}"`);
+  }
+  renameDialogVisible.value = false;
+}
+
+function deleteGroup(group: CustomGroup) {
+  if (
+    !confirm(
+      `Bạn có chắc muốn xóa nhóm "${group.name}"?\n(Các tài khoản trong nhóm vẫn được giữ nguyên ở tab "Tất cả").`,
+    )
+  ) {
+    return;
+  }
+  const name = group.name;
+  customGroups.value = customGroups.value.filter((g) => g.id !== group.id);
+  if (activeFilter.value === group.id) {
+    activeFilter.value = 'all';
+  }
+  saveCustomGroups();
+  toast.info(`Đã xóa nhóm "${name}"`);
+}
+
+function toggleCardInGroup(cardId: string, group: CustomGroup, cardName?: string) {
+  const idx = group.assignedIds.indexOf(cardId);
+  if (idx >= 0) {
+    group.assignedIds.splice(idx, 1);
+    toast.info(`Đã gỡ "${cardName || 'Tài khoản'}" khỏi nhóm "${group.name}"`);
+  } else {
+    group.assignedIds.push(cardId);
+    toast.success(`Đã thêm "${cardName || 'Tài khoản'}" vào nhóm "${group.name}"`);
+  }
+  saveCustomGroups();
+}
+
+function removeCardFromGroup(cardId: string, groupId: string, cardName?: string) {
+  const grp = customGroups.value.find((g) => g.id === groupId);
+  if (!grp) return;
+  const idx = grp.assignedIds.indexOf(cardId);
+  if (idx >= 0) {
+    grp.assignedIds.splice(idx, 1);
+    saveCustomGroups();
+    toast.info(`Đã gỡ "${cardName || 'Tài khoản'}" khỏi nhóm "${grp.name}"`);
+  }
+}
+
+function assignCardToGroup(cardId: string, groupId: string, cardName?: string) {
+  const grp = customGroups.value.find((g) => g.id === groupId);
+  if (!grp) return;
+  if (grp.assignedIds.includes(cardId)) {
+    toast.info(`"${cardName || 'Tài khoản'}" đã có trong nhóm "${grp.name}"`);
+    return;
+  }
+  grp.assignedIds.push(cardId);
+  saveCustomGroups();
+  toast.success(`Đã thêm "${cardName || 'Tài khoản'}" vào nhóm "${grp.name}"`);
+}
+
+// ── DRAG & DROP HANDLERS ──
+function onDragStart(e: DragEvent, id: string, name: string) {
+  isDraggingCard = true;
+  draggedCardId.value = id;
+  draggedCardName.value = name;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'copyMove';
+    e.dataTransfer.setData('text/plain', id);
+  }
+}
+
+function onDragEnd() {
+  setTimeout(() => {
+    isDraggingCard = false;
+  }, 120);
+  draggedCardId.value = null;
+  draggedCardName.value = '';
+  dragOverGroupId.value = null;
+}
+
+function onDragOverGroup(e: DragEvent, groupId: string) {
+  e.preventDefault();
+  dragOverGroupId.value = groupId;
+}
+
+function onDragLeaveGroup(groupId: string) {
+  if (dragOverGroupId.value === groupId) {
+    dragOverGroupId.value = null;
+  }
+}
+
+function onDropIntoGroup(e: DragEvent, group: CustomGroup) {
+  e.preventDefault();
+  dragOverGroupId.value = null;
+  const cardId = draggedCardId.value || e.dataTransfer?.getData('text/plain');
+  if (!cardId) return;
+  assignCardToGroup(cardId, group.id, draggedCardName.value);
+}
+
+function handleLeadCardClick() {
+  if (isDraggingCard) return;
+  void enterCskhWorkspace();
+}
+
+function handleSalesCardClick(sales: SalesCardData) {
+  if (isDraggingCard) return;
+  startSupportingSales(sales);
+}
+
+// ── DATA FETCHING & ROUTING ──
 async function fetchHubData() {
   loading.value = true;
   try {
@@ -373,11 +781,13 @@ function resetHomeDelegatedState() {
 }
 
 onMounted(() => {
+  loadCustomGroups();
   void fetchHubData();
   resetHomeDelegatedState();
 });
 
 onActivated(() => {
+  loadCustomGroups();
   void fetchHubData();
   resetHomeDelegatedState();
 });
@@ -511,7 +921,7 @@ onActivated(() => {
   to { transform: rotate(360deg); }
 }
 
-/* ── SMART FILTER PILLS BAR ────────────────────────────── */
+/* ── CUSTOM GROUPS TAB BAR ────────────────────────────── */
 .cs-filter-bar {
   display: flex;
   align-items: center;
@@ -524,7 +934,13 @@ onActivated(() => {
 .cs-pills-group {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+
+.cs-group-pill-wrapper {
+  display: inline-flex;
+  align-items: center;
 }
 
 .cs-filter-pill {
@@ -542,6 +958,7 @@ onActivated(() => {
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+  user-select: none;
 }
 
 .cs-filter-pill:hover {
@@ -574,34 +991,127 @@ onActivated(() => {
   color: #FFFFFF;
 }
 
-/* Urgent Pill Style */
-.cs-filter-pill.urgent-pill.has-urgent {
-  border-color: #FDE68A;
-  color: #B45309;
+/* Custom Group Tab styles */
+.custom-group-pill {
+  position: relative;
+  padding-right: 6px;
 }
 
-.cs-filter-pill.urgent-pill.has-urgent .urgent-badge {
-  background: #FEF3C7;
-  color: #D97706;
+.cs-group-tab-name {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.cs-filter-pill.urgent-pill.active {
-  background: #D97706;
-  border-color: #D97706;
-  color: #FFFFFF;
-}
-
-.cs-filter-pill.urgent-pill.active .urgent-badge {
-  background: rgba(255, 255, 255, 0.25);
-  color: #FFFFFF;
-}
-
-.cs-dot-indicator {
-  width: 7px;
-  height: 7px;
+.cs-group-tab-more {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 2px;
   border-radius: 50%;
+  color: #94A3B8;
+  transition: all 0.15s ease;
 }
-.cs-dot-indicator.online { background-color: #10B981; }
+
+.cs-group-tab-more:hover {
+  background: rgba(0, 0, 0, 0.08);
+  color: #0F172A;
+}
+
+.custom-group-pill.active .cs-group-tab-more {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.custom-group-pill.active .cs-group-tab-more:hover {
+  background: rgba(255, 255, 255, 0.2);
+  color: #FFFFFF;
+}
+
+/* Drag Over Highlight Target */
+.custom-group-pill.is-drop-target {
+  border: 2px dashed #0D9488 !important;
+  background: #F0FDFA !important;
+  color: #0F766E !important;
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.25) !important;
+}
+
+/* Add Group Form & Button */
+.add-group-btn {
+  border-style: dashed;
+  border-color: #94A3B8;
+  color: #475569;
+}
+
+.add-group-btn:hover {
+  border-color: #0D9488;
+  color: #0D9488;
+  background: #F0FDFA;
+}
+
+.cs-add-group-form {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #FFFFFF;
+  border: 1.5px solid #0D9488;
+  border-radius: 999px;
+  padding: 2px 4px 2px 12px;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+
+.cs-new-group-input {
+  width: 140px;
+  height: 28px;
+  border: none;
+  outline: none;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0F172A;
+  background: transparent;
+  font-family: inherit;
+}
+
+.cs-group-confirm-btn,
+.cs-group-cancel-btn {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cs-group-confirm-btn {
+  background: #0D9488;
+  color: #FFFFFF;
+}
+
+.cs-group-confirm-btn:hover {
+  background: #0F766E;
+}
+
+.cs-group-cancel-btn {
+  background: #F1F5F9;
+  color: #64748B;
+}
+
+.cs-group-cancel-btn:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.cs-tab-menu-list {
+  border-radius: 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12) !important;
+  border: 1px solid #E2E8F0 !important;
+}
 
 
 /* ── BENTO GRID CONTAINER ──────────────────────────────── */
@@ -866,6 +1376,189 @@ onActivated(() => {
 .cs-btn-reset-filter:hover {
   background: #E2E8F0;
   color: #0F172A;
+}
+
+/* ── CARD MENU & ASSIGN STYLES ────────────────────────── */
+.cs-card-menu-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  background: #F8FAFC;
+  color: #64748B;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.cs-card-menu-btn:hover {
+  background: #F0FDFA;
+  border-color: #99F6E4;
+  color: #0D9488;
+}
+
+.cs-card-assign-menu {
+  min-width: 210px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #FFFFFF;
+  border-radius: 14px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+  padding: 10px 12px;
+}
+
+.cs-assign-menu-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748B;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.cs-assign-empty {
+  font-size: 12px;
+  color: #94A3B8;
+  line-height: 1.4;
+  padding: 4px 0;
+}
+
+.cs-assign-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1E293B;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  user-select: none;
+}
+
+.cs-assign-option:hover {
+  background: #F1F5F9;
+}
+
+.cs-assign-option input[type='checkbox'] {
+  accent-color: #0D9488;
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+}
+
+/* Button Remove From Group */
+.cs-btn-remove-from-group {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  background: #FEF2F2;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  color: #DC2626;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.cs-btn-remove-from-group:hover {
+  background: #FEE2E2;
+  border-color: #F87171;
+  color: #B91C1C;
+}
+
+/* Card Dragging State */
+.cs-sales-card.is-dragging,
+.cs-lead-card.is-dragging {
+  opacity: 0.45;
+  border: 2px dashed #0D9488 !important;
+  transform: scale(0.98);
+}
+
+/* Dialog Rename Group */
+.cs-dialog-card {
+  padding: 22px 24px;
+  background: #FFFFFF;
+  border-radius: 20px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+}
+
+.cs-dialog-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 14px;
+}
+
+.cs-dialog-input {
+  width: 100%;
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid #CBD5E1;
+  border-radius: 10px;
+  font-size: 14px;
+  color: #0F172A;
+  outline: none;
+  box-sizing: border-box;
+  font-family: inherit;
+  transition: all 0.2s ease;
+}
+
+.cs-dialog-input:focus {
+  border-color: #0D9488;
+  box-shadow: 0 0 0 3px rgba(13, 148, 136, 0.12);
+}
+
+.cs-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.cs-dialog-btn {
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.cs-dialog-btn.cancel {
+  background: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+.cs-dialog-btn.cancel:hover {
+  background: #E2E8F0;
+  color: #0F172A;
+}
+
+.cs-dialog-btn.confirm {
+  background: #0D9488;
+  border: none;
+  color: #FFFFFF;
+}
+
+.cs-dialog-btn.confirm:hover {
+  background: #0F766E;
+}
+
+.cs-dialog-btn.confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* ── RESPONSIVE ───────────────────────────────────────── */
