@@ -377,16 +377,11 @@ const primaryTabs: NavTab[] = [
   { path: "/", label: "Dashboard", icon: LayoutDashboard, matchPrefix: "/$" },
   {
     path: "/channels",
-    label: "Kênh Kết Nối",
-    short: "Kênh",
-    icon: Share2,
-    resource: "zalo_account",
-  },
-  {
-    path: "/chat",
-    label: "Tin nhắn",
+    label: "Kênh & Tin nhắn",
+    short: "Kênh & Chat",
     icon: MessageSquareText,
-    resource: "conversation",
+    matchAny: ["/channels", "/chat"],
+    resource: "zalo_account",
   },
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang
   // /contacts?rel=friend, nên bỏ tab riêng thay vì để 2 tab trỏ cùng màn.
