@@ -82,59 +82,111 @@ export async function csRoutes(app: FastifyInstance) {
       unreadMessages: myUnreadMessages,
     };
 
-    // 2. Lấy danh sách nick được cấp quyền qua ZaloAccountAccess
-    const delegatedAccesses = await prisma.zaloAccountAccess.findMany({
-      where: {
-        userId: user.id,
-        permission: { in: ['chat', 'admin'] },
-        zaloAccount: {
+    const isOrgAdmin = user.role === 'owner' || user.role === 'admin';
+
+    // 2. Lấy danh sách nick của các Sales
+    // Đối với Admin / Owner: lấy toàn bộ tài khoản trong org (ngoại trừ nick của chính mình đã có ở cskhData)
+    // Đối với nhân viên CSKH thường: lấy danh sách nick được cấp quyền qua ZaloAccountAccess
+    let targetAccounts: Array<{
+      id: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      status: string;
+      ownerUserId: string | null;
+      owner: {
+        id: string;
+        fullName: string | null;
+        avatarUrl: string | null;
+        email: string | null;
+      } | null;
+    }> = [];
+
+    if (isOrgAdmin) {
+      targetAccounts = await prisma.zaloAccount.findMany({
+        where: {
           orgId: user.orgId,
           ...DISPLAYABLE_NICK_WHERE,
-          ownerUserId: { not: user.id }, // Loại bỏ nick của chính mình
+          ownerUserId: { not: user.id },
         },
-      },
-      include: {
-        zaloAccount: {
-          select: {
-            id: true,
-            displayName: true,
-            avatarUrl: true,
-            status: true,
-            ownerUserId: true,
-            owner: {
-              select: {
-                id: true,
-                fullName: true,
-                avatarUrl: true,
-                email: true,
+        select: {
+          id: true,
+          displayName: true,
+          avatarUrl: true,
+          status: true,
+          ownerUserId: true,
+          owner: {
+            select: {
+              id: true,
+              fullName: true,
+              avatarUrl: true,
+              email: true,
+            },
+          },
+        },
+      });
+    } else {
+      const delegatedAccesses = await prisma.zaloAccountAccess.findMany({
+        where: {
+          userId: user.id,
+          permission: { in: ['chat', 'admin'] },
+          zaloAccount: {
+            orgId: user.orgId,
+            ...DISPLAYABLE_NICK_WHERE,
+            ownerUserId: { not: user.id }, // Loại bỏ nick của chính mình
+          },
+        },
+        include: {
+          zaloAccount: {
+            select: {
+              id: true,
+              displayName: true,
+              avatarUrl: true,
+              status: true,
+              ownerUserId: true,
+              owner: {
+                select: {
+                  id: true,
+                  fullName: true,
+                  avatarUrl: true,
+                  email: true,
+                },
               },
             },
           },
         },
-      },
-    });
+      });
+
+      targetAccounts = delegatedAccesses
+        .map((a) => a.zaloAccount)
+        .filter((acct): acct is NonNullable<typeof acct> => !!acct);
+    }
 
     // Nhóm theo Sales (ownerUserId)
     const salesMap = new Map<
       string,
       {
         salesUser: { id: string; fullName: string; avatarUrl: string | null; email: string };
-        zaloAccounts: Array<{ id: string; displayName: string | null; avatarUrl: string | null; isOnline: boolean }>;
+        zaloAccounts: Array<{
+          id: string;
+          displayName: string | null;
+          avatarUrl: string | null;
+          status: string;
+          isOnline: boolean;
+        }>;
       }
     >();
 
-    for (const access of delegatedAccesses) {
-      const acct = access.zaloAccount;
-      if (!acct || !acct.ownerUserId || !acct.owner) continue;
+    for (const acct of targetAccounts) {
+      if (!acct) continue;
 
-      const salesUserId = acct.ownerUserId;
+      const salesUserId = acct.ownerUserId || 'unassigned';
       if (!salesMap.has(salesUserId)) {
         salesMap.set(salesUserId, {
           salesUser: {
-            id: acct.owner.id,
-            fullName: acct.owner.fullName || acct.owner.email || '',
-            avatarUrl: acct.owner.avatarUrl,
-            email: acct.owner.email || '',
+            id: salesUserId,
+            fullName: acct.owner?.fullName || acct.owner?.email || (salesUserId === 'unassigned' ? 'Chưa gán nhân viên' : 'Nhân viên'),
+            avatarUrl: acct.owner?.avatarUrl || null,
+            email: acct.owner?.email || '',
           },
           zaloAccounts: [],
         });
@@ -145,6 +197,7 @@ export async function csRoutes(app: FastifyInstance) {
         id: acct.id,
         displayName: acct.displayName,
         avatarUrl: acct.avatarUrl,
+        status: acct.status,
         isOnline,
       });
     }

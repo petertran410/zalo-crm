@@ -661,6 +661,7 @@ watch(
   font-size: 13px;
   font-weight: 700;
   color: #1e293b;
+  white-space: nowrap;
 }
 
 .cpi-count-badge {

@@ -1,7 +1,7 @@
 <template>
   <aside class="filter-sidebar" :class="{ collapsed }">
-    <!-- Header: workspace + privacy lock badge + collapse -->
-    <header class="sb-header" :class="{ stacked: collapsed }">
+    <!-- Header: workspace + privacy lock badge + collapse (Ẩn hoàn toàn khi ở compactRail) -->
+    <header v-if="!compactRail" class="sb-header" :class="{ stacked: collapsed }">
       <div v-if="!collapsed" class="ws">
         <div class="ws-dot">{{ workspaceInitial }}</div>
         <div class="ws-info">
@@ -36,6 +36,10 @@
 
     <!-- ══════ COLLAPSED MODE ══════ -->
     <div v-if="collapsed" class="c-content">
+      <!-- Privacy Lock Badge nếu đang ở chế độ compactRail và có bật privacy -->
+      <div v-if="compactRail && canUsePrivacy" class="c-privacy-rail-wrap" style="display: flex; justify-content: center; margin-bottom: 8px;">
+        <PrivacyLockBadge @click="onLockBadgeClick" />
+      </div>
       <!-- 2026-06-01: "Nhận khách" icon hộp quà ưu tiên top, pulse animation -->
       <div class="c-nhan-khach-wrap">
         <LeadFloatingButton inline />
@@ -1557,7 +1561,7 @@ watch(
   display: flex;
 }
 .filter-sidebar.smax-filter-rail .c-content {
-  padding-top: 4px;
+  padding-top: 14px;
 }
 .filter-sidebar.smax-filter-rail .c-icon-strip {
   gap: 9px;

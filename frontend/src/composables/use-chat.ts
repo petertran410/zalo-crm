@@ -361,15 +361,27 @@ export function useChat() {
 
   const extraFilters = ref<Record<string, string>>({});
 
+  function buildConversationQueryParams() {
+    const scopeIds = workScope.accountIds.value;
+    const params: Record<string, any> = {
+      limit: 100,
+      search: searchQuery.value,
+      ...extraFilters.value,
+    };
+    if (scopeIds && scopeIds.length > 1) {
+      params.accountIds = scopeIds.join(',');
+    } else if (scopeIds && scopeIds.length === 1) {
+      params.accountId = scopeIds[0];
+    } else if (accountFilter.value) {
+      params.accountId = accountFilter.value;
+    }
+    return params;
+  }
+
   /** Ghi live list vào cache key hiện tại (giữ fetchedAt) — unread/socket không mất khi trust tab switch. */
   function syncLiveConversationsToCache() {
     try {
-      const params = {
-        limit: 100,
-        search: searchQuery.value,
-        accountId: accountFilter.value || undefined,
-        ...extraFilters.value,
-      };
+      const params = buildConversationQueryParams();
       const cacheKey = JSON.stringify(params);
       const prev = conversationsCache.get(cacheKey);
       if (!prev) return;
@@ -381,12 +393,7 @@ export function useChat() {
   }
 
   async function fetchConversations(opts?: { bypassCache?: boolean; trustFreshCache?: boolean }) {
-    const params = {
-      limit: 100,
-      search: searchQuery.value,
-      accountId: accountFilter.value || undefined,
-      ...extraFilters.value,
-    };
+    const params = buildConversationQueryParams();
     const cacheKey = JSON.stringify(params);
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
 

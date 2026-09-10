@@ -22,17 +22,11 @@ export const adminMenu: MenuItemConfig[] = [
   },
   {
     key: 'channels',
-    title: 'Kênh Kết Nối',
-    icon: 'mdi-transit-connection-variant',
-    to: '/channels',
-    resource: 'zalo_account',
-  },
-  {
-    key: 'chat',
-    title: 'Tin nhắn',
+    title: 'Kênh & Tin nhắn',
     icon: 'mdi-message-text-outline',
-    to: '/chat',
-    resource: 'conversation',
+    to: '/channels',
+    matchPrefix: '/(channels|chat)',
+    resource: 'zalo_account',
   },
   {
     key: 'contacts',
