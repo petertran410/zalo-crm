@@ -1,149 +1,171 @@
 <template>
   <MobileChatView v-if="isMobile" />
-  <div v-else class="smax-chat-grid">
-    <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
-    <ConversationFilterSidebar
-      :filters="inboxFilters"
-      :workspace-name="workspaceName"
-      :current-user-name="currentUserName"
-      :current-user-id="currentUserId"
-      :all-accounts-count="zaloAccounts?.length || 0"
-      :account-statuses="accountStatuses"
-      :total-unread="totalUnreadCount"
-      :current-account-id="accountFilter"
-      :current-account="currentAccount"
-      :current-role="currentRole"
-      @update:current-role="currentRole = $event"
-      @manage-folders="showFolderManagePopup = true"
-      @clear-account-filter="onFilterAccount(null)"
-    />
+  <div v-else class="cs-chat-wrapper">
+    <div class="smax-chat-grid" :style="gridStyle">
+      <!-- COL 1: conversation list — FilterBar render INSIDE via named slot -->
+      <div class="smax-conv-col">
+        <!-- Compact Delegated Pill when in Delegated Mode -->
+        <div v-if="csWorkspace.isDelegatedMode" class="cs-delegated-chip">
+          <div class="cs-delegated-chip-left">
+            <span class="cs-dot-live" />
+            <span class="cs-label">Trực thay:</span>
+            <strong class="cs-sales-name">{{ csWorkspace.activeSalesTarget?.fullName }}</strong>
+          </div>
+          <div class="cs-delegated-chip-actions">
+            <button class="cs-btn-exit" @click="exitDelegatedMode" title="Thoát trực thay, về hộp thư CSKH">
+              <v-icon size="13">mdi-close-circle-outline</v-icon>
+              <span>Về CSKH của tôi</span>
+            </button>
+            <button class="cs-btn-back" @click="returnToCsHome" title="Đổi Sales / Về Trang Chủ">
+              <v-icon size="13">mdi-arrow-left</v-icon>
+              <span>Đổi Sales</span>
+            </button>
+          </div>
+        </div>
 
-    <!-- COL 2: conversation list — FilterBar render INSIDE via named slot
-         giữa CRM tag bar và conv list (đúng order user yêu cầu) -->
-    <div class="smax-conv-col">
-      <!-- FIX socket-chết v2 — báo mất kết nối realtime, KHÔNG để chết âm thầm (bỏ lỡ khách).
-           Text generic, không lộ orgId/user. Ẩn khi đã kết nối. -->
-      <div v-if="realtimeOffline" class="realtime-offline-banner">
-        <span class="dot" />
-        Mất kết nối realtime — đang thử kết nối lại...
+        <!-- FIX socket-chết v2 — báo mất kết nối realtime, KHÔNG để chết âm thầm (bỏ lỡ khách) -->
+        <div v-if="realtimeOffline" class="realtime-offline-banner">
+          <span class="dot" />
+          Mất kết nối realtime — đang thử kết nối lại...
+        </div>
+        <!-- work-scope 2026-06-15 — 1 DÒNG tóm tắt "N tin ở M nick khác" -->
+        <button
+          v-if="outOfScopeTotal > 0"
+          class="out-of-scope-bar"
+          :title="`Có ${outOfScopeTotal} tin ở ${outOfScopeNickCount} nick khác — bấm để xem tất cả`"
+          @click="onShowAllOutOfScope"
+        >
+          <v-icon size="16" class="oos-icon">mdi-bell-outline</v-icon>
+          <span class="oos-text">{{ outOfScopeTotal }} tin ở {{ outOfScopeNickCount }} nick khác</span>
+        </button>
+        <ConversationList
+          :conversations="conversations"
+          :selected-id="selectedConvId"
+          :loading="loadingConvs"
+          :accounts="accountList"
+          :selected-account-ids="selectedAccountIds"
+          :active-tab-key="inboxFilters.state.activeTab"
+          :auto-compose-phone="autoComposePhone"
+          :following-pairs="followingPairs"
+          :filter-collapsed="filterCollapsed"
+          v-model:search="searchQuery"
+          @select="onSelectConv"
+          @filter-account="onFilterAccount"
+          @update:filters="onFiltersUpdate"
+          @conversation-moved="onConversationMoved"
+          @conversation-deleted="onConversationDeleted"
+          @compose-opened="onComposeOpened"
+          @follow-changed="onFollowChanged"
+        >
+          <template #filters>
+            <ConversationFilterBar
+              :filters="inboxFilters"
+              :total-count="conversations.length"
+              :counts="conversationCounts"
+              :priority-has-unread="priorityHasUnread"
+              :collapsed="filterCollapsed"
+              @reselect-tab="onReselectActiveTab"
+              @update:collapsed="filterCollapsed = $event"
+            />
+          </template>
+        </ConversationList>
       </div>
-      <!-- work-scope 2026-06-15 — 1 DÒNG tóm tắt "N tin ở M nick khác" (anh chốt: gọn,
-           không liệt kê từng nick, icon hệ thống không emoji). Ẩn khi không có tin.
-           Bấm → về "Toàn bộ" (xem tất cả nick) + reload. Chỉ đếm nick CÓ QUYỀN. -->
-      <button
-        v-if="outOfScopeTotal > 0"
-        class="out-of-scope-bar"
-        :title="`Có ${outOfScopeTotal} tin ở ${outOfScopeNickCount} nick khác — bấm để xem tất cả`"
-        @click="onShowAllOutOfScope"
-      >
-        <v-icon size="16" class="oos-icon">mdi-bell-outline</v-icon>
-        <span class="oos-text">{{ outOfScopeTotal }} tin ở {{ outOfScopeNickCount }} nick khác</span>
-      </button>
-      <ConversationList
-        :conversations="conversations"
-        :selected-id="selectedConvId"
-        :loading="loadingConvs"
-        :accounts="accountList"
-        :selected-account-ids="selectedAccountIds"
-        :active-tab-key="inboxFilters.state.activeTab"
-        :auto-compose-phone="autoComposePhone"
-        :following-pairs="followingPairs"
-        v-model:search="searchQuery"
-        @select="onSelectConv"
-        @filter-account="onFilterAccount"
-        @update:filters="onFiltersUpdate"
-        @conversation-moved="onConversationMoved"
-        @conversation-deleted="onConversationDeleted"
-        @compose-opened="onComposeOpened"
-        @follow-changed="onFollowChanged"
-      >
-        <template #filters>
-          <ConversationFilterBar
-            :filters="inboxFilters"
-            :total-count="conversations.length"
-            :counts="conversationCounts"
-            :priority-has-unread="priorityHasUnread"
-            @reselect-tab="onReselectActiveTab"
-          />
-        </template>
-      </ConversationList>
+
+      <!-- Resizer giữa Cột 1 và Cột 2 -->
+      <div
+        class="sl-resizer"
+        :class="{ 'is-active': isResizingConv }"
+        title="Kéo thả điều chỉnh chiều rộng danh sách hội thoại"
+        @mousedown="startResizeConv"
+      />
+
+      <!-- COL 2: message thread (handles header/messages/input bên trong) -->
+      <MessageThread
+        :conversation="selectedConv"
+        :messages="messages"
+        :loading="loadingMsgs"
+        :sending="sendingMsg"
+        :all-conversations="conversations"
+        :replying-to="replyingTo"
+        :editing-message="editingMessage"
+        :typing-users="currentTypers"
+        :show-contact-panel="showContactPanel"
+        :delegated-operator-info="delegatedOperatorInfo"
+        class="smax-msg-col"
+        @send="sendMessage"
+        @open-media-tab="onOpenMediaTab"
+        @toggle-contact-panel="showContactPanel = !showContactPanel"
+        @add-reaction="onAddReaction"
+        @remove-reaction="onRemoveReaction"
+        @delete-message="onDeleteMessage"
+        @undo-message="onUndoMessage"
+        @edit-message="onEditMessage"
+        @forward-message="onForwardMessage"
+        @set-reply-to="setReplyTo"
+        @set-editing="setEditing"
+        @cancel-reply-edit="onCancelReplyEdit"
+        @typing="onTyping"
+        @refresh-thread="selectedConvId && fetchMessages(selectedConvId)"
+        @switch-conversation="onSwitchToNickConv"
+        @profile-synced="patchContactProfile"
+        @exit-delegated="exitDelegatedMode"
+      />
+
+      <!-- Resizer giữa Cột 2 và Cột 3 -->
+      <div
+        v-if="showContactPanel && selectedConv?.contact"
+        class="sl-resizer"
+        :class="{ 'is-active': isResizingInfo }"
+        title="Kéo thả điều chỉnh chiều rộng thông tin 360"
+        @mousedown="startResizeInfo"
+      />
+
+      <!-- Folder management modal (overlay) -->
+      <FolderManagePopup
+        v-model="showFolderManagePopup"
+        :filters="inboxFilters"
+        :all-accounts-count="zaloAccounts?.length || 0"
+        :account-statuses="accountStatuses"
+        :total-unread="totalUnreadCount"
+        :current-account-id="accountFilter"
+        @view-applied="onFolderViewApplied"
+      />
+
+      <!-- COL 3: contact info panel (chỉ hiện khi có contact) -->
+      <ChatContactPanel
+        v-if="showContactPanel && selectedConv?.contact"
+        ref="contactPanelRef"
+        :contact-id="selectedConv.contact.id"
+        :contact="selectedConv.contact"
+        :friendship="selectedConv.friendship ?? null"
+        :active-zalo-account-id="selectedConv.zaloAccount?.id ?? null"
+        :friend-id="selectedConv.friendship?.id ?? null"
+        :conversation-id="selectedConv.id ?? null"
+        :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
+        :current-role="currentRole"
+        class="smax-info-col"
+        @close="showContactPanel = false"
+        @saved="fetchConversations()"
+        @status-changed="onPanelStatusChanged"
+      />
     </div>
-
-    <!-- COL 3: message thread (giữ nguyên — handles header/messages/input bên trong) -->
-    <MessageThread
-      :conversation="selectedConv"
-      :messages="messages"
-      :loading="loadingMsgs"
-       :sending="sendingMsg"
-       :all-conversations="conversations"
-      :replying-to="replyingTo"
-      :editing-message="editingMessage"
-      :typing-users="currentTypers"
-      :show-contact-panel="showContactPanel"
-      class="smax-msg-col"
-       @send="sendMessage"
-       @open-media-tab="onOpenMediaTab"
-      @toggle-contact-panel="showContactPanel = !showContactPanel"
-      @add-reaction="onAddReaction"
-      @remove-reaction="onRemoveReaction"
-      @delete-message="onDeleteMessage"
-      @undo-message="onUndoMessage"
-      @edit-message="onEditMessage"
-      @forward-message="onForwardMessage"
-      @set-reply-to="setReplyTo"
-      @set-editing="setEditing"
-      @cancel-reply-edit="onCancelReplyEdit"
-      @typing="onTyping"
-      @refresh-thread="selectedConvId && fetchMessages(selectedConvId)"
-      @switch-conversation="onSwitchToNickConv"
-      @profile-synced="patchContactProfile"
-    />
-
-    <!-- Folder management modal (overlay) -->
-    <FolderManagePopup
-      v-model="showFolderManagePopup"
-      :filters="inboxFilters"
-      :all-accounts-count="zaloAccounts?.length || 0"
-      :account-statuses="accountStatuses"
-      :total-unread="totalUnreadCount"
-      :current-account-id="accountFilter"
-      @view-applied="onFolderViewApplied"
-    />
-
-    <!-- COL 4: contact info panel (chỉ hiện khi có contact) -->
-    <ChatContactPanel
-      v-if="showContactPanel && selectedConv?.contact"
-      ref="contactPanelRef"
-      :contact-id="selectedConv.contact.id"
-      :contact="selectedConv.contact"
-      :friendship="selectedConv.friendship ?? null"
-      :active-zalo-account-id="selectedConv.zaloAccount?.id ?? null"
-      :friend-id="selectedConv.friendship?.id ?? null"
-      :conversation-id="selectedConv.id ?? null"
-       :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
-       :current-role="currentRole"
-       class="smax-info-col"
-       @close="showContactPanel = false"
-      @saved="fetchConversations()"
-      @status-changed="onPanelStatusChanged"
-    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick, provide } from 'vue';
+import { ref, computed, onMounted, onActivated, onUnmounted, watch, nextTick, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';
 import ChatContactPanel from '@/components/chat/ChatContactPanel.vue';
-import ConversationFilterSidebar from '@/components/chat/ConversationFilterSidebar.vue';
 import ConversationFilterBar from '@/components/chat/ConversationFilterBar.vue';
 import FolderManagePopup from '@/components/chat/FolderManagePopup.vue';
 import { useChat } from '@/composables/use-chat';
 import { useInboxFilters } from '@/composables/use-inbox-filters';
 import { useAuthStore } from '@/stores/auth';
+import { useCsWorkspaceStore } from '@/stores/use-cs-workspace';
 import { usePrivacyStore } from '@/stores/privacy';
 import { useChatOperations } from '@/composables/use-chat-operations';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
@@ -155,6 +177,15 @@ import { useMobile } from '@/composables/use-mobile';
 const { isMobile } = useMobile();
 const route = useRoute();
 const router = useRouter();
+const csWorkspace = useCsWorkspaceStore();
+
+const delegatedOperatorInfo = computed(() => {
+  if (!csWorkspace.isDelegatedMode || !csWorkspace.activeSalesTarget) return null;
+  return {
+    salesName: csWorkspace.activeSalesTarget.fullName,
+    nickName: selectedConv.value?.zaloAccount?.displayName || undefined,
+  };
+});
 
 const {
   conversations, selectedConvId, selectedConv, messages,
@@ -215,7 +246,8 @@ const selectedAccountIds = computed(() => workScope.accountIds.value);
 const SCOPE_KEY = 'chat.scope.v1';
 function saveScope(folderId: string | null, accountId: string | null) {
   try {
-    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId, accountId }));
+    // CSKH không dùng folder filter -> luôn lưu folderId = null để không bị kẹt bộ lọc folder
+    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId: null, accountId }));
   } catch { /* localStorage đầy/chặn → bỏ qua */ }
 }
 function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
@@ -227,13 +259,15 @@ function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
 // Áp scope đã lưu vào state, CÓ validate quyền nick.
 // work-scope migration 2026-06-15: NICK giờ do workScope quản (seed từ chat.workscope.v2).
 // validateAgainst bỏ nick MẤT QUYỀN (bảo mật — KHÔNG vượt quyền server getZaloScope cấp).
-// restoreScope chỉ còn lo FOLDER (chat.scope.v1) — nick đã tách sang workScope.
+// CSKH view: không dùng folder sidebar -> luôn ép inboxFilters.setFolder(null) và xóa folderId cũ khỏi localStorage.
 function restoreScope() {
   const accessibleIds = (zaloAccounts.value || []).map(a => a.id);
   workScope.validateAgainst(accessibleIds); // lọc scope đã lưu chỉ còn nick có quyền
-  // Folder: set vào inbox filter (sidebar tự bỏ nếu folder không tồn tại khi render).
+  inboxFilters.setFolder(null);
   const saved = loadScopeRaw();
-  inboxFilters.setFolder(saved.folderId);
+  if (saved.folderId) {
+    saveScope(null, saved.accountId);
+  }
 }
 // work-scope 2026-06-15 — tóm tắt "N tin ở M nick khác" (anh chốt: 1 dòng, không liệt kê).
 // CHỈ đếm nick CÓ QUYỀN (join zaloAccounts đã qua getZaloScope) — bảo mật, không lộ/đếm
@@ -371,6 +405,7 @@ const conversationCounts = computed(() => {
 // Apply inbox filter state → extraFilters → refetch.
 // Sync ngay extraFilters trên mount để first fetch dùng đúng default tab
 // (Cá nhân → threadType=user) thay vì load tất cả conv.
+inboxFilters.setFolder(null);
 extraFilters.value = inboxFilters.buildQueryParams();
 
 let filterApplyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -523,13 +558,13 @@ function onTyping() {
 }
 function onFilterAccount(id: string | null) {
   accountFilter.value = id;
-  saveScope(inboxFilters.state.folderId, id); // nhớ Phạm vi xem qua reload
+  saveScope(null, id); // CSKH không lưu folderId
   fetchConversations();
 }
 function onFolderViewApplied(payload: { folderId: string | null; accountId: string | null }) {
-  inboxFilters.setFolder(payload.folderId);
+  inboxFilters.setFolder(null);
   accountFilter.value = payload.accountId;
-  saveScope(payload.folderId, payload.accountId); // nhớ Phạm vi xem qua reload
+  saveScope(null, payload.accountId);
   fetchConversations();
 }
 function onFiltersUpdate(params: Record<string, string>) {
@@ -549,7 +584,7 @@ function onConversationDeleted(id: string) {
   const idx = conversations.value.findIndex((c) => c.id === id);
   if (idx !== -1) conversations.value.splice(idx, 1);
   if (selectedConvId.value === id) {
-    router.push({ name: 'Chat' }).catch(() => {});
+    router.push({ name: 'CsChat' }).catch(() => {});
   }
   fetchConversations({ bypassCache: true });
   void refreshPriorityUnread();
@@ -558,7 +593,7 @@ function onConversationDeleted(id: string) {
 // Khi user tạo conv mới từ "Tin nhắn mới" dialog → refresh list + nav vào conv đó.
 async function onComposeOpened(conversationId: string) {
   await fetchConversations();
-  router.push({ name: 'Chat', params: { convId: conversationId } });
+  router.push({ name: 'CsChat', params: { convId: conversationId } });
 }
 
 // Sprint v3 Tuần 3 Row 6.9 (2026-06-03): sale switch nick trong header chat.
@@ -568,7 +603,7 @@ async function onSwitchToNickConv(convId: string) {
   if (!conversations.value.find(c => c.id === convId)) {
     await fetchConversations();
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: 'CsChat', params: { convId } });
 }
 
 // Auto-show panel khi chọn conv có contact
@@ -585,8 +620,8 @@ async function onOpenMediaTab() {
   contactPanelRef.value?.setMainTab('media');
 }
 
-// ════════ URL routing: /chat/:convId — deep-link hội thoại ════════
-/** Khi user click 1 conv → push URL /chat/:id (watcher bên dưới sẽ trigger selectConversation) */
+// ════════ URL routing: /cs-chat/:convId — deep-link hội thoại ════════
+/** Khi user click 1 conv → push URL /cs-chat/:id (watcher bên dưới sẽ trigger selectConversation) */
 function onSelectConv(convId: string) {
   if (route.params.convId === convId) {
     // Click lại conv đang mở → vẫn refresh messages
@@ -595,7 +630,7 @@ function onSelectConv(convId: string) {
     void selectConversation(convId).then(() => refreshPriorityUnread());
     return;
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: 'CsChat', params: { convId } });
 }
 
 // Watch route → select conv khi convId thay đổi (deep-link, back/forward, mới click)
@@ -632,8 +667,8 @@ const autoComposePhone = computed(() => {
   return typeof c === 'string' ? c : '';
 });
 
-// Watch query.contactId — khi nav từ Contacts/Friends qua /chat?contactId=xxx
-// Resolve sang convId qua conversations list, rồi redirect /chat/:convId.
+// Watch query.contactId — khi nav từ Contacts/Friends qua /cs-chat?contactId=xxx
+// Resolve sang convId qua conversations list, rồi redirect /cs-chat/:convId.
 watch(
   [() => route.query.contactId, conversations],
   ([contactId, convs]) => {
@@ -641,7 +676,7 @@ watch(
     if (!Array.isArray(convs) || !convs.length) return;
     const match = convs.find(c => c.contact?.id === contactId && c.threadType === 'user');
     if (match) {
-      router.replace({ name: 'Chat', params: { convId: match.id } });
+      router.replace({ name: 'CsChat', params: { convId: match.id } });
     }
   },
   { deep: false, immediate: false },
@@ -655,16 +690,73 @@ function onLabelsSynced() {
   }
 }
 
+function getMyOwnedAccountIds(): string[] {
+  const myId = authStore.user?.id;
+  return (zaloAccounts.value || [])
+    .filter(a => a.ownerUserId === myId || (a as any).isOwnedByMe)
+    .map(a => a.id);
+}
+
+async function syncCurrentScopeAndConversations() {
+  if (isMobile.value) return;
+  inboxFilters.setFolder(null);
+  await fetchZaloAccounts();
+  const ownIds = getMyOwnedAccountIds();
+
+  // Khôi phục scope theo Sales đang chọn nếu đang ở delegated mode, ngược lại khóa về nick của CSKH
+  if (csWorkspace.isDelegatedMode && csWorkspace.activeSalesAccountIds.length > 0) {
+    workScope.setScope(csWorkspace.activeSalesAccountIds);
+  } else {
+    if (ownIds.length > 0) {
+      workScope.setScope(ownIds);
+    } else {
+      restoreScope();
+    }
+  }
+
+  // Làm sạch khung chat giữa (trạng thái chờ chọn hội thoại mới, tránh nhầm lẫn giữa Sales và CSKH)
+  selectedConvId.value = null;
+  messages.value = [];
+  if (route.params.convId) {
+    router.replace({ name: 'CsChat' });
+  }
+
+  extraFilters.value = inboxFilters.buildQueryParams();
+  await fetchConversations({ bypassCache: true });
+  void fetchPriorityUnread();
+  void fetchFollowingPairs();
+}
+
+function exitDelegatedMode() {
+  const ownIds = getMyOwnedAccountIds();
+  csWorkspace.clearSalesTarget(ownIds);
+  void syncCurrentScopeAndConversations();
+  toast.success('Đã quay lại hộp thư Zalo CSKH của bạn');
+}
+
+function returnToCsHome() {
+  const ownIds = getMyOwnedAccountIds();
+  csWorkspace.clearSalesTarget(ownIds);
+  selectedConvId.value = null;
+  messages.value = [];
+  router.push('/cs-home');
+}
+
+watch(
+  () => csWorkspace.activeSalesTarget,
+  () => {
+    void syncCurrentScopeAndConversations();
+  },
+  { deep: true }
+);
+
+onActivated(async () => {
+  await syncCurrentScopeAndConversations();
+});
+
 onMounted(async () => {
   if (!isMobile.value) {
-    await fetchZaloAccounts();
-    // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
-    // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.
-    restoreScope();
-    extraFilters.value = inboxFilters.buildQueryParams();
-    fetchConversations();
-    void fetchPriorityUnread(); // badge đậm tab Ưu tiên — load NGAY lúc mount (không debounce)
-    void fetchFollowingPairs(); // theo dõi — Set để cột 2 hiện chuông (anh chốt 2026-06-15)
+    await syncCurrentScopeAndConversations();
     initSocket();
     registerSocketListeners(getSocket());
     // 2026-06-06 (Anh chốt): listen 'friend:updated' để sync realtime giai đoạn KH
@@ -735,42 +827,125 @@ watch(searchQuery, () => {
   clearTimeout(searchTimeout);
   searchTimeout = setTimeout(() => fetchConversations(), 300);
 });
+
+// ── Layout Resizing (Cache & Drag) ───────────────────────────────────────────
+const filterCollapsed = ref(false);
+
+const LAYOUT_CACHE_KEY = 'cs.chat.layout.v1';
+function loadCachedLayout(): { convWidth: number; infoWidth: number } {
+  try {
+    const raw = localStorage.getItem(LAYOUT_CACHE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      return {
+        convWidth: Math.min(Math.max(Number(parsed.convWidth) || 360, 280), 480),
+        infoWidth: Math.min(Math.max(Number(parsed.infoWidth) || 340, 280), 450),
+      };
+    }
+  } catch { /* parse fallback */ }
+  return { convWidth: 360, infoWidth: 340 };
+}
+
+const cachedLayout = loadCachedLayout();
+const convColWidth = ref<number>(cachedLayout.convWidth);
+const infoColWidth = ref<number>(cachedLayout.infoWidth);
+
+function saveCachedLayout() {
+  try {
+    localStorage.setItem(
+      LAYOUT_CACHE_KEY,
+      JSON.stringify({ convWidth: convColWidth.value, infoWidth: infoColWidth.value })
+    );
+  } catch { /* storage full / blocked */ }
+}
+
+const isResizingConv = ref(false);
+const isResizingInfo = ref(false);
+
+function startResizeConv(e: MouseEvent) {
+  e.preventDefault();
+  isResizingConv.value = true;
+  const startX = e.clientX;
+  const startWidth = convColWidth.value;
+
+  function onMouseMove(moveEvent: MouseEvent) {
+    const deltaX = moveEvent.clientX - startX;
+    const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 480);
+    convColWidth.value = newWidth;
+  }
+
+  function onMouseUp() {
+    isResizingConv.value = false;
+    saveCachedLayout();
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+function startResizeInfo(e: MouseEvent) {
+  e.preventDefault();
+  isResizingInfo.value = true;
+  const startX = e.clientX;
+  const startWidth = infoColWidth.value;
+
+  function onMouseMove(moveEvent: MouseEvent) {
+    const deltaX = startX - moveEvent.clientX;
+    const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 450);
+    infoColWidth.value = newWidth;
+  }
+
+  function onMouseUp() {
+    isResizingInfo.value = false;
+    saveCachedLayout();
+    window.removeEventListener('mousemove', onMouseMove);
+    window.removeEventListener('mouseup', onMouseUp);
+  }
+
+  window.addEventListener('mousemove', onMouseMove);
+  window.addEventListener('mouseup', onMouseUp);
+}
+
+const gridStyle = computed(() => {
+  const hasInfo = showContactPanel.value && selectedConv.value?.contact;
+  if (hasInfo) {
+    return {
+      gridTemplateColumns: `${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
+      gap: '8px',
+    };
+  }
+  return {
+    gridTemplateColumns: `${convColWidth.value}px 6px 1fr`,
+    gap: '8px',
+  };
+});
 </script>
 
 <style scoped>
-/* ════════ Responsive chat layout — adaptive 4 tier + filter collapse ════════
-   Filter rail có 2 mode: expanded (default tier width) hoặc collapsed (56px).
-   Collapse state qua :has(.filter-rail.collapsed) — auto sync khi FilterRail
-   toggle localStorage. Grid template column 1 thay đổi theo. */
-.smax-chat-grid {
-  display: grid;
-  grid-template-columns: 290px 380px 1fr 350px;
-  height: calc(100vh - var(--smax-topnav-h));
+.cs-chat-wrapper {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  width: 100%;
   overflow: hidden;
-  background: var(--smax-grey-100);
-  gap: 5px;
 }
 
-/* Khi info-panel đóng, col 4 collapse → grid auto-adjust */
-.smax-chat-grid:has(.smax-info-col:not(:empty)) { /* presence query placeholder */ }
-.smax-chat-grid:not(:has(.smax-info-col)) {
-  grid-template-columns: 290px 380px 1fr;
-}
-/* Khi filter rail collapsed → col 1 = 56px (cả new sidebar lẫn legacy) */
-.smax-chat-grid:has(.filter-rail.collapsed),
-.smax-chat-grid:has(.filter-sidebar.collapsed) {
-  grid-template-columns: 56px 380px 1fr 350px;
-}
-.smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)),
-.smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-  grid-template-columns: 56px 380px 1fr;
+.smax-chat-grid {
+  display: grid;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: transparent;
+  gap: 8px;
 }
 
 .smax-conv-col,
 .smax-msg-col,
 .smax-info-col {
-  min-width: 0; min-height: 0;
+  min-width: 0;
+  min-height: 0;
   height: 100%;
   overflow: hidden;
 }
@@ -778,9 +953,123 @@ watch(searchQuery, () => {
 .smax-conv-col {
   border-right: 1px solid var(--smax-grey-200);
   background: var(--smax-bg);
+  display: flex;
+  flex-direction: column;
 }
 
-/* work-scope 2026-06-15 — 1 DÒNG "N tin ở M nick khác" ở đầu cột 2 (anh chốt: gọn) */
+/* Compact Delegated Pill in Conv Column Header */
+.cs-delegated-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 12px;
+  background: #f0fdfa;
+  border-bottom: 1px solid #ccfbf1;
+  font-size: 12px;
+  color: #0f766e;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.cs-delegated-chip-left {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cs-delegated-chip-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.cs-btn-exit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: #0d9488;
+  border: 1px solid #0d9488;
+  color: white;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.cs-btn-exit:hover {
+  background: #0f766e;
+}
+.cs-dot-live {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #0d9488;
+  flex-shrink: 0;
+  animation: cs-pulse 1.8s infinite;
+}
+@keyframes cs-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.85); }
+}
+.cs-label {
+  color: #64748b;
+  font-size: 11px;
+}
+.cs-sales-name {
+  color: #0f766e;
+  font-weight: 700;
+}
+.cs-btn-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: white;
+  border: 1px solid #99f6e4;
+  color: #0f766e;
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.15s;
+}
+.cs-btn-back:hover {
+  background: #0d9488;
+  color: white;
+  border-color: #0d9488;
+}
+
+/* Resizer giữa các cột */
+.sl-resizer {
+  width: 6px;
+  cursor: col-resize;
+  background: transparent;
+  transition: background 0.15s;
+  position: relative;
+  z-index: 10;
+  user-select: none;
+}
+.sl-resizer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: var(--smax-grey-200, #e2e8f0);
+  transition: background 0.15s;
+}
+.sl-resizer:hover::after,
+.sl-resizer.is-active::after {
+  background: #0D9488;
+}
+
+/* work-scope 2026-06-15 — 1 DÒNG "N tin ở M nick khác" ở đầu cột conv */
 .out-of-scope-bar {
   display: flex;
   align-items: center;
@@ -800,7 +1089,7 @@ watch(searchQuery, () => {
 .out-of-scope-bar .oos-icon { color: #1e40af; }
 .out-of-scope-bar .oos-text { line-height: 1.2; }
 
-/* FIX socket-chết v2 — banner mất kết nối realtime ở đầu cột 2 */
+/* FIX socket-chết v2 — banner mất kết nối realtime ở đầu cột conv */
 .realtime-offline-banner {
   display: flex;
   align-items: center;
@@ -828,79 +1117,10 @@ watch(searchQuery, () => {
   background: var(--smax-grey-100);
 }
 
-/* HD+ compact: thu nhỏ chút để thread có thêm space */
-@media (max-width: 1700px) {
-  .smax-chat-grid { grid-template-columns: 260px 340px 1fr 310px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 260px 340px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 340px 1fr 310px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 340px 1fr;
-  }
-}
-/* Tight: filter rail vẫn show nhưng compact */
-@media (max-width: 1440px) {
-  .smax-chat-grid { grid-template-columns: 240px 320px 1fr 280px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 240px 320px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 320px 1fr 280px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 320px 1fr;
-  }
-}
-/* HD 1366 — target chính sale VN. Chèn 2026-06-06 (/plan-design-review), giữ :has() động đủ 4 trạng thái. */
-@media (max-width: 1366px) {
-  .smax-chat-grid { grid-template-columns: 220px 296px 1fr 288px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 220px 296px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 296px 1fr 288px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 296px 1fr;
-  }
-}
-/* 1280 — XGA, vẫn giữ 4 cột, thread giữa ~450px đủ rộng. */
-@media (max-width: 1280px) {
-  .smax-chat-grid { grid-template-columns: 208px 280px 1fr 280px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 208px 280px 1fr;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed),
-  .smax-chat-grid:has(.filter-sidebar.collapsed) {
-    grid-template-columns: 56px 280px 1fr 280px;
-  }
-  .smax-chat-grid:has(.filter-rail.collapsed):not(:has(.smax-info-col)),
-  .smax-chat-grid:has(.filter-sidebar.collapsed):not(:has(.smax-info-col)) {
-    grid-template-columns: 56px 280px 1fr;
-  }
-}
-/* < 1200: drop filter rail */
-@media (max-width: 1200px) {
-  .smax-chat-grid { grid-template-columns: 0 320px 1fr 280px; }
-  .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 0 320px 1fr;
-  }
-  .smax-chat-grid > :first-child { display: none; }
-}
-/* < 1024: drop info panel too — chỉ còn conv list + thread */
 @media (max-width: 1024px) {
-  .smax-chat-grid { grid-template-columns: 320px 1fr; }
-  .smax-chat-grid > :first-child,
-  .smax-chat-grid > :nth-child(4) { display: none; }
+  .smax-info-col,
+  .sl-resizer:last-of-type {
+    display: none !important;
+  }
 }
-
 </style>

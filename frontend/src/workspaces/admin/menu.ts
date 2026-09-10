@@ -67,6 +67,7 @@ export const adminMenu: MenuItemConfig[] = [
 export const adminSettingsShortcuts: MenuItemConfig[] = [
   { key: 'stg-profile',      title: 'Hồ sơ của tôi',      icon: 'mdi-account-outline',         to: '/settings/personal/profile' },
   { key: 'stg-users',        title: 'Nhân viên',           icon: 'mdi-account-group-outline',   to: '/settings/rbac/users',             resource: 'user' },
+  { key: 'stg-departments',  title: 'Sơ đồ tổ chức',       icon: 'mdi-file-tree-outline',       to: '/settings/rbac/departments',       resource: 'department' },
   { key: 'stg-permissions',  title: 'Phân quyền',          icon: 'mdi-shield-account-outline',  to: '/settings/rbac/permission-groups', resource: 'permission_group' },
   { key: 'stg-zalo',         title: 'Tài khoản Zalo',      icon: 'mdi-cellphone-link',          to: '/settings/channels/zalo',          resource: 'zalo_account', dividerBefore: true },
   { key: 'stg-tags',         title: 'Nhãn khách hàng',     icon: 'mdi-tag-multiple-outline',    to: '/settings/crm/tags-v2',            resource: 'settings' },

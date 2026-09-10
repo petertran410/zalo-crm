@@ -187,6 +187,21 @@
         </div>
       </div>
 
+      <!-- CSKH Delegated Mode Banner -->
+      <div v-if="delegatedOperatorInfo" class="virtual-banner cskh-delegated-banner">
+        <div class="virtual-banner-icon cskh-icon"><v-icon size="14" color="#FFFFFF">mdi-shield-account</v-icon></div>
+        <div class="virtual-banner-body">
+          <div class="virtual-banner-title">Đang trực thay Sales {{ delegatedOperatorInfo.salesName }}</div>
+          <div class="virtual-banner-sub">
+            Tin nhắn gửi đi sẽ xuất phát từ nick Zalo <strong>{{ delegatedOperatorInfo.nickName || conversation?.zaloAccount?.displayName || 'của Sales' }}</strong>.
+          </div>
+        </div>
+        <button class="cskh-banner-exit-btn" @click="$emit('exit-delegated')" title="Thoát trực thay, về hộp thư Zalo CSKH">
+          <v-icon size="13" class="mr-1">mdi-close-circle-outline</v-icon>
+          Thoát trực thay
+        </button>
+      </div>
+
       <!-- ════════ Messages ════════ -->
       <div ref="messagesContainer" class="messages chat-messages-area" :class="{ 'is-virtual-mode': isVirtualConv }">
         <v-progress-linear v-if="loading" indeterminate color="primary" class="mb-2" />
@@ -884,6 +899,7 @@ const props = defineProps<{
   replyingTo?: Message | null;
   editingMessage?: Message | null;
   typingUsers?: { userId: string; userName: string }[];
+  delegatedOperatorInfo?: { salesName: string; nickName?: string } | null;
 }>();
 
 const emit = defineEmits<{
@@ -908,6 +924,7 @@ const emit = defineEmits<{
   // Fix 2026-06-16: dialog xem info Zalo trả avatar/tên mới từ SDK → báo ChatView patch
   // conversation state (header + list cập nhật ngay, không chờ F5).
   'profile-synced': [payload: { uid: string; avatarUrl: string | null; displayName: string | null; gender: number | null }];
+  'exit-delegated': [];
 }>();
 
 const toast = useToast();
@@ -3427,6 +3444,40 @@ watch(() => props.editingMessage?.id, async (id) => {
 }
 .archived-banner .virtual-banner-icon { background: #9ca3af; }
 .archived-banner .virtual-banner-sub { color: #6b7280; }
+
+/* CSKH Delegated Banner */
+.cskh-delegated-banner {
+  background: linear-gradient(90deg, #f0fdfa, #ccfbf1);
+  border-bottom: 1px solid #99f6e4;
+  color: #0f766e;
+}
+.cskh-banner-exit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  background: white;
+  border: 1px solid #99f6e4;
+  color: #0f766e;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.cskh-banner-exit-btn:hover {
+  background: #0d9488;
+  color: white;
+}
+.cskh-delegated-banner .cskh-icon {
+  background: #0d9488;
+}
+.cskh-delegated-banner .virtual-banner-sub {
+  color: #0f766e;
+}
 .nick-archived-chip {
   display: inline-flex;
   align-items: center;

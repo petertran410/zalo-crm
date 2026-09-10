@@ -58,6 +58,26 @@
             </div>
           </section>
 
+          <!-- ── System Role ─────────────────────── -->
+          <section class="section">
+            <h3 class="section-title">Vai trò hệ thống</h3>
+            <label class="field-label">Vai trò</label>
+            <select
+              v-model="roleLocal"
+              class="field-input"
+              :disabled="busy || !canEditRole"
+              @change="onRoleChange"
+            >
+              <option value="owner" v-if="user?.role === 'owner'" disabled>👑 Chủ tổ chức (Owner)</option>
+              <option value="admin" v-if="currentUserRole === 'owner'">🛡️ Quản trị viên (Admin)</option>
+              <option value="cskh">🎧 Chăm sóc khách hàng (CSKH)</option>
+              <option value="member">👤 Nhân viên (Sale / Member)</option>
+            </select>
+            <p class="hint-soft" v-if="roleLocal === 'cskh'">
+              Vai trò CSKH: Tự động dùng CSKH Workspace với màu Care Teal và điều phối đa Sales.
+            </p>
+          </section>
+
           <!-- ── Department ──────────────────────── -->
           <section class="section">
             <h3 class="section-title">Phòng ban</h3>
@@ -307,6 +327,7 @@ const localPhone = ref('');
 const deptIdLocal = ref<string>('');
 const deptRoleLocal = ref<'leader' | 'deputy' | 'member'>('member');
 const pgIdLocal = ref<string>('');
+const roleLocal = ref<string>('member');
 const ownedNicks = ref<OwnedNick[]>([]);
 // Phase Privacy v2 2026-05-23
 const maxPrivacyLocal = ref<number>(2);
@@ -317,6 +338,13 @@ const canEditInfo = computed(() => {
   // Owner edits self always; owner/admin edits anyone
   if (u.id === props.currentUserId) return true;
   return ['owner', 'admin'].includes(props.currentUserRole);
+});
+const canEditRole = computed(() => {
+  if (!props.user) return false;
+  if (props.user.id === props.currentUserId) return false;
+  if (props.currentUserRole === 'owner') return true;
+  if (props.currentUserRole === 'admin' && props.user.role !== 'owner' && props.user.role !== 'admin') return true;
+  return false;
 });
 const canDeactivate = computed(() => {
   return props.currentUserRole === 'owner' && props.user?.id !== props.currentUserId;
@@ -486,6 +514,7 @@ watch(
     deptIdLocal.value = props.user.departmentMember?.departmentId ?? '';
     deptRoleLocal.value = props.user.departmentMember?.deptRole ?? 'member';
     pgIdLocal.value = props.user.permissionGroupId ?? '';
+    roleLocal.value = props.user.role ?? 'member';
     maxPrivacyLocal.value = (props.user as any).maxPrivacyNicks ?? 2;
     error.value = '';
     ownedNicks.value = [];
@@ -594,11 +623,42 @@ async function onDeptRoleChange() {
   }
 }
 
+async function onRoleChange() {
+  if (!props.user || !canEditRole.value) return;
+  busy.value = true;
+  error.value = '';
+  try {
+    await api.put(`/users/${props.user.id}`, { role: roleLocal.value });
+    // Nếu chọn cskh và chưa gán nhóm CSKH, tự động gợi ý gán nhóm quyền "Chăm sóc khách hàng"
+    if (roleLocal.value === 'cskh') {
+      const csGroup = flatGroups.value.find((g) => g.name === 'Chăm sóc khách hàng' || (g as any).workspaceId === 'customer-care');
+      if (csGroup && pgIdLocal.value !== csGroup.id) {
+        pgIdLocal.value = csGroup.id;
+        await store.setUserPermissionGroup(props.user.id, csGroup.id);
+      }
+    }
+    emit('changed');
+  } catch (e: any) {
+    error.value = e?.response?.data?.error || 'Lỗi đổi vai trò';
+    roleLocal.value = props.user.role ?? 'member';
+  } finally {
+    busy.value = false;
+  }
+}
+
 async function onPgChange() {
   if (!props.user) return;
   busy.value = true;
   try {
     await store.setUserPermissionGroup(props.user.id, pgIdLocal.value || null);
+    // Nếu gán nhóm "Chăm sóc khách hàng", tự động nâng role thành 'cskh' nếu đang là 'member'
+    const selectedGroup = flatGroups.value.find((g) => g.id === pgIdLocal.value);
+    if (selectedGroup && (selectedGroup.name === 'Chăm sóc khách hàng' || (selectedGroup as any).workspaceId === 'customer-care')) {
+      if (roleLocal.value === 'member' && canEditRole.value) {
+        roleLocal.value = 'cskh';
+        await api.put(`/users/${props.user.id}`, { role: 'cskh' }).catch(() => {});
+      }
+    }
     emit('changed');
   } catch (e: any) {
     error.value = e?.response?.data?.error || 'Lỗi đổi nhóm quyền';
@@ -663,7 +723,7 @@ async function confirmReactivate() {
 }
 
 function legacyRoleLabel(r?: string) {
-  return r === 'owner' ? 'Chủ tổ chức' : r === 'admin' ? 'Quản trị' : 'Thành viên';
+  return r === 'owner' ? 'Chủ tổ chức' : r === 'admin' ? 'Quản trị' : r === 'cskh' ? 'CSKH' : 'Thành viên';
 }
 
 function statusLabel(s: string): string {
@@ -776,6 +836,7 @@ function avatarColor(name: string): string {
 .role-empty-tag { background: #f0f1f3; color: #6b7280; }
 .role-legacy-owner { background: #fdf3df; color: #7a5818; }
 .role-legacy-admin { background: #e3ede4; color: #0a2e0e; }
+.role-legacy-cskh { background: #ccfbf1; color: #0f766e; }
 .role-legacy-member { background: #f0f1f3; color: #41454d; }
 
 .hint-soft {

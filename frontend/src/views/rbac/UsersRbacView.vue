@@ -161,6 +161,8 @@
               <div class="cell-name-text">
                 <div class="cell-name-main">{{ u.fullName || '(chưa đặt tên)' }}</div>
                 <div v-if="u.role === 'owner'" class="cell-name-sub owner-tag">👑 Chủ tổ chức</div>
+                <div v-else-if="u.role === 'admin'" class="cell-name-sub admin-tag">⚡ Quản trị viên</div>
+                <div v-else-if="u.role === 'cskh'" class="cell-name-sub cskh-tag">🎧 CSKH</div>
               </div>
             </td>
             <td class="cell-phone">
@@ -780,6 +782,7 @@ function onboardingTooltip(s: OnboardingSummary): string {
 }
 .owner-tag { color: #7a5818; }
 .admin-tag { color: #0a2e0e; }
+.cskh-tag { color: #0f766e; }
 
 .cell-email {
   font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;

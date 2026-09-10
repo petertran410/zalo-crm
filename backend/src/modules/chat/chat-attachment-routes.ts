@@ -12,7 +12,7 @@ import type { Server } from 'socket.io';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
-import { requireZaloAccess } from '../zalo/zalo-access-middleware.js';
+import { requireZaloAccess, hasZaloAccess } from '../zalo/zalo-access-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
 import { zaloRateLimiter } from '../zalo/zalo-rate-limiter.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
@@ -94,14 +94,23 @@ export async function chatAttachmentRoutes(app: FastifyInstance) {
       const instance = zaloPool.getInstance(conversation.zaloAccountId);
       if (!instance?.api) return reply.status(400).send({ error: 'Zalo account not connected' });
 
-      // PRIVACY GUARD 2026-05-22: nick privacy=main → chỉ chính chủ upload được
+      // PRIVACY GUARD: nick privacy=main → chỉ chính chủ hoặc người được cấp quyền chat mới gửi được
       if (conversation.zaloAccount.privacyMode === 'main') {
         const senderUserId = (user as any).userId ?? user.id;
         if (conversation.zaloAccount.ownerUserId !== senderUserId) {
-          return reply.status(403).send({
-            error: 'Nick này đang bật Riêng tư — chỉ chính chủ mới gửi được file/ảnh.',
-            code: 'PRIVACY_LOCKED',
+          const canChat = await hasZaloAccess({
+            userId: senderUserId,
+            orgId: user.orgId,
+            role: user.role,
+            zaloAccountId: conversation.zaloAccountId,
+            minPermission: 'chat',
           });
+          if (!canChat) {
+            return reply.status(403).send({
+              error: 'Nick này đang bật Riêng tư — chỉ chính chủ hoặc người được cấp quyền mới gửi được file/ảnh.',
+              code: 'PRIVACY_LOCKED',
+            });
+          }
         }
       }
 
@@ -300,6 +309,31 @@ export async function chatAttachmentRoutes(app: FastifyInstance) {
             privacyMode: conversation.zaloAccount.privacyMode,
             ownerUserId: conversation.zaloAccount.ownerUserId,
           });
+        }
+
+        const senderUserId = (user as any).userId ?? user.id;
+        const isDelegatedSend = Boolean(
+          conversation.zaloAccount.ownerUserId && conversation.zaloAccount.ownerUserId !== senderUserId,
+        );
+
+        if (isDelegatedSend && created.length > 0) {
+          void Promise.resolve(
+            prisma.activityLog.create({
+              data: {
+                orgId: user.orgId,
+                userId: user.id,
+                actorType: 'user',
+                action: 'message.send_as_delegate',
+                entityType: 'conversation',
+                entityId: id,
+                details: {
+                  zaloAccountId: conversation.zaloAccountId,
+                  salesOwnerUserId: conversation.zaloAccount.ownerUserId,
+                  attachmentCount: created.length,
+                },
+              },
+            }),
+          ).catch((logErr) => logger.warn('[chat-attachment] ActivityLog delegate error:', logErr));
         }
 
         return { messages: created };

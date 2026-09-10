@@ -10,6 +10,7 @@
 import { randomUUID } from 'node:crypto';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
 import { sanitizeGrants, hasGrant, resolveGrant, type GrantsJson, type Resource, type Action } from './permission-types.js';
+import { seedDefaultPermissionGroups } from './seed-default-groups.js';
 
 export interface PermissionGroupNode {
   id: string;
@@ -24,18 +25,30 @@ export interface PermissionGroupNode {
 }
 
 export async function getOrgPermissionGroups(orgId: string): Promise<PermissionGroupNode[]> {
-  const [groups, userCounts] = await Promise.all([
-    prisma.permissionGroup.findMany({
-      where: { orgId, archivedAt: null },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-    }),
-    // Count users per group
-    prisma.user.groupBy({
-      by: ['permissionGroupId'],
-      where: { orgId, permissionGroupId: { not: null } },
-      _count: { _all: true },
-    }),
-  ]);
+  let groups = await prisma.permissionGroup.findMany({
+    where: { orgId, archivedAt: null },
+    orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+  });
+
+  // Auto-seed: nếu org thiếu nhóm "Chăm sóc khách hàng" (CSKH), tự động seed bổ sung (idempotent)
+  const hasCsGroup = groups.some((g) => g.isSystem && (g.name === 'Chăm sóc khách hàng' || g.workspaceId === 'customer-care'));
+  if (!hasCsGroup) {
+    try {
+      await seedDefaultPermissionGroups(orgId);
+      groups = await prisma.permissionGroup.findMany({
+        where: { orgId, archivedAt: null },
+        orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch {
+      // Giữ groups hiện tại nếu seed lỗi
+    }
+  }
+
+  const userCounts = await prisma.user.groupBy({
+    by: ['permissionGroupId'],
+    where: { orgId, permissionGroupId: { not: null } },
+    _count: { _all: true },
+  });
 
   const countMap = new Map<string, number>();
   for (const c of userCounts) {
