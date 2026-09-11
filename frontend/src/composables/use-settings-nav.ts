@@ -72,6 +72,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     items: [
       { id: 'profile', label: 'Hồ sơ tổ chức', icon: 'mdi-office-building-outline', route: '/settings/org/profile', permission: 'admin', resource: 'settings' },
       { id: 'users', label: 'Nhân viên', icon: 'mdi-account-group-outline', route: '/settings/rbac/users', permission: 'admin', resource: 'user', aliases: ['user', 'sale', 'nhân sự'] },
+      { id: 'departments', label: 'Sơ đồ tổ chức', icon: 'mdi-file-tree-outline', route: '/settings/rbac/departments', permission: 'admin', resource: 'department', aliases: ['phòng ban', 'department', 'tree', 'đội nhóm', 'team', 'sơ đồ tổ chức'] },
       { id: 'permission-groups', label: 'Phân quyền', icon: 'mdi-shield-account-outline', route: '/settings/rbac/permission-groups', permission: 'owner', resource: 'permission_group', aliases: ['phân quyền', 'permission', 'role', 'vai trò', 'nhóm quyền'] },
     ],
   },

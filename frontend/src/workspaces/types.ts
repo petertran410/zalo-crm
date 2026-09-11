@@ -106,4 +106,6 @@ export interface WorkspaceConfig {
     resource?: string;
     items: MenuItemConfig[];
   }>;
+  /** CSS class áp dụng cho layout theme (vd 'cskh-theme'). */
+  themeClass?: string;
 }

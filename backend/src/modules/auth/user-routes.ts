@@ -84,12 +84,13 @@ export async function userRoutes(app: FastifyInstance) {
     }
 
     const {
-      email, phone: rawPhone, fullName, password, role = 'member', teamId,
+      email, phone: rawPhone, fullName, password, role: inputRole = 'member', teamId,
       // 2026-08-06 — nhận nhóm quyền ngay lúc tạo. Bỏ trống → gán nhóm mặc định
       // theo legacy role bên dưới.
       permissionGroupId,
       departmentId,
     } = request.body as any;
+    let role = inputRole;
     if (!fullName || !password) {
       return reply.status(400).send({ error: 'Họ tên và mật khẩu là bắt buộc' });
     }
@@ -127,15 +128,19 @@ export async function userRoutes(app: FastifyInstance) {
       owner: 'Admin',
       admin: 'CEO',
       member: 'Sale',
+      cskh: 'Chăm sóc khách hàng',
     };
     let resolvedGroupId: string | null = null;
     if (permissionGroupId) {
       const grp = await prisma.permissionGroup.findFirst({
         where: { id: permissionGroupId, orgId: currentUser.orgId, archivedAt: null },
-        select: { id: true },
+        select: { id: true, name: true, workspaceId: true },
       });
       if (!grp) return reply.status(400).send({ error: 'Nhóm quyền không tồn tại' });
       resolvedGroupId = grp.id;
+      if (role === 'member' && (grp.workspaceId === 'customer-care' || grp.name === 'Chăm sóc khách hàng')) {
+        role = 'cskh';
+      }
     } else {
       const fallbackName = DEFAULT_GROUP_BY_ROLE[role];
       if (fallbackName) {
@@ -218,7 +223,13 @@ export async function userRoutes(app: FastifyInstance) {
     const updateData: any = {};
     if (fullName !== undefined) updateData.fullName = fullName;
     if (email !== undefined) updateData.email = email;
-    if (role !== undefined && currentUser.role === 'owner') updateData.role = role;
+    if (role !== undefined) {
+      if (currentUser.role === 'owner') {
+        updateData.role = role;
+      } else if (currentUser.role === 'admin' && ['member', 'cskh'].includes(role)) {
+        updateData.role = role;
+      }
+    }
     if (teamId !== undefined) updateData.teamId = teamId || null;
     if (isActive !== undefined && currentUser.role === 'owner') updateData.isActive = isActive;
 

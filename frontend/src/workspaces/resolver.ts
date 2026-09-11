@@ -120,6 +120,11 @@ function detectWorkspaceId(user: {
     return 'admin';
   }
 
+  // Role CSKH trực tiếp
+  if (user.role === 'cskh') {
+    return 'customer-care';
+  }
+
   // ── Đọc trực tiếp từ PermissionGroup.workspaceId (chính xác, không đoán) ──
   if (user.workspaceId) {
     // Validate: chỉ nhận các WorkspaceId hợp lệ

@@ -1,7 +1,6 @@
 <template>
   <aside class="info-panel">
-    <!-- ════════ ROLE-BASED WORKSPACE: Sales & Customer Service ════════ -->
-    <template v-if="currentRole && currentRole !== 'manager'">
+    <!-- ════════ Modern Sales & Customer Service Panel ════════ -->
       <!-- ══════════════════════════════════════════
            SP COMPACT HEADER — Glass Minimalist
            ══════════════════════════════════════════ -->
@@ -10,9 +9,11 @@
         <div class="sp-compact-main">
           <div class="sp-avatar-wrap">
             <Avatar
-              :src="props.contact?.avatarUrl"
+              :src="panelAvatarSrc"
               :name="headerFullName"
               :size="38"
+              :is-group="isGroupChat"
+              :gender="isGroupChat ? undefined : props.contact?.gender"
               :gradient-seed="props.contact?.id || headerFullName"
               class="sp-avatar" />
             <span
@@ -858,239 +859,7 @@
       <!-- Order Detail Modal -->
       <OrderDetailModal
         v-model="showOrderDetailDialog"
-        :order="selectedOrderForDetail" /> </template
-    ><!-- /Sales & CS panel -->
-
-    <!-- ════════ Compact manager profile — Smax fields + POS only ════════ -->
-    <template v-else>
-      <header class="ip-header">
-        <button class="ip-close" title="Đóng" @click="$emit('close')">×</button>
-        <div class="ip-smax-identity">
-          <Avatar
-            :src="props.contact?.avatarUrl"
-            :name="headerFullName"
-            :size="56"
-            :gradient-seed="props.contact?.id || headerFullName"
-            class="ip-avatar-big" />
-          <div class="ip-smax-name-block">
-            <div class="ip-name-line" :title="headerFullName">
-              {{ headerFullName }}
-            </div>
-            <div v-if="props.contact?.zaloUid" class="ip-id">
-              Id: {{ props.contact.zaloUid }}
-            </div>
-            <div class="ip-care-row-inline">
-              <ContactDealStageSelector
-                v-if="props.contact?.id"
-                :contact-id="props.contact.id"
-                :current-status-id="
-                  (props.contact as { statusId?: string | null }).statusId ??
-                  null
-                "
-                :org-id="orgId"
-                @updated="onDealStageUpdatedPanel" />
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div class="ip-tab-content ip-compact-content">
-        <section class="ip-form ip-form--compact">
-          <div class="ip-form-row">
-            <span class="ip-icon">👤</span><span class="ip-label">Tên Zalo</span
-            ><input
-              v-model="form.fullName"
-              placeholder="Tên Zalo"
-              @blur="saveContact" />
-          </div>
-          <div class="ip-form-row">
-            <span class="ip-icon">📅</span
-            ><span class="ip-label">Ngày sinh</span
-            ><input type="date" v-model="form.birthDate" @blur="saveContact" />
-          </div>
-          <div class="ip-form-row">
-            <span class="ip-icon">📞</span><span class="ip-label">SĐT</span>
-            <input
-              :value="phoneFocused ? form.phone : displayPhone(form.phone)"
-              :title="form.phone ? displayPhoneIntl(form.phone) : ''"
-              placeholder="SĐT chính"
-              @focus="phoneFocused = true"
-              @input="form.phone = ($event.target as HTMLInputElement).value"
-              @blur="
-                phoneFocused = false;
-                saveContact();
-              " />
-          </div>
-        </section>
-
-        <v-alert
-          v-if="saveSuccess"
-          type="success"
-          density="compact"
-          class="mx-3 my-2"
-          closable
-          @click:close="saveSuccess = false"
-          >Đã lưu thành công!</v-alert
-        >
-        <v-alert
-          v-if="saveError"
-          type="error"
-          density="compact"
-          class="mx-3 my-2"
-          closable
-          @click:close="saveError = false"
-          >Lưu thất bại, thử lại.</v-alert
-        >
-
-        <!-- POS is retained because it is business-critical and has no Smax equivalent. -->
-        <section v-if="props.contactId" class="ip-section ip-pos-section">
-          <div class="ip-section-title">
-            <span class="accent" />🛒 KiotViet POS<span
-              class="ip-section-spacer" /><span
-              class="pos-status-chip"
-              :class="{ linked: posLinkStatus.linked }"
-              >{{
-                posLinkStatus.linked
-                  ? posLinkStatus.posCustomerCode || "Đã liên kết"
-                  : "Chưa liên kết"
-              }}</span
-            >
-          </div>
-          <div class="ip-pos-card">
-            <div
-              v-if="loadingStatus"
-              class="d-flex align-center justify-center py-2">
-              <v-progress-circular
-                indeterminate
-                size="18"
-                width="2"
-                color="primary"
-                class="mr-2" /><span class="text-caption text-grey-darken-1"
-                >Đang kiểm tra POS...</span
-              >
-            </div>
-            <template
-              v-else-if="posLinkStatus.linked && posLinkStatus.posCustomer">
-              <div class="pos-linked-info">
-                <div class="text-subtitle-2 font-weight-bold slate-dark">
-                  {{ posLinkStatus.posCustomer.name }}
-                </div>
-                <div class="text-caption text-grey-darken-1 font-mono">
-                  SĐT:
-                  {{
-                    posLinkStatus.posCustomer.phone ||
-                    posLinkStatus.posCustomer.contactNumber ||
-                    "—"
-                  }}
-                </div>
-                <div
-                  v-if="posLinkStatus.posCustomer.address"
-                  class="text-caption text-grey-darken-2 mt-1">
-                  📍 {{ posLinkStatus.posCustomer.address }}
-                </div>
-              </div>
-              <div class="ip-pos-actions">
-                <v-btn
-                  size="small"
-                  variant="tonal"
-                  color="primary"
-                  density="comfortable"
-                  class="text-none font-weight-medium"
-                  @click="openEditCustomerForm"
-                  ><span
-                    class="material-symbols-outlined mr-1"
-                    style="font-size: 14px"
-                    >edit</span
-                  >Sửa</v-btn
-                ><v-btn
-                  size="small"
-                  variant="text"
-                  color="grey-darken-1"
-                  density="comfortable"
-                  class="text-none"
-                  @click="posLinkSearchOpen = true"
-                  >Đổi liên kết</v-btn
-                ><v-btn
-                  size="small"
-                  variant="text"
-                  color="error"
-                  density="comfortable"
-                  class="text-none"
-                  :loading="unlinking"
-                  @click="performUnlink"
-                  >Hủy</v-btn
-                >
-              </div>
-            </template>
-            <template
-              v-else-if="
-                posLinkStatus.autoSuggest && posLinkStatus.posCustomer
-              ">
-              <p class="text-caption text-grey-darken-1 mb-2">
-                Tìm thấy
-                <strong>{{ posLinkStatus.posCustomer.name }}</strong> trùng SĐT
-                trên POS.
-              </p>
-              <div class="ip-pos-actions">
-                <v-btn
-                  size="small"
-                  color="primary"
-                  variant="flat"
-                  class="text-none"
-                  :loading="linking"
-                  @click="performQuickLink"
-                  >Liên kết ngay</v-btn
-                ><v-btn
-                  size="small"
-                  variant="text"
-                  color="grey-darken-1"
-                  class="text-none"
-                  @click="openCreateCustomerForm"
-                  >Tạo mới</v-btn
-                >
-              </div>
-            </template>
-            <template v-else>
-              <p class="text-caption text-grey-darken-1 mb-2">
-                Khách hàng này chưa có trên POS.
-              </p>
-              <div class="ip-pos-actions">
-                <v-btn
-                  size="small"
-                  color="primary"
-                  variant="flat"
-                  prepend-icon="mdi-plus"
-                  class="text-none"
-                  @click="openCreateCustomerForm"
-                  >Tạo khách hàng POS</v-btn
-                ><v-btn
-                  size="small"
-                  variant="text"
-                  color="grey-darken-1"
-                  class="text-none"
-                  @click="posLinkSearchOpen = true"
-                  >Liên kết KH</v-btn
-                >
-              </div>
-            </template>
-          </div>
-        </section>
-
-        <!-- ── Sản phẩm đang quan tâm (Manager view) ── -->
-        <div v-if="props.contactId" class="px-2 my-2">
-          <ChatProductInterestsSection
-            :contact-id="props.contactId"
-            :contact-name="props.contact?.fullName || headerFullName"
-          />
-        </div>
-      </div>
-
-      <PosCustomerForm
-        v-model="customerFormOpen"
-        :contact-id="props.contactId"
-        :customer-data="selectedPosCustomer"
-        @success="onCustomerFormSuccess" />
-    </template>
+        :order="selectedOrderForDetail" />
   </aside>
 </template>
 
@@ -1143,8 +912,11 @@ const props = defineProps<{
   activeZaloAccountName?: string | null;
   // Conversation hiện tại — dùng cho POS order draft.
   conversationId?: string | null;
+  conversation?: any;
+  avatarUrl?: string | null;
+  isGroup?: boolean;
   // Friendship per-pair (nick × KH) — chứa aliasInNick để sync 2-way với Zalo Real.
-  friendship?: { id?: string; aliasInNick?: string | null } | null;
+  friendship?: { id?: string; aliasInNick?: string | null; zaloAvatarUrl?: string | null } | null;
   currentRole?: string;
 }>();
 
@@ -1452,8 +1224,7 @@ function openOrderForContact() {
     toast.info("Vui lòng liên kết khách hàng với POS để lập đơn");
     return;
   }
-  const avatar =
-    props.contact?.avatarUrl || activeFriend.value?.zaloAvatarUrl || undefined;
+  const avatar = panelAvatarSrc.value || undefined;
   orderDraftStore.openDraft({
     contactId: props.contactId || undefined,
     contactName: headerFullName.value,
@@ -1794,10 +1565,50 @@ async function fetchRelations(contactId: string) {
 // Care status legacy (CareStatusBadge) GỠ 2026-06-06 — cột 4 dùng ContactDealStageSelector
 // (statusId dynamic) cạnh UID để sync với cột 3. onChangeCareStatus + import bỏ.
 
-// ════════ Header name (Avatar component handle initials + gender + gradient) ════════
+// ════════ Header name & Avatar (Avatar component handle initials + gender + gradient + group) ════════
+const activeFriend = computed<FriendItem | null>(() => {
+  if (!props.activeZaloAccountId) return null;
+  return (
+    relations.value.friends.find(
+      (f) => f.zaloAccount.id === props.activeZaloAccountId
+    ) || null
+  );
+});
+
+const isGroupChat = computed(() => {
+  return props.conversation?.threadType === "group" || props.isGroup === true;
+});
+
+const panelAvatarSrc = computed(() => {
+  if (isGroupChat.value) {
+    return (
+      props.conversation?.groupAvatarUrl ||
+      props.avatarUrl ||
+      props.contact?.avatarUrl ||
+      null
+    );
+  }
+  return (
+    props.avatarUrl ||
+    props.contact?.avatarUrl ||
+    (props.friendship as any)?.zaloAvatarUrl ||
+    activeFriend.value?.zaloAvatarUrl ||
+    null
+  );
+});
+
 // B7 fix — Contact stub có thể fullName='Unknown'; fallback qua aliasInNick (props.friendship)
 // rồi activeFriend.zaloDisplayName (nick đang chăm) trước khi hiện 'Khách hàng'.
 const headerFullName = computed(() => {
+  if (isGroupChat.value) {
+    if (props.conversation?.groupName && props.conversation.groupName.trim()) {
+      return props.conversation.groupName.trim();
+    }
+    if (props.contact?.fullName && props.contact.fullName.trim()) {
+      return props.contact.fullName.trim();
+    }
+    return "Nhóm";
+  }
   const isUsable = (s: string | null | undefined): s is string =>
     !!s && s.trim().length > 0 && s.trim().toLowerCase() !== "unknown";
   if (isUsable(props.contact?.crmName)) return props.contact!.crmName!;
@@ -1864,15 +1675,7 @@ function openFullProfile() {
   router.push({ path: "/contacts", query: { focus: props.contact.id } });
 }
 
-// activeFriend dùng cho headerFullName fallback (zaloDisplayName cho KH stub).
-const activeFriend = computed<FriendItem | null>(() => {
-  if (!props.activeZaloAccountId) return null;
-  return (
-    relations.value.friends.find(
-      (f) => f.zaloAccount.id === props.activeZaloAccountId
-    ) || null
-  );
-});
+
 
 const router = useRouter();
 
