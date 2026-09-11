@@ -1,5 +1,22 @@
 <template>
-  <MobileChatView v-if="isMobile" />
+  <MobileChatView
+    v-if="isMobile"
+    :conversations="conversations"
+    :selected-conv-id="selectedConvId"
+    :selected-conv="selectedConv"
+    :messages="messages"
+    :loading-convs="loadingConvs"
+    :loading-msgs="loadingMsgs"
+    :sending-msg="sendingMsg"
+    :search-query="searchQuery"
+    :send-message="sendMessage"
+    :send-message-to="sendMessageTo"
+    :fetch-messages="fetchMessages"
+    @select="onSelectConv"
+    @back="onMobileBack"
+    @update:search="searchQuery = $event"
+    @filter-account="onFilterAccount"
+  />
   <div v-else class="sl-app sales-theme chat-canvas-wrap">
     <div class="smax-chat-grid" :style="gridStyle">
       <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
@@ -209,7 +226,7 @@ const csWorkspace = useCsWorkspaceStore();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  fetchConversations, fetchMessages, selectConversation, sendMessage,
+  fetchConversations, fetchMessages, selectConversation, sendMessage, sendMessageTo,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -747,8 +764,11 @@ function onSelectConv(convId: string) {
   router.push({ name: 'Chat', params: { convId } });
 }
 
-// Watch route → select conv khi convId thay đổi (deep-link, back/forward, mới click)
-// work-scope 2026-06-15 — FIX BUG NHẢY NICK: nếu hội thoại mở thuộc nick NGOÀI scope
+function onMobileBack() {
+  router.push({ name: 'Chat' });
+}
+
+// Watch route → select conv when convId changes (deep-link, back/forward, mới click): nếu hội thoại mở thuộc nick NGOÀI scope
 // (vd từ Friend bấm chat khách nick B trong khi đang khóa nick A) → đặt scope = nick B
 // rồi RELOAD trang (Anh chốt: state sạch). Nick TRONG scope → luồng tự thông (không reload).
 // Đặt adopt-scope Ở ĐÂY (watcher), KHÔNG trong selectConversation (selectConversation có
@@ -756,6 +776,10 @@ function onSelectConv(convId: string) {
 watch(
   () => route.params.convId,
   (id) => {
+    if (!id && selectedConvId.value) {
+      selectedConvId.value = null;
+      return;
+    }
     if (typeof id === 'string' && id && id !== selectedConvId.value) {
       void selectConversation(id).then(() => {
         // Sau resolve: selectedConv đã có (từ list HOẶC selectedConvDetail). Đọc nick của nó.
@@ -805,8 +829,7 @@ function onLabelsSynced() {
 }
 
 onMounted(async () => {
-  if (!isMobile.value) {
-    await fetchZaloAccounts();
+  await fetchZaloAccounts();
     // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
     // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.
     restoreScope();
@@ -862,14 +885,11 @@ onMounted(async () => {
     // "Ưu tiên". Cần vì conv tab Ưu tiên không nằm trong list tab đang xem nên socket
     // không cập nhật được badge tại chỗ. refreshPriorityUnread đã debounce 400ms.
     window.addEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
 });
 onUnmounted(() => {
-  if (!isMobile.value) {
-    destroySocket();
-    window.removeEventListener('zalo-labels-synced', onLabelsSynced);
-    window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
+  destroySocket();
+  window.removeEventListener('zalo-labels-synced', onLabelsSynced);
+  window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
 });
 
 // Đổi trạng thái ở cột 4 (panel) → cập nhật selectedConv.contact.statusId → cột 3 sync (cùng tab).
@@ -1178,13 +1198,19 @@ const gridStyle = computed(() => {
   border-color: #94A3B8;
 }
 
-/* ════════ Responsive Rules ════════ */
+/* ════════ Responsive Rules ════════
+   Mỗi breakpoint phải giữ đúng bất biến: số track == số con HIỂN THỊ của grid.
+   Con bị display:none KHÔNG chiếm track, nên track của nó phải biến mất khỏi
+   grid-template-columns, nếu không các cột còn lại trượt sang track sai (mất cột). */
 @media (max-width: 1200px) {
+  /* Rail ẩn → 5 con hiển thị (conv, resizer, msg, resizer, info) → 5 track. */
   .smax-chat-grid {
-    grid-template-columns: 0 320px 1fr 280px !important;
+    grid-template-columns: 320px 6px 1fr 6px 280px !important;
   }
+  /* Không có cột info → resizer thứ hai không render (v-if cùng điều kiện với panel)
+     → còn 3 con hiển thị (conv, resizer, msg) → 3 track. */
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 0 320px 1fr !important;
+    grid-template-columns: 320px 6px 1fr !important;
   }
   .smax-filter-rail {
     display: none !important;
@@ -1192,7 +1218,10 @@ const gridStyle = computed(() => {
 }
 
 @media (max-width: 1024px) {
-  .smax-chat-grid {
+  /* Selector :not(:has(...)) đặc trưng hơn class trần; cả hai cùng !important thì
+     specificity thắng bất kể thứ tự — phải lặp selector để rule 2 track này đè rule 3 track ở 1200px. */
+  .smax-chat-grid,
+  .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 320px 1fr !important;
   }
   .smax-filter-rail,

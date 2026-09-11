@@ -1594,6 +1594,9 @@ function onPatternLeave() {
 }
 .ci-name {
   font-size: 14px;
+  /* Màu nền bắt buộc: shell mobile chạy Vuetify dark theme (chữ trắng kế thừa),
+     còn .ci-preview/.ci-time đã có màu riêng — thiếu màu gốc thì tên biến mất. */
+  color: var(--smax-text);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   display: inline-flex; align-items: center; gap: 4px;
   min-width: 0; flex: 1;

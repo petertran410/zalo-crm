@@ -318,6 +318,9 @@ onMounted(() => {
   navObserver = new ResizeObserver(syncNavMode);
   navObserver.observe(document.documentElement);
   window.addEventListener("resize", syncNavMode);
+  navMediaQuery = window.matchMedia(`(min-width: ${NAV_RAIL_MAX}px)`);
+  navMediaQuery.addEventListener("change", onNavMediaChange);
+  navPollTimer = window.setInterval(syncNavMode, 1000);
 
   // Khôi phục các đơn nháp từ localStorage
   orderDraftStore.hydrate();
@@ -345,14 +348,20 @@ const navMode = ref<"bar" | "rail">(
     : "bar"
 );
 let navObserver: ResizeObserver | null = null;
+let navMediaQuery: MediaQueryList | null = null;
+let navPollTimer: number | null = null;
 function syncNavMode() {
   navMode.value = window.innerWidth < NAV_RAIL_MAX ? "rail" : "bar";
 }
 // Cố tình nghe cả ResizeObserver lẫn window resize dù hàm này idempotent: ResizeObserver
 // bắt được zoom và cắm rút màn hình, window resize là lưới an toàn. Cả hai cùng câm thì
 // nav kẹt một chế độ tới lần tải lại, đắt hơn nhiều so với chi phí nghe thừa một nguồn.
-// Trình duyệt điều khiển qua CDP không bắn sự kiện nào trong số này, nên đường chuyển chế
-// độ chỉ kiểm được bằng cách tải lại ở từng bề rộng.
+// matchMedia + poll 1s là lưới thứ ba cho môi trường không bắn resize/RO (browser điều
+// khiển qua CDP, một số đường snap cửa sổ): mq change bắn đúng lúc vượt ngưỡng 1440,
+// poll chỉ ghi khi bucket thật sự đổi nên gần như miễn phí.
+function onNavMediaChange(e: MediaQueryListEvent) {
+  navMode.value = e.matches ? "bar" : "rail";
+}
 
 const SHOW_MARKETING_NAV = false;
 
@@ -489,6 +498,12 @@ onBeforeUnmount(() => {
   navObserver?.disconnect();
   navObserver = null;
   window.removeEventListener("resize", syncNavMode);
+  navMediaQuery?.removeEventListener("change", onNavMediaChange);
+  navMediaQuery = null;
+  if (navPollTimer !== null) {
+    clearInterval(navPollTimer);
+    navPollTimer = null;
+  }
 });
 </script>
 

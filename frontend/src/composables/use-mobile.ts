@@ -6,6 +6,7 @@ const isMobile = ref(false);
 const isOnline = ref(true);
 
 let initialized = false;
+let viewportObserver: ResizeObserver | null = null;
 
 function updateMobile() {
   isMobile.value = window.innerWidth < MOBILE_BREAKPOINT;
@@ -22,6 +23,8 @@ export function useMobile() {
       updateMobile();
       updateOnline();
       window.addEventListener('resize', updateMobile);
+      viewportObserver = new ResizeObserver(updateMobile);
+      viewportObserver.observe(document.documentElement);
       window.addEventListener('online', updateOnline);
       window.addEventListener('offline', updateOnline);
     }

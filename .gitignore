@@ -11,6 +11,7 @@ dist/
 backups/
 .DS_Store
 .gstack/
+compare/
 
 ui-smax
 
@@ -74,3 +75,4 @@ DASHBOARD_FRONTEND_INVENTORY.md
 DASHBOARD_REMAINING_CORE_FEATURES.md
 FRIENDS_CONTACTS_INVENTORY.md
 ONBOARDING.md
+implementation_plan.md
