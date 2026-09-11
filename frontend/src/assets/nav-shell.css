@@ -139,6 +139,9 @@
 .nv-mode-rail .smax-topnav .hs-bbox { width: 30px; height: 30px; border-radius: 8px; }
 .nv-mode-rail .smax-topnav .hs-bbox img { width: 20px; }
 .nv-mode-rail .smax-topnav .workspace-identity { display: none; }
+/* Rail mode bỏ .nav-tabs (flex:1) nên không còn gì hấp thụ khoảng trống —
+   spacer phải giãn ra để đẩy cụm actions về mép phải như bar mode. */
+.nv-mode-rail .smax-topnav .topnav-spacer { flex: 1 1 auto; }
 
 /* ── Tab ngang ────────────────────────────────────────────────────────────── */
 .smax-topnav .nav-tabs {

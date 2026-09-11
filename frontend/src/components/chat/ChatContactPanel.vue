@@ -1042,6 +1042,15 @@ async function checkPosStatus() {
   }
 }
 
+// Khai báo trước watch immediate bên dưới: callback của nó gán salesTab/overviewSubTab
+// ngay trong setup, đọc trước khai báo là TDZ ReferenceError và panel mount hỏng giữa chừng.
+const salesTab = ref<
+  "overview" | "inventory" | "orders" | "debt" | "appointment" | "notes"
+>("overview");
+const overviewSubTab = ref<
+  "360" | "purchased" | "journey" | "ai_interests" | "activity"
+>("360");
+
 watch(
   () => props.contactId,
   (newId) => {
@@ -1209,13 +1218,8 @@ async function saveAlias() {
 const mainTab = ref<"profile" | "media" | "followup">("profile");
 const activeTab = ref<"profile" | "crm" | "activity">("profile");
 
-// Sales & Customer Service Workspace Optimization state:
-const salesTab = ref<
-  "overview" | "inventory" | "orders" | "debt" | "appointment" | "notes"
->("overview");
-const overviewSubTab = ref<
-  "360" | "purchased" | "journey" | "ai_interests" | "activity"
->("360");
+// Sales & Customer Service Workspace Optimization state: khai báo đã dời lên trên
+// watch immediate (TDZ) — xem block `const salesTab` phía trên.
 // showCreateOrderDialog is now managed by orderDraftStore
 
 function openOrderForContact() {

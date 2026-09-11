@@ -1153,9 +1153,29 @@ const gridStyle = computed(() => {
   background: var(--smax-grey-100);
 }
 
+/* Responsive: số track phải bằng số con HIỂN THỊ (con display:none không chiếm track).
+   CsChatView không có rail: con đầu là conv-col, KHÔNG được ẩn như bản copy từ ChatView. */
+@media (max-width: 1200px) {
+  /* 5 con hiển thị (conv, resizer, msg, resizer, info) → 5 track. */
+  .smax-chat-grid {
+    grid-template-columns: 320px 6px 1fr 6px 280px !important;
+  }
+  /* Không có cột info → resizer thứ hai không render (v-if cùng điều kiện với panel)
+     → còn 3 con hiển thị (conv, resizer, msg) → 3 track. */
+  .smax-chat-grid:not(:has(.smax-info-col)) {
+    grid-template-columns: 320px 6px 1fr !important;
+  }
+}
+
 @media (max-width: 1024px) {
+  /* Chỉ còn conv + thread → 2 track; info và cả hai resizer ẩn.
+     Lặp selector :not(:has(...)) để thắng specificity của rule 3 track ở 1200px (cả hai !important). */
+  .smax-chat-grid,
+  .smax-chat-grid:not(:has(.smax-info-col)) {
+    grid-template-columns: 320px 1fr !important;
+  }
   .smax-info-col,
-  .sl-resizer:last-of-type {
+  .sl-resizer {
     display: none !important;
   }
 }

@@ -1198,13 +1198,19 @@ const gridStyle = computed(() => {
   border-color: #94A3B8;
 }
 
-/* ════════ Responsive Rules ════════ */
+/* ════════ Responsive Rules ════════
+   Mỗi breakpoint phải giữ đúng bất biến: số track == số con HIỂN THỊ của grid.
+   Con bị display:none KHÔNG chiếm track, nên track của nó phải biến mất khỏi
+   grid-template-columns, nếu không các cột còn lại trượt sang track sai (mất cột). */
 @media (max-width: 1200px) {
+  /* Rail ẩn → 5 con hiển thị (conv, resizer, msg, resizer, info) → 5 track. */
   .smax-chat-grid {
-    grid-template-columns: 0 320px 1fr 280px !important;
+    grid-template-columns: 320px 6px 1fr 6px 280px !important;
   }
+  /* Không có cột info → resizer thứ hai không render (v-if cùng điều kiện với panel)
+     → còn 3 con hiển thị (conv, resizer, msg) → 3 track. */
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 0 320px 1fr !important;
+    grid-template-columns: 320px 6px 1fr !important;
   }
   .smax-filter-rail {
     display: none !important;
@@ -1212,7 +1218,10 @@ const gridStyle = computed(() => {
 }
 
 @media (max-width: 1024px) {
-  .smax-chat-grid {
+  /* Selector :not(:has(...)) đặc trưng hơn class trần; cả hai cùng !important thì
+     specificity thắng bất kể thứ tự — phải lặp selector để rule 2 track này đè rule 3 track ở 1200px. */
+  .smax-chat-grid,
+  .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 320px 1fr !important;
   }
   .smax-filter-rail,
