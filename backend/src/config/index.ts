@@ -87,6 +87,10 @@ export const config = {
   hisweetiePublicApiMinIntervalMs: Math.max(720, parseInt(envValue('HISWEETIE_PUBLIC_API_MIN_INTERVAL_MS') || '800', 10) || 800),
   hisweetieSyncTransport: (envValue('HISWEETIE_SYNC_TRANSPORT') || 'public_api') === 'mcp' ? 'mcp' : 'public_api',
 
+  /* --- Workshop Public API v1 Settings --- */
+  workshopApiBaseUrl: (envValue('WORKSHOP_API_BASE_URL') || '').replace(/\/+$/, ''),
+  workshopApiKey: envValue('WORKSHOP_API_KEY') || '',
+
   /* Legacy keys (kept for backward compat) */
   anthropicApiKey: envValue('ANTHROPIC_API_KEY') || envValue('ANTHROPIC_AUTH_TOKEN') || '',
   geminiApiKey: envValue('GEMINI_API_KEY') || envValue('GEMINI_AUTH_TOKEN') || '',

@@ -120,6 +120,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/TasksView.vue"),
     meta: { requiresAuth: true },
   },
+  {
+    path: "/workshops",
+    name: "Workshops",
+    component: () => import("@/views/WorkshopsView.vue"),
+    meta: { requiresAuth: true },
+  },
   // ════════ NEW Settings — 6-group sidebar layout ════════
   {
     path: "/settings",

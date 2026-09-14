@@ -87,6 +87,7 @@ import { publicApiRoutes } from './modules/api/public-api-routes.js';
 import { webhookSettingsRoutes } from './modules/api/webhook-settings-routes.js';
 import { startContactIntelligence } from './modules/contacts/contact-intelligence.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
+import { workshopRoutes } from './modules/workshops/workshop-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
 import { posSaleMappingRoutes } from './modules/pos/pos-sale-mapping-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
@@ -359,6 +360,7 @@ async function bootstrap() {
   await app.register(publicApiRoutes);
   await app.register(webhookSettingsRoutes);
   await app.register(integrationRoutes);
+  await app.register(workshopRoutes);
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   await app.register(posRoutes);

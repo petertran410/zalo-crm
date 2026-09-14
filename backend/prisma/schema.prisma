@@ -39,6 +39,8 @@ model Organization {
   contacts                    Contact[]
   careProductInterests       ContactProductInterest[]
   careWorkshopAttendances    ContactWorkshopAttendance[]
+  workshops                   Workshop[]
+  workshopGuests              WorkshopGuest[]
   careComplaints             ContactComplaint[]
   zaloAccounts                ZaloAccount[]
   contactAccess               ContactAccess[]
@@ -778,6 +780,7 @@ model Contact {
   posOrders   PosOrder[]        @relation("ContactPosOrders")
   posInvoices PosInvoice[]      @relation("ContactPosInvoices")
   posDebts    PosCustomerDebt[] @relation("ContactPosDebts")
+  workshopGuests WorkshopGuest[]
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
@@ -4733,5 +4736,64 @@ model CustomerProductInterest {
   @@index([contactId, isDeleted])
   @@index([scannedAt])
   @@map("customer_product_interests")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workshop Read-Model — Đồng bộ từ máy chủ Workshop Public API v1
+// ════════════════════════════════════════════════════════════════════════════
+
+model Workshop {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  externalId  String?  @map("external_id")
+  slug        String
+  title       String
+  description String?  @db.Text
+  location    String?
+  startsAt    DateTime @map("starts_at")
+  endsAt      DateTime @map("ends_at")
+  capacity    Int      @default(0)
+  status      String   @default("OPEN")
+  bannerUrl   String?  @map("banner_url")
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org         Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  guests      WorkshopGuest[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, startsAt(sort: Desc)])
+  @@map("workshops")
+}
+
+model WorkshopGuest {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  workshopId      String    @map("workshop_id")
+  contactId       String?   @map("contact_id")
+  externalGuestId String?   @map("external_guest_id")
+  fullName        String    @map("full_name")
+  phone           String
+  phoneNormalized String    @map("phone_normalized")
+  email           String?
+  partySize       Int       @default(1) @map("party_size")
+  status          String    @default("REGISTERED")
+  checkinQrCode   String?   @map("checkin_qr_code")
+  registeredAt    DateTime  @default(now()) @map("registered_at")
+  checkedInAt     DateTime? @map("checked_in_at")
+  source          String?
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workshop        Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  contact         Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([workshopId, phoneNormalized])
+  @@index([orgId, phoneNormalized])
+  @@index([orgId, contactId])
+  @@map("workshop_guests")
 }
 

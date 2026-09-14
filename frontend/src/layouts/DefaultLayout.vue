@@ -213,6 +213,7 @@ import {
   Megaphone,
   ChevronDown,
   Smartphone,
+  GraduationCap,
 } from "lucide-vue-next";
 import "@/assets/nav-shell.css";
 
@@ -413,6 +414,7 @@ const primaryTabs: NavTab[] = [
     resource: "media",
   },
   { path: "/pos", label: "Cửa hàng POS", short: "POS", icon: Store },
+  { path: "/workshops", label: "Workshop", short: "Workshop", icon: GraduationCap },
 ];
 
 // Tab Marketing gồm nhiều chức năng, hiện nếu user có quyền bất kỳ chức năng nào và trỏ
