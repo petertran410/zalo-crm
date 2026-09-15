@@ -14,6 +14,7 @@ backups/
 compare/
 workshop/
 .claude/
+.docs/
 
 ui-smax
 
@@ -71,6 +72,7 @@ backend/uploads/
 # Artifact của phiên AI khác
 claude_todo/
 run.bat
+run-prisma-studio.bat
 
 # Scoping/inventory docs — local research artifacts, không commit
 DASHBOARD_FRONTEND_INVENTORY.md
