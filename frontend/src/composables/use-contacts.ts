@@ -190,6 +190,34 @@ export interface Contact {
   priorityUpdatedAt?: string | null;
 }
 
+/**
+ * Một dòng trong dropdown "nick khác" — Contact cùng SĐT thật với Contact đang mở.
+ * Backend tách hậu tố ".1" rồi nhóm (xem phoneFamilyKey, shared/utils/phone.ts).
+ */
+export interface PhoneFamilyMember {
+  id: string;
+  phone: string | null;
+  phoneSuffix: string | null;
+  isCurrent: boolean;
+  crmName: string | null;
+  /** File này coi cột fullName là TÊN POS — xem hydrateDraft(). */
+  fullName: string | null;
+  avatarUrl: string | null;
+  zaloDisplayName: string | null;
+  aliasInNick: string | null;
+  zaloUid: string | null;
+  posName: string | null;
+  posCode: string | null;
+  posSaleName: string | null;
+  accessible: boolean;
+}
+
+export interface PhoneFamilyResponse {
+  familyKey: string | null;
+  contacts: PhoneFamilyMember[];
+  truncated: boolean;
+}
+
 export const GENDER_OPTIONS = [
   { text: 'Nam', value: 'male' },
   { text: 'Nữ', value: 'female' },

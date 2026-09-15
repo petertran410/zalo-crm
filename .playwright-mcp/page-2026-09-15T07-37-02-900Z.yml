@@ -1,0 +1,21 @@
+- generic [ref=e4]:
+  - banner [ref=e5]:
+    - generic [ref=e6]:
+      - searchbox "Tìm kiếm toàn hệ thống" [ref=e11]
+      - link "Quản lý nick Zalo" [ref=e12] [cursor=pointer]:
+        - /url: /settings/channels/zalo
+      - button [ref=e15] [cursor=pointer]
+      - button "Chuyển nền tối" [ref=e22] [cursor=pointer]
+      - button "Mở menu tài khoản" [ref=e25] [cursor=pointer]:
+        - generic "U" [ref=e26]
+  - generic [ref=e28]:
+    - navigation "Điều hướng chính" [ref=e29]:
+      - generic [ref=e30]:
+        - link "Dashboard" [ref=e31] [cursor=pointer]:
+          - /url: /
+        - link "Công việc" [ref=e38] [cursor=pointer]:
+          - /url: /appointments
+        - link "POS" [ref=e43] [cursor=pointer]:
+          - /url: /pos
+      - button "Cài đặt" [ref=e51] [cursor=pointer]
+    - main [ref=e64]

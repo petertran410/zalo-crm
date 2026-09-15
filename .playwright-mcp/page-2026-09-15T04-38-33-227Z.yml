@@ -1,0 +1,27 @@
+- generic [ref=f1e4]:
+  - banner [ref=f1e5]:
+    - generic "kkk" [ref=f1e6]: K
+    - navigation "Điều hướng chính" [ref=f1e11]:
+      - link "Dashboard" [ref=f1e12] [cursor=pointer]:
+        - /url: /
+      - link "Kênh & Tin nhắn" [ref=f1e19] [cursor=pointer]:
+        - /url: /channels
+      - link "Khách hàng" [ref=f1e23] [cursor=pointer]:
+        - /url: /contacts
+      - link "Công việc" [ref=f1e30] [cursor=pointer]:
+        - /url: /appointments
+      - link "Kho lưu trữ" [ref=f1e35] [cursor=pointer]:
+        - /url: /media
+      - link "Cửa hàng POS" [ref=f1e39] [cursor=pointer]:
+        - /url: /pos
+      - button "Cài đặt" [ref=f1e46] [cursor=pointer]
+    - generic [ref=f1e61]:
+      - button "Mở trung tâm đồng bộ POS" [ref=f1e63] [cursor=pointer]
+      - searchbox "Tìm kiếm toàn hệ thống" [ref=f1e73]
+      - link "Quản lý nick Zalo" [ref=f1e74] [cursor=pointer]:
+        - /url: /settings/channels/zalo
+      - button [ref=f1e77] [cursor=pointer]
+      - button "Chuyển nền tối" [ref=f1e84] [cursor=pointer]
+      - button "Mở menu tài khoản" [ref=f1e87] [cursor=pointer]:
+        - generic "kkk" [ref=f1e88]: K
+  - main [ref=f1e91]
