@@ -61,6 +61,18 @@
           <Smartphone :size="19" :stroke-width="1.9" />
         </RouterLink>
         <NotificationBell />
+        <!-- Nút nền tối — thay cho nút "Tối/Sáng" cũ nằm trong header màn Khách hàng.
+             Token tối hiện chỉ có ở màn Khách hàng nên cờ này chỉ đổi màu những màn
+             đã khai báo [data-theme='dark']; xem stores/ui-theme.ts. -->
+        <button
+          class="icon-btn"
+          :title="uiTheme.isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'"
+          :aria-label="uiTheme.isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'"
+          :aria-pressed="uiTheme.isDark"
+          @click="uiTheme.toggle()">
+          <Moon v-if="!uiTheme.isDark" :size="19" :stroke-width="1.9" />
+          <Sun v-else :size="19" :stroke-width="1.9" />
+        </button>
         <v-menu v-model="userMenu" :close-on-content-click="true">
           <template #activator="{ props: act }">
             <button
@@ -198,6 +210,7 @@ import OrderBuilderWorkspace from "@/components/order-builder/workspace/OrderBui
 import { useOrderDraftStore } from "@/stores/use-workspace-sessions";
 import { fetchPublicBranding } from "@/api/public-branding";
 import NavSettingsMenu from "@/components/nav/NavSettingsMenu.vue";
+import { useUiThemeStore } from "@/stores/ui-theme";
 /* Navigation icons are Lucide SVG, not the MDI icon font.
    The MDI font renders each glyph inside its own solid em-box, which on a dark
    header reads as a white tile behind every icon. Stroked SVG has a transparent
@@ -213,6 +226,8 @@ import {
   Megaphone,
   ChevronDown,
   Smartphone,
+  Moon,
+  Sun,
 } from "lucide-vue-next";
 import "@/assets/nav-shell.css";
 
@@ -225,6 +240,7 @@ const theme = useTheme();
 const route = useRoute();
 const authStore = useAuthStore();
 const router = useRouter();
+const uiTheme = useUiThemeStore();
 
 // Dropdown Vuetify ở z-index 2000, kẹt mở là phủ lên nav và nuốt hết click. Vì vậy giữ
 // bằng v-model rồi ép đóng sau mỗi điều hướng, kể cả điều hướng bị huỷ hay chặn quyền.

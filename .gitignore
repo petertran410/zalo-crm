@@ -12,6 +12,8 @@ backups/
 .DS_Store
 .gstack/
 compare/
+workshop/
+.claude/
 
 ui-smax
 

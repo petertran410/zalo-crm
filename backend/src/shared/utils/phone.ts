@@ -97,3 +97,31 @@ export function phoneVariants(input: string | null | undefined): string[] {
   }
   return [...variants];
 }
+
+/**
+ * Bỏ hậu tố thập phân ".N" mà team bán hàng gắn vào SĐT để tách nhiều Contact trên
+ * cùng một số thật: `0335862112` = "(Sale 1 - A1)", `0335862112.1` = "(Sale 2 - A2)".
+ *
+ * KHÔNG dùng cho ghi DB — `phoneNormalized` vẫn do normalizePhone() sinh ra. Chỉ dùng
+ * khi cần NHÓM các Contact cùng một khách.
+ */
+export function stripPhoneSuffix(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+  const m = raw.match(/^(.*?)\.\d+$/);
+  const base = (m ? m[1] : raw).trim();
+  return base || null;
+}
+
+/**
+ * Canonical key để nhóm Contact cùng SĐT thật, bất kể hậu tố ".N" và format 0/84/+84.
+ *
+ * Cần hàm riêng vì normalizePhone() nuốt hậu tố thành digit:
+ *   0335862112   → 84335862112
+ *   0335862112.1 → 843358621121   ≠ số trên
+ * nên phoneNormalized KHÔNG group được hai Contact của cùng một khách.
+ */
+export function phoneFamilyKey(input: string | null | undefined): string | null {
+  return normalizePhone(stripPhoneSuffix(input));
+}
