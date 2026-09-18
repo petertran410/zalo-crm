@@ -42,6 +42,30 @@ describe('stripPhoneSuffix', () => {
     // "0376449977 (Anh Hưng ).1" — base giữ nguyên phần ghi chú.
     expect(stripPhoneSuffix('0376449977 (Anh Hưng ).1')).toBe('0376449977 (Anh Hưng )');
   });
+
+  // ── Hai dạng typo khác thấy trong DB (base đã verify là bản A1) ──
+  it('bỏ hậu tố dấu phẩy ",1" (lỗi gõ thay cho ".1")', () => {
+    expect(stripPhoneSuffix('0398881102,1')).toBe('0398881102');
+  });
+
+  it('rớt 1 số cuối thừa của mobile 11 số (mobile VN đúng = 10 số)', () => {
+    expect(stripPhoneSuffix('03841187881')).toBe('0384118788');
+    expect(stripPhoneSuffix('09622746061')).toBe('0962274606');
+  });
+
+  it('KHÔNG rớt số cuối của mobile 10 số hợp lệ', () => {
+    expect(stripPhoneSuffix('0384118788')).toBe('0384118788');
+  });
+
+  it('KHÔNG đụng số legacy 11 số bắt đầu 01 (Viettel/Mobi/Vina cũ)', () => {
+    // Legacy 01xx không khớp 0[35789] nên phải giữ nguyên 11 số.
+    expect(stripPhoneSuffix('01681234567')).toBe('01681234567');
+    expect(stripPhoneSuffix('01234567890')).toBe('01234567890');
+  });
+
+  it('KHÔNG đụng số bàn 11 số (02x = mã vùng, không phải mobile typo)', () => {
+    expect(stripPhoneSuffix('02835350029')).toBe('02835350029');
+  });
 });
 
 describe('phoneFamilyKey', () => {
@@ -83,5 +107,23 @@ describe('phoneFamilyKey', () => {
       phoneFamilyKey('0376449977 (Anh Hưng ).1'),
     );
     expect(phoneFamilyKey('0376449977 (Anh Hưng )')).toBe('84376449977');
+  });
+
+  // ── Hai dạng typo mới: base và biến thể phải group với nhau ──
+  it('comma-suffix group với base', () => {
+    expect(phoneFamilyKey('0398881102')).toBe(phoneFamilyKey('0398881102,1'));
+    expect(phoneFamilyKey('0398881102')).toBe('84398881102');
+  });
+
+  it('mobile 11 số group với base 10 số của nó', () => {
+    expect(phoneFamilyKey('0384118788')).toBe(phoneFamilyKey('03841187881'));
+    expect(phoneFamilyKey('0384118788')).toBe('84384118788');
+  });
+
+  it('số legacy 01x và số bàn KHÔNG bị group nhầm vào mobile 10 số', () => {
+    // 01681234567 (legacy) khác 0168123456 — không được rớt số cuối.
+    expect(phoneFamilyKey('01681234567')).not.toBe(phoneFamilyKey('0168123456'));
+    // số bàn 02x giữ nguyên 11 số.
+    expect(phoneFamilyKey('02835350029')).not.toBe(phoneFamilyKey('0283535002'));
   });
 });

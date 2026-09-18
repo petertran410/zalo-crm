@@ -418,42 +418,77 @@
               class="ppl-btn-ghost sm ppl-fam-btn" :class="{ on: familyOpen }"
               type="button" @click.stop="toggleFamilyMenu"
             >
-              nick khác
+              nick liên quan
               <span v-if="familyOtherCount" class="ppl-fam-count">{{ familyOtherCount }}</span>
               <span class="ppl-fam-caret" :class="{ up: familyOpen }">▾</span>
             </button>
             <div v-if="familyOpen" class="ppl-fam-panel" @click.stop>
-              <div class="ppl-fam-title">Cùng số điện thoại</div>
-              <div v-if="familyLoading" class="ppl-fam-empty">Đang tải…</div>
-              <div v-else-if="!familyMembers.length" class="ppl-fam-empty">
-                Không có nick nào khác
+              <div class="ppl-fam-sec">
+                <div class="ppl-fam-title">Cùng số điện thoại</div>
+                <div v-if="familyLoading" class="ppl-fam-empty">Đang tải…</div>
+                <div v-else-if="!familyMembers.length" class="ppl-fam-empty">
+                  Không có nick nào khác
+                </div>
+                <div v-else class="ppl-fam-list">
+                  <button
+                    v-for="m in familyMembers" :key="m.id"
+                    class="ppl-fam-item" :class="{ current: m.isCurrent, locked: !m.accessible }"
+                    type="button" :disabled="m.isCurrent"
+                    @click="openFamilyMember(m)"
+                  >
+                    <span class="ppl-fam-av" :style="{ background: hueOf(m.id) }">
+                      <img
+                        v-if="m.avatarUrl" :src="m.avatarUrl" alt=""
+                        referrerpolicy="no-referrer" @error="onAvatarError"
+                      />
+                      <template v-else>{{ familyInitials(m) }}</template>
+                    </span>
+                    <span class="ppl-fam-txt">
+                      <span class="ppl-fam-zalo">
+                        <span class="ppl-fam-zname" :title="familyZaloName(m)">{{ familyZaloName(m) }}</span>
+                        <span v-if="m.isCurrent" class="ppl-fam-badge">đang xem</span>
+                        <span v-else-if="!m.accessible" class="ppl-fam-badge alt">sale khác</span>
+                        <span v-if="m.phoneSuffix" class="ppl-fam-sfx">{{ m.phoneSuffix }}</span>
+                      </span>
+                      <span class="ppl-fam-pos" :title="familyPosName(m)">
+                        {{ familyPosName(m) || '— chưa có tên POS —' }}
+                      </span>
+                    </span>
+                  </button>
+                </div>
               </div>
-              <div v-else class="ppl-fam-list">
-                <button
-                  v-for="m in familyMembers" :key="m.id"
-                  class="ppl-fam-item" :class="{ current: m.isCurrent, locked: !m.accessible }"
-                  type="button" :disabled="m.isCurrent"
-                  @click="openFamilyMember(m)"
-                >
-                  <span class="ppl-fam-av" :style="{ background: hueOf(m.id) }">
-                    <img
-                      v-if="m.avatarUrl" :src="m.avatarUrl" alt=""
-                      referrerpolicy="no-referrer" @error="onAvatarError"
-                    />
-                    <template v-else>{{ familyInitials(m) }}</template>
-                  </span>
-                  <span class="ppl-fam-txt">
-                    <span class="ppl-fam-zalo">
-                      <span class="ppl-fam-zname" :title="familyZaloName(m)">{{ familyZaloName(m) }}</span>
-                      <span v-if="m.isCurrent" class="ppl-fam-badge">đang xem</span>
-                      <span v-else-if="!m.accessible" class="ppl-fam-badge alt">sale khác</span>
-                      <span v-if="m.phoneSuffix" class="ppl-fam-sfx">{{ m.phoneSuffix }}</span>
+              <div class="ppl-fam-sec alt">
+                <div class="ppl-fam-title">chuỗi</div>
+                <div v-if="chainLoading" class="ppl-fam-empty">Đang tải…</div>
+                <div v-else-if="!chainMembers.length" class="ppl-fam-empty">
+                  Không có nick nào cùng chuỗi
+                </div>
+                <div v-else class="ppl-fam-list">
+                  <button
+                    v-for="m in chainMembers" :key="m.id"
+                    class="ppl-fam-item" :class="{ current: m.isCurrent, locked: !m.accessible }"
+                    type="button" :disabled="m.isCurrent"
+                    @click="openFamilyMember(m)"
+                  >
+                    <span class="ppl-fam-av" :style="{ background: hueOf(m.id) }">
+                      <img
+                        v-if="m.avatarUrl" :src="m.avatarUrl" alt=""
+                        referrerpolicy="no-referrer" @error="onAvatarError"
+                      />
+                      <template v-else>{{ familyInitials(m) }}</template>
                     </span>
-                    <span class="ppl-fam-pos" :title="familyPosName(m)">
-                      {{ familyPosName(m) || '— chưa có tên POS —' }}
+                    <span class="ppl-fam-txt">
+                      <span class="ppl-fam-zalo">
+                        <span class="ppl-fam-zname" :title="familyZaloName(m)">{{ familyZaloName(m) }}</span>
+                        <span v-if="m.isCurrent" class="ppl-fam-badge">đang xem</span>
+                        <span v-else-if="!m.accessible" class="ppl-fam-badge alt">sale khác</span>
+                      </span>
+                      <span class="ppl-fam-pos" :title="familyPosName(m)">
+                        {{ familyPosName(m) || '— chưa có tên POS —' }}
+                      </span>
                     </span>
-                  </span>
-                </button>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -737,6 +772,7 @@ import {
   type ContactCareFields,
   type PhoneFamilyMember,
   type PhoneFamilyResponse,
+  type ChainFamilyResponse,
 } from '@/composables/use-contacts';
 import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-friend-socket';
 import { useContactPhoneSearch, candidateDisplayName, candidateKey, type PosLinkCandidate } from '@/composables/use-contact-phone-search';
@@ -1528,16 +1564,23 @@ const copiedCode = ref<string | null>(null);
 const copiedPosId = ref<number | null>(null);
 const chanEdit = reactive<Record<string, { alias?: string; statusId?: string }>>({});
 
-// "nick khác" — các Contact cùng SĐT thật (team bán tách KH bằng hậu tố ".1").
+// "nick liên quan" — Contact cùng SĐT thật + cùng "chuỗi" (thương hiệu/công ty).
 const familyOpen = ref(false);
 const familyLoading = ref(false);
 const familyMembers = ref<PhoneFamilyMember[]>([]);
+const chainLoading = ref(false);
+const chainMembers = ref<PhoneFamilyMember[]>([]);
 const familyWrapRef = ref<HTMLElement | null>(null);
 let familyLoadedFor: string | null = null;
-// Số nick KHÁC (không tính Contact đang xem) — hiện trên chip.
-const familyOtherCount = computed(
-  () => familyMembers.value.filter((m) => !m.isCurrent).length,
-);
+let chainLoadedFor: string | null = null;
+// Số nick LIÊN QUAN (không tính Contact đang xem, dedupe theo id giữa 2 list).
+const familyOtherCount = computed(() => {
+  const ids = new Set<string>();
+  for (const m of [...familyMembers.value, ...chainMembers.value]) {
+    if (!m.isCurrent) ids.add(m.id);
+  }
+  return ids.size;
+});
 
 const timeline = ref<Array<{ title: string; desc: string; when: string }>>([]);
 const loadingTimeline = ref(false);
@@ -1723,7 +1766,7 @@ function closeDrawer() {
   }
 }
 
-// ── "nick khác": các Contact cùng SĐT thật ─────────────────────────────────
+// ── "nick liên quan": Contact cùng SĐT thật + cùng "chuỗi" ─────────────────
 function closeFamilyMenu() {
   familyOpen.value = false;
 }
@@ -1743,7 +1786,7 @@ async function toggleFamilyMenu() {
   if (familyOpen.value) { familyOpen.value = false; return; }
   if (!detail.value) return;
   familyOpen.value = true;
-  await loadFamily();
+  await Promise.all([loadFamily(), loadChain()]);
 }
 
 /**
@@ -1772,6 +1815,31 @@ async function loadFamily(silent = false) {
     familyMembers.value = [];
   } finally {
     if (selectedId.value === anchorId) familyLoading.value = false;
+  }
+}
+
+/**
+ * Fetch "chuỗi" — cùng logic cache/guard như loadFamily, chỉ khác endpoint.
+ * `silent=true` từ drawer để chip có số nền mà không toast khi lỗi.
+ */
+async function loadChain(silent = false) {
+  if (!detail.value) return;
+  const anchorId = detail.value.id;
+  if (chainLoadedFor === anchorId) return;
+  chainMembers.value = [];
+  chainLoading.value = true;
+  try {
+    const res = await api.get<ChainFamilyResponse>(`/contacts/${anchorId}/chain-family`);
+    if (selectedId.value !== anchorId) return;
+    chainMembers.value = res.data?.contacts ?? [];
+    chainLoadedFor = anchorId;
+  } catch (err) {
+    if (selectedId.value !== anchorId) return;
+    console.error('[PeopleView] load chain family failed:', err);
+    if (!silent) toast.error('Không tải được các nick cùng chuỗi của khách này');
+    chainMembers.value = [];
+  } finally {
+    if (selectedId.value === anchorId) chainLoading.value = false;
   }
 }
 
@@ -2085,8 +2153,9 @@ watch(selectedId, () => {
   timeline.value = [];
   notes.value = [];
   Object.keys(chanEdit).forEach((k) => delete chanEdit[k]);
-  // Tải family nền để chip "nick khác" có số ngay — silent=true vì lỗi không cần toast.
+  // Tải family + chuỗi nền để chip "nick liên quan" có số ngay — silent=true.
   void loadFamily(true);
+  void loadChain(true);
 });
 
 async function saveNote() {
@@ -2859,7 +2928,7 @@ onBeforeUnmount(() => {
 .ppl-dr-x:hover { color: var(--pp-fg); }
 .ppl-dr-actions { display: flex; align-items: center; gap: 9px; }
 
-/* ── "nick khác" dropdown (Contact cùng SĐT thật) ── */
+/* ── "nick liên quan" dropdown (cùng SĐT thật + cùng "chuỗi") ── */
 .ppl-fam-wrap { position: relative; display: inline-flex; flex: none; }
 .ppl-fam-btn {
   display: inline-flex; align-items: center; gap: 6px;
@@ -2883,6 +2952,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--pp-line); box-shadow: 0 26px 52px -20px var(--pp-shadow);
   animation: ppPop .16s ease-out;
 }
+.ppl-fam-sec { display: flex; flex-direction: column; flex: none; min-height: 0; }
+/* Section "chuỗi" ngăn với section SĐT bằng một đường kẻ. */
+.ppl-fam-sec.alt { border-top: 1px solid var(--pp-line); }
 .ppl-fam-title {
   flex: none; padding: 11px 14px 8px;
   font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
@@ -2890,8 +2962,9 @@ onBeforeUnmount(() => {
 }
 .ppl-fam-empty { padding: 4px 14px 14px; font-size: 12.5px; color: var(--pp-muted); }
 /* max-height trên flex container + overflow-y trên body = cặp quy ước của repo
-   (NickPickerPopup, quick-template-popup) để list cuộn mà header vẫn cố định. */
-.ppl-fam-list { flex: 1 1 auto; min-height: 0; max-height: 296px; overflow-y: auto; padding: 0 6px 6px; }
+   (NickPickerPopup, quick-template-popup) để list cuộn mà header vẫn cố định.
+   Cap 200px (thay vì 296) để hai section cùng nằm gọn trong panel. */
+.ppl-fam-list { flex: 1 1 auto; min-height: 0; max-height: 200px; overflow-y: auto; padding: 0 6px 6px; }
 .ppl-fam-item {
   width: 100%; display: flex; align-items: flex-start; gap: 10px;
   padding: 8px; border: 0; border-radius: 11px; background: transparent;

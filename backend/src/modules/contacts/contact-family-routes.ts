@@ -1,5 +1,8 @@
 /**
- * contact-family-routes.ts — "nick khác": các Contact dùng chung một SĐT thật.
+ * contact-family-routes.ts — dropdown "nick liên quan": các Contact liên quan tới
+ * Contact đang mở. Hai route, cùng một shape dòng (PhoneFamilyMember):
+ *   /phone-family — cùng SĐT thật (team bán tách KH bằng hậu tố ".1").
+ *   /chain-family — cùng "chuỗi"/thương hiệu (PosCustomer.organization).
  *
  * Bối cảnh: team bán hàng tách một khách thành nhiều Contact bằng cách gắn hậu tố
  * thập phân vào SĐT — `0335862112` = "(Sale 1 - A1)", `0335862112.1` = "(Sale 2 - A2)".
@@ -13,6 +16,7 @@
  * sale khác" thay vì để bấm rồi ăn 403.
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
+import type { Prisma } from "@prisma/client";
 import { authMiddleware } from "../auth/auth-middleware.js";
 import { prisma } from "../../shared/database/prisma-client.js";
 import { logger } from "../../shared/utils/logger.js";
@@ -27,6 +31,31 @@ import { FRIEND_INCLUDE } from "../../shared/friend-serializer.js";
 
 /** Giới hạn cứng cho 1 family — thực tế max 2-3 dòng, cap để chặn data bẩn. */
 const FAMILY_LIMIT = 50;
+
+/** Cột Contact cần cho một dòng family — phone-family và chain-family dùng chung. */
+const FAMILY_SELECT = {
+  id: true,
+  phone: true,
+  phone2: true,
+  phone3: true,
+  crmName: true,
+  fullName: true,
+  avatarUrl: true,
+  zaloUid: true,
+  posCustomerId: true,
+  posCustomerCode: true,
+  friends: {
+    where: {
+      zaloAccount: { archivedAt: null },
+      relationshipKind: { not: "ghost" },
+    },
+    include: FRIEND_INCLUDE,
+    orderBy: { lastInboundAt: { sort: "desc", nulls: "last" } },
+    take: 5,
+  },
+} as const satisfies Prisma.ContactSelect;
+
+type FamilyRow = Prisma.ContactGetPayload<{ select: typeof FAMILY_SELECT }>;
 
 export interface PhoneFamilyMember {
   id: string;
@@ -46,6 +75,68 @@ export interface PhoneFamilyMember {
   posSaleName: string | null;
   /** False khi Contact thuộc scope sale khác — FE disable navigation. */
   accessible: boolean;
+}
+
+/**
+ * POS enrichment + scope flag + map sang PhoneFamilyMember. Dùng chung cho cả
+ * phone-family và chain-family — hai route trả cùng một shape dòng.
+ */
+async function buildFamilyMembers(
+  rows: FamilyRow[],
+  anchorId: string,
+  user: { id: string; orgId: string; role: string }
+): Promise<PhoneFamilyMember[]> {
+  // POS name nằm ở bảng riêng, không có Prisma relation → 1 query theo (posId, orgId).
+  const posIds = rows
+    .map((r) => r.posCustomerId)
+    .filter((v): v is number => v != null);
+  const posRows = posIds.length
+    ? await prisma.posCustomer.findMany({
+        where: { orgId: user.orgId, posId: { in: posIds } },
+        select: {
+          posId: true,
+          code: true,
+          name: true,
+          assignedSaleName: true,
+        },
+      })
+    : [];
+  const posByPosId = new Map(posRows.map((p) => [p.posId, p]));
+
+  const cScope = await getContactScope(user.id, user.orgId, user.role);
+  const accessibleIds =
+    cScope.accessibleContactIds === null
+      ? null
+      : new Set(cScope.accessibleContactIds);
+  const canOpen = (contactId: string) => {
+    if (cScope.isOrgAdmin || accessibleIds === null) return true;
+    return accessibleIds.has(contactId);
+  };
+
+  return rows.map((c) => {
+    // Hậu tố hiển thị: ".N" hoặc ",N" (11-số-thừa không có dấu nên không có chip).
+    const suffixMatch = (c.phone ?? "").match(/([.,]\d+)$/);
+    const pos = c.posCustomerId
+      ? posByPosId.get(c.posCustomerId)
+      : undefined;
+    const fr = c.friends?.[0];
+    return {
+      id: c.id,
+      phone: c.phone,
+      phoneSuffix: suffixMatch ? suffixMatch[1] : null,
+      isCurrent: c.id === anchorId,
+      crmName: c.crmName,
+      fullName: c.fullName,
+      avatarUrl: c.avatarUrl,
+      zaloDisplayName: fr?.zaloDisplayName ?? null,
+      aliasInNick: fr?.aliasInNick ?? null,
+      zaloUid: fr?.zaloUidInNick ?? c.zaloUid ?? null,
+      posName: pos?.name ?? null,
+      posCode: pos?.code ?? c.posCustomerCode ?? null,
+      posSaleName: pos?.assignedSaleName ?? null,
+      accessible: canOpen(c.id),
+    };
+  });
 }
 
 export async function contactFamilyRoutes(
@@ -110,27 +201,7 @@ export async function contactFamilyRoutes(
               { phone3: { contains: v } },
             ]),
           },
-          select: {
-            id: true,
-            phone: true,
-            phone2: true,
-            phone3: true,
-            crmName: true,
-            fullName: true,
-            avatarUrl: true,
-            zaloUid: true,
-            posCustomerId: true,
-            posCustomerCode: true,
-            friends: {
-              where: {
-                zaloAccount: { archivedAt: null },
-                relationshipKind: { not: "ghost" },
-              },
-              include: FRIEND_INCLUDE,
-              orderBy: { lastInboundAt: { sort: "desc", nulls: "last" } },
-              take: 5,
-            },
-          },
+          select: FAMILY_SELECT,
           take: FAMILY_LIMIT * 4,
         });
 
@@ -149,56 +220,7 @@ export async function contactFamilyRoutes(
         const truncated = matched.length > FAMILY_LIMIT;
         const rows = matched.slice(0, FAMILY_LIMIT);
 
-        // POS name nằm ở bảng riêng, không có Prisma relation → 1 query theo (posId, orgId).
-        const posIds = rows
-          .map((r) => r.posCustomerId)
-          .filter((v): v is number => v != null);
-        const posRows = posIds.length
-          ? await prisma.posCustomer.findMany({
-              where: { orgId: user.orgId, posId: { in: posIds } },
-              select: {
-                posId: true,
-                code: true,
-                name: true,
-                assignedSaleName: true,
-              },
-            })
-          : [];
-        const posByPosId = new Map(posRows.map((p) => [p.posId, p]));
-
-        const cScope = await getContactScope(user.id, user.orgId, user.role);
-        const accessibleIds =
-          cScope.accessibleContactIds === null
-            ? null
-            : new Set(cScope.accessibleContactIds);
-        const canOpen = (contactId: string) => {
-          if (cScope.isOrgAdmin || accessibleIds === null) return true;
-          return accessibleIds.has(contactId);
-        };
-
-        const contacts: PhoneFamilyMember[] = rows.map((c) => {
-          const suffixMatch = (c.phone ?? "").match(/(\.\d+)$/);
-          const pos = c.posCustomerId
-            ? posByPosId.get(c.posCustomerId)
-            : undefined;
-          const fr = c.friends?.[0];
-          return {
-            id: c.id,
-            phone: c.phone,
-            phoneSuffix: suffixMatch ? suffixMatch[1] : null,
-            isCurrent: c.id === anchor.id,
-            crmName: c.crmName,
-            fullName: c.fullName,
-            avatarUrl: c.avatarUrl,
-            zaloDisplayName: fr?.zaloDisplayName ?? null,
-            aliasInNick: fr?.aliasInNick ?? null,
-            zaloUid: fr?.zaloUidInNick ?? c.zaloUid ?? null,
-            posName: pos?.name ?? null,
-            posCode: pos?.code ?? c.posCustomerCode ?? null,
-            posSaleName: pos?.assignedSaleName ?? null,
-            accessible: canOpen(c.id),
-          };
-        });
+        const contacts = await buildFamilyMembers(rows, anchor.id, user);
 
         return { familyKey, contacts, truncated };
       } catch (err) {
@@ -206,6 +228,85 @@ export async function contactFamilyRoutes(
         return reply
           .status(500)
           .send({ error: "Failed to fetch phone family" });
+      }
+    }
+  );
+
+  // "chuỗi" — các Contact cùng công ty/thương hiệu (PosCustomer.organization).
+  // Org-wide + cờ accessible như phone-family: chuỗi một brand trải nhiều sale.
+  app.get(
+    "/api/v1/contacts/:id/chain-family",
+    {
+      preHandler: requireGrant("contact", "access"),
+      config: {
+        contentClass: "mixed" as const,
+        rbacResource: "contact" as const,
+        rbacAction: "access" as const,
+      },
+    },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const user = request.user!;
+        const { id } = request.params as { id: string };
+
+        const anchor = await prisma.contact.findFirst({
+          where: { id, orgId: user.orgId },
+          select: { id: true, posCustomerId: true },
+        });
+        if (!anchor) {
+          return reply.status(404).send({ error: "Contact not found" });
+        }
+        if (anchor.posCustomerId == null) {
+          return { chainKey: null, contacts: [], truncated: false };
+        }
+
+        const anchorPos = await prisma.posCustomer.findFirst({
+          where: { orgId: user.orgId, posId: anchor.posCustomerId },
+          select: { organization: true, isOrganization: true },
+        });
+        const orgName = anchorPos?.organization?.trim();
+        // Chỉ group khi là hồ sơ tổ chức thật — tránh "chuỗi" giả từ org rỗng/chung.
+        if (!anchorPos || anchorPos.isOrganization !== true || !orgName) {
+          return { chainKey: null, contacts: [], truncated: false };
+        }
+
+        const sameOrg = await prisma.posCustomer.findMany({
+          where: {
+            orgId: user.orgId,
+            organization: { equals: orgName, mode: "insensitive" },
+          },
+          select: { posId: true },
+        });
+        const posIds = sameOrg.map((p) => p.posId);
+
+        // (orgId, posCustomerId) đã có index nên query thẳng, không cần contains+verify.
+        const matched = await prisma.contact.findMany({
+          where: {
+            orgId: user.orgId,
+            mergedInto: null,
+            archivedAt: null,
+            posCustomerId: { in: posIds },
+          },
+          select: FAMILY_SELECT,
+          take: FAMILY_LIMIT * 4,
+        });
+
+        if (matched.length <= 1) {
+          return { chainKey: orgName, contacts: [], truncated: false };
+        }
+
+        matched.sort((a, b) => (a.crmName ?? "").localeCompare(b.crmName ?? ""));
+        const truncated = matched.length > FAMILY_LIMIT;
+        const rows = matched.slice(0, FAMILY_LIMIT);
+
+        const contacts = await buildFamilyMembers(rows, anchor.id, user);
+
+        return { chainKey: orgName, contacts, truncated };
+      } catch (err) {
+        logger.error("[contacts] chain-family error:", err);
+        return reply
+          .status(500)
+          .send({ error: "Failed to fetch chain family" });
       }
     }
   );

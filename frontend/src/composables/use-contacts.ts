@@ -218,6 +218,16 @@ export interface PhoneFamilyResponse {
   truncated: boolean;
 }
 
+/**
+ * Cùng "chuỗi" — các Contact chung công ty/thương hiệu (PosCustomer.organization).
+ * Dùng lại PhoneFamilyMember vì hai section render y hệt nhau.
+ */
+export interface ChainFamilyResponse {
+  chainKey: string | null;
+  contacts: PhoneFamilyMember[];
+  truncated: boolean;
+}
+
 export const GENDER_OPTIONS = [
   { text: 'Nam', value: 'male' },
   { text: 'Nữ', value: 'female' },
