@@ -18,6 +18,8 @@ workshop/
 
 ui-smax
 
+ui-smax
+
 # Local dev artifacts — không commit
 .backfill*.sql
 .diag.sql
