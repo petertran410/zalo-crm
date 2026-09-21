@@ -18,7 +18,7 @@ workshop/
 
 ui-smax
 
-ui-smax
+PUBLIC-API.md
 
 # Local dev artifacts — không commit
 .backfill*.sql
