@@ -8,15 +8,36 @@
         class="qt-chip"
         :class="{ active: activeTagSlugs.has(tag.slug) }"
         :style="getChipStyle(tag, activeTagSlugs.has(tag.slug))"
-        :title="activeTagSlugs.has(tag.slug) ? `Nhấp để gỡ nhãn '${tag.name}'` : `Nhấp để gắn nhãn '${tag.name}'`"
+        :title="tag.isPrivate ? `[Riêng tư] ${activeTagSlugs.has(tag.slug) ? 'Nhấp để gỡ nhãn' : 'Nhấp để gắn nhãn'} '${tag.name}'` : (activeTagSlugs.has(tag.slug) ? `Nhấp để gỡ nhãn '${tag.name}'` : `Nhấp để gắn nhãn '${tag.name}'`)"
         :disabled="pendingSlugs.has(tag.slug)"
         @click="toggleTag(tag)"
       >
+        <span v-if="tag.isPrivate" class="qt-chip-priv" title="Thẻ riêng tư của bạn">🔒</span>
         <span v-if="tag.emoji" class="qt-chip-emoji">{{ tag.emoji }}</span>
         <span class="qt-chip-name">{{ tag.name }}</span>
       </button>
 
+      <!-- Nút '+' mở modal quản lý & thêm nhãn -->
+      <button
+        type="button"
+        class="qt-add-btn"
+        title="Thêm và quản lý thẻ nhãn khách hàng"
+        @click="openManageModal"
+      >
+        <Plus :size="15" :stroke-width="2.2" />
+      </button>
     </div>
+
+    <!-- Modal Quản lý & Tạo thẻ nhãn -->
+    <TagCrmManageModal
+      v-if="showManageModal"
+      :friend-id="friendId"
+      :contact-id="contactId"
+      @close="showManageModal = false"
+      @created="onTagCreated"
+      @updated="onTagUpdated"
+      @deleted="onTagDeleted"
+    />
   </div>
 </template>
 
@@ -28,6 +49,8 @@ import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import { useFriendSocket } from '@/composables/use-friend-socket';
 import { refreshTagTaxonomy } from '@/composables/use-tag-taxonomy';
+import { Plus } from 'lucide-vue-next';
+import TagCrmManageModal from './TagCrmManageModal.vue';
 
 interface TagV2 {
   id: string;
@@ -38,6 +61,8 @@ interface TagV2 {
   scope: 'friend' | 'crm';
   source: string;
   priority: number;
+  isPrivate?: boolean;
+  createdById?: string | null;
 }
 
 interface FriendTagAssignment {
@@ -53,6 +78,35 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
+
+const showManageModal = ref(false);
+
+function openManageModal() {
+  showManageModal.value = true;
+}
+
+async function onTagCreated(newTag: TagV2, assignNow: boolean) {
+  fetchedDefsOnce = false;
+  await loadManualTagDefs();
+  await refreshTagTaxonomy();
+  if (assignNow && props.friendId) {
+    toggleTag(newTag);
+  }
+}
+
+async function onTagUpdated(_updatedTag: TagV2) {
+  fetchedDefsOnce = false;
+  await loadManualTagDefs();
+  await refreshTagTaxonomy();
+  await loadFriendTags();
+}
+
+async function onTagDeleted(_tagId: string) {
+  fetchedDefsOnce = false;
+  await loadManualTagDefs();
+  await refreshTagTaxonomy();
+  await loadFriendTags();
+}
 
 
 // ── UI Source of Truth ────────────────────────────────────────────────────────
@@ -354,6 +408,11 @@ async function toggleTag(tag: TagV2) {
 
 .qt-chip-emoji {
   font-size: 13px;
+  line-height: 1;
+}
+
+.qt-chip-priv {
+  font-size: 11px;
   line-height: 1;
 }
 

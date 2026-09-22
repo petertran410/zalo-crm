@@ -132,7 +132,7 @@
               :class="{ 'tag-zalo': tag.isZalo, 'tag-crm': !tag.isZalo, 'tag-auto': tag.isAuto }"
               :style="{ '--tag-color': tag.color }"
             >
-              <ZaloBrandIcon v-if="tag.isZalo" :size="11" /><span v-else-if="tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
+              <ZaloBrandIcon v-if="tag.isZalo" :size="11" /><span v-else-if="tag.isPrivate" class="tag-mini-emoji">🔒</span><span v-else-if="tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
             </span>
 
             <v-menu
@@ -157,7 +157,7 @@
                   :class="{ 'tag-zalo': tag.isZalo, 'tag-crm': !tag.isZalo, 'tag-auto': tag.isAuto }"
                   :style="{ '--tag-color': tag.color }"
                 >
-                  <ZaloBrandIcon v-if="tag.isZalo" :size="11" /><span v-else-if="tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
+                  <ZaloBrandIcon v-if="tag.isZalo" :size="11" /><span v-else-if="tag.isPrivate" class="tag-mini-emoji">🔒</span><span v-else-if="tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
                 </span>
               </div>
             </v-menu>
@@ -473,7 +473,7 @@ function buildFilterParams(): Record<string, string> {
 // 2026-06-06 (Anh chốt) — Tag Zalo Real ở cột 2 lấy từ Friend.zaloLabels (object {name,color}
 // màu CHUẨN = zalo_labels.color, đồng bộ TagCrmBar + header) thay vì string '🔵 X' + crm_tags legacy.
 // Tag khác (manual/auto) giữ đường cũ. Trả object {name, color, isZalo} thống nhất.
-interface DisplayTag { name: string; color: string; emoji?: string | null; isZalo: boolean; isAuto?: boolean; key: string }
+interface DisplayTag { name: string; color: string; emoji?: string | null; isZalo: boolean; isAuto?: boolean; isPrivate?: boolean; key: string }
 
 // Reactive trigger — displayTags đọc taxonomyVersion.value để Vue re-render khi
 // taxonomy load xong (slug→name). Không có dòng này thì tag hiện slug tới lần render sau.
@@ -481,10 +481,14 @@ const { taxonomyVersion } = useTagTaxonomy();
 
 // Resolve 1 slug CRM/manual → def taxonomy (name/color/emoji). Fallback slug thô nếu
 // không tìm thấy (free-text tag chưa migrate / taxonomy chưa load).
-function resolveCrmTag(slug: string): DisplayTag {
+function resolveCrmTag(slug: string): DisplayTag | null {
   const def = findTagBySlug(slug);
   if (def) {
-    return { name: def.name, color: def.color || '#6B7280', emoji: def.emoji, isZalo: false, key: 'c:' + slug };
+    return { name: def.name, color: def.color || '#6B7280', emoji: def.emoji, isZalo: false, isPrivate: def.isPrivate, key: 'c:' + slug };
+  }
+  // Nếu là tag riêng tư (priv-) nhưng user này không sở hữu / không thấy trong taxonomy → ẩn
+  if (slug.startsWith('priv-')) {
+    return null;
   }
   // Fallback: tag legacy lưu NAME (CrmTag table) hoặc free-text → dùng đường cũ.
   return { name: cleanTagName(slug), color: tagColor(slug) || '#6B7280', isZalo: false, key: 'c:' + slug };
@@ -547,6 +551,7 @@ function computeDisplayTags(conv: Conversation): DisplayTag[] {
     if (t.startsWith('🔵 ')) continue; // tag Zalo mirror → đã lấy từ zaloLabels
     if (seen.has('c:' + t)) continue;
     const tagObj = resolveCrmTag(t);
+    if (!tagObj) continue;
     // Bỏ tag nếu chứa nhãn "Đang chat" / "Hoạt động"
     if (tagObj.name.includes('Đang chat') || tagObj.name === 'Hoạt động') continue;
     seen.add('c:' + t);
