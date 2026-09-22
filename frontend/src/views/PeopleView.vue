@@ -84,8 +84,8 @@
               </div>
 
             <!-- CKG Milestone 4: Lookalike Cluster Filter -->
-            <div class="ppl-grp">
-              <div class="ppl-grp-t">Chân dung Radar (Lookalike Cluster)</div>
+            <div class="ppl-field">
+              <span class="ppl-field-l">Chân dung Radar (Lookalike Cluster)</span>
               <div class="ppl-set-row" style="display: flex; gap: 6px; flex-wrap: wrap;">
                 <span
                   class="ppl-set"
@@ -107,8 +107,8 @@
               </div>
             </div>
 
-            <div class="ppl-grp">
-              <div class="ppl-grp-t">Mức độ tin cậy</div>
+            <div class="ppl-field">
+              <span class="ppl-field-l">Mức độ tin cậy</span>
               <div class="ppl-seg">
                 <span
                   class="ppl-seg-i"
@@ -127,8 +127,6 @@
                 >Sơ bộ (50–65%)</span>
               </div>
             </div>
-
-            <div class="ppl-grid2">
               <div class="ppl-field">
                 <span class="ppl-field-l">Nhân viên phụ trách</span>
                 <select v-model="f.employee" @change="applyFilters">
