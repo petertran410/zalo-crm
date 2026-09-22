@@ -229,8 +229,8 @@
                 class="quick-add-trigger"
                 @click="showQuickAddDialog = true"
               >
-                ＋ Thêm nhanh KH với SĐT "{{ query }}"
-                <div class="trigger-hint">KH không có Zalo — vẫn lưu vào CRM để chăm sóc, đặt lịch hẹn, ghi chú</div>
+                ＋ Thêm KH với SĐT "{{ query }}"
+                <div class="trigger-hint">Liên kết khách có sẵn bên POS, hoặc tạo mới nếu chưa có — để chăm sóc, đặt lịch hẹn, ghi chú</div>
               </button>
             </div>
             <button

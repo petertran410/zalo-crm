@@ -1,5 +1,5 @@
 /**
- * local-driver.ts — lưu file lên ổ đĩa VPS (config.uploadDir).
+ * Lưu file lên ổ đĩa VPS tại config.uploadDir.
  *
  * File nằm tại {uploadDir}/{key}, ví dụ {uploadDir}/media/{hash}.jpg.
  * Serve công khai qua route tĩnh /files (đăng ký trong app.ts) →
@@ -33,7 +33,9 @@ export const localDriver: StorageDriver = {
 
   async uploadBuffer(buffer: Buffer, mimeType: string, originalName?: string): Promise<UploadResult> {
     if (!buffer || buffer.length === 0) throw new Error('uploadBuffer: empty buffer (refusing 0-byte object)');
-    const ext = originalName ? extname(originalName) : mimeToExt(mimeType);
+    // Đuôi theo nội dung thật, tên tệp chỉ là dự phòng cho loại mimeToExt chưa biết. Lấy
+    // theo tên tệp thì ảnh nén thành WebP vẫn mang key .png và /files khai sai Content-Type.
+    const ext = mimeToExt(mimeType) || (originalName ? extname(originalName) : '');
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const key = `media/${contentHash}${ext}`;
     const url = this.publicUrl(key);

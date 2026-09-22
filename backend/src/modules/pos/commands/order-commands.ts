@@ -1,6 +1,6 @@
 import { Command, CommandHandler, CommandValidator, ValidationResult } from '../../../shared/commands/command.interface.js';
 import { commandDispatcher } from '../../../shared/commands/command-dispatcher.js';
-import { getPosMcpClient } from '../../../shared/mcp/mcp-client.js';
+import { getHisweetiePublicApiClient } from '../../integrations/hisweetie-public-api-client.js';
 import { prisma } from '../../../shared/database/prisma-client.js';
 import { logger } from '../../../shared/utils/logger.js';
 import { handleMcpError } from '../../../shared/commands/error-handler.js';
@@ -108,16 +108,17 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
     //    ```
     // -------------------------------------------------------------------------
 
-    const mcpClient = getPosMcpClient();
-    const idempotencyKey = uuidv4() as `${string}-${string}-${string}-${string}-${string}`;
+    const api = getHisweetiePublicApiClient();
+    const idempotencyKey = uuidv4();
 
-    // 1. Build MCP OrderInput
+    // 1. Build payload đúng đặc tả Public API (PUBLIC-API.md §6 "Tạo đơn hàng"):
+    // {branchId, customerId, items[{productId, quantity, unitPrice}]}.
+    // Khuyến mãi do máy chủ POS tính lại — KHÔNG gửi discount/note/priceBookId
+    // vì strict validation sẽ 400 các trường lạ.
     const orderItems = items.map(item => ({
       productId: item.productId,
       quantity: item.quantity,
       unitPrice: item.unitPrice,
-      discount: item.discount || 0,
-      note: item.note || '',
     }));
 
     let posOrderId: number | undefined;
@@ -127,25 +128,18 @@ export class CreateOrderHandler implements CommandHandler<Command<CreateOrderPay
     try {
       logger.info(`[CreateOrderHandler] Creating order on POS for customer ${posCustomerId}, branch ${branchId}, ${items.length} items`);
 
-      // 2. Gọi MCP tạo đơn trên POS
-      // Lưu ý: MCP tool crm_create_order không nhận field 'status' — mặc định luôn tạo Phiếu tạm (status=1)
-      // Để chuyển sang "Đã xác nhận" cần call update riêng sau khi tạo xong
-      const targetPriceBookId = priceBookId ? (isNaN(Number(priceBookId)) ? 1 : Number(priceBookId)) : 1;
-      const res = await mcpClient.orders.create({
+      const res = await api.createOrder({
         customerId: posCustomerId,
         branchId,
-        priceBookId: targetPriceBookId,
         items: orderItems,
-        paidAmount: 0,
-        description: description || '',
       }, idempotencyKey);
 
       // Log raw response để debug field name từ POS
       logger.info(`[CreateOrderHandler] POS raw response keys: ${Object.keys(res || {}).join(', ')}`);
 
-      // POS MCP trả về { order: {...}, warnings: [...] } — data nằm trong field 'order'
+      // Public API trả order object kèm `warnings` — data nằm ngay gốc response.
       const rawRes = res as any;
-      orderData = rawRes.order ?? rawRes.data?.order ?? rawRes.data ?? rawRes;
+      orderData = rawRes.data?.order ?? rawRes.order ?? rawRes.data ?? rawRes;
       logger.info(`[CreateOrderHandler] orderData.id=${orderData.id}, orderData.code=${orderData.code}`);
 
       // Thử nhiều field name phổ biến từ KiotViet API

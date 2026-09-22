@@ -13,6 +13,10 @@ export interface ChannelAccount {
   createdAt: string;
   canManage: boolean;
   isOwnedByMe: boolean;
+  /** UI-only: kênh có đang hiện trong danh sách không. Backend chưa trả field này. */
+  visible?: boolean;
+  /** UI-only: tên chủ sở hữu đã làm phẳng từ `owner.fullName`. */
+  ownerName?: string | null;
   owner?: {
     id: string;
     fullName: string | null;

@@ -36,8 +36,7 @@ export interface PermissionGroupNode {
   children: PermissionGroupNode[];
 }
 
-// 2026-06-09 (Anh chốt): gỡ 'internal_contact' khỏi onboarding (còn 3 bước).
-export type OnboardingStepKey = 'change_password' | 'connect_nick' | 'pin';
+export type OnboardingStepKey = 'pin';
 
 export interface OnboardingSummary {
   userId: string;
@@ -45,8 +44,6 @@ export interface OnboardingSummary {
   totalCount: number;
   percent: number;
   pendingSteps: OnboardingStepKey[];
-  changePassword: boolean;
-  connectNick: boolean;
   pin: boolean;
   pinSkipped: boolean;
   dismissed: boolean;
@@ -62,7 +59,11 @@ export interface RbacUser {
   fullName: string;
   role: string;
   permissionGroupId: string | null;
-  permissionGroup: { id: string; name: string; isSystem: boolean } | null;
+  // `grants` đã có sẵn trong response (user-assignment-routes select) nhưng trước
+  // giờ không khai báo ở type — màn "Quyền theo người" cần để tính quyền kế thừa.
+  permissionGroup: { id: string; name: string; isSystem: boolean; grants?: Record<string, Record<string, boolean>> } | null;
+  /** Override lẻ theo từng người: true = cấp thêm, false = TỪ CHỐI (đè nhóm), thiếu key = kế thừa. */
+  customGrants?: Record<string, Record<string, boolean>> | null;
   departmentMember: {
     departmentId: string;
     deptRole: 'leader' | 'deputy' | 'member';
@@ -83,11 +84,7 @@ export interface RbacUser {
   recipientStatus: 'ready' | 'pending_friend_request' | 'pending_user_confirm' | 'invalid' | 'missing_internal_contact' | string | null;
   recipientError: string | null;
   maxPrivacyNicks?: number;
-  // Phase status 4-state 2026-05-27 — FE compute status từ 3 field này:
-  //   - isActive=false → Vô hiệu
-  //   - isActive=true && passwordChangedAt=null → Chưa kích hoạt (sale chưa từng login + đổi pw)
-  //   - isActive=true && passwordChangedAt!=null && lastLoginAt > now-3d → Hoạt động
-  //   - else → Im lặng
+  // Phase status 4-state 2026-05-27 — FE compute status từ isActive + lastLoginAt:
   passwordChangedAt: string | null;
   lastLoginAt: string | null;
   isActive: boolean;
@@ -184,6 +181,17 @@ export const useRbacStore = defineStore('rbac', {
     async setUserPermissionGroup(userId: string, permissionGroupId: string | null) {
       await api.patch(`/rbac/users/${userId}/permission-group`, { permissionGroupId });
       await this.loadUsers();
+    },
+    /**
+     * Ghi override lẻ cho 1 user (màn "Quyền theo người").
+     * Gửi NGUYÊN map customGrants — backend sanitize + chặn leo thang rồi mới lưu.
+     * Cập nhật tại chỗ thay vì loadUsers() để bảng không nhảy sau mỗi lần tick.
+     */
+    async setUserOverrides(userId: string, customGrants: Record<string, Record<string, boolean>>) {
+      const { data } = await api.patch(`/rbac/users/${userId}/overrides`, { customGrants });
+      const u = this.users.find((x) => x.id === userId);
+      if (u) u.customGrants = data.customGrants ?? {};
+      return data.customGrants;
     },
     async seedDefaultGroups() {
       const { data } = await api.post('/admin/rbac/seed-default-groups');

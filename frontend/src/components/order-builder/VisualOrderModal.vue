@@ -601,7 +601,7 @@ function checkAndAutoRemoveIneligiblePromotions() {
     return sum + Math.max(0, unitPrice * item.quantity - (item.discount || 0));
   }, 0);
 
-  const appliedIds = [...draft.appliedPromoIds];
+  const appliedIds = [...(draft.appliedPromoIds ?? [])];
   for (const promoId of appliedIds) {
     const promo = MOCK_PROMOTIONS.find(p => p.id === promoId);
     if (promo) {

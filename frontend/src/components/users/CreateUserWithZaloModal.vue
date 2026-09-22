@@ -182,7 +182,7 @@
           <button class="btn-copy-all" @click="copy(credentialsText)">
             {{ copiedAll ? '✅ Đã copy' : '📋 Copy toàn bộ' }}
           </button>
-          <div class="cuwz-cred-note">Sale sẽ bị bắt buộc đổi mật khẩu ngay lần đăng nhập đầu tiên.</div>
+          <div class="cuwz-cred-note">Mật khẩu do tổ chức quản lý; nhân viên không thể tự đổi mật khẩu.</div>
         </div>
 
         <div v-if="createResult.zalo.error" class="cuwz-alert warning">
@@ -331,7 +331,7 @@ const credentialsText = computed(() => {
   lines.push(`Mật khẩu tạm: ${r.tempPassword}`);
   lines.push(`Link đăng nhập: ${loginUrl}`);
   lines.push('');
-  lines.push('Lưu ý: Đăng nhập lần đầu sẽ được yêu cầu đổi sang mật khẩu riêng.');
+  lines.push('Lưu ý: Mật khẩu do tổ chức quản lý; khi cần thay đổi hãy liên hệ quản trị viên.');
   return lines.join('\n');
 });
 

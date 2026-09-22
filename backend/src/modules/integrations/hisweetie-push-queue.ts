@@ -17,10 +17,8 @@ import { Queue, Worker, type Job } from 'bullmq';
 import { Redis } from 'ioredis';
 import { logger } from '../../shared/utils/logger.js';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { config } from '../../config/index.js';
-import { getHisweetieClient, isHisweetieMcpConfigured } from './hisweetie-mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from './hisweetie-public-api-client.js';
 import { buildPosCustomerPatch } from './hisweetie-customer-patch.js';
-import { assertSandboxForPosWrite } from './hisweetie-sandbox-guard.js';
 
 const QUEUE_NAME = 'hisweetie-customer-push';
 const DEBOUNCE_MS = 2000;
@@ -55,7 +53,7 @@ function getQueue(): Queue<HisweetiePushJob> | null {
 
 /** Gọi sau khi PUT /contacts/:id ghi DB thành công + contact đã link POS. */
 export async function scheduleHisweetiePush(contactId: string): Promise<void> {
-  if (!isHisweetieMcpConfigured()) return;
+  if (!isPublicApiSyncEnabled()) return;
   const q = getQueue();
   if (!q) {
     logger.warn(`[hisweetie-push] enqueue skipped (no Redis) contactId=${contactId}`);
@@ -104,9 +102,24 @@ export async function pushContactToPos(
   const patch = buildPosCustomerPatch(contact);
   if (!patch) return { pushed: false, reason: 'nothing_to_push', posCustomerId: contact.posCustomerId };
 
-  // Chốt sandbox 2026-07-18 — mọi POS write phải qua guard (chưa có quyền ghi production).
-  assertSandboxForPosWrite(config.hisweetieMcpUrl, 'customers.update');
-  await getHisweetieClient().customers.update(contact.posCustomerId, patch, idempotencyKey);
+  // Public API strict: PUT chỉ nhận các trường trong đặc tả §6. Patch từ CRM
+  // gồm name/contactNumber(/email) — email chưa có trong đặc tả nên KHÔNG gửi,
+  // nếu patch chỉ có email thì không còn gì đáng đẩy.
+  const { name, contactNumber } = patch as { name?: string; contactNumber?: string };
+  const payload: { name: string; contactNumber: string } = {
+    name: String(name ?? contact?.crmName ?? contact?.fullName ?? '').trim(),
+    contactNumber: String(contactNumber ?? '').trim(),
+  };
+  if (!payload.name || !payload.contactNumber) {
+    return { pushed: false, reason: 'nothing_to_push', posCustomerId: contact.posCustomerId };
+  }
+
+  // Ghi qua Public API của POS (được POS cho phép + ghi nhật ký hệ thống, doc §6).
+  await getHisweetiePublicApiClient().updateCustomer(
+    contact.posCustomerId,
+    payload,
+    idempotencyKey,
+  );
   logger.info(`[hisweetie-push] Pushed contact ${contactId} → POS customer ${contact.posCustomerId}`);
   return { pushed: true, posCustomerId: contact.posCustomerId };
 }

@@ -4,7 +4,7 @@
 
 import { defineAsyncComponent } from 'vue';
 import type { WorkspaceConfig } from '../types';
-import { managerMenu, managerReportsDropdown } from './menu';
+import { managerMenu } from './menu';
 
 export const managerWorkspace: WorkspaceConfig = {
   id: 'manager',
@@ -15,12 +15,4 @@ export const managerWorkspace: WorkspaceConfig = {
   // Phase 2: sẽ tạo ManagerLayout.vue riêng. Tạm dùng DefaultLayout (full admin).
   layoutComponent: defineAsyncComponent(() => import('@/layouts/DefaultLayout.vue')),
   menu: managerMenu,
-  dropdownMenus: {
-    reports: {
-      label: 'Báo cáo',
-      icon: 'mdi-chart-box-outline',
-      resource: 'engagement_score',
-      items: managerReportsDropdown,
-    },
-  },
 };

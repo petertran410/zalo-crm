@@ -25,15 +25,8 @@ import {
   RefreshInvalidError,
 } from './refresh-token-service.js';
 import { auditSecurityAsync } from './security-audit.js';
-import { seedScoringDefaults } from '../scoring/seed-defaults.js';
 import { logger } from '../../shared/utils/logger.js';
 import { config } from '../../config/index.js';
-
-function autoSeedScoringIfNeeded(orgId: string): void {
-  seedScoringDefaults(orgId).catch((err) => {
-    logger.warn({ orgId, err: err?.message }, '[auto-seed-scoring] failed silently');
-  });
-}
 
 /** Ký access token ngắn hạn (typ:'access', expiresIn 15'). */
 function signAccess(app: FastifyInstance, payload: JwtPayload): string {
@@ -65,7 +58,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const payload = await setup(orgName, fullName, email, password, phone);
     const token = signAccess(app, payload);
     const refresh = await issueRefreshToken(payload.id, deviceMeta(request));
-    autoSeedScoringIfNeeded(payload.orgId);
     return { token, refreshToken: refresh.token, user: payload };
   });
 
@@ -81,7 +73,6 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const payload = await login(id, password);
     const token = signAccess(app, payload);
     const refresh = await issueRefreshToken(payload.id, deviceMeta(request));
-    autoSeedScoringIfNeeded(payload.orgId);
     auditSecurityAsync({
       action: 'login_success',
       orgId: payload.orgId,

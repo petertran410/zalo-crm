@@ -107,8 +107,7 @@ import { api } from '@/api/index';
 import { useAuthStore } from '@/stores/auth';
 
 interface StepStatus {
-  // 2026-06-09 (Anh chốt): gỡ 'internal_contact' — onboarding còn 3 bước.
-  step: 'change_password' | 'connect_nick' | 'pin';
+  step: 'pin';
   completed: boolean;
   completedAt: string | null;
   skipped: boolean;
@@ -129,7 +128,7 @@ const auth = useAuthStore();
 const state = ref<OnboardingState>({
   steps: [],
   completedCount: 0,
-  totalCount: 4,
+  totalCount: 1,
   percent: 0,
   dismissed: false,
   dismissedAt: null,
@@ -168,7 +167,7 @@ const subText = computed(() => {
     const last = state.value.steps.find((s) => !s.completed);
     if (last?.step === 'pin') return 'Đặt PIN bảo mật là tuỳ chọn — bạn có thể bỏ qua nếu không cần.';
   }
-  return 'Hoàn tất để nhận thông báo khách hàng, lịch hẹn, daily KPI tự động vào Zalo.';
+  return 'Hoàn tất thiết lập tài khoản để sử dụng CRM an toàn.';
 });
 
 const firstPendingStep = computed(() => {
@@ -178,15 +177,12 @@ const firstPendingStep = computed(() => {
 
 function stepTitle(step: string): string {
   return ({
-    change_password: 'Đổi mật khẩu',
-    connect_nick: 'Kết nối nick Zalo',
     pin: 'Đặt PIN bảo mật',
   } as Record<string, string>)[step] || step;
 }
 
 function ctaLabel(step: string): string {
   return ({
-    connect_nick: 'Kết nối ngay',
     pin: 'Setup',
   } as Record<string, string>)[step] || 'Thiết lập';
 }
@@ -203,13 +199,8 @@ async function fetchState() {
 }
 
 function onGoStep(step: string) {
-  if (step === 'change_password') return;
-  if (step === 'connect_nick') {
-    router.push('/settings/channels/zalo');
-    return;
-  }
   if (step === 'pin') {
-    router.push('/settings/privacy');
+    router.push('/settings/channels/zalo?tab=privacy');
     return;
   }
 }

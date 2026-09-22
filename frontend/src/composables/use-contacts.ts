@@ -8,6 +8,38 @@ import { ref, reactive } from 'vue';
 import { api } from '@/api/index';
 import { getOrgParts, orgDayKey, formatInOrgTz } from '@/composables/use-org-timezone';
 
+export interface ContactCareEntry {
+  id: string;
+  value: string;
+  createdByUserId: string | null;
+  createdAt: string;
+}
+
+export interface ContactWorkshopCareEntry extends ContactCareEntry {
+  attendedAt: string | null;
+}
+
+export interface ContactCareFields {
+  productInterests: ContactCareEntry[];
+  workshopsAttended: ContactWorkshopCareEntry[];
+  complaints: ContactCareEntry[];
+  current: {
+    productInterest: string;
+    workshopsAttended: string;
+    complaints: string;
+  };
+  // Suy diễn từ hoá đơn POS — chỉ đọc, không bao giờ ghi vào lịch sử append.
+  derived: {
+    productInterests: string[];
+    // 'quantity' khi đơn gần nhất có >= 5 sản phẩm khác nhau, còn lại 'recency'.
+    rankedBy: 'recency' | 'quantity';
+    latestOrderProductCount: number;
+    source: string;
+    windowMonths: number;
+    asOf: string;
+  };
+}
+
 export interface Contact {
   id: string;
   fullName: string | null;
@@ -156,6 +188,44 @@ export interface Contact {
   // Phase 8.C — Priority Score (combined Lead × 0.55 + Engagement × 0.30 + trend)
   priorityScore?: number | null;
   priorityUpdatedAt?: string | null;
+}
+
+/**
+ * Một dòng trong dropdown "nick khác" — Contact cùng SĐT thật với Contact đang mở.
+ * Backend tách hậu tố ".1" rồi nhóm (xem phoneFamilyKey, shared/utils/phone.ts).
+ */
+export interface PhoneFamilyMember {
+  id: string;
+  phone: string | null;
+  phoneSuffix: string | null;
+  isCurrent: boolean;
+  crmName: string | null;
+  /** File này coi cột fullName là TÊN POS — xem hydrateDraft(). */
+  fullName: string | null;
+  avatarUrl: string | null;
+  zaloDisplayName: string | null;
+  aliasInNick: string | null;
+  zaloUid: string | null;
+  posName: string | null;
+  posCode: string | null;
+  posSaleName: string | null;
+  accessible: boolean;
+}
+
+export interface PhoneFamilyResponse {
+  familyKey: string | null;
+  contacts: PhoneFamilyMember[];
+  truncated: boolean;
+}
+
+/**
+ * Cùng "chuỗi" — các Contact chung công ty/thương hiệu (PosCustomer.organization).
+ * Dùng lại PhoneFamilyMember vì hai section render y hệt nhau.
+ */
+export interface ChainFamilyResponse {
+  chainKey: string | null;
+  contacts: PhoneFamilyMember[];
+  truncated: boolean;
 }
 
 export const GENDER_OPTIONS = [

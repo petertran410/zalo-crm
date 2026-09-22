@@ -9,6 +9,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { seedDefaultPermissionGroups, migrateLegacyUsersToPermissionGroups } from './seed-default-groups.js';
 import { requireGrant } from './rbac-middleware.js';
+import { findUnconferrableGrant } from './permission-group-service.js';
 
 export async function registerUserAssignmentRoutes(app: FastifyInstance): Promise<void> {
   // GET /api/v1/rbac/users — list users với filter dept/group
@@ -115,13 +116,36 @@ export async function registerUserAssignmentRoutes(app: FastifyInstance): Promis
     });
     if (!target) return reply.status(404).send({ error: 'User không tồn tại' });
 
+    // ── Chống leo thang quyền (2026-08-06) ───────────────────────────────────
+    // owner bỏ qua: đã toàn quyền, không thể "leo" thêm.
+    const actorId: string = user.userId ?? user.id;
+    if (user.role !== 'owner') {
+      if (id === actorId) {
+        return reply.status(403).send({
+          error: 'Không thể tự đổi nhóm quyền của chính mình — nhờ Chủ tài khoản hoặc admin khác',
+          code: 'RBAC_SELF_ASSIGN',
+        });
+      }
+    }
+
     // Validate permission group ∈ org (nếu set)
     if (body.permissionGroupId) {
       const grp = await prisma.permissionGroup.findFirst({
         where: { id: body.permissionGroupId, orgId: user.orgId, archivedAt: null },
-        select: { id: true },
+        select: { id: true, grants: true },
       });
       if (!grp) return reply.status(400).send({ error: 'Nhóm quyền không tồn tại' });
+
+      if (user.role !== 'owner') {
+        const missing = await findUnconferrableGrant(actorId, grp.grants as any);
+        if (missing) {
+          return reply.status(403).send({
+            error: `Không thể gán nhóm này: nhóm có quyền "${missing}" mà bạn không có`,
+            code: 'RBAC_ESCALATION',
+            missingGrant: missing,
+          });
+        }
+      }
     }
 
     await prisma.user.update({
@@ -149,6 +173,27 @@ export async function registerUserAssignmentRoutes(app: FastifyInstance): Promis
     // Sanitize customGrants using sanitizeGrants from permission-types
     const { sanitizeGrants } = await import('./permission-types.js');
     const sanitized = sanitizeGrants(body.customGrants ?? {});
+
+    // ── Chống leo thang quyền (2026-08-06) ───────────────────────────────────
+    // Cùng luật với endpoint permission-group: không tự sửa quyền của mình, và
+    // không CẤP (true) thứ mình không có. Set false = thu hẹp → luôn cho phép.
+    const actorIdOv: string = user.userId ?? user.id;
+    if (user.role !== 'owner') {
+      if (id === actorIdOv) {
+        return reply.status(403).send({
+          error: 'Không thể tự sửa quyền riêng của chính mình — nhờ Chủ tài khoản hoặc admin khác',
+          code: 'RBAC_SELF_ASSIGN',
+        });
+      }
+      const missing = await findUnconferrableGrant(actorIdOv, sanitized);
+      if (missing) {
+        return reply.status(403).send({
+          error: `Không thể cấp quyền "${missing}" vì bạn không có quyền đó`,
+          code: 'RBAC_ESCALATION',
+          missingGrant: missing,
+        });
+      }
+    }
 
     await prisma.user.update({
       where: { id },

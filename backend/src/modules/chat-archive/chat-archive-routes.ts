@@ -17,7 +17,7 @@ import { logActivity } from '../activity/activity-logger.js';
 import { logger } from '../../shared/utils/logger.js';
 import { createChatArchive, type ArchiveMode } from './chat-archive-service.js';
 
-const VALID_MODES: ArchiveMode[] = ['summary', 'verbatim', 'both'];
+const VALID_MODES: ArchiveMode[] = ['verbatim'];
 
 export async function chatArchiveRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
@@ -25,7 +25,7 @@ export async function chatArchiveRoutes(app: FastifyInstance) {
   app.addHook('preHandler', requireRole('owner'));
 
   // ── POST /api/v1/chat-archives — lưu 1 hội thoại vào kho lưu trữ ──────────
-  // body: { conversationId, mode?: 'summary' | 'verbatim' | 'both' }
+  // body: { conversationId, mode?: 'verbatim' }
   app.post(
     '/api/v1/chat-archives',
     async (request: FastifyRequest, reply: FastifyReply) => {
@@ -36,7 +36,7 @@ export async function chatArchiveRoutes(app: FastifyInstance) {
       if (!body.conversationId) return reply.status(400).send({ error: 'Thiếu conversationId' });
       const mode = (VALID_MODES as string[]).includes(body.mode ?? '')
         ? (body.mode as ArchiveMode)
-        : 'both';
+        : 'verbatim';
 
       try {
         const res = await createChatArchive({

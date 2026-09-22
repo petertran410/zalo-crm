@@ -1,0 +1,820 @@
+/* Dashboard v5 — Claude Design handoff (CRM Dashboard Redesign / Dashboard.dc.html).
+   Every selector sits under .dh-v5. atlas-v2-dashboard.css declares bare .at-* rules that
+   also style RBAC/media/settings screens, so this file must not reuse or redefine them. */
+
+.dh-v5 {
+  --dh-bg: #f0eff6;
+  --dh-surface: #ffffff;
+  --dh-surface-soft: #faf9fd;
+  --dh-border: #e4e1ed;
+  --dh-border-strong: #d8d4e4;
+  --dh-hairline: #f1eff7;
+  --dh-hairline-2: #eeecf5;
+  --dh-chip: #efedf5;
+  --dh-ink: #1b1a24;
+  --dh-muted: #736f84;
+  --dh-faint: #9a95b0;
+  --dh-primary: #5b4be6;
+  --dh-danger: #dc3a5b;
+  --dh-danger-soft: #fbedf0;
+  --dh-success: #0e9f6e;
+
+  background: var(--dh-bg);
+  color: var(--dh-ink);
+  font-family: var(--app-font-body);
+  font-weight: 500;
+}
+
+.dh-v5 .dh-num {
+  font-family: var(--app-font-heading);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Role tabs — segmented control ── */
+.dh-v5 .dh-tabs {
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--dh-chip);
+}
+.dh-v5 .dh-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 13px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--dh-muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.dh-v5 .dh-tab:hover { color: var(--dh-ink); }
+.dh-v5 .dh-tab.is-active {
+  background: var(--dh-surface);
+  box-shadow: 0 1px 2px rgba(27, 26, 36, 0.1);
+  color: var(--dh-ink);
+  font-weight: 600;
+}
+.dh-v5 .dh-tab__count {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--dh-border);
+  color: var(--dh-muted);
+  font-family: var(--app-font-heading);
+  font-size: 11px;
+}
+
+/* ── Greeting ── */
+.dh-v5 .dh-greet { display: flex; align-items: flex-start; gap: 24px; }
+.dh-v5 .dh-greet__l { flex: 1; min-width: 0; }
+.dh-v5 .dh-greet__h {
+  margin-bottom: 5px;
+  font-family: var(--app-font-heading);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  /* Long full names must not push the action buttons off the row. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-greet__s { font-size: 14px; color: var(--dh-muted); }
+.dh-v5 .dh-greet__s b { color: var(--dh-ink); font-weight: 600; }
+.dh-v5 .dh-greet__r { display: flex; align-items: center; gap: 10px; padding-top: 4px; }
+
+/* ── Buttons ── */
+.dh-v5 .dh-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 36px;
+  padding: 0 15px;
+  border: 1px solid var(--dh-border-strong);
+  border-radius: 8px;
+  background: var(--dh-surface);
+  color: var(--dh-ink);
+  font: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: transform 0.12s ease;
+}
+.dh-v5 .dh-btn:hover { transform: translateY(-1px); }
+.dh-v5 .dh-btn--primary {
+  padding: 0 17px;
+  border-color: transparent;
+  background: var(--dh-primary);
+  color: #fff;
+  font-weight: 600;
+}
+.dh-v5 .dh-btn--ghost {
+  height: 36px;
+  padding: 0 11px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--dh-muted);
+  font-size: 13px;
+  transition: background-color 0.12s ease;
+}
+.dh-v5 .dh-btn--ghost:hover { transform: none; background: var(--dh-chip); }
+.dh-v5 .dh-btn__hint { color: var(--dh-faint); }
+.dh-v5 .dh-btn__arrow { opacity: 0.75; }
+
+/* ── KPI row ── */
+.dh-v5 .dh-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+.dh-v5 .dh-kpi {
+  padding: 15px 17px;
+  border: 1px solid var(--dh-border);
+  border-radius: 11px;
+  background: var(--dh-surface);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.dh-v5 button.dh-kpi { cursor: pointer; transition: transform 0.12s ease; }
+.dh-v5 button.dh-kpi:hover { transform: translateY(-2px); }
+/* A KPI whose destination doesn't exist in this edition stops being a control. */
+.dh-v5 button.dh-kpi:disabled { cursor: default; }
+.dh-v5 button.dh-kpi:disabled:hover { transform: none; }
+.dh-v5 .dh-kpi__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+.dh-v5 .dh-kpi__label {
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+.dh-v5 .dh-kpi__go { flex-shrink: 0; font-size: 12px; color: var(--dh-faint); }
+.dh-v5 .dh-kpi__row { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; }
+.dh-v5 .dh-kpi__value {
+  font-family: var(--app-font-heading);
+  font-size: 34px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.dh-v5 .dh-kpi__sub {
+  display: block;
+  margin-top: 7px;
+  font-size: 12.5px;
+  color: var(--dh-muted);
+  /* "Gần nhất 14:30" / long sub-labels must not widen the tile past its grid track. */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dh-v5 :focus-visible { outline: 2px solid var(--dh-primary); outline-offset: 2px; border-radius: 6px; }
+
+/* Private-nick counterpart of a public metric. Never carries content, only a count. */
+.dh-v5 .dh-priv {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: 6px;
+  color: var(--dh-muted);
+  font-size: 0.44em;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+.dh-v5 .dh-kpi__sub .dh-priv,
+.dh-v5 .dh-strip .dh-priv { font-size: 11.5px; margin-left: 4px; }
+
+.dh-v5 .dh-kpi__value--danger { color: var(--dh-danger); }
+/* "42/48" — the denominator is context, not a second metric. */
+.dh-v5 .dh-kpi__frac {
+  font-family: var(--app-font-heading);
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--dh-faint);
+}
+.dh-v5 .dh-kpi__delta {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--dh-chip);
+  color: var(--dh-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dh-v5 .dh-kpi__delta--good { background: #e7f6f0; color: var(--dh-success); }
+.dh-v5 .dh-kpi__delta--danger { background: var(--dh-danger-soft); color: var(--dh-danger); }
+/* Two sub-facts under one value, e.g. "34 công khai | 7 nick riêng". */
+.dh-v5 .dh-kpi__split {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 7px;
+  font-size: 12.5px;
+  color: var(--dh-muted);
+}
+.dh-v5 .dh-kpi__split-sep { width: 1px; height: 11px; background: var(--dh-border); flex-shrink: 0; }
+
+/* ── Screen header meta row ── */
+.dh-v5 .dh-metarow {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 14px;
+  color: var(--dh-muted);
+  flex-wrap: wrap;
+}
+.dh-v5 .dh-metarow b { color: var(--dh-ink); font-weight: 600; }
+.dh-v5 .dh-metarow__sep { width: 1px; height: 13px; background: var(--dh-border); flex-shrink: 0; }
+.dh-v5 .dh-metarow__note { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.dh-v5 .dh-titlerow { display: flex; align-items: center; gap: 10px; margin-bottom: 5px; flex-wrap: wrap; }
+.dh-v5 .dh-scopechip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid var(--dh-border);
+  border-radius: 12px;
+  font-size: 11.5px;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+
+/* ── Demoted metric strip ── */
+.dh-v5 .dh-strip {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  padding: 11px 17px;
+  border: 1px solid var(--dh-border);
+  border-radius: 10px;
+  background: var(--dh-surface);
+  flex-wrap: wrap;
+}
+.dh-v5 .dh-strip__item { display: flex; align-items: baseline; gap: 8px; }
+.dh-v5 .dh-strip__k { font-size: 12.5px; color: var(--dh-muted); white-space: nowrap; }
+.dh-v5 .dh-strip__v { font-family: var(--app-font-heading); font-size: 16px; font-weight: 600; }
+.dh-v5 .dh-strip__delta { font-size: 12px; color: var(--dh-success); white-space: nowrap; }
+.dh-v5 .dh-strip__sep { width: 1px; height: 18px; background: var(--dh-border); }
+.dh-v5 .dh-strip__quota { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 220px; }
+.dh-v5 .dh-strip__quota .dh-strip__k {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 240px;
+}
+.dh-v5 .dh-bar {
+  flex: 1;
+  max-width: 200px;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--dh-hairline-2);
+  overflow: hidden;
+}
+.dh-v5 .dh-bar__fill { height: 100%; border-radius: 3px; background: var(--dh-primary); }
+.dh-v5 .dh-bar__fill--warn { background: #d97706; }
+.dh-v5 .dh-bar__fill--over { background: var(--dh-danger); }
+/* Audit line in the System strip — the message is variable-length, so it takes the
+   slack and truncates while the label and link stay put. */
+.dh-v5 .dh-strip__wide { display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0; }
+.dh-v5 .dh-strip__text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-strip__link {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--dh-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dh-v5 .dh-strip__link:hover { text-decoration: underline; }
+.dh-v5 .dh-cols--start { align-items: start; }
+.dh-v5 .dh-strip__quota-v {
+  font-family: var(--app-font-heading);
+  font-size: 12px;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+
+/* ── Cards ── */
+.dh-v5 .dh-cols {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.62fr 1fr;
+  gap: 18px;
+  min-height: 0;
+}
+.dh-v5 .dh-side { display: flex; flex-direction: column; gap: 18px; min-height: 0; }
+.dh-v5 .dh-card {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--dh-border);
+  border-radius: 12px;
+  background: var(--dh-surface);
+  overflow: hidden;
+}
+.dh-v5 .dh-card--grow { flex: 1; min-height: 0; }
+.dh-v5 .dh-card__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  height: 50px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--dh-hairline-2);
+}
+.dh-v5 .dh-card__title { font-size: 14.5px; font-weight: 600; }
+.dh-v5 .dh-card__badge {
+  padding: 2px 7px;
+  border-radius: 5px;
+  background: var(--dh-chip);
+  color: var(--dh-muted);
+  font-family: var(--app-font-heading);
+  font-size: 11px;
+  font-weight: 600;
+}
+.dh-v5 .dh-card__badge--danger { background: var(--dh-danger-soft); color: var(--dh-danger); }
+.dh-v5 .dh-card__spacer { flex: 1; }
+.dh-v5 .dh-card__link {
+  border: 0;
+  background: transparent;
+  color: var(--dh-primary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.dh-v5 .dh-card__body { flex: 1; min-height: 0; overflow-y: auto; }
+
+/* ── Urgent conversation rows ── */
+.dh-v5 .dh-urgent {
+  display: flex;
+  gap: 13px;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--dh-hairline);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.dh-v5 .dh-urgent:hover { background: var(--dh-surface-soft); }
+.dh-v5 .dh-urgent:last-child { border-bottom: 0; }
+.dh-v5 .dh-urgent__av { flex-shrink: 0; }
+.dh-v5 .dh-urgent__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.dh-v5 .dh-urgent__top { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.dh-v5 .dh-urgent__nm {
+  font-size: 14px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-urgent__status {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--dh-border);
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+.dh-v5 .dh-urgent__preview {
+  font-size: 13px;
+  color: var(--dh-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Redaction is a solid bar, not a blur: the server already stripped the text, and a bar
+   cannot be un-filtered by a screenshot the way blur can. */
+.dh-v5 .dh-urgent__redacted { display: flex; align-items: center; gap: 8px; }
+.dh-v5 .dh-urgent__redacted-bar {
+  width: 150px;
+  max-width: 100%;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--dh-border);
+}
+.dh-v5 .dh-urgent__redacted-lb { font-size: 12px; font-style: italic; color: var(--dh-faint); }
+.dh-v5 .dh-urgent__nick {
+  font-size: 11.5px;
+  color: var(--dh-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-urgent__r {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 7px;
+}
+.dh-v5 .dh-urgent__time { font-size: 11.5px; color: var(--dh-faint); white-space: nowrap; }
+.dh-v5 .dh-urgent__unread {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--dh-danger);
+  color: #fff;
+  font-family: var(--app-font-heading);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Reminder rows ── */
+.dh-v5 .dh-rem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 18px;
+  border: 0;
+  border-bottom: 1px solid var(--dh-hairline);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+}
+.dh-v5 .dh-rem:hover { background: var(--dh-surface-soft); }
+.dh-v5 .dh-rem:last-child { border-bottom: 0; }
+.dh-v5 .dh-rem__top { display: flex; align-items: center; gap: 8px; }
+.dh-v5 .dh-rem__bucket {
+  font-family: var(--app-font-heading);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--dh-muted);
+  white-space: nowrap;
+}
+.dh-v5 .dh-rem__bucket--overdue { color: var(--dh-danger); }
+.dh-v5 .dh-rem__rule { flex: 1; height: 1px; background: var(--dh-hairline); }
+.dh-v5 .dh-rem__when { font-size: 11.5px; color: var(--dh-faint); white-space: nowrap; }
+.dh-v5 .dh-rem__title {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-rem__sub {
+  font-size: 12.5px;
+  color: var(--dh-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Session ministats ── */
+.dh-v5 .dh-sessions { flex-shrink: 0; padding: 14px 18px; }
+.dh-v5 .dh-sessions__title { margin-bottom: 10px; font-size: 14.5px; font-weight: 600; }
+.dh-v5 .dh-sessions__grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.dh-v5 .dh-sessions__v { font-family: var(--app-font-heading); font-size: 20px; font-weight: 600; }
+.dh-v5 .dh-sessions__v--good { color: var(--dh-success); }
+.dh-v5 .dh-sessions__l { margin-top: 2px; font-size: 11.5px; color: var(--dh-muted); }
+
+/* ── Data tables (team members, departments) ──
+   Column widths differ per table, so each table sets --dh-cols inline and the
+   header and body rows share it. */
+.dh-v5 .dh-tbl { display: flex; flex-direction: column; min-height: 0; }
+.dh-v5 .dh-tbl__head {
+  display: grid;
+  grid-template-columns: var(--dh-cols);
+  align-items: center;
+  flex-shrink: 0;
+  height: 32px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--dh-hairline-2);
+  font-family: var(--app-font-heading);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--dh-faint);
+}
+.dh-v5 .dh-tbl__body { flex: 1; min-height: 0; overflow-y: auto; }
+.dh-v5 .dh-tbl__row {
+  display: grid;
+  grid-template-columns: var(--dh-cols);
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-bottom: 1px solid var(--dh-hairline);
+  background: transparent;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.dh-v5 .dh-tbl__row--tall { min-height: 52px; }
+.dh-v5 .dh-tbl__row--click { cursor: pointer; transition: background-color 0.12s ease; }
+.dh-v5 .dh-tbl__row--click:hover { background: var(--dh-surface-soft); }
+.dh-v5 .dh-tbl__num {
+  font-family: var(--app-font-heading);
+  font-size: 13px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.dh-v5 .dh-tbl__muted { font-size: 12px; color: var(--dh-muted); text-align: right; }
+.dh-v5 .dh-tbl__foot {
+  display: grid;
+  grid-template-columns: var(--dh-cols);
+  align-items: center;
+  height: 44px;
+  padding: 0 18px;
+  background: var(--dh-surface-soft);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--dh-muted);
+}
+.dh-v5 .dh-tbl__foot .dh-tbl__num { font-weight: 600; }
+.dh-v5 .dh-tbl__more {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 40px;
+  padding: 0 18px;
+  font-size: 12.5px;
+  color: var(--dh-faint);
+}
+.dh-v5 .dh-tbl__more button {
+  border: 0;
+  background: transparent;
+  color: var(--dh-primary);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.dh-v5 .dh-tbl__hint { font-size: 12px; color: var(--dh-faint); }
+
+.dh-v5 .dh-person { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.dh-v5 .dh-person__nm {
+  font-size: 13.5px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-person__role {
+  font-size: 11.5px;
+  color: var(--dh-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-person__sub { min-width: 0; }
+.dh-v5 .dh-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--dh-hairline-2);
+  color: var(--dh-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.dh-v5 .dh-initial--sq {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-family: var(--app-font-heading);
+  font-size: 11px;
+  font-weight: 700;
+}
+.dh-v5 .dh-tag {
+  flex-shrink: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #e7f6f0;
+  color: var(--dh-success);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.dh-v5 .dh-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  background: var(--dh-danger-soft);
+  color: var(--dh-danger);
+  font-family: var(--app-font-heading);
+  font-size: 12px;
+  font-weight: 600;
+}
+.dh-v5 .dh-count--zero {
+  background: transparent;
+  color: var(--dh-faint);
+  font-size: 12.5px;
+  font-weight: 500;
+}
+
+/* ── Nick health breakdown ── */
+.dh-v5 .dh-health { display: flex; flex-direction: column; gap: 9px; }
+.dh-v5 .dh-health__row { display: flex; align-items: center; gap: 10px; }
+.dh-v5 .dh-health__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.dh-v5 .dh-health__lb { width: 104px; flex-shrink: 0; font-size: 12.5px; color: var(--dh-muted); }
+.dh-v5 .dh-health__track { flex: 1; height: 6px; border-radius: 3px; background: var(--dh-hairline-2); overflow: hidden; }
+.dh-v5 .dh-health__fill { height: 100%; border-radius: 3px; }
+.dh-v5 .dh-health__v {
+  width: 24px;
+  text-align: right;
+  font-family: var(--app-font-heading);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+/* ── Status funnel ── */
+.dh-v5 .dh-panelcard { padding: 15px 18px; }
+.dh-v5 .dh-panelcard__head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.dh-v5 .dh-panelcard__total { font-family: var(--app-font-heading); font-size: 12px; color: var(--dh-muted); }
+.dh-v5 .dh-funnelbar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+.dh-v5 .dh-funnelbar span { display: block; height: 100%; }
+.dh-v5 .dh-funnel__row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--dh-hairline);
+}
+.dh-v5 .dh-funnel__sw { width: 8px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+.dh-v5 .dh-funnel__lb {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dh-v5 .dh-funnel__v { font-family: var(--app-font-heading); font-size: 13px; font-weight: 600; }
+.dh-v5 .dh-funnel__pct { width: 40px; text-align: right; font-size: 11.5px; color: var(--dh-faint); }
+
+/* ── Empty / loading / error ── */
+.dh-v5 .dh-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 34px 18px;
+  text-align: center;
+}
+.dh-v5 .dh-empty__t { font-size: 13.5px; font-weight: 500; color: var(--dh-muted); }
+.dh-v5 .dh-empty__s { font-size: 12.5px; color: var(--dh-faint); }
+.dh-v5 .dh-error {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  font-size: 13px;
+  color: var(--dh-muted);
+}
+.dh-v5 .dh-error__retry {
+  border: 1px solid var(--dh-border-strong);
+  border-radius: 7px;
+  padding: 4px 10px;
+  background: var(--dh-surface);
+  color: var(--dh-ink);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* Skeletons animate opacity only — no gradient sweep across a repeated row. */
+.dh-v5 .dh-skel { border-radius: 4px; background: var(--dh-hairline-2); animation: dh-pulse 1.4s ease-in-out infinite; }
+.dh-v5 .dh-skel--line { height: 10px; }
+.dh-v5 .dh-skel--av { width: 38px; height: 38px; border-radius: 50%; flex-shrink: 0; }
+.dh-v5 .dh-skel-row { display: flex; gap: 13px; padding: 14px 18px; border-bottom: 1px solid var(--dh-hairline); }
+.dh-v5 .dh-skel-row__body { flex: 1; display: flex; flex-direction: column; gap: 7px; }
+@keyframes dh-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.45; } }
+
+/* ── View-as dropdown ── */
+.dh-v5 .dh-picker { position: relative; }
+.dh-v5 .dh-picker__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  width: 268px;
+  max-height: 360px;
+  padding: 6px;
+  border: 1px solid var(--dh-border);
+  border-radius: 10px;
+  background: var(--dh-surface);
+  box-shadow: 0 8px 28px rgba(27, 26, 36, 0.16);
+  overflow-y: auto;
+}
+.dh-v5 .dh-picker__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--dh-hairline);
+  color: var(--dh-faint);
+}
+.dh-v5 .dh-picker__search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  font: inherit;
+  font-size: 12.5px;
+  background: transparent;
+}
+.dh-v5 .dh-picker__group {
+  padding: 6px 8px 2px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--dh-faint);
+}
+.dh-v5 .dh-picker__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.dh-v5 .dh-picker__item:hover { background: var(--dh-surface-soft); }
+.dh-v5 .dh-picker__item.is-active { background: var(--dh-chip); color: var(--dh-primary); font-weight: 600; }
+.dh-v5 .dh-picker__item-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dh-v5 .dh-picker__dept { flex-shrink: 0; font-size: 10.5px; color: var(--dh-faint); }
+.dh-v5 .dh-picker__empty { padding: 10px 8px; font-size: 12.5px; color: var(--dh-faint); }
+
+/* ── Narrow desktop / mobile ── */
+@media (max-width: 1180px) {
+  .dh-v5 .dh-cols { grid-template-columns: 1fr; }
+  .dh-v5 .dh-kpis { grid-template-columns: repeat(2, 1fr); }
+  /* Once the columns stack, the side cards are full-width. Letting the reminders card
+     still stretch turned its empty state into a tall band of whitespace, and the three
+     session stats drifted to the far edges of an 860px card. */
+  .dh-v5 .dh-card--grow { flex: none; }
+  .dh-v5 .dh-sessions__grid { grid-template-columns: repeat(3, minmax(0, 180px)); }
+}
+@media (max-width: 720px) {
+  .dh-v5 .dh-kpis { grid-template-columns: 1fr; }
+  .dh-v5 .dh-greet { flex-direction: column; gap: 14px; }
+  .dh-v5 .dh-greet__r { width: 100%; flex-wrap: wrap; }
+  .dh-v5 .dh-greet__h { font-size: 22px; white-space: normal; }
+  .dh-v5 .dh-strip { gap: 14px; }
+  .dh-v5 .dh-strip__sep { display: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dh-v5 *,
+  .dh-v5 *::before,
+  .dh-v5 *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .dh-v5 .dh-btn:hover,
+  .dh-v5 button.dh-kpi:hover { transform: none; }
+}

@@ -1,8 +1,7 @@
 /**
  * onboarding-service.ts — Phase Onboarding v1 2026-05-24.
  *
- * Track 4-step setup cho sale mới: change_password / connect_nick / internal_contact / pin.
- * Mỗi step auto-detect từ DB state, không cần sale tự bấm "đã xong".
+ * Track bước PIN bảo mật tuỳ chọn cho sale mới.
  *
  * Spec đầy đủ: docs/DESIGN-ONBOARDING-V1.md
  */
@@ -10,10 +9,7 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 
-// 2026-06-09 (Anh chốt): gỡ 'internal_contact' khỏi onboarding. User giờ tạo bằng SĐT
-// đã verify có Zalo 100% (wizard create-with-zalo điền sẵn recipient) → không cần bắt sale
-// tự thiết lập kênh nhận thông báo nữa. Còn 3 bước: đổi mk / kết nối nick / PIN.
-export type OnboardingStep = 'change_password' | 'connect_nick' | 'pin';
+export type OnboardingStep = 'pin';
 
 interface StepStatus {
   step: OnboardingStep;
@@ -30,7 +26,7 @@ interface OnboardingState {
   percent: number;
   dismissed: boolean;
   dismissedAt: string | null;
-  canDismiss: boolean; // true nếu đã xong ≥ 3 step
+  canDismiss: boolean;
 }
 
 const PASSWORD_STRENGTH_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
@@ -42,9 +38,9 @@ export class OnboardingError extends Error {
 }
 
 /**
- * Detect 4 step completion từ DB state. Single query optimized.
+ * Detect step completion từ DB state. Single query optimized.
  */
-export async function getOnboardingState(userId: string, orgId: string): Promise<OnboardingState> {
+export async function getOnboardingState(userId: string, _orgId: string): Promise<OnboardingState> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
     select: {
@@ -60,36 +56,12 @@ export async function getOnboardingState(userId: string, orgId: string): Promise
 
   const stepsJson = (user.onboardingStepsCompleted as Record<string, string> | null) ?? {};
 
-  // Step 1: change_password
-  const changePasswordDone = user.passwordChangedAt !== null;
-
-  // Step 2: connect_nick — ≥ 1 nick OWN với status='connected'
-  const connectedNickCount = await prisma.zaloAccount.count({
-    where: { ownerUserId: userId, orgId, status: 'connected' },
-  });
-  const connectNickDone = connectedNickCount >= 1;
-
-  // 2026-06-09: bước internal_contact đã gỡ — bỏ luôn query org + recipient (không còn dùng).
-
-  // Step 3: pin — đã đặt PIN hoặc sale chủ động skip
+  // Mật khẩu do tổ chức cấp → không còn bước "đổi mật khẩu" trong onboarding.
+  // Step duy nhất: pin — đã đặt PIN hoặc sale chủ động skip
   const pinSkipped = stepsJson.pin === 'skipped';
   const pinDone = user.privacyPinHash !== null || pinSkipped;
 
   const steps: StepStatus[] = [
-    {
-      step: 'change_password',
-      completed: changePasswordDone,
-      completedAt: user.passwordChangedAt?.toISOString() ?? null,
-      skipped: false,
-      detail: changePasswordDone ? 'Mật khẩu đã được đổi an toàn' : 'Bắt buộc đổi password admin giao',
-    },
-    {
-      step: 'connect_nick',
-      completed: connectNickDone,
-      completedAt: stepsJson.connect_nick ?? null,
-      skipped: false,
-      detail: connectNickDone ? `${connectedNickCount} nick đã kết nối` : 'Quét QR đăng nhập nick Zalo vào CRM',
-    },
     {
       step: 'pin',
       completed: pinDone,
@@ -111,8 +83,8 @@ export async function getOnboardingState(userId: string, orgId: string): Promise
     percent,
     dismissed: user.onboardingDismissedAt !== null,
     dismissedAt: user.onboardingDismissedAt?.toISOString() ?? null,
-    // Còn 3 bước (PIN optional) → cho dismiss khi xong ≥ 2 bước bắt buộc (đổi mk + kết nối nick).
-    canDismiss: completedCount >= 2,
+    // Bước PIN là tuỳ chọn → luôn cho phép ẩn checklist.
+    canDismiss: true,
   };
 }
 
@@ -219,15 +191,13 @@ export interface OnboardingSummary {
   totalCount: number;
   percent: number;
   pendingSteps: OnboardingStep[];   // các step CHƯA done (loại pin nếu skipped)
-  changePassword: boolean;
-  connectNick: boolean;
   pin: boolean;                     // true nếu đặt PIN hoặc đã skip
   pinSkipped: boolean;
   dismissed: boolean;
 }
 
 /**
- * Bulk summary cho RBAC users list — 4 query thay vì N×4.
+ * Bulk summary cho RBAC users list.
  * Dùng cho admin xem cột "Onboarding %" của toàn org.
  */
 export async function getOnboardingSummariesForOrg(orgId: string): Promise<Record<string, OnboardingSummary>> {
@@ -235,7 +205,6 @@ export async function getOnboardingSummariesForOrg(orgId: string): Promise<Recor
     where: { orgId },
     select: {
       id: true,
-      passwordChangedAt: true,
       onboardingStepsCompleted: true,
       onboardingDismissedAt: true,
       privacyPinHash: true,
@@ -243,36 +212,16 @@ export async function getOnboardingSummariesForOrg(orgId: string): Promise<Recor
   });
   if (users.length === 0) return {};
 
-  const userIds = users.map((u) => u.id);
-
-  // Step 2: connect_nick — group COUNT nick connected per owner
-  const nickCounts = await prisma.zaloAccount.groupBy({
-    by: ['ownerUserId'],
-    where: { orgId, status: 'connected', ownerUserId: { in: userIds } },
-    _count: { _all: true },
-  });
-  const nickCountByUser = new Map<string, number>();
-  for (const row of nickCounts) {
-    if (row.ownerUserId) nickCountByUser.set(row.ownerUserId, row._count._all);
-  }
-
-  // 2026-06-09: bước internal_contact đã gỡ — không còn query recipient ở đây nữa.
-
   const result: Record<string, OnboardingSummary> = {};
   for (const u of users) {
     const stepsJson = (u.onboardingStepsCompleted as Record<string, string> | null) ?? {};
-    const changePassword = u.passwordChangedAt !== null;
-    const connectNick = (nickCountByUser.get(u.id) ?? 0) >= 1;
     const pinSkipped = stepsJson.pin === 'skipped';
     const pin = u.privacyPinHash !== null || pinSkipped;
 
-    const flags = [changePassword, connectNick, pin];
-    const completedCount = flags.filter(Boolean).length;
-    const totalCount = 3;
+    const completedCount = pin ? 1 : 0;
+    const totalCount = 1;
 
     const pendingSteps: OnboardingStep[] = [];
-    if (!changePassword) pendingSteps.push('change_password');
-    if (!connectNick) pendingSteps.push('connect_nick');
     if (!pin) pendingSteps.push('pin');
 
     result[u.id] = {
@@ -281,8 +230,6 @@ export async function getOnboardingSummariesForOrg(orgId: string): Promise<Recor
       totalCount,
       percent: Math.round((completedCount / totalCount) * 100),
       pendingSteps,
-      changePassword,
-      connectNick,
       pin,
       pinSkipped,
       dismissed: u.onboardingDismissedAt !== null,

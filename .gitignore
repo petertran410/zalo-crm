@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .env
+.env.env
 .env.example
 .env.local
 .docker-compose.yml
@@ -10,8 +11,14 @@ dist/
 backups/
 .DS_Store
 .gstack/
+compare/
+workshop/
+.claude/
+.docs/
 
 ui-smax
+
+PUBLIC-API.md
 
 # Local dev artifacts — không commit
 .backfill*.sql
@@ -66,3 +73,12 @@ backend/uploads/
 
 # Artifact của phiên AI khác
 claude_todo/
+run.bat
+run-prisma-studio.bat
+
+# Scoping/inventory docs — local research artifacts, không commit
+DASHBOARD_FRONTEND_INVENTORY.md
+DASHBOARD_REMAINING_CORE_FEATURES.md
+FRIENDS_CONTACTS_INVENTORY.md
+ONBOARDING.md
+implementation_plan.md

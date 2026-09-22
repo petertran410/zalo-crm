@@ -7,7 +7,7 @@
  *
  * FE consume:
  *  - POS views: live update tables & cards
- *  - usePosNotification: interactive Toast notifications for Sales staff
+ *  - Toast toàn cục đã TẮT (usePosNotification = no-op).
  */
 import { type Socket } from 'socket.io-client';
 import { createAppSocket } from '@/api/socket';

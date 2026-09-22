@@ -1,5 +1,5 @@
 /**
- * r2-driver.ts — lưu file lên Cloudflare R2 (hoặc bất kỳ S3-compatible) qua AWS SDK v3.
+ * Lưu file lên Cloudflare R2 hoặc bất kỳ S3-compatible nào qua AWS SDK v3.
  *
  * R2 lưu ý:
  *   - region phải là 'auto'
@@ -46,13 +46,14 @@ async function objectExists(key: string): Promise<boolean> {
 
 export const r2Driver: StorageDriver = {
   publicUrl(key: string): string {
-    // KHÔNG có /{bucket}/ — domain công khai R2 đã map vào bucket root.
+    // Không có /{bucket}/ vì domain công khai R2 đã map vào bucket root.
     return `${config.s3PublicUrl}/${key}`;
   },
 
   async uploadBuffer(buffer: Buffer, mimeType: string, originalName?: string): Promise<UploadResult> {
     if (!buffer || buffer.length === 0) throw new Error('uploadBuffer: empty buffer (refusing 0-byte object)');
-    const ext = originalName ? extname(originalName) : mimeToExt(mimeType);
+    // Đuôi theo nội dung thật, tên tệp chỉ là dự phòng. Khớp local-driver.
+    const ext = mimeToExt(mimeType) || (originalName ? extname(originalName) : '');
     const contentHash = createHash('sha256').update(buffer).digest('hex');
     const key = `media/${contentHash}${ext}`;
     const url = this.publicUrl(key);

@@ -664,7 +664,7 @@ export async function createUserAndSendLogin(input: CreateUserInput): Promise<Cr
           passwordHash,
           role: input.role ?? 'member',
           permissionGroupId: input.permissionGroupId ?? null,
-          passwordChangedAt: null,
+          passwordChangedAt: new Date(),
           // UI refactor 2026-05-27 — avatar Zalo lấy lúc findUser, lưu để render UsersRbacView
           avatarUrl: zaloAvatar,
           onboardingStepsCompleted: undefined as never,
@@ -802,7 +802,7 @@ export async function createUserAndSendLogin(input: CreateUserInput): Promise<Cr
 /**
  * Admin retry gửi tin login khi tin trước đó fail (sale chưa nhận được hoặc tin lạc).
  * Phải GENERATE PASSWORD MỚI (BE không lưu plaintext, không thể resend pass cũ).
- * User cũng được update passwordChangedAt=null để force-change-on-next-login.
+ * Mật khẩu mới có hiệu lực trực tiếp; user không được tự đổi mật khẩu.
  */
 export async function resendLoginMessage(args: {
   orgId: string;
@@ -853,7 +853,7 @@ export async function resendLoginMessage(args: {
   const passwordHash = await bcrypt.hash(tempPassword, 10);
   await prisma.user.update({
     where: { id: target.id },
-    data: { passwordHash, passwordChangedAt: null, jwtTokenVersion: { increment: 1 } },
+    data: { passwordHash, passwordChangedAt: new Date(), jwtTokenVersion: { increment: 1 } },
   });
 
   // Re-check relation + auto-accept if pending

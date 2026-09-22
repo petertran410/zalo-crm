@@ -1,6 +1,5 @@
 <template>
   <div class="cfb">
-    <!-- Mini counter + sort row -->
     <div class="cfb-mini">
       <span class="mini-count">
         <strong>{{ totalCount }}</strong> hội thoại
@@ -10,12 +9,15 @@
         </template>
       </span>
 
-      <div class="mini-right">
-        <button class="mini-sort" @click="toggleSort">
-          {{ filters.state.sortMode === 'unread-first' ? 'Chưa đọc lên trên' : 'Mới nhất lên trên' }}
-          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
-        </button>
-      </div>
+      <button
+        class="mini-sort"
+        type="button"
+        :title="filters.state.sortMode === 'unread-first' ? 'Đang ưu tiên chưa đọc' : 'Đang sắp xếp tin mới nhất'"
+        @click="toggleSort"
+      >
+        {{ filters.state.sortMode === 'unread-first' ? 'Chưa đọc trước' : 'Mới nhất' }}
+        <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
     </div>
   </div>
 </template>
@@ -335,11 +337,40 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.cfb {
-  background: white;
-  border-bottom: 1px solid #F3F4F6;
-  flex-shrink: 0;
+.cfb { display: none; }
+.cfb-mini {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 13px;
+  background: var(--app-surface-panel);
+  font-size: 10.5px;
+  color: var(--app-text-muted);
+  border-bottom: 1px solid var(--app-border-subtle);
 }
+.mini-count strong { color: var(--app-text-primary); font-weight: 700; }
+.mini-count .dot { margin: 0 4px; color: var(--app-text-muted); }
+.mini-count .accent { color: var(--app-accent); font-weight: 700; }
+.mini-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: var(--app-radius-sm);
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--app-text-secondary);
+  font-weight: 600;
+  font-size: 10.5px;
+  font-family: inherit;
+  white-space: nowrap;
+  transition: color .15s ease, background .15s ease, border-color .15s ease;
+}
+.mini-sort:hover { color: var(--app-accent); background: var(--app-accent-soft); border-color: color-mix(in srgb, var(--app-accent) 20%, transparent); }
+.mini-sort .ic { width: 10px; height: 10px; opacity: .7; }
 
 /* ① Quick pills — compact 2-line layout, tiết kiệm chiều cao */
 .cfb-pills-wrap {
@@ -783,38 +814,7 @@ onUnmounted(() => {
 .cfb-tabs.main-tab-style .cfb-tab .tab-label { overflow: visible; text-overflow: clip; }
 .cfb-tabs.main-tab-style + .cfb-mini { margin-top: 6px; }
 
-/* ④ Mini row — half height, muted */
-.cfb-mini {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 3px 14px;
-  background: #FAFBFC;
-  font-size: 10.5px;
-  color: #9CA3AF;
-  border-bottom: 1px solid #F3F4F6;
-  min-height: 20px;
-}
-.mini-count strong { color: #4B5563; font-weight: 600; }
-.mini-count .dot   { margin: 0 4px; color: #D1D5DB; }
-.mini-count .accent { color: #EF4444; font-weight: 600; }
-.mini-sort {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: transparent;
-  border: none;
-  color: #6B7280;
-  font-weight: 500;
-  font-size: 10.5px;
-  font-family: inherit;
-  transition: color 0.15s, background 0.15s;
-}
-.mini-sort:hover { color: #4338CA; background: white; }
-.mini-sort .ic { width: 10px; height: 10px; opacity: 0.7; }
+/* Mini row styles are defined with the primary header controls above. */
 
 /* ══ MINI-RIGHT: group sort + collapse btn ══════════════════════════════ */
 .mini-right {

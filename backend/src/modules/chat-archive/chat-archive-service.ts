@@ -12,17 +12,14 @@
  * (message-handler.mirrorRemoteMediaUrl), và cron dọn thùng rác có invariant không đụng
  * byte. Bản lưu chỉ giữ URL + key object là đủ bền.
  *
- * 2 cách lưu (anh chốt) nằm chung 1 bản:
- *   • summary  — nhờ AI tóm tắt (tái dùng generateAiOutput type='summary')
- *   • verbatim — chép từng dòng kèm liên kết ảnh/tệp
+ * The archive stores a durable verbatim snapshot of the conversation.
  */
 import { prisma } from '../../shared/database/prisma-client.js';
 import { keyFromPublicUrl } from '../../shared/storage/minio-client.js';
-import { generateAiOutput } from '../ai/ai-service.js';
 import { logger } from '../../shared/utils/logger.js';
 import { buildArchiveLines, countMediaLines, type ArchivableMessage } from './chat-archive-extract.js';
 
-export type ArchiveMode = 'summary' | 'verbatim' | 'both';
+export type ArchiveMode = 'verbatim';
 
 /** Trần số tin chép 1 lần — hội thoại vài chục nghìn tin không được nuốt hết RAM. */
 const MAX_LINES = 5000;
@@ -39,20 +36,18 @@ export interface CreateArchiveResult {
   mode: ArchiveMode;
   messageCount: number;
   mediaCount: number;
+  /** The archive snapshot contains verbatim messages only. */
   summaryText: string | null;
-  /** Có yêu cầu tóm tắt nhưng AI không chạy được (tắt/hết quota/thiếu khoá) → lý do. */
-  summarySkippedReason?: string;
   truncated: boolean;
 }
 
 /**
  * Chụp 1 hội thoại thành bản lưu.
- * Ném lỗi khi hội thoại không tồn tại trong org; các lỗi khác (AI) đều nuốt + báo lại
- * qua summarySkippedReason để bản chép từng dòng vẫn được lưu.
+ * Ném lỗi khi hội thoại không tồn tại trong org.
  */
 export async function createChatArchive(input: CreateArchiveInput): Promise<CreateArchiveResult> {
   const { orgId, conversationId, createdById } = input;
-  const mode: ArchiveMode = input.mode ?? 'both';
+  const mode: ArchiveMode = 'verbatim';
 
   const conversation = await prisma.conversation.findFirst({
     where: { id: conversationId, orgId },
@@ -80,22 +75,8 @@ export async function createChatArchive(input: CreateArchiveInput): Promise<Crea
   const lines = buildArchiveLines(capped as ArchivableMessage[]);
   const mediaCount = countMediaLines(lines);
 
-  // ── Tóm tắt (nếu được yêu cầu) ──────────────────────────────────────────
-  // AI tắt / hết hạn mức ngày / chưa cấu hình khoá → KHÔNG làm hỏng cả lần lưu:
-  // vẫn lưu bản chép từng dòng, chỉ báo lại lý do thiếu tóm tắt.
-  let summaryText: string | null = null;
-  let summarySkippedReason: string | undefined;
-  if ((mode === 'summary' || mode === 'both') && capped.length > 0) {
-    try {
-      const out = await generateAiOutput({ orgId, conversationId, type: 'summary' });
-      summaryText = typeof out === 'object' && out && 'content' in out ? String((out as any).content) : null;
-    } catch (err) {
-      summarySkippedReason = (err as Error)?.message ?? 'AI tóm tắt lỗi';
-      logger.warn(`[chat-archive] tóm tắt lỗi conv=${conversationId}:`, summarySkippedReason);
-    }
-  }
-
-  const wantVerbatim = mode === 'verbatim' || mode === 'both';
+  const summaryText: string | null = null;
+  const wantVerbatim = true;
 
   const archive = await prisma.$transaction(async (tx) => {
     const created = await tx.chatArchive.create({
@@ -152,7 +133,6 @@ export async function createChatArchive(input: CreateArchiveInput): Promise<Crea
     messageCount: wantVerbatim ? lines.length : 0,
     mediaCount: wantVerbatim ? mediaCount : 0,
     summaryText,
-    summarySkippedReason,
     truncated,
   };
 }

@@ -7,6 +7,7 @@ import { logger } from '../../shared/utils/logger.js';
 
 // Well-known msgType keyword patterns — used to suppress noise logging
 const KNOWN_MSG_TYPE_PATTERNS = [
+  'webchat', 'chat', 'text',
   'photo', 'image', 'sticker', 'video', 'voice',
   'gif', 'link', 'location', 'file', 'doc',
   'recommended', 'card', 'bank', 'transfer',
@@ -20,6 +21,7 @@ const KNOWN_MSG_TYPE_PATTERNS = [
  */
 export function detectContentType(msgType: string | undefined, content: any): string {
   if (!msgType) return 'text';
+  if (msgType === 'webchat' || msgType === 'chat' || msgType.includes('webchat')) return 'text';
 
   // ── FIX 2026-05-21: action-based dispatch PHẢI chạy trước msgType keyword check ──
   // Zalo wrap call/bank/qr trong cùng family "recommended.*" → nếu để keyword check

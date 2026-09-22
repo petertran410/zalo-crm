@@ -1,6 +1,8 @@
 import path from 'node:path';
 import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
-import { getPosMcpClient } from './mcp-client.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../../modules/integrations/hisweetie-public-api-client.js';
+import { isPosCustomerActive, parseCustomerGroups } from '../../modules/integrations/hisweetie-customer-mapper.js';
+import { SyncCancelledError, type ShouldCancel } from '../../modules/pos/pos-sync-lock.js';
 import { prisma } from '../database/prisma-client.js';
 import { logger } from '../utils/logger.js';
 import { getIo } from '../event-buffer.js';
@@ -246,9 +248,6 @@ export async function batchUpsertProducts(orgId: string, products: any[]): Promi
 export async function batchUpsertCustomers(orgId: string, customers: any[]): Promise<number> {
   if (!customers || customers.length === 0) return 0;
 
-  const twoYearsAgo = new Date();
-  twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
-
   const posIds: number[] = [];
   const names: string[] = [];
   const codes: (string | null)[] = [];
@@ -258,45 +257,43 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
   const assignedSaleNames: (string | null)[] = [];
   const tagsJsons: string[] = [];
   const statuses: string[] = [];
+  // Hồ sơ tổ chức + nhóm khách (parse từ groups — xem hisweetie-customer-mapper)
+  const organizations: (string | null)[] = [];
+  const taxCodes: (string | null)[] = [];
+  const isOrgTexts: ('true' | 'false' | null)[] = [];
 
   for (const cust of customers) {
     if (!cust.id) continue;
 
-    const hasFinancial = Number(cust.totalPurchased || 0) > 0 ||
-                         Number(cust.totalRevenue || 0) > 0 ||
-                         Number(cust.totalDebt || 0) !== 0;
-
-    const isRecent = cust.updatedAt ? new Date(cust.updatedAt) >= twoYearsAgo : false;
-
-    if (!hasFinancial || !isRecent) {
-      continue;
-    }
+    // Khách đã ngừng hoạt động thì KHÔNG lưu. Lớp phòng thủ cho trường hợp
+    // record inactive vẫn lọt vào (payload webhook, hoặc caller lỡ bật
+    // includeInactive) — bộ lọc chính nằm ở tham số gọi POS.
+    if (!isPosCustomerActive(cust)) continue;
 
     const phone = cust.phone || cust.contactNumber || null;
-    const address = cust.addresses?.[0]?.address || cust.address || null;
-    const custType = typeof cust.customerType === 'string'
-      ? cust.customerType
-      : (cust.customerType?.name || null);
-    const tagsArray: string[] = [];
-    if (cust.groups && Array.isArray(cust.groups)) {
-      cust.groups.forEach((g: any) => { if (g.name) tagsArray.push(g.name); });
-    }
+    const address = cust.addresses?.[0]?.address || cust.invoiceAddress || cust.address || null;
+    // Public API trả groups là CHUỖI "Khách buôn|phuongnt" — KHÔNG phải mảng
+    // [{name}] như SDK MCP cũ. Parser tách nhãn nhóm vs mã sale theo hình thức.
+    const parsedGroups = parseCustomerGroups(cust.groups);
 
     posIds.push(Number(cust.id));
     names.push(String(cust.name || ''));
     codes.push(cust.code || null);
     phones.push(phone);
     addresses.push(address);
-    customerTypes.push(custType);
-    assignedSaleNames.push(cust.misaEmployeeName || cust.createdBy || null);
-    tagsJsons.push(JSON.stringify(tagsArray));
+    customerTypes.push(parsedGroups.segment);
+    assignedSaleNames.push(parsedGroups.saleCode);
+    tagsJsons.push(JSON.stringify(parsedGroups.tags));
     statuses.push(cust.isActive ? 'Active' : 'Inactive');
+    organizations.push(typeof cust.organization === 'string' && cust.organization.trim() ? cust.organization.trim() : null);
+    taxCodes.push(typeof cust.taxCode === 'string' && cust.taxCode.trim() ? cust.taxCode.trim() : null);
+    isOrgTexts.push(cust.type === 1 ? 'true' : cust.type === 0 ? 'false' : null);
   }
 
   if (posIds.length === 0) return 0;
 
   const sql = `
-    INSERT INTO pos_customers (id, pos_id, name, code, phone, address, customer_type, assigned_sale_name, tags, status, org_id, created_at, updated_at)
+    INSERT INTO pos_customers (id, pos_id, name, code, phone, address, customer_type, assigned_sale_name, tags, status, organization, tax_code, is_organization, org_id, created_at, updated_at)
     SELECT
       gen_random_uuid(),
       u.pos_id,
@@ -308,6 +305,9 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
       u.assigned_sale_name,
       u.tags::jsonb,
       u.status,
+      u.organization,
+      u.tax_code,
+      u.is_org::boolean,
       $1::uuid,
       now(),
       now()
@@ -320,8 +320,11 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
       $7::text[],
       $8::text[],
       $9::text[],
-      $10::text[]
-    ) AS u(pos_id, name, code, phone, address, customer_type, assigned_sale_name, tags, status)
+      $10::text[],
+      $11::text[],
+      $12::text[],
+      $13::text[]
+    ) AS u(pos_id, name, code, phone, address, customer_type, assigned_sale_name, tags, status, organization, tax_code, is_org)
     ON CONFLICT (pos_id, org_id) DO UPDATE SET
       name               = EXCLUDED.name,
       code               = EXCLUDED.code,
@@ -331,6 +334,9 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
       assigned_sale_name = EXCLUDED.assigned_sale_name,
       tags               = EXCLUDED.tags,
       status             = EXCLUDED.status,
+      organization       = EXCLUDED.organization,
+      tax_code           = EXCLUDED.tax_code,
+      is_organization    = EXCLUDED.is_organization,
       updated_at         = now()
   `;
 
@@ -345,7 +351,10 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
     customerTypes,
     assignedSaleNames,
     tagsJsons,
-    statuses
+    statuses,
+    organizations,
+    taxCodes,
+    isOrgTexts
   );
   if (result > 0) {
     emitPosDataUpdated(orgId, { type: 'customer', action: 'synced' });
@@ -1014,8 +1023,14 @@ async function batchUpsertBranchInventoryChunk(orgId: string, inventoryLogs: any
 
 // ── Public Sync Functions ────────────────────────────────────────────────────
 
-export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
+export async function syncPosProductsFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  const fetchProductPage = (args: { page: number; limit: number }) =>
+    publicApi.listProducts(args);
+
   logger.info(`[pos-sync] Syncing products for org ${orgId}`);
   emitProgress(orgId, { table: 'products', phase: 'fetching', current: 0, total: -1 });
 
@@ -1049,7 +1064,9 @@ export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
     let hasMore = true;
 
     while (hasMore) {
-      const res = await fetchWithRetry(() => client.products.list({ page, limit }));
+      // Kiểm tra trước mỗi trang: hủy thì dừng ngay, không tốn thêm request POS.
+      if (await shouldCancel?.()) throw new SyncCancelledError();
+      const res = await fetchWithRetry(() => fetchProductPage({ page, limit }));
       const products = (res as any).data || [];
 
       if (products.length === 0) {
@@ -1092,122 +1109,28 @@ export async function syncPosProductsFromMcp(orgId: string): Promise<void> {
     emitProgress(orgId, { table: 'products', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất ${totalSynced} sản phẩm` });
     logger.info(`[pos-sync] Sync completed. Total synced products: ${totalSynced}`);
   } catch (err: any) {
+    const isCancel = err instanceof SyncCancelledError;
     await prisma.syncJob.update({
       where: { id: job.id },
       data: {
-        status: 'Failed',
+        status: isCancel ? 'Cancelled' : 'Failed',
         endTime: new Date(),
-        lastError: err.message || String(err)
+        lastError: isCancel ? 'Người dùng hủy thủ công' : (err.message || String(err))
       }
     });
 
-    emitProgress(orgId, { table: 'products', phase: 'error', current: totalSynced, total: 0, message: err.message || 'Lỗi đồng bộ sản phẩm' });
+    emitProgress(orgId, { table: 'products', phase: isCancel ? 'done' : 'error', current: totalSynced, total: isCancel ? totalSynced : 0, message: isCancel ? `Đã hủy ở ${totalSynced} sản phẩm` : (err.message || 'Lỗi đồng bộ sản phẩm') });
     logger.error('[pos-sync] Sync products failed:', err.message || err);
     throw err;
   }
 }
 
-export async function syncPosCustomersFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing customers for org ${orgId}`);
-  emitProgress(orgId, { table: 'customers', phase: 'fetching', current: 0, total: -1 });
-
-  const lastJob = await prisma.syncJob.findFirst({
-    where: { orgId, entity: 'Customer' },
-    orderBy: { createdAt: 'desc' }
-  });
-
-  let currentItem = 0;
-  let totalSynced = 0;
-
-  if (lastJob && lastJob.status !== 'Completed' && lastJob.processed > 0) {
-    currentItem = lastJob.processed;
-    totalSynced = lastJob.processed;
-    logger.info(`[pos-sync] Resuming manual customer sync from offset ${currentItem}`);
-  }
-
-  const job = await prisma.syncJob.create({
-    data: {
-      orgId,
-      entity: 'Customer',
-      status: 'Running',
-      processed: totalSynced,
-      currentPage: Math.floor(currentItem / 100),
-      startTime: new Date()
-    }
-  });
-
-  try {
-    const pageSize = 100;
-    let hasMore = true;
-
-    while (hasMore) {
-      const res = await fetchWithRetry(() => client.customers.list({ currentItem, pageSize, isActive: true }));
-      const customers = (res as any).data || [];
-
-      if (customers.length === 0) {
-        hasMore = false;
-        break;
-      }
-
-      emitProgress(orgId, { table: 'customers', phase: 'saving', current: totalSynced, total: -1, message: `Đang lưu trang ${Math.floor(currentItem / pageSize) + 1}...` });
-      await batchUpsertCustomers(orgId, customers);
-
-      totalSynced += customers.length;
-
-      await prisma.syncJob.update({
-        where: { id: job.id },
-        data: {
-          processed: totalSynced,
-          currentPage: Math.floor(currentItem / pageSize) + 1
-        }
-      });
-
-      emitProgress(orgId, { table: 'customers', phase: 'fetching', current: totalSynced, total: -1, message: `Đã đồng bộ ${totalSynced} khách hàng` });
-      logger.info(`[pos-sync] Synced ${customers.length} customers. Total: ${totalSynced}`);
-
-      if (customers.length < pageSize) {
-        hasMore = false;
-      } else {
-        currentItem += pageSize;
-        if (currentItem > 50000) {
-          logger.warn(`[pos-sync] Đã chạm giới hạn tối đa 50,000 khách hàng từ POS MCP Server. Dừng đồng bộ để tránh lỗi offset.`);
-          hasMore = false;
-        } else {
-          await sleep(800);
-        }
-      }
-    }
-
-    await prisma.syncJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'Completed',
-        endTime: new Date()
-      }
-    });
-
-    emitProgress(orgId, { table: 'customers', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất ${totalSynced} khách hàng` });
-    logger.info(`[pos-sync] Sync completed. Total synced customers: ${totalSynced}`);
-  } catch (err: any) {
-    await prisma.syncJob.update({
-      where: { id: job.id },
-      data: {
-        status: 'Failed',
-        endTime: new Date(),
-        lastError: err.message || String(err)
-      }
-    });
-
-    emitProgress(orgId, { table: 'customers', phase: 'error', current: totalSynced, total: 0, message: err.message || 'Lỗi đồng bộ khách hàng' });
-    logger.error('[pos-sync] Sync customers failed:', err.message || err);
-    throw err;
-  }
-}
-
-export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing orders for org ${orgId} (1 năm gần nhất)`);
+export async function syncPosOrdersFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  logger.info(`[pos-sync] Syncing orders for org ${orgId} via Public API (1 năm gần nhất)`);
   emitProgress(orgId, { table: 'orders', phase: 'fetching', current: 0, total: -1 });
 
   const oneYearAgo = new Date();
@@ -1219,11 +1142,14 @@ export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
   let hasMore = true;
 
   while (hasMore) {
-    const res = await fetchWithRetry(() => client.orders.list({
-      page,
-      limit,
-      fromDate: oneYearAgo.toISOString(),
-    }));
+    if (await shouldCancel?.()) throw new SyncCancelledError();
+    const res = await fetchWithRetry(() => {
+      const args = { page, limit, fromDate: oneYearAgo.toISOString() };
+      // Public API chỉ trả dòng hàng khi có `include=details` (doc mục 3). Thiếu
+      // tham số này thì pos_order_items rỗng → "sản phẩm đã mua" trong Customer 360
+      // không có dữ liệu.
+      return publicApi.listOrders({ ...args, include: 'details' });
+    });
 
     const orders = (res as any).data || (res as any).orders || [];
     if (orders.length === 0) {
@@ -1249,9 +1175,12 @@ export async function syncPosOrdersFromMcp(orgId: string): Promise<void> {
   logger.info(`[pos-sync] Sync orders completed. Total: ${totalSynced}`);
 }
 
-export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing invoices for org ${orgId}`);
+export async function syncPosInvoicesFromMcp(
+  orgId: string,
+  shouldCancel?: ShouldCancel,
+): Promise<void> {
+  const publicApi = getHisweetiePublicApiClient();
+  logger.info(`[pos-sync] Syncing invoices for org ${orgId} via Public API`);
   emitProgress(orgId, { table: 'invoices', phase: 'fetching', current: 0, total: -1 });
 
   const oneYearAgo = new Date();
@@ -1263,11 +1192,11 @@ export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
   let hasMore = true;
 
   while (hasMore) {
-    const res = await fetchWithRetry(() => client.invoices.list({
-      page,
-      limit,
-      fromDate: oneYearAgo.toISOString(),
-    }));
+    if (await shouldCancel?.()) throw new SyncCancelledError();
+    const res = await fetchWithRetry(() => {
+      const args = { page, limit, fromDate: oneYearAgo.toISOString() };
+      return publicApi.listInvoices(args);
+    });
 
     const invoices = (res as any).data || (res as any).invoices || [];
     if (invoices.length === 0) {
@@ -1294,14 +1223,16 @@ export async function syncPosInvoicesFromMcp(orgId: string): Promise<void> {
 }
 
 export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void> {
-  const client = getPosMcpClient();
-  logger.info(`[pos-sync] Syncing branch inventory for org ${orgId}`);
+  const publicApi = getHisweetiePublicApiClient();
+  logger.info(`[pos-sync] Syncing branch inventory for org ${orgId} via Public API`);
   emitProgress(orgId, { table: 'branch_inventory', phase: 'fetching', current: 0, total: -1 });
 
   let totalSynced = 0;
 
   try {
-    const branchesRes = await fetchWithRetry(() => client.branches.list());
+    const branchesRes = await fetchWithRetry(() =>
+      publicApi.listBranches({ pageSize: 100 }),
+    );
     const branches = (branchesRes as any).data || (branchesRes as any).branches || [];
 
     if (branches.length === 0) {
@@ -1312,18 +1243,32 @@ export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void
       const branchId = Number(branch.id);
       const branchName = branch.name || `Chi nhánh ${branchId}`;
 
-      const res = await fetchWithRetry(() => client.products.branchInventory(branchId));
-      const inventoryItems = (res as any).data || (res as any).inventory || (res as any).items || [];
+      // Public API `inventories` phân trang theo offset; phải đọc đủ mọi trang
+      // của từng chi nhánh, không chỉ 100 bản ghi đầu tiên.
+      let currentItem = 0;
+      let hasMoreInventory = true;
+      while (hasMoreInventory) {
+        const res = await fetchWithRetry(() =>
+          publicApi.listInventories({ branchIds: String(branchId), pageSize: 100, currentItem }),
+        );
+        const inventoryItems = (res as any).data || (res as any).inventory || (res as any).items || [];
 
-      if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
-        const logsWithBranch = inventoryItems.map(inv => ({
-          ...inv,
-          branchId,
-          branchName
-        }));
+        if (Array.isArray(inventoryItems) && inventoryItems.length > 0) {
+          const logsWithBranch = inventoryItems.map(inv => ({
+            ...inv,
+            branchId,
+            branchName,
+          }));
 
-        await batchUpsertBranchInventory(orgId, logsWithBranch);
-        totalSynced += inventoryItems.length;
+          await batchUpsertBranchInventory(orgId, logsWithBranch);
+          totalSynced += inventoryItems.length;
+        }
+
+        if (!Array.isArray(inventoryItems) || inventoryItems.length < 100) {
+          hasMoreInventory = false;
+        } else {
+          currentItem += inventoryItems.length;
+        }
       }
       await sleep(500);
     }
@@ -1337,7 +1282,10 @@ export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void
     let hasMore = true;
 
     while (hasMore) {
-      const res = await fetchWithRetry(() => client.products.list({ page, limit }));
+      const res = await fetchWithRetry(() => {
+        const args = { page, limit };
+        return publicApi.listProducts(args);
+      });
       const products = (res as any).data || [];
       if (products.length === 0) { hasMore = false; break; }
 

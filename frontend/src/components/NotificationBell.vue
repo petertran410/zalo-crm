@@ -4,14 +4,14 @@
        làm menu (z-index 2000) kẹt mở phủ nav, nuốt click. -->
   <v-menu v-model="bellMenu" offset-y :close-on-content-click="false" max-width="380">
     <template #activator="{ props: menuProps }">
-      <v-btn icon variant="text" v-bind="menuProps" class="mr-1">
+      <v-btn icon variant="text" v-bind="menuProps" class="notification-bell-trigger">
         <v-badge
           :content="notifications.length"
           :model-value="notifications.length > 0"
           color="error"
           overlap
         >
-          <v-icon>mdi-bell-outline</v-icon>
+          <Bell :size="19" :stroke-width="1.9" />
         </v-badge>
       </v-btn>
     </template>
@@ -44,6 +44,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue';
+import { Bell } from 'lucide-vue-next';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
 
@@ -113,3 +114,9 @@ onMounted(() => {
 
 onUnmounted(() => clearInterval(interval));
 </script>
+
+<style scoped>
+/* The actual menu activator needs an explicit class. Passing a class to the
+   v-menu root does not style this nested v-btn reliably. */
+.notification-bell-trigger { margin: 0; }
+</style>

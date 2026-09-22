@@ -36,8 +36,11 @@ model Organization {
 
   teams                       Team[]
   users                       User[]
-  zaloAccounts                ZaloAccount[]
   contacts                    Contact[]
+  careProductInterests       ContactProductInterest[]
+  careWorkshopAttendances    ContactWorkshopAttendance[]
+  careComplaints             ContactComplaint[]
+  zaloAccounts                ZaloAccount[]
   contactAccess               ContactAccess[]
   conversations               Conversation[]
   appointments                Appointment[]
@@ -197,6 +200,7 @@ model Organization {
   posCustomerDebts        PosCustomerDebt[]
   posBranchInventory      PosBranchInventory[]
   posWebhookLogs          PosWebhookLog[]
+  posSaleMappings         PosSaleMapping[]
   syncJobs                SyncJob[]
   workspaceSessions       WorkspaceSession[]
 
@@ -281,11 +285,15 @@ model User {
   updatedAt                    DateTime             @updatedAt @map("updated_at")
 
   org                       Organization                 @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  posSaleMappings           PosSaleMapping[]
   team                      Team?                        @relation(fields: [teamId], references: [id])
   zaloAccounts              ZaloAccount[]
   zaloAccess                ZaloAccountAccess[]
   assignedContacts          Contact[]                    @relation("AssignedContacts")
-  archivedContacts          Contact[]                    @relation("ContactArchivedBy")
+  archivedContacts           Contact[]                    @relation("ContactArchivedBy")
+  authoredCareProductInterests ContactProductInterest[]   @relation("CareProductInterestAuthor")
+  authoredCareWorkshops      ContactWorkshopAttendance[] @relation("CareWorkshopAuthor")
+  authoredCareComplaints     ContactComplaint[]          @relation("CareComplaintAuthor")
   contactAccess             ContactAccess[]
   appointments              Appointment[]
   statusChangedAppointments Appointment[]                @relation("AppointmentStatusChanger")
@@ -596,6 +604,10 @@ model Contact {
   mergedInto       String?   @map("merged_into")
   posCustomerId   Int?      @map("pos_customer_id")
   posCustomerCode String?   @map("pos_customer_code")
+  // 2026-08-01: merge test_feature làm rơi field này khỏi schema (cột
+  // pos_synced_at VẪN có thật trong DB). hisweetie-sync-cron + link-pos đang ghi
+  // vào nó → tsc gãy TS2353. Khai báo lại, KHÔNG cần migration mới.
+  posSyncedAt       DateTime? @map("pos_synced_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
 
@@ -676,6 +688,9 @@ model Contact {
   // bảng này thay vì chỉ assignedUserId.
   contactAccess     ContactAccess[]
   contactNotes      Note[]
+  careProductInterests    ContactProductInterest[]
+  careWorkshopAttendances ContactWorkshopAttendance[]
+  careComplaints          ContactComplaint[]
   // Công việc (Task V1) 2026-07-07 — to-do link KH, SetNull khi purge KH
   tasks             Task[]
   // Ticket V1 2026-07-09 — ticket link KH, SetNull khi purge KH
@@ -1136,6 +1151,59 @@ model SystemNotification {
   @@map("system_notifications")
 }
 
+// Contact care data is append-only in V1 so the simple drawer inputs do not erase history.
+model ContactProductInterest {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  value           String   @db.Text
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareProductInterestAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_product_interests")
+}
+
+model ContactWorkshopAttendance {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  contactId       String    @map("contact_id")
+  value           String    @db.Text
+  attendedAt      DateTime? @map("attended_at")
+  createdByUserId String?   @map("created_by_user_id")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareWorkshopAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_workshop_attendances")
+}
+
+model ContactComplaint {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  value           String   @db.Text
+  createdByUserId String?  @map("created_by_user_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  org       Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact   Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  createdBy User?        @relation("CareComplaintAuthor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+
+  @@index([orgId, contactId, createdAt(sort: Desc)])
+  @@map("contact_complaints")
+}
+
 // Appointment scheduled for a contact
 // source='zalo' khi sync từ reminder Zalo client, source='manual' khi sale tạo trong CRM.
 // externalRef = Zalo reminderId (unique per org để dedup khi reminder edit/fire lại).
@@ -1256,18 +1324,12 @@ model Task {
   @@map("tasks")
 }
 
-// Ticket (KH complaint/request) V1 2026-07-09 — quy trình: NV (hoặc AI đọc hội thoại)
-// tóm tắt vấn đề KH → tạo ticket → theo dõi đến khi resolved.
-// Lifecycle CHỐT (anh quyết định): open → in_progress → resolved là TERMINAL — không
-// reopen. Vấn đề mới phát sinh trên ticket cũ → tạo ticket MỚI thủ công, không mở lại
-// ticket cũ (giữ lịch sử mỗi ticket = 1 vấn đề, audit trail rõ ràng). Không auto-close.
-// status hợp lệ enforce ở route (PATCH /:id/status), không phải DB constraint.
-// summary: AI draft (gọi lại generateAiOutput type='summary' có sẵn từ module ai) hoặc
-// NV tự gõ — aiGenerated đánh dấu nguồn gốc, KHÔNG khoá NV sửa lại sau khi AI tạo.
-// priority: NV luôn tự chọn ở V1 (AI KHÔNG đề xuất priority — xem ONBOARDING/plan review
-// 2026-07-09, giữ đơn giản, tái dùng nguyên endpoint summarize có sẵn thay vì prompt mới).
-// FK: contact/conversation SetNull (xóa nguồn không được xóa ticket — vẫn còn giá trị
-// standalone làm hồ sơ); assignee Cascade giống Task (user chỉ soft-deactivate trong app).
+// Ticket: NV hoặc AI tóm tắt vấn đề KH rồi theo dõi tới khi resolved.
+//
+// resolved là TERMINAL, không reopen: vấn đề mới thì tạo ticket mới, để mỗi ticket là một vấn
+// đề và audit trail rõ ràng. Trạng thái hợp lệ enforce ở route chứ không phải constraint DB.
+// aiGenerated chỉ đánh dấu nguồn gốc, không khoá NV sửa lại.
+// FK contact và conversation SetNull vì ticket vẫn có giá trị độc lập khi nguồn bị xoá.
 model Ticket {
   id               String    @id @default(uuid())
   orgId            String    @map("org_id")
@@ -1303,19 +1365,13 @@ model Ticket {
   @@map("tickets")
 }
 
-// PosBillingDraft (goal 4 — tạo hoá đơn từ chat) 2026-07-16.
-// NV chốt đơn với KH trong chat → tạo draft hoá đơn bên CRM → (SAU NÀY) đẩy sang POS.
+// PosBillingDraft: NV chốt đơn trong chat rồi tạo draft hoá đơn bên CRM.
 //
-// ⚠️ RANH GIỚI (anh chốt 2026-07-16): CẦU CRM → POS CHƯA MỞ. Chưa có quyền ghi POS
-// thật. Model + service CHỈ tạo/validate/lưu draft; dispatch sang POS bị chặn cứng
-// trong hisweetie-billing-service.ts. posOrderId/posInvoiceId để trống tới khi gửi thật.
-//
-// status: draft → (mở cầu) pending_dispatch → sent | failed. Chỉ 'draft' là hiện có.
-// idempotencyKey: sinh 1 lần lúc tạo, DÙNG LẠI khi dispatch (client.orders.create nhận
-//   UUID) → gửi lại do lỗi mạng KHÔNG tạo 2 đơn POS. Sinh sẵn từ bây giờ.
-// items: JSON [{productId,quantity,unitPrice,discount?,note?}] — snapshot giá lúc chốt
-//   (POS là nguồn product/giá; CRM không có catalog nên lưu nguyên để đối soát).
-// FK: contact/createdBy SetNull (xóa KH/NV vẫn giữ chứng từ); org Cascade.
+// CẦU CRM SANG POS CHƯA MỞ: model và service chỉ tạo, validate và lưu draft, dispatch bị chặn
+// cứng trong hisweetie-billing-service. posOrderId và posInvoiceId để trống tới khi gửi thật.
+// idempotencyKey sinh sẵn ngay lúc tạo và dùng lại khi dispatch, để gửi lại do lỗi mạng không
+// đẻ ra hai đơn POS.
+// items lưu snapshot giá lúc chốt vì CRM không có catalog, POS mới là nguồn giá.
 model PosBillingDraft {
   id              String    @id @default(uuid())
   orgId           String    @map("org_id")
@@ -1466,9 +1522,7 @@ model CrmTagGroup {
   @@map("crm_tag_groups")
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
 // TAG TAXONOMY v2 — M57 /plan-eng-review Big-Bang Refactor (2026-05-31)
-// ═════════════════════════════════════════════════════════════════════════════
 // Gom 12 layer tag rải rác thành 2 nhóm: Friend Tag (per-pair) + CRM Tag (cấp KH).
 // 4 bảng mới: Tag (definition) + TagGroup (formal grouping) + FriendTag (junction
 // Friend × Tag) + ContactTag (junction Contact × Tag). Chạy song song legacy 5
@@ -2280,9 +2334,7 @@ model ContactAccess {
   @@map("contact_access")
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // PHASE 6 — Lead Scoring Engine (Config + Rules + Templates)
-// ═══════════════════════════════════════════════════════════════════════════
 // ScoringConfig: org-level weights + global settings cho Lead Scoring Engine.
 // 1 row / orgId. Default seed khi org tạo lần đầu (xem seed.ts).
 // Edit qua Settings UI (admin only). Phase 6 PR6.
@@ -2463,19 +2515,9 @@ model StuckThreshold {
   @@map("stuck_thresholds")
 }
 
-// NbaTemplate: "Next Best Action" message templates.
-// Render trong Stuck Detection Dashboard + Score Breakdown Modal.
-// Sale 1-click "Gửi mẫu" → mở chat compose với template pre-filled (placeholders
-// thay bằng KH name, dự án, ưu đãi tháng này).
-//
-// Default 7 templates (match Stuck Detection design):
-//   - stuck_stage_new_greeting
-//   - stuck_stage_approach_tour
-//   - stuck_stage_meeting_videocall
-//   - stuck_stage_hot_promo
-//   - stuck_stage_potential_call
-//   - cold_reengage_30d
-//   - hot_close_push
+// NbaTemplate: mẫu tin "Next Best Action" hiện trong Stuck Detection Dashboard và Score
+// Breakdown Modal. Sale bấm "Gửi mẫu" là mở chat với placeholder đã thay sẵn.
+// Seed 7 mẫu mặc định khớp thiết kế Stuck Detection.
 model NbaTemplate {
   id              String @id @default(uuid())
   orgId           String @map("org_id")
@@ -2505,9 +2547,7 @@ model NbaTemplate {
   @@map("nba_templates")
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // PHASE 6+ — Inbox Triage Filters (AccountFolder + SavedFilterPreset)
-// ═══════════════════════════════════════════════════════════════════════════
 
 // AccountFolder — gom 2-3 ZaloAccount thành 1 "thư mục" tùy chỉnh per-user.
 // UI Smax-style flat list (không cây): folder hiện composite avatar + tên + count.
@@ -2585,7 +2625,6 @@ model SavedFilterPreset {
   @@map("saved_filter_presets")
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
 // PHASE 7 — Automation Framework
 //
 // Architecture (anh đã chốt 2026-05-20):
@@ -2595,7 +2634,6 @@ model SavedFilterPreset {
 //     KHÔNG ảnh hưởng task đang chạy (có nút Re-sync để force update khi cần)
 //   ─ Reuse: FriendshipAttempt cho request_friend action outcome log
 //   ─ Channel focus phase này: 'zalo_user' (per-nick personal account)
-// ═══════════════════════════════════════════════════════════════════════════
 
 // Folder tổ chức Block — pattern smax.ai (folder theo sale: PHÚ, THÀNH, NGỌC...).
 // `ownerNickId` optional: nếu bind 1 nick → block trong folder mặc định runtime
@@ -2972,31 +3010,16 @@ model AutomationCampaign {
   @@map("automation_campaigns")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // AutomationTask model REMOVED — Luồng Mục Tiêu M0 (2026-06-01)
 // Lý do: BullMQ + Redis làm runtime layer thay thế DB polling.
 // Code đụng prisma.automationTask đã stub trong M0, rewrite trong M2-M4 với queue.
 // Pattern jobId: ${triggerId}-${contactId}-${stepIdx} (DASH, BullMQ v5 cấm `:`).
 // Migration: 20260601182155_marketing_bullmq_rebuild
-// ════════════════════════════════════════════════════════════════════════
 
-// ════════════════════════════════════════════════════════════════════════
-// AutomationEventLog — Luồng Mục Tiêu M3 (2026-06-01)
-// ════════════════════════════════════════════════════════════════════════
-// Append-only event log:
-//   1. Outbox sweeper recovery (v4 Fix #1): check sequence_step_sent ↔
-//      sequence_step_enqueued chain consistency
-//   2. Stats Dashboard M10: count event by type per trigger
-//   3. M5 pause/resume: latest event per (trigger, contact)
-//
-// Event types:
-//   sequence_step_enqueued | sequence_step_sent | sequence_step_failed
-//   friend_request_sent | friend_accepted | friend_rejected | friend_blocked
-//   customer_reply | customer_block | customer_reaction_negative
-//   manual_pause | manual_stop | manual_resume | manual_enroll
-//   no_zalo | send_error | nick_disconnected
-//
-// Migration: 20260601193019_automation_event_log
+// AutomationEventLog: log append-only, dùng để sweeper đối chiếu chuỗi enqueued/sent, đếm
+// thống kê theo trigger, và tra sự kiện mới nhất khi pause/resume.
+// Loại sự kiện gồm nhóm sequence_step_*, nhóm friend_*, phản ứng của khách
+// (customer_reply/block/reaction_negative), thao tác tay manual_*, và các lỗi gửi.
 model AutomationEventLog {
   id            String   @id @default(uuid())
   orgId         String   @map("org_id")
@@ -3037,25 +3060,12 @@ model AutomationEventLog {
   @@map("automation_event_log")
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Phase 8 — ContactEngagementDaily
-// ════════════════════════════════════════════════════════════════════════
-// 1 row per (Contact × date). Aggregate per-day engagement signals cho
-// heatmap UI 4-week timeline + pattern classification (hot/champion/etc).
-//
-// Write path:
-//   - Real-time: message-handler hook (incrementDailyAggregate) on every
-//     inbound/outbound message + reaction event. Upsert today's row.
-//   - Daily 02:30 VN cron: recompute Contact.engagementPattern/Trend dựa
-//     trên 28-day window, cleanup rows >12 tuần (rolling).
-//
-// Read path:
-//   - GET /api/v1/contacts/:id/engagement-timeline → return 28 days
-//   - Filter: conversation list lọc theo Contact.engagementPattern
-//
-// Daily intensity formula (capped 0-100):
-//   30 × reaction + 30 × voiceMsg + 20 × customerInitiated +
-//   15 × mediaShare + 5 × inbound + 5 × outbound (with seen)
+// ContactEngagementDaily: một dòng cho mỗi (Contact × ngày), phục vụ heatmap 4 tuần và phân
+// loại pattern.
+// Ghi real-time qua hook ở message-handler; cron 02:30 tính lại engagementPattern theo cửa sổ
+// 28 ngày rồi dọn dòng cũ hơn 12 tuần.
+// Cường độ ngày (cap 100) = 30×reaction + 30×voice + 20×customerInitiated + 15×media
+// + 5×inbound + 5×outbound.
 model ContactEngagementDaily {
   id        String   @id @default(uuid())
   orgId     String   @map("org_id")
@@ -3087,20 +3097,9 @@ model ContactEngagementDaily {
   @@map("contact_engagement_daily")
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// Tệp khách hàng (Customer Lists) — Phase 7 audience layer
-// ════════════════════════════════════════════════════════════════════════
-// Sale paste/upload danh sách SĐT → CustomerList row + N CustomerListEntry
-// rows. Enrichment async qua background worker + Phase 7 event bus.
-//
-// Reverse-update từ 3 nguồn (qua Phase 7 automationEventBus + phone_uid_resolved
-// event mới):
-//   1. campaign action handler request-friend → findUserByPhone resolved
-//   2. nick friend-sync alias-sync → Friend.phoneNormalized match contact
-//   3. Contact create với phone → check Friend table có nick nào friend
-//
-// Sequence/Broadcast/Campaign future feature reference customerListId làm
-// audience source.
+// Tệp khách hàng: sale dán hoặc tải lên danh sách SĐT, enrichment chạy nền.
+// Ba nguồn cập nhật ngược khi phân giải được uid: campaign request-friend, friend-sync
+// alias-sync, và tạo Contact có SĐT khớp Friend.
 model CustomerList {
   id          String  @id @default(uuid())
   orgId       String  @map("org_id")
@@ -3178,18 +3177,10 @@ model CustomerListEntry {
   // Tên field cố ý KHÔNG là `notes` để tránh nhầm với Contact.notes (CRM internal notes).
   personalNote String? @map("personal_note")
 
-  // 2026-05-20: 2-axis status refactor.
-  // Lifecycle (5 state) đọc từ `status` + `hasZalo`:
-  //   Mới — entry vừa insert (status=pending/validated, chưa qua worker)
-  //   Đang chờ Quét — đã validate hoặc Friend check no-match (status=validated|enriched + hasZalo=null)
-  //   Có Zalo — hasZalo=true
-  //   Không có Zalo — hasZalo=false (CHỈ Campaign SDK 404 confirm)
-  //   Lỗi — status=invalid (parse fail)
-  //
-  // systemMessages = append-only stack các sự kiện đặc thù (trùng list X, đã CRM,
-  // sale loại, số sai format cụ thể, ...). Newest top, hover xem full.
-  // Race-safe append qua raw SQL: jsonb_array_append(system_messages, $event::jsonb).
-  // KHÔNG dùng để filter chính (dùng dup_*_id index riêng) — chỉ for display.
+  // Vòng đời 5 trạng thái đọc từ status cộng hasZalo, trong đó hasZalo=false CHỈ đặt khi
+  // Campaign SDK trả 404 xác nhận.
+  // systemMessages là stack append-only để hiển thị, KHÔNG dùng để lọc (lọc bằng index
+  // dup_*_id riêng). Append race-safe bằng jsonb_array_append trong raw SQL.
   systemMessages Json @default("[]") @map("system_messages")
 
   // Normalized phone variants
@@ -3315,29 +3306,10 @@ model TriggerQueueEntry {
   @@map("trigger_queue_entries")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // CARESESSION (Phiên chăm sóc) — 2026-06-07
 // Tách lớp LẮNG NGHE sự kiện khách + NHẮC sale khỏi trigger/sequence engine.
 // Spec: ~/.gstack/projects/locphamnguyen-ZaloCRM/EVO-THANH-private-hs-design-engagement-session-20260607-023703.md
 //
-//   ┌─ TẠO ──────────────────────────────────────────────────────────────┐
-//   │ Khách vào luồng (trigger auto HOẶC gắn tay) → INSERT CareSession    │
-//   │ (Postgres = CHÂN LÝ, D2) → enqueue BullMQ sequence SAU → reconcile  │
-//   └────────────────────────────────────────────────────────────────────┘
-//   ┌─ NGHE (listener) ──────────────────────────────────────────────────┐
-//   │ Tin/reaction/friend-event của KH → query phiên ĐANG MỞ              │
-//   │ (orgId,contactId,nickId) JOIN trigger.state (D10).                  │
-//   │ allowlist NGHE = [active, paused] (D12: paused VẪN nghe!).          │
-//   │ nguồn ∈ [completed,cancelling,cancelled] → lazy-close + bỏ qua.     │
-//   │ → reset interestWindowUntil + pause luồng + bắn notify.             │
-//   └────────────────────────────────────────────────────────────────────┘
-//   ┌─ ĐÓNG (BẤT KỲ cái nào tới trước) ──────────────────────────────────┐
-//   │ • nguồn completed/cancelled (cascade hoặc lazy-close)               │
-//   │ • đạt status/tag trong closeConditions (event-driven, đóng ngay)    │
-//   │ • khách chặn                                                        │
-//   │ • janitor: im lặng quá interestWindowUntil (set-based UPDATE, D5)   │
-//   └────────────────────────────────────────────────────────────────────┘
-// ════════════════════════════════════════════════════════════════════════
 
 model CareSession {
   id    String @id @default(uuid())
@@ -3430,12 +3402,10 @@ model CareSessionEvent {
   @@map("care_session_events")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // RBAC PHASE PHÂN QUYỀN — 2026-05-21
 // Department tree (org structure) + PermissionGroup tree (what actions)
 // Reference: GetflyCRM model. Decisions locked ở
 // ~/.gstack/projects/zalocrm/thanh-rbac-m2-design-20260521.md
-// ════════════════════════════════════════════════════════════════════════
 
 model Department {
   id           String    @id @default(uuid())
@@ -3508,11 +3478,9 @@ model PermissionGroup {
   @@map("permission_groups")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // PHASE RIÊNG TƯ — 2026-05-22
 // PIN-gated visual privacy cho main nicks của user.
 // Reference: ~/.gstack/projects/zalocrm/thanh-private-mode-design-20260521.md
-// ════════════════════════════════════════════════════════════════════════
 
 model UserPrivacySession {
   id             String    @id @default(uuid())
@@ -3564,11 +3532,9 @@ model PrivacyOtpToken {
   @@map("privacy_otp_tokens")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // Phase Lead Pool 2026-05-24 — Nhận Lead feature
 // Sale rảnh → 1 click nhận lead bị bỏ rơi (forgotten Contact + CustomerList).
 // Force note để xin lead tiếp. Spec đầy đủ: docs/DESIGN-LEAD-POOL.md
-// ════════════════════════════════════════════════════════════════════════
 
 model LeadRequest {
   id                 String    @id @default(uuid())
@@ -3700,12 +3666,10 @@ model LeadPoolDistribution {
   @@map("lead_pool_distributions")
 }
 
-// =============================================================================
 // Phase Multi-Source Lead Ads 2026-05-27
 // Adapter Pattern — ingest leads từ FB / TikTok / Google / Zalo Ads vào
 // CustomerList theo #KEY trong campaign name.
 // Design doc: ~/.gstack/projects/zalocrm/EVO-THANH-private-hs-design-fb-leadads-routing-20260524-213635.md
-// =============================================================================
 
 // Page Facebook đã connect → orgId mapping (multi-tenant isolation).
 // Token AES-256-GCM ciphertext, decrypt only at fetch time. webhookVerifyToken
@@ -3823,23 +3787,11 @@ model NotifyDedupState {
   @@map("notify_dedup_state")
 }
 
-// =============================================================================
-// Phase Friend Invite Queue 2026-05-28 — Outbox cho atomic send + sequence materialize
-// =============================================================================
-//
-// Worker dispatch flow 3-phase:
-//   Phase 1 CLAIM: UPDATE entry status=processing (short DB tx)
-//   Phase 2 HTTP:  Zalo SDK call (NO DB tx, 30s timeout)
-//   Phase 3 RESULT (short DB tx):
-//     - Success → UPDATE entry status=processed + INSERT outbox sendStatus=success
-//     - Fail → UPDATE entry status=queued_for_pickup, append failedNickIds
-//     - Timeout → UPDATE entry status=processed + INSERT outbox sendStatus=tentative
-//
-// Outbox drainer cron 30s: pick outbox WHERE sendStatus=success AND sequenceMaterializedAt IS NULL
-// → call materializeSequenceForContact() → UPDATE sequenceMaterializedAt
-//
-// Crash recovery: nếu worker crash giữa Phase 2 và Phase 3 → entry stuck processing
-// → stuck sweeper after 5 phút release back to pool (documented duplicate-send risk).
+// Outbox cho gửi nguyên tử và materialize sequence.
+// Worker chia ba pha để không giữ DB transaction trong lúc gọi Zalo: claim entry, gọi SDK
+// ngoài transaction, rồi mới ghi kết quả. Timeout ghi outbox là tentative chứ không fail.
+// Crash giữa pha 2 và 3 làm entry kẹt processing, sweeper sau 5 phút thả lại pool; đánh đổi
+// là có rủi ro gửi trùng đã biết trước.
 model FriendRequestOutbox {
   id                      String    @id @default(uuid())
   customerListEntryId     String    @map("customer_list_entry_id")
@@ -3894,9 +3846,7 @@ model FriendRequestOutbox {
 
 // (Wave 3 Event Log model định nghĩa trước đã merge với Luồng Mục Tiêu M3 model ở dòng 2186)
 
-// ════════════════════════════════════════════════════════════════════════
 // Facebook Lead Ads — "Form" ingestion (port từ main 2026-06-09)
-// ════════════════════════════════════════════════════════════════════════
 // Bổ trợ cho luồng "Campaign" (#KEY) đã có. Form: OAuth Page → webhook leadgen
 // → map form→CustomerList → round-robin chia sale. Sống song song, prefix route
 // chung /api/v1/integrations/facebook nhưng sub-path khác (/oauth /pages /mappings).
@@ -4017,9 +3967,7 @@ model LeadNotifyAck {
   @@map("lead_notify_acks")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // Facebook App config per-org (Phase FB 2-tab 2026-06-10)
-// ════════════════════════════════════════════════════════════════════════
 // Điền qua UI (nút ⚙ Cấu hình ở cả 2 tab). Code đọc DB per-org → fallback env.
 // appSecret + tokenEncKey mã hoá AT-REST bằng env TOKEN_ENCRYPTION_KEY (token-encryption.util).
 model FacebookAppConfig {
@@ -4144,7 +4092,6 @@ model ZaloLeadEvent {
   @@map("zalo_lead_events")
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Phase Media Library 2026-06-11 (Anh chốt qua office-hours + CEO/Eng/Design review)
 // Mô hình 2 tầng (eng review E2/E3):
 //   • MediaBlob  = OBJECT THÔ trên MinIO, dedup theo sha256 BYTES THẬT LƯU.
@@ -4154,7 +4101,6 @@ model ZaloLeadEvent {
 // INVARIANT: object immutable, "xóa" = archive (archivedAt), không 404 lịch sử chat.
 // (MediaUploadRef cache forward-ref ĐÃ BỎ 2026-06-12: zca-js không forward được media
 //  → luôn gửi lẻ Đường B, ref không bao giờ dùng. Xem reference_zalo_forward_media_impossible.)
-// ════════════════════════════════════════════════════════════════════════════
 
 // MediaBlob — object thô trên MinIO. Dedup theo contentHash (sha256 bytes đã lưu).
 // 1 asset → nhiều blob variant. Gửi N lần cùng 1 variant = 1 object duy nhất.
@@ -4281,19 +4227,25 @@ model MediaAlbum {
   // Kho Lưu Trữ 2026-07-22 — tên thư mục THẬT trên đĩa, đã bỏ dấu ("việt nam" → "viet_nam").
   // Lưu lại thay vì slug lại từ `name` mỗi lần: đổi tên thư mục có thể thất bại (slug đích đã
   // bận) → DB phải nhớ thư mục đĩa ĐANG dùng là cái nào. null = chưa mirror (driver R2 / lỗi).
+  // Nay là đường dẫn tương đối nhiều cấp ("viet_nam/bao_gia"); hàng cũ một cấp vẫn hợp lệ.
   diskSlug    String?  @map("disk_slug")
+  // null là thư mục gốc. Xoá cha cascade cả cây con, route tự dọn liên kết đĩa trước khi xoá.
+  parentId    String?  @map("parent_id")
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
   org       Organization     @relation(fields: [orgId], references: [id], onDelete: Cascade)
   owner     User?            @relation("MediaAlbumOwner", fields: [ownerUserId], references: [id], onDelete: SetNull)
   createdBy User             @relation("MediaAlbumCreatedBy", fields: [createdById], references: [id])
+  parent    MediaAlbum?      @relation("MediaAlbumTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children  MediaAlbum[]     @relation("MediaAlbumTree")
   items     MediaAlbumItem[]
   assets    MediaAsset[] // assets dùng album này làm folder
 
   @@index([orgId, visibility])
   @@index([orgId, ownerUserId])
   @@index([orgId, kind])
+  @@index([orgId, parentId])
   @@map("media_albums")
 }
 
@@ -4337,13 +4289,11 @@ model MediaUsageEvent {
   @@map("media_usage_events")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // Phase Kho Lưu Trữ (Storage) 2026-07-22 — anh chốt:
 //   • MỌI người đăng nhập đều tải tệp lên được (không cần quyền media.create).
 //   • Tệp tải lên MẶC ĐỊNH chỉ người tải lên thấy. Người khác — KỂ CẢ admin —
 //     phải được CHIA SẺ LIÊN KẾT mới xem được. media.view_all KHÔNG bypass.
 //   • Chủ tài khoản (User.role='owner') xem được tất cả, không cần chia sẻ.
-// ════════════════════════════════════════════════════════════════════════
 
 // MediaShare — 1 lần chia sẻ 1 tệp riêng tư cho người khác trong org.
 // 2 kiểu dùng chung 1 bảng:
@@ -4378,7 +4328,6 @@ model MediaShare {
   @@map("media_shares")
 }
 
-// ════════════════════════════════════════════════════════════════════════
 // Phase Lưu Hội Thoại 2026-07-22 — anh chốt:
 //   "Lưu tin nhắn và ảnh vào một cơ sở dữ liệu để dùng về sau."
 //   CHỈ Chủ tài khoản (User.role='owner') xem được. Nhân viên VÀ admin đều KHÔNG.
@@ -4388,7 +4337,6 @@ model MediaShare {
 //   • summaryText          — bản tóm tắt do AI sinh (tái dùng generateAiOutput type='summary')
 //   • ChatArchiveMessage[] — bản chép TỪNG DÒNG, kèm liên kết ảnh/tệp
 // mode ghi lại lần lưu này sinh ra cái gì để UI biết mà hiện.
-// ════════════════════════════════════════════════════════════════════════
 
 model ChatArchive {
   id             String   @id @default(uuid())
@@ -4462,6 +4410,10 @@ model PosCustomer {
   assignedSaleName String?  @map("assigned_sale_name")
   status           String?
   tags             Json     @default("[]") // mảng string tag của POS
+  // Hồ sơ tổ chức (verify POS thật: type=1 → 100% có organization + taxCode)
+  organization     String?  // tên công ty từ POS `organization`
+  taxCode          String?  @map("tax_code")
+  isOrganization   Boolean? @map("is_organization") // POS `type`: 1 tổ chức, 0 cá nhân
   orgId            String   @map("org_id")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
@@ -4473,6 +4425,26 @@ model PosCustomer {
   @@index([phone])
   @@index([createdAt])
   @@map("pos_customers")
+}
+
+/**
+ * Map mã sale POS ("phuongnt" trong groups) → user CRM.
+ * Người dùng tự map (quyết định 2026-08-24) — hệ thống KHÔNG suy diễn từ tên/email.
+ * Chưa map thì Customer 360 hiển thị nguyên mã POS.
+ */
+model PosSaleMapping {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  posSaleCode String   @map("pos_sale_code")
+  userId      String   @map("user_id")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  user User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, posSaleCode])
+  @@map("pos_sale_mappings")
 }
 
 // Read Model cho Sản phẩm từ POS
@@ -4529,6 +4501,10 @@ model SyncJob {
   retryCount  Int       @default(0) @map("retry_count")
   startTime   DateTime  @default(now()) @map("start_time")
   endTime     DateTime? @map("end_time")
+  // Mốc thời gian do MÁY CHỦ POS trả về (`timestamp` trong response Public API).
+  // Dùng làm `lastModifiedFrom` cho lần đồng bộ tăng dần kế tiếp — PUBLIC-API.md
+  // mục 4 yêu cầu dùng đồng hồ POS, không dùng giờ máy CRM (lệch giờ = sót bản ghi).
+  posTimestamp DateTime? @map("pos_timestamp")
 
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -4541,9 +4517,7 @@ model SyncJob {
   @@map("sync_jobs")
 }
 
-// ════════════════════════════════════════════════════════════════════════════
 // Extended POS Models for Customer 360, Debt Tracking, Branch Stock & Invoices
-// ════════════════════════════════════════════════════════════════════════════
 
 model PosOrder {
   id              String         @id @default(uuid())
@@ -4696,6 +4670,7 @@ model PosWebhookLog {
   id          String    @id @default(uuid())
   orgId       String    @map("org_id")
   eventType   String    @map("event_type")
+  payloadHash String    @map("payload_hash")
   payload     Json
   status      String    @default("PENDING")
   attempts    Int       @default(0)
@@ -4706,6 +4681,7 @@ model PosWebhookLog {
 
   org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
 
+  @@unique([orgId, payloadHash])
   @@index([orgId, status])
   @@index([status, attempts, createdAt])
   @@index([orgId, eventType])
@@ -4735,3 +4711,27 @@ model WorkspaceSession {
   @@index([orgId, userId])
   @@map("workspace_sessions")
 }
+
+// Bảng độc lập lưu sản phẩm khách quan tâm trích xuất từ chat
+model CustomerProductInterest {
+  id              String    @id @default(uuid())
+  orgId           String?   @map("org_id")
+  contactId       String    @map("contact_id")          // ID khách hàng được quét
+  customerName    String?   @map("customer_name")       // Tên khách hàng tại thời điểm quét
+  scannedByUserId String?   @map("scanned_by_user_id")  // ID nhân viên Sale đã bấm quét
+  scannedByName   String?   @map("scanned_by_name")     // Tên nhân viên Sale đã bấm quét
+  productName     String    @map("product_name")        // Tên sản phẩm AI bóc tách
+  intent          String?   @map("intent")              // Ý định: Hỏi giá, xin mẫu, tư vấn, tồn kho...
+  notes           String?   @db.Text                    // Tóm tắt ngữ cảnh từ câu chat
+  status          String    @default("inquiring")       // inquiring | quoted | converted | deleted
+  isDeleted       Boolean   @default(false) @map("is_deleted")
+  salesDeleteNote String?   @map("sales_delete_note") @db.Text // Note từ Sales khi xóa sản phẩm
+  scannedAt       DateTime  @default(now()) @map("scanned_at") // Thời gian quét
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([contactId, isDeleted])
+  @@index([scannedAt])
+  @@map("customer_product_interests")
+}
+

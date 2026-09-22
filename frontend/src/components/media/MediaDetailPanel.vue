@@ -3,11 +3,16 @@
     <!-- ✕ nổi góc ảnh — bỏ thanh tiêu đề "Chi tiết" để ảnh lên TRÊN CÙNG (anh chốt 2026-06-16). -->
     <button class="p-close" title="Đóng" @click="$emit('close')">✕</button>
     <div class="p-body">
-      <!-- Preview thích ứng theo loại: ảnh xem ảnh · video PLAY được · tệp icon + tên rõ. -->
-      <div class="preview" :class="{ 'is-file': asset.kind === 'file' }">
+      <!-- Preview thích ứng theo loại: ảnh xem ảnh · video PLAY được · audio phát được · tệp icon + tên rõ. -->
+      <div class="preview" :class="{ 'is-file': asset.kind === 'file', 'is-audio': asset.kind === 'audio' }">
         <img v-if="asset.kind === 'image' && (wmUrl || asset.thumbnailUrl || asset.url)" :src="wmUrl || asset.thumbnailUrl || asset.url || ''" alt="" />
         <video v-else-if="asset.kind === 'video' && asset.url" :src="asset.url" controls preload="metadata"></video>
         <img v-else-if="asset.kind === 'video' && asset.thumbnailUrl" :src="asset.thumbnailUrl" alt="" />
+        <div v-else-if="asset.kind === 'audio'" class="ph ph-audio">
+          <MusicIcon :size="36" :stroke-width="1.5" />
+          <audio v-if="asset.url" :src="asset.url" controls preload="metadata" class="audio-player"></audio>
+          <span class="ph-name">{{ asset.name }}</span>
+        </div>
         <div v-else class="ph">
           <component :is="kindIcon" :size="40" :stroke-width="1.5" />
           <span v-if="asset.kind === 'file'" class="ph-name">{{ asset.name }}</span>
@@ -58,7 +63,7 @@
           <dd>{{ fmtDate(asset.createdAt) }}</dd>
           <dt>Dung lượng</dt>
           <dd>{{ sizeText }}</dd>
-          <template v-if="asset.kind !== 'file'">
+          <template v-if="asset.kind === 'image' || asset.kind === 'video'">
             <dt>Kích thước</dt>
             <dd>{{ dimText }}</dd>
           </template>
@@ -131,7 +136,7 @@ import { updateMedia, archiveMedia, watermarkMedia, removeWatermark, toggleFavor
 import { useToast } from '@/composables/use-toast';
 import MediaSendPicker from '@/components/media/MediaSendPicker.vue';
 import ConfirmShareDialog from '@/components/media/ConfirmShareDialog.vue';
-import { Image as ImageIcon, FileText as FileIcon, Video as VideoIcon, Smartphone as NickIcon, Upload as UploadIcon, Send as SendIcon, Star as StarIcon, Trash2 as Trash2Icon } from 'lucide-vue-next';
+import { Image as ImageIcon, FileText as FileIcon, Video as VideoIcon, Smartphone as NickIcon, Upload as UploadIcon, Send as SendIcon, Star as StarIcon, Trash2 as Trash2Icon, Music as MusicIcon } from 'lucide-vue-next';
 
 const props = defineProps<{ asset: MediaAssetItem; folders: MediaFolder[] }>();
 const emit = defineEmits<{ close: []; updated: [patch: Partial<MediaAssetItem>]; archived: [id: string] }>();
@@ -166,7 +171,7 @@ const wmLoading = ref(false);
 const fromPrivateNick = computed(() => props.asset.sourceFromPrivateNick ?? false);
 
 // ── Khối "Nguồn & thông tin" (2026-06-15) ───────────────────────────────────
-const kindIcon = computed(() => props.asset.kind === 'video' ? VideoIcon : props.asset.kind === 'file' ? FileIcon : ImageIcon);
+const kindIcon = computed(() => props.asset.kind === 'video' ? VideoIcon : props.asset.kind === 'audio' ? MusicIcon : props.asset.kind === 'file' ? FileIcon : ImageIcon);
 const isFromChatNick = computed(() => props.asset.source === 'saved_from_chat' && !!props.asset.sourceNickName);
 const sourceIcon = computed(() => isFromChatNick.value ? NickIcon : UploadIcon);
 const sourceText = computed(() => {
@@ -174,7 +179,7 @@ const sourceText = computed(() => {
   if (props.asset.source === 'saved_from_chat') return 'Lưu từ chat';
   return 'Tải lên thủ công';
 });
-const kindText = computed(() => props.asset.kind === 'video' ? 'Video' : props.asset.kind === 'file' ? 'Tệp' : 'Ảnh');
+const kindText = computed(() => props.asset.kind === 'video' ? 'Video' : props.asset.kind === 'audio' ? 'Âm thanh' : props.asset.kind === 'file' ? 'Tệp' : 'Ảnh');
 // Kích thước px: ảnh mới có width/height; ảnh cũ chưa đo → '—'.
 const dimText = computed(() => {
   const w = props.asset.width; const h = props.asset.height;
@@ -355,6 +360,9 @@ async function doArchive() {
 /* HD 1366 (workspace ~648px): preview gọn 160px để khối Nguồn + tag + nút không bị đẩy khuất. */
 .preview { height:160px; background:var(--strong); border-radius:var(--r-md); display:flex; align-items:center; justify-content:center; margin-bottom:12px; overflow:hidden; }
 .preview.is-file { height:96px; background:var(--canvas); border:1px solid var(--hairline); }
+.preview.is-audio { height:auto; min-height:96px; background:var(--canvas); border:1px solid var(--hairline); }
+.preview .ph-audio { width:100%; gap:10px; padding:12px; }
+.preview .audio-player { width:100%; }
 .preview img, .preview video { width:100%; height:100%; object-fit:contain; }
 .preview video { background:#000; }
 .preview .ph { color:var(--muted); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; padding:8px; }

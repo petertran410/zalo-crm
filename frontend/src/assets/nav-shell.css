@@ -1,0 +1,411 @@
+/* ════════════════════════════════════════════════════════════════════════════
+   nav-shell.css — vỏ điều hướng của DefaultLayout (revamp nav 2026-08-05)
+   ────────────────────────────────────────────────────────────────────────────
+   HAI CHẾ ĐỘ, một nguồn dữ liệu tab duy nhất (`visiblePrimaryTabs`):
+     .nv-mode-bar   (>= 1440px) — thanh ngang 48px, giống bố cục cũ
+     .nv-mode-rail  (<  1440px) — dải tiện ích 44px + rail dọc 78px cạnh nội dung
+
+   ⚠️ ĐỂ Ở FILE TOÀN CỤC, KHÔNG PHẢI <style scoped>, là CÓ CHỦ Ý.
+   Hai menu Báo cáo / Cài đặt nằm trong component con (NavReportsMenu.vue,
+   NavSettingsMenu.vue) vì activator của v-menu phải dựng trong chính component
+   đó. CSS scoped của DefaultLayout không với tới nút bên trong con, nên toàn bộ
+   style nav phải là global. Cùng cách làm với sales-theme.css của SalesLayout.
+
+   ⚠️⚠️ HỆ QUẢ CỦA VIỆC BỎ SCOPED — MỌI SELECTOR PHẢI NEO VÀO VÙNG CHỨA.
+   Trước đây `.icon-btn` / `.user-avatar` / `.nav-tab` an toàn vì scoped chỉ ăn
+   trong DefaultLayout. Khi chuyển sang global thì KHÔNG còn an toàn: `.icon-btn`
+   đang được ListDetailView, AccountsTable, CrmTagManagement, MessageThread dùng,
+   `.user-avatar` được reaction-detail-popup dùng — đều nằm trong .smax-app nên sẽ
+   dính style nav nếu viết selector trần.
+   ⇒ QUY TẮC: mọi rule ở file này BẮT BUỘC bắt đầu bằng `.smax-topnav` hoặc
+   `.nav-rail` (hoặc `.smax-app` cho biến/bố cục). Đừng bao giờ thêm selector trần.
+
+   ⚠️ CHỈ DefaultLayout dùng file này. SalesLayout có vỏ riêng (.sl-app, glass
+   trắng, xanh Zalo, zoom .85) — đừng trộn hai hệ.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── Chiều cao chrome NGANG theo từng chế độ ───────────────────────────────
+   Rail nằm CẠNH nội dung nên không tính vào biến này; ở chế độ rail phần nằm
+   trên nội dung chỉ còn dải tiện ích 44px. Mọi màn đọc biến này để tính
+   `height: calc(100vh - var(--smax-topnav-h))` — xem tokens.css. */
+.smax-app.nv-mode-bar  { --smax-topnav-h: 58px; }
+.smax-app.nv-mode-rail { --smax-topnav-h: 48px; }
+
+/* ── Bảng màu vỏ nav (revamp 2026-08-12) ──────────────────────────────────
+   TRƯỚC: header lấy --app-surface-inverse (#1F2330) còn rail lấy --nav-bg
+   (#1B1B26) → hai mảng tối cạnh nhau lệch tông. Tab đang chọn lại tô đặc tím
+   #635BFF trong khi mọi thứ khác trong app (nút Vuetify, chip, link) là xanh
+   Zalo #0068FF → một thanh nav có 3 hệ màu.
+   NAY: một nền tối duy nhất + một accent duy nhất = accent của app.
+   Biến khai báo tại .smax-app nên KHÔNG rò sang SalesLayout (.sl-app tự ghim
+   --nav-accent riêng — xem sales-theme.css). */
+.smax-app {
+  --nav-bg: #1f2330;
+  --nav-bg-2: #2a2f3f;
+  --nav-line: rgba(255, 255, 255, .08);
+  --nav-accent: var(--app-accent);
+  --shell-ink: #f2f4f8;
+  --shell-ink-2: #a8b0c0;
+  --nav-badge: #e5484d;
+}
+
+/* ════════ THANH NGANG / DẢI TIỆN ÍCH ════════ */
+.smax-app .smax-topnav {
+  background: var(--nav-bg);
+  color: var(--shell-ink);
+  height: var(--smax-topnav-h);
+  display: flex;
+  align-items: center;
+  /* 10px chứ không phải 12px: ở đúng 1440px thanh ngang đo được dư 2px làm avatar
+     tràn ra 1441px. 4px lấy lại từ đây là đủ khít, còn ô tìm kiếm (min-width:0
+     bên dưới) lo phần co giãn ở các cỡ lỡ cỡ. Wordmark thêm 2026-08-12 chỉ bật
+     từ 1600px trở lên nên không đụng vào ngân sách chiều rộng ở 1440px. */
+  padding: 0 10px;
+  gap: 4px;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: inset 0 -1px 0 var(--nav-line),
+              0 1px 3px rgba(16, 24, 40, .18);
+}
+
+/* ── Brand + workspace ───────────────────────────────────────────────────
+   Reference anatomy: compact product logo | workspace avatar + name + chevron |
+   module navigation. This has clearer hierarchy than a logo followed directly
+   by a dense run of unrelated tabs. */
+.smax-topnav .hs-brand {
+  display: flex;
+  align-items: center;
+  flex: none;
+  margin-right: 10px;
+  text-decoration: none;
+}
+.smax-topnav .hs-bbox {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  /* Never leave a white tile alone on a dark header. The white inner plate is
+     intentional only when the image successfully paints. */
+  background: var(--nav-accent);
+  box-shadow: 0 1px 2px rgba(0,0,0,.16);
+  overflow: hidden;
+  flex: none;
+}
+.smax-topnav .hs-bbox:has(img) { background: #fff; }
+.smax-topnav .hs-bbox img { width: 23px; height: auto; display: block; }
+.smax-topnav .hs-logo-fallback {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1;
+}
+.smax-topnav .workspace-identity {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  max-width: 172px;
+  margin-right: 12px;
+  color: var(--shell-ink);
+  flex: 0 1 auto;
+}
+.smax-topnav .workspace-avatar {
+  width: 32px; height: 32px;
+  border-radius: 9px;
+  display: grid; place-items: center;
+  flex: none;
+  background: linear-gradient(135deg, #9d4edd, #5b21b6);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.2);
+}
+.smax-topnav .workspace-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+}
+.smax-topnav .workspace-caret {
+  color: var(--shell-ink-2);
+  flex: none;
+}
+/* Rail retains only product mark; workspace identity has nowhere useful to go. */
+.nv-mode-rail .smax-topnav .hs-bbox { width: 30px; height: 30px; border-radius: 8px; }
+.nv-mode-rail .smax-topnav .hs-bbox img { width: 20px; }
+.nv-mode-rail .smax-topnav .workspace-identity { display: none; }
+/* Rail mode bỏ .nav-tabs (flex:1) nên không còn gì hấp thụ khoảng trống —
+   spacer phải giãn ra để đẩy cụm actions về mép phải như bar mode. */
+.nv-mode-rail .smax-topnav .topnav-spacer { flex: 1 1 auto; }
+
+/* ── Tab ngang ────────────────────────────────────────────────────────────── */
+.smax-topnav .nav-tabs {
+  display: flex; align-items: center; gap: 4px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+.smax-topnav .nav-tab {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 38px; padding: 0 12px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--shell-ink-2);
+  font-size: 13.5px; font-weight: 600;
+  background: transparent; border: 1px solid transparent;
+  white-space: nowrap; text-decoration: none;
+  line-height: 1.2; position: relative;
+  font-family: inherit;
+  flex: 0 0 auto;
+}
+.smax-topnav .nav-tab .ic-svg { color: inherit; transition: color .14s; }
+/* Reset .caret global (hs-crm-theme.css styles it as a 22px button). A nav
+   chevron is only a glyph and must not consume a separate control-sized box. */
+.smax-topnav .nav-tab .caret {
+  width: auto; height: auto;
+  display: inline;
+  background: transparent;
+  border-radius: 0;
+  font-size: 10px; opacity: .65; margin-left: -2px;
+}
+.smax-topnav .nav-tab:hover { background: rgba(255, 255, 255, .07); color: var(--shell-ink); }
+/* Match the reference: active module is a quiet filled control. It reads as
+   the selected workspace section, not as a bright primary action. */
+.smax-topnav .nav-tab.active {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.08);
+  color: var(--shell-ink);
+  font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+}
+.smax-topnav .nav-tab.active .ic-svg { color: var(--shell-ink); }
+
+/* ── Badge "lịch hẹn hôm nay" — chỉ hiện khi > 0 ─────────────────────────── */
+.smax-topnav .nav-badge,
+.nav-rail .nav-badge {
+  display: inline-grid; place-items: center;
+  min-width: 16px; height: 16px;
+  padding: 0 4px; margin-left: 3px;
+  border-radius: 8px;
+  background: var(--nav-badge);
+  color: #fff;
+  font-size: 9.5px; font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.smax-topnav .nav-tab.active .nav-badge { background: rgba(255, 255, 255, .28); }
+
+.smax-topnav .topnav-spacer { flex: 0 0 10px; }
+.smax-topnav .topnav-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  padding-left: 10px;
+  border-left: 1px solid var(--nav-line);
+}
+
+/* ── Ô tìm kiếm ───────────────────────────────────────────────────────────── */
+/* GlobalSearch root no longer has a fixed inline width. This max-width is now
+   the source of truth and can genuinely shrink at the nav breakpoint. */
+.smax-topnav .topnav-search {
+  width: clamp(160px, 13vw, 214px);
+  max-width: 214px;
+  flex: 0 1 214px;
+  min-width: 0;
+  margin-left: 2px;
+}
+.nv-mode-rail .smax-topnav .topnav-search { width: 176px; max-width: 176px; flex-basis: 176px; }
+@media (max-width: 900px) { .smax-topnav .topnav-search { display: none; } }
+
+/* ── Nút biểu tượng bên phải ──────────────────────────────────────────────
+   ⚠️ NEO VÀO .smax-topnav. `.icon-btn` là tên rất chung, đang dùng ở
+   ListDetailView / AccountsTable / CrmTagManagement / MessageThread; `.user-avatar`
+   dùng ở reaction-detail-popup. Viết trần là hỏng cả 5 chỗ đó. */
+/* Right-side actions: identical circular controls, mirroring the reference
+   header. Uniform shape is what makes that cluster read as one group instead of
+   a row of mismatched widgets. */
+.smax-topnav .icon-btn,
+.smax-topnav .notification-bell-trigger,
+.smax-topnav .sync-trigger-btn {
+  width: 36px !important; height: 36px !important;
+  min-width: 36px !important;
+  border-radius: 50% !important;
+  cursor: pointer;
+  display: inline-flex !important; align-items: center; justify-content: center;
+  color: var(--shell-ink) !important;
+  position: relative;
+  font-size: 16px;
+  text-decoration: none;
+  background: rgba(255,255,255,.08) !important;
+  border: none;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex: none;
+  opacity: 1 !important;
+}
+.smax-topnav .icon-btn:hover,
+.smax-topnav .notification-bell-trigger:hover,
+.smax-topnav .sync-trigger-btn:hover {
+  background: rgba(255, 255, 255, .16) !important;
+  color: #fff !important;
+}
+.smax-topnav .icon-btn:focus-visible,
+.smax-topnav .notification-bell-trigger:focus-visible,
+.smax-topnav .sync-trigger-btn:focus-visible {
+  outline: 2px solid var(--nav-accent);
+  outline-offset: 2px;
+}
+.smax-topnav .notification-bell-trigger .v-badge__badge {
+  font-size: 9.5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-weight: 700;
+}
+/* Running sync may expand into a labelled pill; idle stays circular. */
+.smax-topnav .sync-trigger-btn.is-running {
+  width: auto !important;
+  min-width: 0 !important;
+  max-width: 150px;
+  border-radius: var(--app-radius-pill) !important;
+  padding: 0 12px !important;
+  gap: 6px;
+}
+
+.smax-topnav .user-avatar {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: none; padding: 0;
+  border: none; cursor: pointer;
+  margin-left: 2px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.smax-topnav .user-avatar:focus-visible { outline: 2px solid var(--nav-accent); outline-offset: 2px; }
+.smax-topnav .user-avatar .smax-av { box-shadow: 0 0 0 2px rgba(255, 255, 255, .22); }
+
+/* ── Icon rendering (fix 2026-08-12) ──────────────────────────────────────
+   Anh báo "mỗi icon có một ô nền trắng". Nguyên nhân: nav dùng icon FONT (MDI).
+   Mỗi glyph nằm trong hộp em riêng nên trên nền tối lộ ra thành một ô sáng phía
+   sau. Nav nay dùng SVG stroke (lucide-vue-next) — trong suốt theo bản chất.
+   Các rule dưới là lưới an toàn: bất kỳ icon nào lọt vào vỏ nav cũng bị ép về
+   nền trong suốt, màu kế thừa theo trạng thái tab. */
+.smax-topnav svg,
+.nav-rail svg {
+  background: transparent !important;
+  color: inherit;
+  stroke: currentColor;
+  fill: none;
+  flex: none;
+  display: block;
+}
+.smax-topnav .v-icon,
+.nav-rail .v-icon {
+  background: transparent !important;
+  color: inherit !important;
+}
+/* Vuetify bọc activator bằng lớp riêng — chặn mọi surface vẽ dưới icon. */
+.smax-topnav .v-btn__content,
+.smax-topnav .v-btn__overlay,
+.smax-topnav .v-btn__underlay { background: transparent !important; }
+
+/* 1540–1599px is still bar mode, but it needs the compact typography/density
+   used in Smax's long module list. Below 1440px Vue switches to the rail. */
+@media (max-width: 1599px) and (min-width: 1440px) {
+  .nv-mode-bar .smax-topnav .workspace-identity { max-width: 130px; margin-right: 8px; }
+  .nv-mode-bar .smax-topnav .nav-tabs { gap: 1px; }
+  .nv-mode-bar .smax-topnav .nav-tab { height: 34px; gap: 5px; padding: 0 8px; font-size: 12px; }
+  .nv-mode-bar .smax-topnav .nav-tab .ic-svg { width: 16px; height: 16px; }
+  .nv-mode-bar .smax-topnav .topnav-actions { gap: 4px; padding-left: 8px; }
+  .nv-mode-bar .smax-topnav .topnav-search { width: 178px; max-width: 178px; flex-basis: 178px; }
+  .nv-mode-bar .smax-topnav .icon-btn,
+  .nv-mode-bar .smax-topnav .notification-bell-trigger,
+  .nv-mode-bar .smax-topnav .user-avatar { width: 34px !important; height: 34px !important; min-width: 34px !important; }
+}
+.smax-app .smax-body {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* ── Rail dọc ─────────────────────────────────────────────────────────────
+   78px cố định, KHÔNG mở rộng khi hover. Nhãn hiện thường trực dưới icon nên
+   không cần trạng thái expanded + backdrop như SalesLayout — bớt hẳn một lớp
+   tương tác và không có gì che nội dung. */
+.smax-app .nav-rail {
+  width: 78px;
+  flex: none;
+  background: var(--nav-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 8px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-shadow: inset -1px 0 0 var(--nav-line);
+  z-index: 90;
+  /* Menu 10 mục ≈ 560px. Màn cao 768px vẫn đủ, nhưng không dư — cho phép cuộn để
+     khi menu dài thêm thì không bị cụt mục cuối. Ẩn thanh cuộn cho gọn. */
+  scrollbar-width: none;
+}
+.smax-app .nav-rail::-webkit-scrollbar { width: 0; }
+
+.nav-rail .rail-items {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  width: 100%; flex: 1 0 auto;
+}
+.nav-rail .rail-foot {
+  display: flex; flex-direction: column;
+  align-items: center; gap: 2px;
+  width: 100%; flex: none;
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px solid var(--nav-line);
+}
+
+.nav-rail .rail-item {
+  width: 62px;
+  padding: 7px 2px 6px;
+  border-radius: 12px;
+  display: flex; flex-direction: column;
+  align-items: center; gap: 4px;
+  color: var(--shell-ink-2);
+  background: transparent; border: none;
+  cursor: pointer; text-decoration: none;
+  position: relative; flex: none;
+  font-family: inherit;
+}
+.nav-rail .rail-item .ic-svg { color: inherit; }
+.nav-rail .rail-label {
+  font-size: 9.5px; font-weight: 600;
+  line-height: 1.15; text-align: center;
+  max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.nav-rail .rail-item:hover { background: var(--nav-bg-2); color: var(--shell-ink); }
+.nav-rail .rail-item--active {
+  background: color-mix(in srgb, var(--nav-accent) 20%, transparent);
+  color: #8fc1ff;
+  box-shadow: inset 3px 0 0 var(--nav-accent);
+}
+.nav-rail .rail-item--active .ic-svg { color: #8fc1ff; }
+.nav-rail .rail-item .caret { display: none; }
+
+/* Badge trên rail — neo góc icon, viền trùng nền để tách khỏi nhãn phía dưới. */
+.nav-rail .rail-item .nav-badge {
+  position: absolute;
+  top: 3px; right: 9px;
+  margin-left: 0;
+  border: 2px solid var(--nav-bg);
+}
+.nav-rail .rail-item--active .nav-badge {
+  background: var(--nav-badge);
+  color: #fff;
+  border-color: var(--nav-bg);
+}

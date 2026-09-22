@@ -1,6 +1,6 @@
 import { ref } from 'vue';
 
-export type ToastType = 'default' | 'success' | 'warning' | 'error';
+export type ToastType = 'default' | 'success' | 'warning' | 'error' | 'info';
 
 export interface ToastAction {
   label: string;
@@ -76,6 +76,7 @@ export function useToast() {
     success: (msg: string, dur?: number) => push(msg, 'success', dur),
     warning: (msg: string, dur?: number) => push(msg, 'warning', dur),
     error:   (msg: string, dur?: number) => push(msg, 'error', dur),
+    info:    (msg: string, dur?: number) => push(msg, 'info', dur),
     dismiss: (id: number) => { items.value = items.value.filter(t => t.id !== id); },
   };
 }

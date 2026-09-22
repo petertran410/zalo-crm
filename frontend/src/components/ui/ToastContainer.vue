@@ -75,6 +75,7 @@ async function onAction(t: ToastItem) {
 .toast.success { border-color: #BBF7D0; border-left-color: #22C55E; color: #15803D; }
 .toast.warning { border-color: #FDE68A; border-left-color: #F59E0B; color: #92400E; }
 .toast.error   { border-color: #FECACA; border-left-color: #EF4444; color: #B91C1C; }
+.toast.info    { border-color: #BFDBFE; border-left-color: #3B82F6; color: #1D4ED8; }
 
 .toast-icon { font-size: 16px; flex-shrink: 0; line-height: 1; }
 .toast-msg {

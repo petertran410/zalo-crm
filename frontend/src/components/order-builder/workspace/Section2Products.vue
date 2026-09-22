@@ -573,20 +573,20 @@ const props = defineProps<{
   defaultBranches: POSBranch[];
   branches?: POSBranch[];
   selectedBranchId?: number | null;
-  posCustomerId: number;
+  posCustomerId?: number | null;
   selectedPriceBookId?: string;
   orderDiscountValue?: number;
   orderDiscountType?: 'amount' | 'percent';
   totalBeforeDiscount: number;
   grandTotal: number;
   appliedPromoIds: string[];
-  branches?: POSBranch[];
-  selectedBranchId?: number | null;
-  posCustomerId?: number | null;
 }>();
 
 const emit = defineEmits<{
-  'add-product': [product: POSProduct, opts?: { quantity?: number; discount?: number; note?: string }];
+  'add-product': [product: POSProduct, opts?: {
+    quantity?: number; discount?: number; note?: string;
+    conditionType?: string; discountType?: string; discountValue?: number;
+  }];
   'update-cart-item': [productId: number, opts: { quantity: number; discount: number; note: string; conditionType: string; discountType: string; discountValue: number }];
   'update-quantity': [productId: number, quantity: number];
   'update-product-note': [index: number, note: string];

@@ -6,18 +6,22 @@ import { config } from '../../src/config/index.js';
 // Mock prisma client
 const mockPosWebhookLogCreate = vi.fn();
 const mockPosWebhookLogFindUnique = vi.fn();
+const mockPosWebhookLogFindFirst = vi.fn();
 const mockPosWebhookLogUpdate = vi.fn();
 const mockOrgFindFirst = vi.fn();
+const mockOrgFindUnique = vi.fn();
 
 vi.mock('../../src/shared/database/prisma-client.js', () => ({
   prisma: {
     posWebhookLog: {
       create: (...args: any[]) => mockPosWebhookLogCreate(...args),
       findUnique: (...args: any[]) => mockPosWebhookLogFindUnique(...args),
+      findFirst: (...args: any[]) => mockPosWebhookLogFindFirst(...args),
       update: (...args: any[]) => mockPosWebhookLogUpdate(...args),
     },
     organization: {
       findFirst: (...args: any[]) => mockOrgFindFirst(...args),
+      findUnique: (...args: any[]) => mockOrgFindUnique(...args),
     },
   },
 }));
@@ -51,6 +55,8 @@ describe('POST /api/v1/webhooks/pos — Full HTTP Route Empirical Verification',
     await app.ready();
 
     mockOrgFindFirst.mockResolvedValue({ id: 'org-test-123' });
+    mockOrgFindUnique.mockResolvedValue({ id: 'org-test-123' });
+    mockPosWebhookLogFindFirst.mockResolvedValue(null);
     mockPosWebhookLogCreate.mockImplementation(async ({ data }: any) => ({
       id: 'log-uuid-999',
       ...data,
@@ -84,7 +90,7 @@ describe('POST /api/v1/webhooks/pos — Full HTTP Route Empirical Verification',
     const body = JSON.parse(response.body);
     expect(body.error).toBe('Unauthorized');
     expect(body.code).toBe('invalid_signature');
-    expect(body.message).toBe('Missing x-pos-signature header');
+    expect(body.message).toBe('Missing X-Webhook-Signature header');
     expect(mockPosWebhookLogCreate).not.toHaveBeenCalled();
   });
 
@@ -203,6 +209,7 @@ describe('POST /api/v1/webhooks/pos — Full HTTP Route Empirical Verification',
       data: {
         orgId: 'org-test-123',
         eventType: 'order.created',
+        payloadHash: expect.any(String),
         payload: webhookBody,
         status: 'PENDING',
         attempts: 0,
@@ -240,6 +247,7 @@ describe('POST /api/v1/webhooks/pos — Full HTTP Route Empirical Verification',
       data: {
         orgId: 'org-test-123',
         eventType: 'customer.created',
+        payloadHash: expect.any(String),
         payload: webhookBody,
         status: 'PENDING',
         attempts: 0,

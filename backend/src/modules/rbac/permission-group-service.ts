@@ -9,7 +9,8 @@
  */
 import { randomUUID } from 'node:crypto';
 import { prisma, tenantTransaction } from '../../shared/database/prisma-client.js';
-import { sanitizeGrants, hasGrant, type GrantsJson, type Resource, type Action } from './permission-types.js';
+import { sanitizeGrants, hasGrant, resolveGrant, type GrantsJson, type Resource, type Action } from './permission-types.js';
+import { seedDefaultPermissionGroups } from './seed-default-groups.js';
 
 export interface PermissionGroupNode {
   id: string;
@@ -24,18 +25,30 @@ export interface PermissionGroupNode {
 }
 
 export async function getOrgPermissionGroups(orgId: string): Promise<PermissionGroupNode[]> {
-  const [groups, userCounts] = await Promise.all([
-    prisma.permissionGroup.findMany({
-      where: { orgId, archivedAt: null },
-      orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
-    }),
-    // Count users per group
-    prisma.user.groupBy({
-      by: ['permissionGroupId'],
-      where: { orgId, permissionGroupId: { not: null } },
-      _count: { _all: true },
-    }),
-  ]);
+  let groups = await prisma.permissionGroup.findMany({
+    where: { orgId, archivedAt: null },
+    orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+  });
+
+  // Auto-seed: nếu org thiếu nhóm "Chăm sóc khách hàng" (CSKH), tự động seed bổ sung (idempotent)
+  const hasCsGroup = groups.some((g) => g.isSystem && (g.name === 'Chăm sóc khách hàng' || g.workspaceId === 'customer-care'));
+  if (!hasCsGroup) {
+    try {
+      await seedDefaultPermissionGroups(orgId);
+      groups = await prisma.permissionGroup.findMany({
+        where: { orgId, archivedAt: null },
+        orderBy: [{ displayOrder: 'asc' }, { name: 'asc' }],
+      });
+    } catch {
+      // Giữ groups hiện tại nếu seed lỗi
+    }
+  }
+
+  const userCounts = await prisma.user.groupBy({
+    by: ['permissionGroupId'],
+    where: { orgId, permissionGroupId: { not: null } },
+    _count: { _all: true },
+  });
 
   const countMap = new Map<string, number>();
   for (const c of userCounts) {
@@ -254,6 +267,34 @@ export async function archivePermissionGroup(orgId: string, id: string): Promise
 }
 
 /**
+ * Chống leo thang quyền (2026-08-06).
+ *
+ * Trả về "resource.action" ĐẦU TIÊN mà `actorUserId` định CẤP (true) cho người
+ * khác nhưng CHÍNH MÌNH không có; null nếu hợp lệ. Caller trả 403 kèm tên quyền.
+ *
+ * Vì sao cần: PATCH /rbac/users/:id/permission-group và /overrides chỉ gác bằng
+ * grant `user.edit`. Nhóm "Hành chính - Nhân sự" có user.edit → tự gán mình vào
+ * nhóm Admin là chiếm được toàn tổ chức. Quy tắc: KHÔNG cấp được thứ mình không có.
+ *
+ * Chỉ soi giá trị `true` — set `false` là THU HẸP quyền người khác, không phải
+ * leo thang, nên không chặn.
+ */
+export async function findUnconferrableGrant(
+  actorUserId: string,
+  grants: GrantsJson | null | undefined,
+): Promise<string | null> {
+  if (!grants) return null;
+  for (const [resource, actions] of Object.entries(grants)) {
+    for (const [action, on] of Object.entries(actions ?? {})) {
+      if (on !== true) continue;
+      const allowed = await userHasGrant(actorUserId, resource as Resource, action as Action);
+      if (!allowed) return `${resource}.${action}`;
+    }
+  }
+  return null;
+}
+
+/**
  * Check permission của 1 user trên 1 (resource, action).
  * Đây là hot path RBAC — cache layer ở D8.
  */
@@ -273,21 +314,29 @@ export async function userHasGrant(
   });
   if (!user) return false;
 
-  // Check custom overrides/grants gán trực tiếp (Dây nối mạng lưới)
-  if (user.customGrants) {
-    const custom = user.customGrants as GrantsJson;
-    if (hasGrant(custom, resource, action)) return true;
-  }
+  // ── Thứ tự quyết định (2026-08-06) ─────────────────────────────────────────
+  // 1. owner  → LUÔN cho phép, không deny được. Chủ tổ chức là tầng không uỷ
+  //    quyền được (xem contact delete owner-only), nên cũng không tự khoá mình
+  //    ra ngoài bằng override được.
+  // 2. customGrants = false → TỪ CHỐI (đè quyền nhóm). Đây là cái cho phép admin
+  //    gỡ đúng 1 quyền của đúng 1 người mà không phải clone cả nhóm.
+  // 3. customGrants = true  → cho phép.
+  // 4. Quyền của nhóm (nhóm chưa archive).
+  // 5. legacy admin → cho phép (dual-read window). Đặt SAU deny để override
+  //    siết được cả admin; owner ở bước 1 thì không.
+  // 6. Mặc định từ chối.
+  if (user.role === 'owner') return true;
 
-  // Permission group active
+  const custom = resolveGrant(user.customGrants as GrantsJson, resource, action);
+  if (custom !== undefined) return custom;
+
   if (user.permissionGroup && !user.permissionGroup.archivedAt) {
     const grants = (user.permissionGroup.grants ?? {}) as GrantsJson;
     if (hasGrant(grants, resource, action)) return true;
   }
 
-  // Fallback: legacy role='owner' hoặc 'admin' → bypass mọi quyền.
   // Anh chốt 2026-06-08: admin toàn quyền như owner (khớp canAccess frontend + getProfile.isFullAccess).
-  if (user.role === 'owner' || user.role === 'admin') return true;
+  if (user.role === 'admin') return true;
 
   return false;
 }

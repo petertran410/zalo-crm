@@ -23,21 +23,6 @@ interface ZaloAccount {
   archivedAt?: string | null;
 }
 
-export interface AiSentiment {
-  label: 'positive' | 'neutral' | 'negative';
-  confidence: number;
-  reason: string;
-}
-
-export interface AiConfig {
-  provider: string;
-  model: string;
-  maxDaily: number;
-  enabled: boolean;
-  hasAnthropicKey?: boolean;
-  hasGeminiKey?: boolean;
-}
-
 interface ConversationMessage {
   content: string | null;
   contentType: string;
@@ -203,7 +188,9 @@ export interface Message {
     };
     // Bug B 2026-06-22 — tin gửi THẤT BẠI (Zalo từ chối: chặn tin lạ / 119 / 127...):
     // message-bubble đọc 2 key này để hiện "Gửi thất bại: <lý do>" trong bubble.
-    sendStatus?: 'failed';
+    // 'pending' (2026-07-27) — tin soạn lúc nick mất kết nối Zalo, đang chờ flush
+    // worker gửi lại khi nick kết nối lại (xem chat:message-status handler dưới).
+    sendStatus?: 'failed' | 'pending';
     failReason?: string;
     [key: string]: unknown;
   } | null;
@@ -334,15 +321,6 @@ export function useChat() {
     get: () => workScope.scopeAccountId() ?? null,
     set: (v) => workScope.lockToNick(v),
   });
-  const aiSuggestion = ref('');
-  const aiSuggestionLoading = ref(false);
-  const aiSuggestionError = ref('');
-  const aiSummary = ref('');
-  const aiSummaryLoading = ref(false);
-  const aiSentiment = ref<AiSentiment | null>(null);
-  const aiSentimentLoading = ref(false);
-  const aiUsage = ref({ usedToday: 0, maxDaily: 500, remaining: 500, enabled: true });
-  const aiConfig = ref<AiConfig>({ provider: 'anthropic', model: 'claude-sonnet-4-6', maxDaily: 500, enabled: true });
   let socket: Socket | null = null;
   let convSyncTimer: ReturnType<typeof setTimeout> | null = null;
   // work-scope 2026-06-15 — badge "N tin nick khác": đếm tin OUT-OF-SCOPE per nick.
@@ -381,24 +359,29 @@ export function useChat() {
     || (selectedConvDetail.value?.id === selectedConvId.value ? selectedConvDetail.value : null),
   );
 
-  function clearAiState() {
-    aiSuggestion.value = '';
-    aiSuggestionError.value = '';
-    aiSummary.value = '';
-    aiSentiment.value = null;
-  }
-
   const extraFilters = ref<Record<string, string>>({});
+
+  function buildConversationQueryParams() {
+    const scopeIds = workScope.accountIds.value;
+    const params: Record<string, any> = {
+      limit: 100,
+      search: searchQuery.value,
+      ...extraFilters.value,
+    };
+    if (scopeIds && scopeIds.length > 1) {
+      params.accountIds = scopeIds.join(',');
+    } else if (scopeIds && scopeIds.length === 1) {
+      params.accountId = scopeIds[0];
+    } else if (accountFilter.value) {
+      params.accountId = accountFilter.value;
+    }
+    return params;
+  }
 
   /** Ghi live list vào cache key hiện tại (giữ fetchedAt) — unread/socket không mất khi trust tab switch. */
   function syncLiveConversationsToCache() {
     try {
-      const params = {
-        limit: 100,
-        search: searchQuery.value,
-        accountId: accountFilter.value || undefined,
-        ...extraFilters.value,
-      };
+      const params = buildConversationQueryParams();
       const cacheKey = JSON.stringify(params);
       const prev = conversationsCache.get(cacheKey);
       if (!prev) return;
@@ -410,12 +393,7 @@ export function useChat() {
   }
 
   async function fetchConversations(opts?: { bypassCache?: boolean; trustFreshCache?: boolean }) {
-    const params = {
-      limit: 100,
-      search: searchQuery.value,
-      accountId: accountFilter.value || undefined,
-      ...extraFilters.value,
-    };
+    const params = buildConversationQueryParams();
     const cacheKey = JSON.stringify(params);
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
 
@@ -605,89 +583,8 @@ export function useChat() {
     }
   }
 
-  async function fetchAiConfig() {
-    try {
-      const res = await api.get('/ai/config');
-      aiConfig.value = {
-        provider: res.data.provider,
-        model: res.data.model,
-        maxDaily: res.data.maxDaily,
-        enabled: res.data.enabled,
-        hasAnthropicKey: res.data.hasAnthropicKey,
-        hasGeminiKey: res.data.hasGeminiKey,
-      };
-    } catch (err) {
-      console.error('Failed to fetch AI config:', err);
-    }
-  }
-
-  async function saveAiConfig(payload: AiConfig) {
-    const res = await api.put('/ai/config', payload);
-    aiConfig.value = {
-      provider: res.data.provider,
-      model: res.data.model,
-      maxDaily: res.data.maxDaily,
-      enabled: res.data.enabled,
-      hasAnthropicKey: aiConfig.value.hasAnthropicKey,
-      hasGeminiKey: aiConfig.value.hasGeminiKey,
-    };
-  }
-
-  async function fetchAiUsage() {
-    try {
-      const res = await api.get('/ai/usage');
-      aiUsage.value = res.data;
-    } catch (err) {
-      console.error('Failed to fetch AI usage:', err);
-    }
-  }
-
-  async function generateAiSuggestion() {
-    if (!selectedConvId.value) return;
-    aiSuggestionLoading.value = true;
-    aiSuggestionError.value = '';
-    try {
-      const res = await api.post('/ai/suggest', { conversationId: selectedConvId.value });
-      aiSuggestion.value = res.data.content || '';
-      await fetchAiUsage();
-    } catch (err: any) {
-      aiSuggestionError.value = err.response?.data?.error || 'Không thể tạo gợi ý AI';
-    } finally {
-      aiSuggestionLoading.value = false;
-    }
-  }
-
-  async function generateAiSummary() {
-    if (!selectedConvId.value) return;
-    aiSummaryLoading.value = true;
-    try {
-      const res = await api.post(`/ai/summarize/${selectedConvId.value}`);
-      aiSummary.value = res.data.content || '';
-      await fetchAiUsage();
-    } catch (err) {
-      console.error('Failed to summarize conversation:', err);
-    } finally {
-      aiSummaryLoading.value = false;
-    }
-  }
-
-  async function generateAiSentiment() {
-    if (!selectedConvId.value) return;
-    aiSentimentLoading.value = true;
-    try {
-      const res = await api.post(`/ai/sentiment/${selectedConvId.value}`);
-      aiSentiment.value = res.data;
-      await fetchAiUsage();
-    } catch (err) {
-      console.error('Failed to analyze sentiment:', err);
-    } finally {
-      aiSentimentLoading.value = false;
-    }
-  }
-
   async function selectConversation(convId: string) {
     selectedConvId.value = convId;
-    clearAiState();
     // Nếu conv không có trong list (filter loại ra HOẶC vừa tạo mới qua
     // ensure-conversation từ dialog) → refresh list để MessageThread render được.
     // selectedConv = computed find trong list — list rỗng = blank UI.
@@ -747,9 +644,6 @@ export function useChat() {
     // (gọi POST /conversations/:id/touch-profile, cooldown 5min server-side). KHÔNG
     // duplicate ở đây để tránh spam SDK + 404 lên endpoint /contacts/:id/sync-zalo-profile
     // (legacy, đã bỏ).
-    // AI summary + sentiment KHÔNG auto-fire mỗi lần đổi conv — user bấm nút refresh khi cần.
-    // Trước đây 2 LLM call awaited mỗi switch = 2-10s + tốn quota.
-    void fetchAiUsage();
   }
 
   async function sendMessage(content: string, replyMessageId?: string | null, styles?: Array<{ st: string; start: number; len: number }>, mentions?: Array<{ uid: string; pos: number; len: number }>) {
@@ -1042,6 +936,32 @@ export function useChat() {
       }
     });
 
+    // 2026-07-27 — tin 'pending' (soạn lúc nick mất kết nối) được flush worker gửi
+    // thật khi nick kết nối lại. KHÔNG dùng lại 'chat:message' vì handler đó dedup
+    // theo id (bubble đã render rồi sẽ bị bỏ qua, không patch được) — event riêng,
+    // cùng khuôn với chat:message-edited (tìm theo id, patch field, update preview).
+    socket.on('chat:message-status', (data: { messageId: string; conversationId?: string; zaloMsgId?: string | null; zaloMsgIdNum?: string | null; metadata?: Message['metadata'] }) => {
+      const msg = messages.value.find(m => m.id === data.messageId);
+      if (msg) {
+        if (data.zaloMsgId !== undefined) msg.zaloMsgId = data.zaloMsgId;
+        if (data.zaloMsgIdNum !== undefined) msg.zaloMsgIdNum = data.zaloMsgIdNum;
+        if (data.metadata !== undefined) msg.metadata = data.metadata;
+      }
+      for (let i = 0; i < conversations.value.length; i++) {
+        const conv = conversations.value[i];
+        if (data.conversationId && conv.id !== data.conversationId) continue;
+        const preview = conv.messages?.[0];
+        if (preview && preview.id === data.messageId) {
+          const newPreview = { ...preview, zaloMsgId: data.zaloMsgId ?? preview.zaloMsgId };
+          conversations.value.splice(i, 1, {
+            ...conv,
+            messages: [newPreview, ...(conv.messages || []).slice(1)],
+          } as typeof conv);
+          if (data.conversationId) break;
+        }
+      }
+    });
+
     socket.on('chat:reactions', (data: { messageId?: string; msgId?: string; zaloMsgId?: string; reactions: { userId: string; userName: string; avatar?: string | null; source?: string | null; reaction: string; action: 'add' | 'remove'; totalCount?: number }[] }) => {
       const msg = messages.value.find(m => m.id === data.messageId || m.id === data.msgId || m.zaloMsgId === data.zaloMsgId);
       if (!msg) return;
@@ -1244,28 +1164,12 @@ export function useChat() {
     searchQuery,
     accountFilter,
     extraFilters,
-    aiSuggestion,
-    aiSuggestionLoading,
-    aiSuggestionError,
-    aiSummary,
-    aiSummaryLoading,
-    aiSentiment,
-    aiSentimentLoading,
-    aiUsage,
-    aiConfig,
     fetchConversations,
-    fetchAiConfig,
-    saveAiConfig,
-    fetchAiUsage,
     fetchMessages,
     selectConversation,
     patchContactProfile,
     sendMessage,
     sendMessageTo,
-    generateAiSuggestion,
-    generateAiSummary,
-    generateAiSentiment,
-    clearAiState,
     initSocket,
     destroySocket,
     getSocket: () => socket,

@@ -75,23 +75,32 @@ function onSwitch(targetId: WorkspaceId) {
 
 <style scoped>
 .ws-switch-trigger {
-  display: inline-flex; align-items: center; gap: 5px;
-  padding: 0 10px;
-  height: 32px; border-radius: 7px;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.9);
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 12px;
+  height: 34px; border-radius: 10px;
+  background: #F1F5F9;
+  border: 1px solid #E2E8F0;
+  color: #334155;
   font-size: 12px; font-weight: 600;
   cursor: pointer;
-  transition: background .14s, border-color .14s;
+  transition: all .15s ease;
   font-family: inherit;
+  width: 100%;
+  box-sizing: border-box;
 }
 .ws-switch-trigger:hover {
-  background: rgba(255, 255, 255, 0.14);
-  border-color: rgba(255, 255, 255, 0.22);
+  background: #E2E8F0;
+  color: #0F172A;
+  border-color: #CBD5E1;
 }
-.ws-switch-label { white-space: nowrap; }
-.ws-switch-caret { font-size: 9px; opacity: 0.6; }
+.ws-switch-label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: 1;
+  text-align: left;
+}
+.ws-switch-caret { font-size: 9px; opacity: 0.7; color: #64748B; }
 
 .ws-switch-list :deep(.v-list-item__prepend > .v-icon) {
   margin-inline-end: 12px;

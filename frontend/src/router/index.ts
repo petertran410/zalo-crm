@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/composables/use-toast';
 import { useProgress } from '@/composables/use-progress';
 // Open-core: extension route injection (empty in Community edition via @ee stub).
-import { eeSettingsChildren, eeReportsChildren, eeTopRoutes } from "@ee/routes";
+import { eeSettingsChildren, eeTopRoutes } from "@ee/routes";
 // Edition flag (open-core): EE=true, Community=false. Dùng để chỉ đăng ký menu
 // Marketing CE khi KHÔNG phải EE (tránh đụng /marketing của EE trong eeTopRoutes).
 import { isExtension } from "@ee/edition";
@@ -21,13 +21,6 @@ const routes: RouteRecordRaw[] = [
     name: "Setup",
     component: () => import("@/views/SetupView.vue"),
     meta: { layout: "auth" },
-  },
-  // Phase Onboarding v1 2026-05-24 — force change password lần đầu
-  {
-    path: "/setup-password",
-    name: "SetupPassword",
-    component: () => import("@/views/ForcePasswordChangeView.vue"),
-    meta: { layout: "auth", requiresAuth: true, allowUnchangedPassword: true },
   },
   // Trang CÔNG KHAI (không cần đăng nhập) — sale bấm link trong tin Zalo để
   // đánh dấu Lịch hẹn Hoàn thành / Huỷ. Xác thực bằng token ?t= (2026-06-16).
@@ -58,14 +51,25 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
-    // Multi-channel Phase 2 (2026-07-21) — inbox Facebook tối giản (test kết nối).
+    // Inbox Facebook tối giản, dùng để test kết nối.
+    // 2026-07-31: route này TỪNG bị dính chung object với /sales-chat (thiếu dấu
+    // đóng `},` khi merge) → key trùng, key sau đè key trước nên /fb-inbox biến
+    // thành /sales-chat và FacebookInboxView không mở được. Tách lại làm 2 route.
     path: "/fb-inbox",
     name: "FacebookInbox",
     component: () => import("@/views/FacebookInboxView.vue"),
     meta: { requiresAuth: true },
+  },
+  {
     path: "/sales-chat/:convId?",
     name: "SalesChat",
     component: () => import("@/views/SalesChatView.vue"),
+    meta: { requiresAuth: true, resource: "conversation" },
+  },
+  {
+    path: "/cs-home",
+    name: "CsHome",
+    component: () => import("@/views/CsHomeView.vue"),
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
@@ -75,10 +79,17 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "conversation" },
   },
   {
+    // Màn gộp Bạn bè + Khách hàng (design CRM Atlas, 2026-07-29).
+    // Thay ContactsView + FriendsView cũ (đã xoá).
     path: "/contacts",
     name: "Contacts",
-    component: () => import("@/views/ContactsView.vue"),
+    component: () => import("@/views/PeopleView.vue"),
     meta: { requiresAuth: true, resource: "contact" },
+  },
+  {
+    // Giữ /people làm alias để link cũ trong session không vỡ.
+    path: "/people",
+    redirect: "/contacts",
   },
   {
     path: "/media",
@@ -87,7 +98,7 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "media" },
   },
   {
-    // Legacy redirect — now nested under /settings
+    // Legacy redirect, giờ nằm dưới /settings
     path: "/zalo-accounts",
     redirect: "/settings/channels/zalo",
   },
@@ -109,79 +120,20 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/TasksView.vue"),
     meta: { requiresAuth: true },
   },
-  // ════════ Module Báo cáo — shell + 7 màn (2026-06-17) ════════
-  {
-    path: "/reports",
-    component: () => import("@/views/reports/ReportsShell.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-    redirect: "/reports/tong-quan",
-    children: [
-      {
-        path: "tong-quan",
-        name: "Reports.Overview",
-        component: () => import("@/views/reports/OverviewReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "nick",
-        name: "Reports.Nick",
-        component: () => import("@/views/reports/NickFleetReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "sale",
-        name: "Reports.Sales",
-        component: () => import("@/views/reports/SalesReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "pipeline",
-        name: "Reports.Pipeline",
-        component: () => import("@/views/reports/PipelineReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "engagement",
-        name: "Reports.Engagement",
-        component: () => import("@/views/reports/EngagementReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      {
-        path: "audit",
-        name: "Reports.Audit",
-        component: () => import("@/views/reports/AuditReport.vue"),
-        meta: { resource: "engagement_score" },
-      },
-      ...eeReportsChildren,
-    ],
-  },
-  // Báo cáo cơ bản cũ — giữ deep-link không gãy.
-  {
-    path: "/reports-co-ban",
-    name: "Reports",
-    component: () => import("@/views/ReportsView.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-  },
-  {
-    path: "/analytics",
-    name: "Analytics",
-    component: () => import("@/views/AnalyticsView.vue"),
-    meta: { requiresAuth: true, resource: "engagement_score" },
-  },
   // ════════ NEW Settings — 6-group sidebar layout ════════
   {
     path: "/settings",
     component: () => import("@/views/settings/SettingsLayout.vue"),
     meta: { requiresAuth: true },
     children: [
-      // Default: root /settings → role-based default route (handled in SettingsLayout onMounted)
+      // Trang tổng quan Settings — giữ /settings là điểm vào thay vì chuyển thẳng đến hồ sơ.
       {
         path: "",
         name: "Settings",
-        component: () => import("@/views/settings/PersonalAccountPage.vue"),
+        component: () => import("@/views/settings/SettingsHome.vue"),
       },
 
-      // 👤 Personal — Module Cá nhân gom 2026-06-13: 1 trang "Tài khoản của tôi".
+      // Personal: gom thành một trang "Tài khoản của tôi".
       {
         path: "personal/profile",
         name: "Settings.Profile",
@@ -239,7 +191,7 @@ const routes: RouteRecordRaw[] = [
         meta: { resource: "audit_log" },
       },
 
-      // 👥 Team — Variant C menu reorg 2026-05-22: legacy team/* redirect → rbac/*
+      // Team: legacy team/* redirect sang rbac/*
       // Em giữ 3 route legacy nhưng redirect sang RBAC pages mới để không break deep link.
       { path: "team/users", redirect: "/settings/rbac/users" },
       { path: "team/teams", redirect: "/settings/rbac/departments" },
@@ -269,15 +221,47 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/rbac/NetworkPermissionView.vue"),
         meta: { resource: "permission_group" },
       },
+      // So sánh grants của mọi nhóm cạnh nhau (read-only). Màn Phân quyền chỉ
+      // xem được 1 nhóm mỗi lần nên không đối chiếu được giữa các nhóm.
+      {
+        path: "rbac/compare",
+        name: "Settings.RbacCompare",
+        component: () => import("@/views/rbac/PermissionComparePage.vue"),
+        meta: { resource: "permission_group" },
+      },
+      // Lưới người và chức năng để admin tick quyền lẻ cho từng nhân viên.
+      // Cần user.edit (chính là quyền mà PATCH /rbac/users/:id/overrides đòi) để
+      // menu và route khớp nhau, tránh vào được màn rồi mọi thao tác đều 403.
+      {
+        path: "rbac/user-permissions",
+        name: "Settings.RbacUserPermissions",
+        component: () => import("@/views/rbac/UserPermissionGridPage.vue"),
+        meta: { resource: "user", action: "edit" },
+      },
       // Phase Riêng Tư: trang /settings/privacy GỠ 2026-06-06 (trùng với tab Privacy
       // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 
-      // ⚙ CRM Config — toàn bộ là cấu hình admin-level → resource 'settings'
+      // CRM Config: toàn bộ là cấu hình admin-level nên dùng resource settings
       {
         path: "crm/statuses",
         name: "Settings.Statuses",
         component: () => import("@/components/settings/StatusManagement.vue"),
         meta: { resource: "settings" },
+      },
+      // Dò-gộp trùng, chuyển từ menu "Công cụ" của ContactsView cũ (2026-07-29).
+      {
+        path: "crm/data-quality",
+        name: "Settings.DataQuality",
+        component: () => import("@/views/settings/DataQualityPage.vue"),
+        meta: { resource: "settings" },
+      },
+      // Xoá vĩnh viễn (owner-only, backend tự chặn). Chuyển vào thùng rác /
+      // khôi phục vẫn ở màn /contacts.
+      {
+        path: "crm/trash",
+        name: "Settings.Trash",
+        component: () => import("@/views/settings/TrashPage.vue"),
+        meta: { resource: "contact" },
       },
       {
         path: "crm/tags",
@@ -285,7 +269,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/components/settings/CrmTagManagement.vue"),
         meta: { resource: "settings" },
       },
-      // Tag Taxonomy v2 — M57 /plan-eng-review 2026-05-31 (Wave 4a dual-write window).
+      // Tag Taxonomy v2 (cửa sổ dual-write Wave 4a).
       // Khi Wave 5 ship, route /crm/tags này sẽ thành alias của tags-v2.
       {
         path: "crm/tags-v2",
@@ -298,12 +282,6 @@ const routes: RouteRecordRaw[] = [
         name: "Settings.ZaloLabels",
         component: () =>
           import("@/components/settings/ZaloLabelsManagement.vue"),
-        meta: { resource: "settings" },
-      },
-      {
-        path: "crm/scoring",
-        name: "Settings.Scoring",
-        component: () => import("@/views/ScoringSettingsView.vue"),
         meta: { resource: "settings" },
       },
       // Lịch hẹn → nhắc hẹn Zalo (2026-06-16) — bật/tắt + delay phút gửi link đánh dấu.
@@ -334,14 +312,6 @@ const routes: RouteRecordRaw[] = [
         props: { feature: "templates" },
         meta: { resource: "settings" },
       },
-      // Lead Pool routes → extension bundle (eeSettingsChildren).
-      // M53 2026-05-30 — Trợ Lý AI Virtual Chat
-      {
-        path: "crm/ai-assistant",
-        name: "Settings.AiAssistant",
-        component: () => import("@/views/settings/AiAssistantPage.vue"),
-        meta: { resource: "settings" },
-      },
       // 🔌 Channels & Integrations
       {
         path: "channels/zalo",
@@ -349,7 +319,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import("@/views/ZaloAccountsView.vue"),
         meta: { resource: "zalo_account" },
       },
-      // 2026-06-18 — Trần SDK dời sang Cài đặt (gate 'settings', KHÔNG 'zalo_account') → sale ko đổi được.
+      // Trần SDK dời sang Cài đặt và gate bằng settings chứ không zalo_account, để sale
       {
         path: "channels/sdk-limits",
         name: "Settings.SdkLimits",
@@ -423,21 +393,17 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "contact" },
   },
   {
-    // Tab "Hồ sơ KH tổng hợp" — SKELETON, render 3 field ẩn cột 4 (email/address/occupation)
-    // + aggregate Friend rows. Backend route stub, full impl ở phase sau.
+    // "Hồ sơ KH tổng hợp" (ContactProfileView) là skeleton chạy data mock, backend
+  // stub không bao giờ implement nên đã xoá. Drawer của PeopleView đã là
+    // surface chi tiết thật, nên redirect ?focus= để link/bookmark cũ vẫn mở đúng KH.
     path: "/contacts/:id/profile",
-    name: "ContactProfile",
-    component: () => import("@/views/ContactProfileView.vue"),
-    meta: { requiresAuth: true, resource: "contact" },
+    redirect: (to) => ({ path: "/contacts", query: { focus: to.params.id } }),
   },
   {
     path: "/leads/stuck",
-    name: "StuckLeads",
-    component: () => import("@/views/StuckLeadsView.vue"),
-    meta: { requiresAuth: true, resource: "contact" },
+    redirect: "/contacts",
   },
   // Legacy redirects — old routes moved under /settings/*
-  { path: "/settings/scoring", redirect: "/settings/crm/scoring" },
   { path: "/api-settings", redirect: "/settings/dev/api" },
   { path: "/integrations", redirect: "/settings/channels/integrations" },
   {
@@ -446,7 +412,7 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/GroupsView.vue"),
     meta: { requiresAuth: true },
   },
-  // Open-core: menu Marketing cho bản COMMUNITY — chỉ Quét nhóm + Tệp khách hàng.
+  // Open-core: menu Marketing bản Community chỉ có Quét nhóm và Tệp khách hàng.
   // Gate !isExtension → KHÔNG đăng ký khi là EE (EE đã có /marketing riêng trong eeTopRoutes).
   ...(!isExtension
     ? [
@@ -457,14 +423,14 @@ const routes: RouteRecordRaw[] = [
           meta: { requiresAuth: true },
           children: [
             { path: "", redirect: "/marketing/group-scan" },
-            // E1 — Quét nhóm & thành viên (group scan).
+            // Quét nhóm và thành viên.
             {
               path: "group-scan",
               name: "CE.GroupScan",
               component: () => import("@/views/GroupScanView.vue"),
               meta: { requiresAuth: true },
             },
-            // Tệp khách hàng (Customer Lists) — open-core, dùng được ở Community.
+            // Tệp khách hàng, open-core nên Community dùng được.
             {
               path: "lists",
               name: "CE.Lists",
@@ -482,10 +448,10 @@ const routes: RouteRecordRaw[] = [
       ]
     : []),
   {
+    // Bạn bè đã gộp vào /contacts (2026-07-29). Redirect + preset bộ lọc
+    // quan hệ = đã kết bạn để link/bookmark cũ vẫn ra đúng nghĩa.
     path: "/friends",
-    name: "Friends",
-    component: () => import("@/views/FriendsView.vue"),
-    meta: { requiresAuth: true, resource: "friend" },
+    redirect: () => ({ path: "/contacts", query: { rel: "friend" } }),
   },
   // Open-core: extension top-level routes (empty in Community edition).
   ...eeTopRoutes,
@@ -534,7 +500,6 @@ const LEGACY_TAB_MAP: Record<string, string> = {
   statuses: "/settings/crm/statuses",
   "crm-tags": "/settings/crm/tags",
   "zalo-labels": "/settings/crm/zalo-labels",
-  scoring: "/settings/crm/scoring",
 };
 
 // Auth guard + legacy tab redirect
@@ -569,33 +534,52 @@ router.beforeEach(async (to, _from, next) => {
       // Không cần gọi workspaceStore.resolveForUser() ở đây.
     }
 
-    // Redirect sales role away from '/' to '/sales-chat'
-    if (to.path === "/") {
-      const workspaceStore = useWorkspaceStore();
-      if (authStore.user) {
-        workspaceStore.resolveForUser(authStore.user);
+    // Redirect sales & cs role away from '/' or other workspace chat views
+    const workspaceStore = useWorkspaceStore();
+    if (authStore.user) {
+      workspaceStore.resolveForUser(authStore.user);
+    }
+    if (workspaceStore.activeWorkspaceId === "customer-care") {
+      if (to.path === "/") {
+        return next("/cs-home");
       }
-      if (workspaceStore.activeWorkspaceId === "sales") {
+      if (to.name === "Chat" || to.path === "/chat" || to.path.startsWith("/chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "CsChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+      if (to.name === "SalesChat" || to.path === "/sales-chat" || to.path.startsWith("/sales-chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "CsChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+    } else if (workspaceStore.activeWorkspaceId === "sales") {
+      if (to.path === "/") {
         return next("/sales-chat");
       }
+      if (to.name === "Chat" || to.path === "/chat" || to.path.startsWith("/chat/")) {
+        const convId = to.params.convId;
+        return next({
+          name: "SalesChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
+      if (to.name === "CsChat" || to.name === "CsHome" || to.path.startsWith("/cs-chat") || to.path === "/cs-home") {
+        const convId = to.params.convId;
+        return next({
+          name: "SalesChat",
+          params: convId ? { convId } : undefined,
+          query: to.query,
+        });
+      }
     }
-    // Phase Onboarding v1 2026-05-24 — force change password lần đầu.
-    // passwordChangedAt = null → block tất cả route khác, ép sale qua /setup-password.
-    // allowUnchangedPassword cho phép /setup-password route bypass (chính nó).
-    if (
-      authStore.user?.passwordChangedAt === null &&
-      !to.meta.allowUnchangedPassword
-    ) {
-      return next("/setup-password");
-    }
-    // Ngược lại: nếu user đã đổi pw mà vẫn vào /setup-password → redirect dashboard
-    if (
-      authStore.user?.passwordChangedAt !== null &&
-      to.meta.allowUnchangedPassword
-    ) {
-      return next("/");
-    }
-
     // RBAC page-level guard 2026-06-08 — chặn theo nhóm quyền (grants).
     // Route khai báo meta.resource → user phải canAccess(resource, action) mới vào.
     // owner/admin = full (canAccess tự bypass). Default action = 'access'.
@@ -635,28 +619,18 @@ const ROUTE_TITLES: Record<string, string> = {
   // Top-level
   Login: "Đăng nhập",
   Setup: "Khởi tạo",
-  SetupPassword: "Đổi mật khẩu",
   Dashboard: "Tổng quan",
   ChannelConnections: "Kênh Kết Nối",
   Chat: "Hội thoại",
   SalesChat: "Hội thoại (Sales)",
+  CsHome: "Trang chủ điều phối",
   CsChat: "Hội thoại (CS)",
   Contacts: "Khách hàng",
-  Media: "Kho phương tiện",
+  Media: "Kho lưu trữ",
   Profile: "Hồ sơ cá nhân",
   Appointments: "Lịch hẹn",
   Tasks: "Công việc",
-  Reports: "Báo cáo",
-  "Reports.Overview": "Báo cáo · Tổng quan điều hành",
-  "Reports.Nick": "Báo cáo · Vận hành Nick Zalo",
-  "Reports.Sales": "Báo cáo · Hiệu suất Sale & Team",
-  "Reports.Pipeline": "Báo cáo · Pipeline & Lead Pool",
-  "Reports.Automation": "Báo cáo · Automation & Chăm sóc",
-  "Reports.Engagement": "Báo cáo · Engagement KH",
-  "Reports.Audit": "Báo cáo · Audit & Sức khỏe hệ thống",
-  Analytics: "Phân tích",
   CustomerActivityLog: "Nhật ký hoạt động KH",
-  ContactProfile: "Hồ sơ khách hàng",
   StuckLeads: "Lead bị kẹt",
   Automation: "Tự động hóa",
   Groups: "Nhóm",
@@ -681,13 +655,11 @@ const ROUTE_TITLES: Record<string, string> = {
   "Settings.Tags": "Thẻ (tag)",
   "Settings.TagsV2": "Thẻ (taxonomy)",
   "Settings.ZaloLabels": "Nhãn Zalo",
-  "Settings.Scoring": "Chấm điểm tương tác",
   "Settings.Appointments": "Lịch hẹn & Nhắc hẹn",
   "Settings.Stuck": "KH bị kẹt",
   "Settings.Folders": "Thư mục",
   "Settings.Templates": "Mẫu tin",
   "Settings.LeadPool": "Lead Pool",
-  "Settings.AiAssistant": "Trợ lý AI",
   "Settings.ZaloAccounts": "Tài khoản Zalo",
   "Settings.FacebookLeadAds": "Facebook Lead Ads",
   "Settings.ZaloAdsLeadForm": "Zalo Ads Lead Form",
@@ -726,4 +698,43 @@ router.afterEach((to) => {
   const key = typeof to.name === "string" ? to.name : "";
   const screen = ROUTE_TITLES[key];
   document.title = screen ? `${screen} · ${BRAND}` : BRAND;
+});
+
+// ── Lazy-route load failure: KHÔNG để app trắng màn ───────────────────────────
+// Route dùng dynamic import; nếu chunk lỗi (component throw khi setup, deploy mới
+// làm hash chunk cũ 404, mạng đứt) thì <router-view> không render gì cả → người
+// dùng chỉ thấy nền trắng, không biết chuyện gì xảy ra.
+// Ở đây bắt lỗi để: (1) báo toast, (2) reload 1 lần cho case chunk cũ đã bị xoá
+// sau deploy, (3) các case còn lại đưa về Dashboard thay vì đứng ở màn trắng.
+const CHUNK_RELOAD_KEY = "router.chunkReloadAt";
+
+function isChunkLoadError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return (
+    /Failed to fetch dynamically imported module/i.test(message) ||
+    /error loading dynamically imported module/i.test(message) ||
+    /Importing a module script failed/i.test(message)
+  );
+}
+
+router.onError((error, to) => {
+  useProgress().finish();
+
+  if (isChunkLoadError(error)) {
+    // Chunk cũ bị xoá sau khi deploy bản mới → reload để lấy manifest mới.
+    // Chỉ tự reload tối đa 1 lần / 10s để không rơi vào vòng lặp reload vô hạn.
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+    if (Date.now() - last > 10_000) {
+      sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+      window.location.assign(to.fullPath);
+      return;
+    }
+  }
+
+  console.error("[router] Không tải được màn hình:", to.fullPath, error);
+  try {
+    useToast().error("Không mở được màn hình này. Vui lòng thử lại.");
+  } catch {
+    /* toast chưa sẵn sàng */
+  }
 });

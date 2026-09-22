@@ -1,5 +1,22 @@
 <template>
-  <MobileChatView v-if="isMobile" />
+  <MobileChatView
+    v-if="isMobile"
+    :conversations="conversations"
+    :selected-conv-id="selectedConvId"
+    :selected-conv="selectedConv"
+    :messages="messages"
+    :loading-convs="loadingConvs"
+    :loading-msgs="loadingMsgs"
+    :sending-msg="sendingMsg"
+    :search-query="searchQuery"
+    :send-message="sendMessage"
+    :send-message-to="sendMessageTo"
+    :fetch-messages="fetchMessages"
+    @select="onSelectConv"
+    @back="onMobileBack"
+    @update:search="searchQuery = $event"
+    @filter-account="onFilterAccount"
+  />
   <div
     v-else
     class="smax-chat-grid"
@@ -93,19 +110,15 @@
       :conversation="selectedConv"
       :messages="messages"
       :loading="loadingMsgs"
-      :sending="sendingMsg"
-      :ai-suggestion="aiSuggestion"
-      :ai-suggestion-loading="aiSuggestionLoading"
-      :ai-suggestion-error="aiSuggestionError"
-      :all-conversations="conversations"
+       :sending="sendingMsg"
+       :all-conversations="conversations"
       :replying-to="replyingTo"
       :editing-message="editingMessage"
       :typing-users="currentTypers"
       :show-contact-panel="showContactPanel"
       class="smax-msg-col"
-      @send="sendMessage"
-      @ask-ai="generateAiSuggestion"
-      @open-media-tab="onOpenMediaTab"
+       @send="sendMessage"
+       @open-media-tab="onOpenMediaTab"
       @toggle-contact-panel="showContactPanel = !showContactPanel"
       @add-reaction="onAddReaction"
       @remove-reaction="onRemoveReaction"
@@ -148,19 +161,16 @@
       ref="contactPanelRef"
       :contact-id="selectedConv.contact.id"
       :contact="selectedConv.contact"
+      :conversation="selectedConv"
+      :avatar-url="selectedConv.threadType === 'group' ? selectedConv.groupAvatarUrl : (selectedConv.contact?.avatarUrl || (selectedConv.friendship as any)?.zaloAvatarUrl)"
+      :is-group="selectedConv.threadType === 'group'"
       :friendship="selectedConv.friendship ?? null"
       :active-zalo-account-id="selectedConv.zaloAccount?.id ?? null"
       :friend-id="selectedConv.friendship?.id ?? null"
       :conversation-id="selectedConv.id ?? null"
       :active-zalo-account-name="selectedConv.zaloAccount?.displayName ?? null"
-      :ai-summary="aiSummary"
-      :ai-summary-loading="aiSummaryLoading"
-      :ai-sentiment="aiSentiment"
-      :ai-sentiment-loading="aiSentimentLoading"
       :current-role="currentRole"
       class="smax-info-col"
-      @refresh-ai-summary="generateAiSummary"
-      @refresh-ai-sentiment="generateAiSentiment"
       @close="showContactPanel = false"
       @saved="fetchConversations()"
       @status-changed="onPanelStatusChanged"
@@ -199,10 +209,7 @@ const router = useRouter();
 const {
   conversations, selectedConvId, selectedConv, messages,
   loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  aiSuggestion, aiSuggestionLoading, aiSuggestionError,
-  aiSummary, aiSummaryLoading, aiSentiment, aiSentimentLoading,
-  fetchConversations, fetchAiConfig, fetchMessages, selectConversation, sendMessage,
-  generateAiSuggestion, generateAiSummary, generateAiSentiment,
+  fetchConversations, fetchMessages, selectConversation, sendMessage, sendMessageTo,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -273,7 +280,8 @@ const selectedAccountIds = computed(() => workScope.accountIds.value);
 const SCOPE_KEY = 'chat.scope.v1';
 function saveScope(folderId: string | null, accountId: string | null) {
   try {
-    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId, accountId }));
+    const fId = currentRole.value === 'sales' ? null : folderId;
+    localStorage.setItem(SCOPE_KEY, JSON.stringify({ folderId: fId, accountId }));
   } catch { /* localStorage đầy/chặn → bỏ qua */ }
 }
 function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
@@ -285,13 +293,20 @@ function loadScopeRaw(): { folderId: string | null; accountId: string | null } {
 // Áp scope đã lưu vào state, CÓ validate quyền nick.
 // work-scope migration 2026-06-15: NICK giờ do workScope quản (seed từ chat.workscope.v2).
 // validateAgainst bỏ nick MẤT QUYỀN (bảo mật — KHÔNG vượt quyền server getZaloScope cấp).
-// restoreScope chỉ còn lo FOLDER (chat.scope.v1) — nick đã tách sang workScope.
+// restoreScope: nếu là sales workspace (ẩn folder sidebar) -> ép folderId = null để không kẹt.
 function restoreScope() {
   const accessibleIds = (zaloAccounts.value || []).map(a => a.id);
   workScope.validateAgainst(accessibleIds); // lọc scope đã lưu chỉ còn nick có quyền
-  // Folder: set vào inbox filter (sidebar tự bỏ nếu folder không tồn tại khi render).
-  const saved = loadScopeRaw();
-  inboxFilters.setFolder(saved.folderId);
+  if (currentRole.value === 'sales') {
+    inboxFilters.setFolder(null);
+    const saved = loadScopeRaw();
+    if (saved.folderId) {
+      saveScope(null, saved.accountId);
+    }
+  } else {
+    const saved = loadScopeRaw();
+    inboxFilters.setFolder(saved.folderId);
+  }
 }
 // work-scope 2026-06-15 — tóm tắt "N tin ở M nick khác" (anh chốt: 1 dòng, không liệt kê).
 // CHỈ đếm nick CÓ QUYỀN (join zaloAccounts đã qua getZaloScope) — bảo mật, không lộ/đếm
@@ -429,6 +444,9 @@ const conversationCounts = computed(() => {
 // Apply inbox filter state → extraFilters → refetch.
 // Sync ngay extraFilters trên mount để first fetch dùng đúng default tab
 // (Cá nhân → threadType=user) thay vì load tất cả conv.
+if (currentRole.value === 'sales') {
+  inboxFilters.setFolder(null);
+}
 extraFilters.value = inboxFilters.buildQueryParams();
 
 let filterApplyTimer: ReturnType<typeof setTimeout> | null = null;
@@ -581,13 +599,15 @@ function onTyping() {
 }
 function onFilterAccount(id: string | null) {
   accountFilter.value = id;
-  saveScope(inboxFilters.state.folderId, id); // nhớ Phạm vi xem qua reload
+  const fId = currentRole.value === 'sales' ? null : inboxFilters.state.folderId;
+  saveScope(fId, id); // nhớ Phạm vi xem qua reload
   fetchConversations();
 }
 function onFolderViewApplied(payload: { folderId: string | null; accountId: string | null }) {
-  inboxFilters.setFolder(payload.folderId);
+  const fId = currentRole.value === 'sales' ? null : payload.folderId;
+  inboxFilters.setFolder(fId);
   accountFilter.value = payload.accountId;
-  saveScope(payload.folderId, payload.accountId); // nhớ Phạm vi xem qua reload
+  saveScope(fId, payload.accountId); // nhớ Phạm vi xem qua reload
   fetchConversations();
 }
 function onFiltersUpdate(params: Record<string, string>) {
@@ -661,8 +681,11 @@ function onSelectConv(convId: string) {
   router.push({ name: 'SalesChat', params: { convId } });
 }
 
-// Watch route → select conv khi convId thay đổi (deep-link, back/forward, mới click)
-// work-scope 2026-06-15 — FIX BUG NHẢY NICK: nếu hội thoại mở thuộc nick NGOÀI scope
+function onMobileBack() {
+  router.push({ name: 'SalesChat' });
+}
+
+// Watch route → select conv when convId changes (deep-link, back/forward, mới click): nếu hội thoại mở thuộc nick NGOÀI scope
 // (vd từ Friend bấm chat khách nick B trong khi đang khóa nick A) → đặt scope = nick B
 // rồi RELOAD trang (Anh chốt: state sạch). Nick TRONG scope → luồng tự thông (không reload).
 // Đặt adopt-scope Ở ĐÂY (watcher), KHÔNG trong selectConversation (selectConversation có
@@ -670,6 +693,10 @@ function onSelectConv(convId: string) {
 watch(
   () => route.params.convId,
   (id) => {
+    if (!id && selectedConvId.value) {
+      selectedConvId.value = null;
+      return;
+    }
     if (typeof id === 'string' && id && id !== selectedConvId.value) {
       void selectConversation(id).then(() => {
         // Sau resolve: selectedConv đã có (từ list HOẶC selectedConvDetail). Đọc nick của nó.
@@ -720,8 +747,10 @@ function onLabelsSynced() {
 }
 
 onMounted(async () => {
-  if (!isMobile.value) {
-    await fetchZaloAccounts();
+  if (currentRole.value === 'sales') {
+    inboxFilters.setFolder(null);
+  }
+  await fetchZaloAccounts();
     // 2026-06-09 — khôi phục Phạm vi xem đã lưu (validate quyền nick) TRƯỚC khi fetch
     // conversations, để lần đầu load đúng scope đã chọn thay vì ALL rồi mới đổi.
     restoreScope();
@@ -729,7 +758,6 @@ onMounted(async () => {
     fetchConversations();
     void fetchPriorityUnread(); // badge đậm tab Ưu tiên — load NGAY lúc mount (không debounce)
     void fetchFollowingPairs(); // theo dõi — Set để cột 2 hiện chuông (anh chốt 2026-06-15)
-    fetchAiConfig();
     initSocket();
     registerSocketListeners(getSocket());
     // Bridge realtime chat state → MiniChatPanel (thay thế inject/provide không hoạt động
@@ -781,15 +809,12 @@ onMounted(async () => {
     // "Ưu tiên". Cần vì conv tab Ưu tiên không nằm trong list tab đang xem nên socket
     // không cập nhật được badge tại chỗ. refreshPriorityUnread đã debounce 400ms.
     window.addEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
 });
 onUnmounted(() => {
-  if (!isMobile.value) {
-    destroySocket();
-    miniChatBridge.unpublish();
-    window.removeEventListener('zalo-labels-synced', onLabelsSynced);
-    window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
-  }
+  destroySocket();
+  miniChatBridge.unpublish();
+  window.removeEventListener('zalo-labels-synced', onLabelsSynced);
+  window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
 });
 
 // ═══ Workspace Session Bridge ═══
@@ -923,12 +948,12 @@ const gridStyle = computed(() => {
   if (hasInfo) {
     return {
       gridTemplateColumns: `${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
-      gap: '5px',
+      gap: '8px',
     };
   }
   return {
     gridTemplateColumns: `${convColWidth.value}px 6px 1fr`,
-    gap: '5px',
+    gap: '8px',
   };
 });
 </script>
@@ -945,7 +970,7 @@ const gridStyle = computed(() => {
   width: 100%;
   overflow: hidden;
   background: transparent;
-  gap: 5px;
+  gap: 8px;
 }
 
 /* Khi info-panel đóng, col 4 collapse → grid auto-adjust */
@@ -981,7 +1006,7 @@ const gridStyle = computed(() => {
   min-width: 0; min-height: 0;
   height: 100%;
   overflow: hidden;
-  border-radius: 24px;
+  border-radius: 18px;
   background: rgba(255, 255, 255, 0.72) !important;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -990,7 +1015,7 @@ const gridStyle = computed(() => {
 }
 
 :deep(.filter-sidebar) {
-  border-radius: 24px;
+  border-radius: 18px;
   border: 1px solid rgba(255, 255, 255, 0.5) !important;
   box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.04);
 }
@@ -1119,19 +1144,29 @@ const gridStyle = computed(() => {
   .is-sales-workspace { grid-template-columns: 300px 3fr 2fr; }
   .is-sales-workspace:not(:has(.smax-info-col)) { grid-template-columns: 300px 1fr; }
 }
-/* < 1200: drop filter rail */
+/* < 1200: drop filter rail. Số track phải bằng số con HIỂN THỊ — con display:none
+   không chiếm track, giữ track của nó lại sẽ đẩy các cột còn lại sang track sai. */
 @media (max-width: 1200px) {
-  .smax-chat-grid { grid-template-columns: 0 320px 1fr 280px; }
+  /* Rail ẩn → 5 con (conv, resizer, msg, resizer, info) → 5 track.
+     !important thắng cả gridStyle inline của role sales. */
+  .smax-chat-grid { grid-template-columns: 320px 6px 1fr 6px 280px !important; }
+  /* Không có cột info → resizer thứ hai không render (v-if cùng điều kiện với panel)
+     → còn 3 con hiển thị (conv, resizer, msg) → 3 track. */
   .smax-chat-grid:not(:has(.smax-info-col)) {
-    grid-template-columns: 0 320px 1fr;
+    grid-template-columns: 320px 6px 1fr !important;
   }
-  .smax-chat-grid > :first-child { display: none; }
+  /* Ẩn rail theo class chứ không :first-child: role sales không render rail (v-if),
+     :first-child sẽ trúng smax-conv-col và nuốt mất danh sách hội thoại. */
+  .smax-chat-grid > .filter-sidebar { display: none !important; }
 }
-/* < 1024: drop info panel too — chỉ còn conv list + thread */
+/* < 1024: drop info panel too — chỉ còn conv list + thread → 2 track.
+   Lặp selector :not(:has(...)) để thắng specificity của rule 3 track ở 1200px (cả hai !important). */
 @media (max-width: 1024px) {
-  .smax-chat-grid { grid-template-columns: 320px 1fr; }
-  .smax-chat-grid > :first-child,
-  .smax-chat-grid > :nth-child(4) { display: none; }
+  .smax-chat-grid,
+  .smax-chat-grid:not(:has(.smax-info-col)) { grid-template-columns: 320px 1fr !important; }
+  .smax-chat-grid > .filter-sidebar,
+  .smax-info-col,
+  .sl-resizer { display: none !important; }
 }
 
 /* ── Resizer handle styling ────────────────────── */

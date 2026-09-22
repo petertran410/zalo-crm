@@ -59,7 +59,7 @@ describe('PosWebhookController — HMAC-SHA256 Verification', () => {
 
     const result = verifyPosWebhookSignature(mockRequest);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('Missing x-pos-signature header');
+    expect(result.reason).toBe('Missing X-Webhook-Signature header');
   });
 
   it('should reject invalid or tampered signatures', () => {

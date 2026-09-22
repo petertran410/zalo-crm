@@ -173,7 +173,7 @@ async function onAnnotated(payload: { blobId: string; url: string }) {
       if (idx >= 0) local.value[idx] = attachmentToLocal(updated);
       emit('changed', local.value.map((x, i) => ({
         ...(props.attachments[i] || {} as WorkAttachment),
-        ...attachmentToLocal(x) as any,
+        ...x as any,
       })) as any);
     }
     await reload();

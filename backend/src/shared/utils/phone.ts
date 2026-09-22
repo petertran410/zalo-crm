@@ -97,3 +97,43 @@ export function phoneVariants(input: string | null | undefined): string[] {
   }
   return [...variants];
 }
+
+/**
+ * Bỏ hậu tố mà team bán hàng gắn vào SĐT để tách nhiều Contact trên cùng một số thật:
+ * `0335862112` = "(Sale 1 - A1)", `0335862112.1` = "(Sale 2 - A2)".
+ *
+ * Ba dạng hậu tố thấy trong DB (đã verify base của chúng là bản A1):
+ *   • dấu chấm   `0335862112.1`  → 0335862112
+ *   • dấu phẩy   `0398881102,1`  → 0398881102   (lỗi gõ thay cho ".1")
+ *   • 11 số mobile `03841187881` → 0384118788   (thừa 1 số cuối; mobile VN đúng = 10 số)
+ *
+ * KHÔNG dùng cho ghi DB — `phoneNormalized` vẫn do normalizePhone() sinh ra. Chỉ dùng
+ * khi cần NHÓM các Contact cùng một khách.
+ */
+// 11 số bắt đầu 0[35789] = mobile 10 số + 1 số thừa (mobile VN không bao giờ 11 số).
+const VN_MOBILE_11_TYPO = /^0[35789]\d{9}$/;
+
+export function stripPhoneSuffix(input: string | null | undefined): string | null {
+  if (!input) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+  // Bỏ hậu tố ".N" hoặc ",N" (giữ nguyên ghi chú trong ngoặc nếu có).
+  const m = raw.match(/^(.*?)[.,]\d+$/);
+  let base = (m ? m[1] : raw).trim();
+  // Số thuần 11 chữ số dạng mobile → rớt 1 số cuối thừa.
+  if (VN_MOBILE_11_TYPO.test(base)) base = base.slice(0, 10);
+  return base || null;
+}
+
+/**
+ * Canonical key để nhóm Contact cùng SĐT thật, bất kể hậu tố (".1" / ",1" / 11-số-thừa)
+ * và format 0/84/+84.
+ *
+ * Cần hàm riêng vì normalizePhone() nuốt hậu tố thành digit:
+ *   0335862112   → 84335862112
+ *   0335862112.1 → 843358621121   ≠ số trên
+ * nên phoneNormalized KHÔNG group được hai Contact của cùng một khách.
+ */
+export function phoneFamilyKey(input: string | null | undefined): string | null {
+  return normalizePhone(stripPhoneSuffix(input));
+}

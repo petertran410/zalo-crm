@@ -26,6 +26,12 @@ import { userHasGrant } from '../rbac/permission-group-service.js';
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
+/**
+ * Ranh giới giữa "Cần rep gấp" và KPI "KH đình trệ". Cùng một con số cho cả hai để
+ * không có hội thoại nào rơi vào khoảng trống hoặc bị đếm hai lần.
+ */
+const URGENT_WINDOW_DAYS = 7;
+
 function todayRangeVN() {
   const now = new Date();
   const vnOffset = 7 * 60 * 60 * 1000;
@@ -240,8 +246,7 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
         prisma.contact.count({ where: { orgId: viewer.orgId, assignedUserId: targetUserId, createdAt: { gte: today, lt: tomorrow } } }),
       ]);
 
-      // "Cần rep gấp" (anh chốt 2026-06-11): tin chủ nick CHƯA ĐỌC (unreadCount>0,
-      // reset 0 khi chủ nick gửi). Sắp MỚI NHẤT trước (tin vừa tới = gấp nhất).
+      // "Cần rep gấp": tin chủ nick CHƯA ĐỌC (unreadCount>0, reset 0 khi chủ nick gửi).
       // 2026-06-11 (anh chốt): GỒM CẢ nick RIÊNG TƯ nhưng nội dung tin TUÂN THỦ privacy
       // (redact server-side qua canSeeConversationContent — không lộ tin nick main cho
       // người ngoài). Trước đây chỉ lấy nick public.
@@ -257,6 +262,11 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
           deletedAt: null,
           unreadCount: { gt: 0 },
           contactId: { not: null },
+          // Chỉ hội thoại còn "sống" (≤7 ngày). Cùng mốc 7 ngày với KPI "KH đình trệ",
+          // nên hai ô chia nhau gọn: chưa quá 7 ngày = còn cứu được → thẻ này; quá 7
+          // ngày = đình trệ → KPI kia. Không có mốc này, sắp cũ-nhất-trước sẽ nhồi thẻ
+          // toàn khách 30+ ngày và đẩy tin hôm nay ra ngoài (đo thực tế 2026-08-15).
+          lastMessageAt: { gte: new Date(Date.now() - URGENT_WINDOW_DAYS * 24 * 3600e3) },
         },
         select: {
           id: true,
@@ -280,7 +290,11 @@ export async function dashboardActionHubRoutes(app: FastifyInstance): Promise<vo
             select: { content: true, contentType: true, senderType: true, isDeleted: true },
           },
         },
-        orderBy: { lastMessageAt: 'desc' }, // mới nhất trước → tin vừa tới, chưa đọc = gấp nhất
+        // 2026-08-15: đảo thành CŨ NHẤT trước (trước đây desc, chốt 2026-06-11). "Mới nhất
+        // trước" + take:5 làm thẻ hiện tin vừa tới trong khi khách đợi cả tuần bị đẩy khỏi
+        // danh sách — ngược với ý nghĩa "gấp". Trong cửa sổ 7 ngày ở trên, đây là 5 khách
+        // đợi lâu nhất mà vẫn còn cứu được. Toàn bộ danh sách: /chat?unreplied=1.
+        orderBy: { lastMessageAt: 'asc' },
         take: 5,
       });
 

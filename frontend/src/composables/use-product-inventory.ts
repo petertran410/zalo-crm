@@ -5,6 +5,14 @@ import { api } from "@/api/index";
 
 export type InventoryStatus = "InStock" | "LowStock" | "OutOfStock" | "Unknown";
 
+export interface ProductBranchStock {
+  branchId: number | null;
+  branchName: string | null;
+  onHand: number | null;
+  available: number | null;
+  status: InventoryStatus | null;
+}
+
 export interface ProductInventoryData {
   posProductId: number;
   branchId: number | null;
@@ -15,6 +23,8 @@ export interface ProductInventoryData {
   minStockLevel: number | null;
   status: InventoryStatus;
   lastSyncedAt: string | null;
+  /** Chỉ có khi query không truyền branchId — backend trả tồn kho từng chi nhánh. */
+  branches?: ProductBranchStock[];
 }
 
 export interface InventoryState {

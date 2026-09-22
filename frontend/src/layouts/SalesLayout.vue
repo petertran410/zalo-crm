@@ -1,69 +1,6 @@
 <template>
-  <v-app class="sl-app">
-    <!-- ════════ TOP HEADER — Glassmorphic Floating Bar ════════ -->
-    <header class="sl-topbar">
-      <!-- Left: Search — tìm kiếm trong danh sách hội thoại (local, không phải global search) -->
-      <div class="sl-topbar-search">
-        <div class="sl-conv-search">
-          <svg class="sl-conv-search__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/>
-          </svg>
-          <input
-            v-model="salesSearch.query.value"
-            class="sl-conv-search__input"
-            placeholder="Tìm khách hàng..."
-            type="search"
-          />
-          <button v-if="salesSearch.query.value" class="sl-conv-search__clear" @click="salesSearch.query.value = ''" title="Xóa">×</button>
-        </div>
-      </div>
+  <v-app class="sl-app" :class="workspaceStore.activeConfig.themeClass">
 
-      <!-- Center: Workspace Title -->
-      <div class="sl-workspace-title">
-        Sales Workspace
-      </div>
-
-      <!-- Right: Trailing actions -->
-      <div class="sl-topbar-actions">
-        <SyncHeaderWidget />
-        <WorkspaceSwitcher v-if="canSwitchWorkspace" />
-
-        <!-- User Avatar + Menu -->
-        <v-menu v-model="userMenu" :close-on-content-click="true" location="bottom end">
-          <template #activator="{ props: act }">
-            <button class="sl-avatar-btn" v-bind="act" :title="authStore.user?.fullName || 'Tài khoản'">
-              <span class="sl-avatar-ring">
-                <Avatar
-                  :src="authStore.user?.avatarUrl"
-                  :name="authStore.user?.fullName || 'U'"
-                  :size="34"
-                  :platform="null"
-                />
-              </span>
-            </button>
-          </template>
-          <v-list density="compact" min-width="220" rounded="lg">
-            <v-list-item
-              :title="authStore.user?.fullName || ''"
-              :subtitle="authStore.user?.email || authStore.user?.phone || ''"
-            />
-            <v-divider />
-            <v-list-item
-              to="/settings/personal/profile"
-              title="Hồ sơ của tôi"
-              prepend-icon="mdi-account-circle-outline"
-            />
-            <v-divider />
-            <v-list-item
-              @click="logout"
-              title="Đăng xuất"
-              prepend-icon="mdi-logout"
-              class="text-error"
-            />
-          </v-list>
-        </v-menu>
-      </div>
-    </header>
 
     <!-- Simulation Mode Banner -->
     <div v-if="workspaceStore.isSimulationMode" class="sl-sim-banner">
@@ -87,10 +24,13 @@
           <RouterLink
             v-for="tab in visibleTabs"
             :key="tab.key"
+            :ref="(el) => setNavTabRef(tab.key, el)"
             :to="tab.to"
             class="sl-nav-item"
             :class="{ 'sl-nav-item--active': isActive(tab) }"
-            @click="onNavItemClick"
+            @click="onNavItemClick(tab, $event)"
+            @mouseenter="onNavTabMouseEnter(tab, $event)"
+            @mouseleave="onNavTabMouseLeave(tab)"
           >
             <!-- Material Symbol (preferred) or MDI fallback inside icon wrapper -->
             <div class="sl-nav-icon-wrap">
@@ -102,20 +42,119 @@
 
             <span class="sl-nav-label">{{ tab.title }}</span>
 
-            <!-- Tooltip shown when sidebar is collapsed -->
-            <div class="sl-nav-tooltip">{{ tab.title }}</div>
+            <!-- Tooltip shown when sidebar is collapsed (ẩn nếu flyout đang mở) -->
+            <div
+              v-if="!isCsChatFlyoutVisible || tab.key !== 'cs-chat'"
+              class="sl-nav-tooltip"
+            >
+              {{ tab.title }}
+            </div>
           </RouterLink>
         </div>
 
-        <!-- Footer: Logout -->
+        <!-- CS Chat Scope Flyout Dock (cho phép chuyển đổi giữa Tôi và Sales được phân công) -->
+        <CsChatScopeFlyout
+          v-if="isCsChatFlyoutVisible"
+          :is-open="isCsChatFlyoutOpen"
+          :is-pinned="isCsChatFlyoutPinned"
+          :target-top="csChatFlyoutTop"
+          :target-left="csChatFlyoutLeft"
+          @mouseenter="onFlyoutMouseEnter"
+          @mouseleave="onFlyoutMouseLeave"
+          @close="closeCsChatFlyout"
+          @unpin="unpinCsChatFlyout"
+        />
+
+        <!-- Footer: POS Sync + Avatar Profile Menu -->
         <div class="sl-nav-footer">
-          <button class="sl-nav-item sl-nav-logout" @click="handleLogout">
-            <div class="sl-nav-icon-wrap">
-              <span class="sl-nav-icon material-symbols-outlined">logout</span>
+          <!-- POS Sync Widget (Admin only) -->
+          <div v-if="authStore.isAdmin" class="sl-nav-sync-wrap" title="Trung tâm đồng bộ POS">
+            <SyncHeaderWidget />
+          </div>
+
+          <WorkspaceSwitcher v-if="canSwitchWorkspace && isSidebarExpanded" class="mb-1" />
+
+          <!-- User Avatar + Menu (Profile & Logout) — Inline Panel tránh VOverlay trắng màn hình -->
+          <div ref="userMenuRef" class="sl-nav-user-wrap">
+            <button
+              class="sl-nav-item sl-nav-user-btn"
+              :title="authStore.user?.fullName || 'Tài khoản'"
+              @click.stop="toggleUserMenu"
+            >
+              <div class="sl-nav-icon-wrap">
+                <span class="sl-avatar-ring">
+                  <Avatar
+                    :src="authStore.user?.avatarUrl"
+                    :name="authStore.user?.fullName || 'U'"
+                    :size="30"
+                    :platform="null"
+                  />
+                </span>
+              </div>
+              <span class="sl-nav-label sl-user-name-label">
+                {{ authStore.user?.fullName || 'Tài khoản' }}
+              </span>
+              <div v-if="!userMenuOpen" class="sl-nav-tooltip">{{ authStore.user?.fullName || 'Tài khoản' }}</div>
+            </button>
+
+            <!-- Inline Profile Popup — Không dùng v-menu/VOverlay tránh trắng màn hình -->
+            <div
+              v-if="userMenuOpen"
+              class="sl-user-menu-panel"
+              @click.stop
+            >
+              <div class="sl-user-menu-header">
+                <Avatar
+                  :src="authStore.user?.avatarUrl"
+                  :name="authStore.user?.fullName || 'U'"
+                  :size="34"
+                  :platform="null"
+                />
+                <div class="sl-user-menu-info">
+                  <div class="sl-user-menu-name">{{ authStore.user?.fullName || '' }}</div>
+                  <div class="sl-user-menu-sub">{{ authStore.user?.email || authStore.user?.phone || '' }}</div>
+                </div>
+              </div>
+
+              <!-- Workspace Switcher in User Menu -->
+              <template v-if="canSwitchWorkspace">
+                <div class="sl-user-menu-divider" />
+                <div class="sl-user-menu-section-title">Giao diện làm việc</div>
+                <button
+                  v-for="ws in workspaceStore.allWorkspaces"
+                  :key="ws.id"
+                  class="sl-user-menu-item"
+                  :class="{ 'sl-user-menu-item--active': ws.id === workspaceStore.activeWorkspaceId }"
+                  @click="onSwitchWorkspace(ws.id)"
+                >
+                  <v-icon size="16" class="sl-menu-icon">{{ ws.icon }}</v-icon>
+                  <span class="sl-menu-ws-label">{{ ws.name }}</span>
+                  <v-icon v-if="ws.id === workspaceStore.activeWorkspaceId" size="14" color="#0068FF">mdi-check</v-icon>
+                </button>
+              </template>
+
+              <div class="sl-user-menu-divider" />
+
+              <RouterLink
+                to="/settings/personal/profile"
+                class="sl-user-menu-item"
+                @click="userMenuOpen = false"
+              >
+                <span class="material-symbols-outlined sl-menu-icon">account_circle</span>
+                <span>Hồ sơ của tôi</span>
+              </RouterLink>
+
+              <div class="sl-user-menu-divider" />
+
+              <button
+                class="sl-user-menu-item text-error"
+                @click="logout"
+              >
+                <span class="material-symbols-outlined sl-menu-icon">logout</span>
+                <span>Đăng xuất</span>
+              </button>
             </div>
-            <span class="sl-nav-label">Đăng xuất</span>
-            <div class="sl-nav-tooltip">Đăng xuất</div>
-          </button>
+          </div>
         </div>
       </nav>
 
@@ -145,13 +184,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue';
 import { useTheme } from 'vuetify';
 import { useRoute, useRouter, RouterLink } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
 import { useWorkspaceStore } from '@/workspaces/resolver';
-import type { MenuItemConfig } from '@/workspaces/types';
-import { useSalesSearch } from '@/composables/use-sales-search';
+import type { MenuItemConfig, WorkspaceId } from '@/workspaces/types';
+
 import SyncHeaderWidget from '@/components/SyncHeaderWidget.vue';
 import ToastContainer from '@/components/ui/ToastContainer.vue';
 import Avatar from '@/components/ui/Avatar.vue';
@@ -159,7 +198,8 @@ import WorkspaceSwitcher from '@/components/workspace/WorkspaceSwitcher.vue';
 import OrderDraftTaskbar from '@/components/order-builder/workspace/OrderDraftTaskbar.vue';
 import OrderBuilderWorkspace from '@/components/order-builder/workspace/OrderBuilderWorkspace.vue';
 import { useOrderDraftStore } from '@/stores/use-workspace-sessions';
-import { usePosNotification } from '@/composables/use-pos-notification';
+import { useCsWorkspaceStore } from '@/stores/use-cs-workspace';
+import CsChatScopeFlyout from '@/components/workspace/CsChatScopeFlyout.vue';
 import '@/assets/sales-theme.css';
 
 const orderDraftStore = useOrderDraftStore();
@@ -169,13 +209,125 @@ const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
 const workspaceStore = useWorkspaceStore();
+const csWorkspace = useCsWorkspaceStore();
 
-usePosNotification();
-
-const userMenu = ref(false);
+const userMenuOpen = ref(false);
+const userMenuRef = ref<HTMLElement | null>(null);
 const isSidebarExpanded = ref(false);
-const salesSearch = useSalesSearch();
 
+// ── CS Chat Quick Scope Switcher Flyout Dock ────────────────────────────────
+const csChatNavEl = ref<HTMLElement | null>(null);
+const csChatFlyoutTop = ref(120);
+const csChatFlyoutLeft = computed(() => (isSidebarExpanded.value ? 248 : 84));
+
+const isCsChatFlyoutOpen = ref(false);
+const isCsChatFlyoutPinned = ref(false);
+
+const isCsChatFlyoutVisible = computed(() => {
+  return (
+    workspaceStore.activeWorkspaceId === 'customer-care' &&
+    (isCsChatFlyoutOpen.value || isCsChatFlyoutPinned.value)
+  );
+});
+
+function setNavTabRef(key: string, el: any) {
+  if (key === 'cs-chat') {
+    csChatNavEl.value = (el && '$el' in el ? el.$el : el) as HTMLElement | null;
+  }
+}
+
+function updateFlyoutPosition() {
+  if (csChatNavEl.value) {
+    const rect = csChatNavEl.value.getBoundingClientRect();
+    csChatFlyoutTop.value = Math.round(rect.top + rect.height / 2);
+  }
+}
+
+let flyoutOpenTimer: ReturnType<typeof setTimeout> | null = null;
+let flyoutCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
+function onNavTabMouseEnter(tab: MenuItemConfig, _event: MouseEvent) {
+  if (tab.key !== 'cs-chat' || workspaceStore.activeWorkspaceId !== 'customer-care') return;
+  if (flyoutCloseTimer) {
+    clearTimeout(flyoutCloseTimer);
+    flyoutCloseTimer = null;
+  }
+  void csWorkspace.fetchDelegatedSales();
+  updateFlyoutPosition();
+  flyoutOpenTimer = setTimeout(() => {
+    updateFlyoutPosition();
+    isCsChatFlyoutOpen.value = true;
+  }, 160);
+}
+
+function onNavTabMouseLeave(tab: MenuItemConfig) {
+  if (tab.key !== 'cs-chat') return;
+  if (flyoutOpenTimer) {
+    clearTimeout(flyoutOpenTimer);
+    flyoutOpenTimer = null;
+  }
+  if (!isCsChatFlyoutPinned.value) {
+    flyoutCloseTimer = setTimeout(() => {
+      isCsChatFlyoutOpen.value = false;
+    }, 250);
+  }
+}
+
+function onFlyoutMouseEnter() {
+  if (flyoutCloseTimer) {
+    clearTimeout(flyoutCloseTimer);
+    flyoutCloseTimer = null;
+  }
+}
+
+function onFlyoutMouseLeave() {
+  if (!isCsChatFlyoutPinned.value) {
+    flyoutCloseTimer = setTimeout(() => {
+      isCsChatFlyoutOpen.value = false;
+    }, 250);
+  }
+}
+
+function closeCsChatFlyout() {
+  isCsChatFlyoutOpen.value = false;
+  isCsChatFlyoutPinned.value = false;
+}
+
+function unpinCsChatFlyout() {
+  isCsChatFlyoutPinned.value = false;
+  closeCsChatFlyout();
+}
+
+function toggleUserMenu() {
+  userMenuOpen.value = !userMenuOpen.value;
+}
+
+function onDocumentPointerDown(event: PointerEvent) {
+  if (userMenuOpen.value && !userMenuRef.value?.contains(event.target as Node)) {
+    userMenuOpen.value = false;
+  }
+  if (isCsChatFlyoutOpen.value || isCsChatFlyoutPinned.value) {
+    const flyoutEl = document.querySelector('.cs-scope-flyout');
+    if (
+      !csChatNavEl.value?.contains(event.target as Node) &&
+      !flyoutEl?.contains(event.target as Node)
+    ) {
+      closeCsChatFlyout();
+    }
+  }
+}
+
+watch([userMenuOpen, isCsChatFlyoutOpen, isCsChatFlyoutPinned], ([menuOpen, flyoutOpen, flyoutPinned]) => {
+  if (menuOpen || flyoutOpen || flyoutPinned) {
+    document.addEventListener('pointerdown', onDocumentPointerDown);
+  } else {
+    document.removeEventListener('pointerdown', onDocumentPointerDown);
+  }
+});
+
+onBeforeUnmount(() => {
+  document.removeEventListener('pointerdown', onDocumentPointerDown);
+});
 
 function onSidebarClick(event: MouseEvent) {
   const target = event.target as HTMLElement;
@@ -184,7 +336,6 @@ function onSidebarClick(event: MouseEvent) {
   if (!isSidebarExpanded.value) {
     if (isNavItem) {
       // Nav item khi thu gọn: để RouterLink navigate ngay, đóng sidebar sau khi xong
-      // KHÔNG chặn event — navigation xảy ra tức thì không giật
       isSidebarExpanded.value = false;
       return;
     }
@@ -201,9 +352,23 @@ function onSidebarClick(event: MouseEvent) {
   }
 }
 
-function onNavItemClick() {
+function onNavItemClick(tab?: MenuItemConfig, _event?: MouseEvent) {
   // Đóng sidebar sau mỗi lần chọn tab (cả mở lẫn đóng)
   isSidebarExpanded.value = false;
+  if (tab?.key === 'cs-chat' || tab?.to === '/cs-chat') {
+    if (workspaceStore.activeWorkspaceId === 'customer-care') {
+      // Click vào Tin nhắn CS -> toggle pin thanh flyout dock
+      isCsChatFlyoutPinned.value = !isCsChatFlyoutPinned.value;
+      if (isCsChatFlyoutPinned.value) {
+        updateFlyoutPosition();
+        isCsChatFlyoutOpen.value = true;
+      }
+    } else {
+      if (csWorkspace.isDelegatedMode) {
+        csWorkspace.clearSalesTarget();
+      }
+    }
+  }
 }
 
 
@@ -231,8 +396,9 @@ function sweepStuckOverlays() {
 }
 
 function cleanupAfterNav() {
-  userMenu.value = false;
+  userMenuOpen.value = false;
   isSidebarExpanded.value = false;
+  closeCsChatFlyout();
   sweepStuckOverlays();
 }
 router.afterEach(() => cleanupAfterNav());
@@ -240,6 +406,10 @@ router.onError(() => cleanupAfterNav());
 
 onMounted(() => {
   theme.change('hsLight');
+
+  if (workspaceStore.activeWorkspaceId === 'customer-care') {
+    void csWorkspace.fetchDelegatedSales();
+  }
 
   // Khôi phục các đơn nháp từ localStorage
   orderDraftStore.hydrate();
@@ -259,8 +429,11 @@ onMounted(() => {
   // Lần đầu click vào bất kỳ tab nào sẽ load tức thì thay vì chờ download.
   const saleSidebarPrefetch = [
     () => import('@/views/AppointmentsView.vue'),
-    () => import('@/views/ContactsView.vue'),
-    () => import('@/views/FriendsView.vue'),
+    // 2026-07-31: ContactsView + FriendsView đã gộp thành PeopleView (commit
+    // 3a424b9) và bị xoá. Đây KHÔNG phải rename — git không nối 2 file, nên
+    // merge từ nhánh cũ mang lại 2 dòng import này và làm vite build chết
+    // (UNLOADABLE_DEPENDENCY). Cả 2 tab giờ đều là /contacts → 1 dòng là đủ.
+    () => import('@/views/PeopleView.vue'),
     () => import('@/views/MediaView.vue'),
     // POS module — lazy load theo sub-route
     () => import('@/views/pos/PosCustomersView.vue'),
@@ -302,6 +475,14 @@ function isActive(tab: MenuItemConfig): boolean {
 // Dùng workspace ID thay vì role string để tránh edge case (deptRole, canViewAll...).
 const canSwitchWorkspace = computed(() => workspaceStore.activeWorkspaceId !== 'sales');
 
+function onSwitchWorkspace(targetId: WorkspaceId) {
+  if (targetId === workspaceStore.activeWorkspaceId) return;
+  if (!canSwitchWorkspace.value) return;
+  workspaceStore.switchWorkspace(targetId);
+  userMenuOpen.value = false;
+  router.push(workspaceStore.activeConfig.defaultRoute);
+}
+
 // ── Logout ────────────────────────────────────────────────────────────────────
 function logout() {
   authStore.logout();
@@ -317,6 +498,19 @@ function logout() {
 
 /* Root app container — Cool Slate Canvas (Option 1) */
 .sl-app {
+  /* GHIM 48px = đúng giá trị SalesLayout đang thừa hưởng từ :root hôm nay, nên
+     render KHÔNG đổi. Mục đích là chặn override 48↔44 của DefaultLayout (revamp
+     nav 2026-08-05) rò sang đây — chrome hai shell khác hẳn nhau.
+     ⚠️ Nợ kỹ thuật có sẵn: chrome thật của shell này là topbar 60px + margin 12px
+     + padding body 12px, lại còn zoom .85 — tức 48px vốn đã SAI sẵn với các màn
+     dùng chung (ChatView, PeopleView, AppointmentsView, MediaView). Sửa cho đúng
+     sẽ làm đổi giao diện Sales nên tách thành quyết định riêng, không gộp vào đây. */
+  --smax-topnav-h: 48px;
+  /* GHIM accent teal cũ. Bảng màu nav đổi sang indigo #635BFF ở hs-crm-theme.css
+     (revamp 2026-08-05) nhưng phạm vi chốt là CHỈ DefaultLayout — vỏ Sales giữ
+     nguyên tông xanh Zalo. Widget dùng chung (SyncHeaderWidget) đọc biến này nên
+     ghim ở đây là đủ để Sales không đổi một pixel nào. */
+  --nav-accent: #5bb8e5;
   background: linear-gradient(135deg, #E2E9F3 0%, #EEF3F9 100%) !important;
   display: flex;
   flex-direction: column;
@@ -325,119 +519,147 @@ function logout() {
   overflow: hidden;
 }
 
-/* ── TOP BAR ────────────────────────────────────────────── */
-.sl-topbar {
+/* ── NAV FOOTER ACTIONS (Sync & User Profile) ───────────── */
+.sl-nav-sync-wrap {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  height: 60px;
-  padding: 0 20px;
-  margin: 12px 16px 0;
-  border-radius: 9999px;
-  background: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.65);
-  box-shadow: 0 4px 20px 0 rgba(0, 50, 150, 0.08);
-  flex-shrink: 0;
-  gap: 12px;
-  position: relative;
-  z-index: 50;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto;
 }
 
-.sl-topbar-search {
-  width: 260px;
-  flex-shrink: 0;
-}
-
-/* Inline conv-list search — thay GlobalSearch, tìm trong danh sách KH */
-.sl-conv-search {
-  position: relative;
-  display: flex;
-  align-items: center;
-  width: 100%;
-}
-.sl-conv-search__icon {
-  position: absolute;
-  left: 12px;
-  width: 16px;
-  height: 16px;
+.sl-nav-sync-wrap :deep(.sync-trigger-btn) {
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
   color: #64748b;
-  pointer-events: none;
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
-.sl-conv-search__input {
-  width: 100%;
-  padding: 8px 32px 8px 36px;
-  border-radius: 9999px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: rgba(255, 255, 255, 0.6);
-  font-size: 13.5px;
-  color: #1e293b;
-  outline: none;
-  transition: border-color 0.15s, background 0.15s;
-  font-family: inherit;
-  /* Xóa nút X mặc định của type=search trên Safari/Chrome */
-  -webkit-appearance: none;
-}
-.sl-conv-search__input::placeholder { color: #94a3b8; }
-.sl-conv-search__input:focus {
-  border-color: #0068FF;
-  background: rgba(255, 255, 255, 0.9);
-}
-.sl-conv-search__clear {
-  position: absolute;
-  right: 10px;
-  background: none;
-  border: none;
-  cursor: pointer;
-  font-size: 16px;
-  color: #94a3b8;
-  line-height: 1;
-  padding: 2px 4px;
-  border-radius: 50%;
-  transition: color 0.15s;
-}
-.sl-conv-search__clear:hover { color: #1e293b; }
 
-
-/* Workspace Title center block */
-.sl-workspace-title {
-  position: absolute;
-  left: 50%;
-  transform: translateX(-50%);
-  font-size: 15px;
-  font-weight: 700;
+.sl-nav-sync-wrap :deep(.sync-trigger-btn:hover) {
+  background: rgba(0, 104, 255, 0.08);
   color: #0068FF;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  background: linear-gradient(135deg, #0068FF 0%, #0046b8 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  font-family: 'Outfit', sans-serif;
 }
 
-@media (max-width: 768px) {
-  .sl-workspace-title { display: none; }
+.sl-nav-sync-wrap :deep(.sync-center-card) {
+  position: fixed !important;
+  left: 86px !important;
+  bottom: 24px !important;
+  top: auto !important;
+  right: auto !important;
+  z-index: 2200 !important;
 }
 
-/* Trailing actions (right side of topbar) */
-.sl-topbar-actions {
+.sl-nav-user-wrap {
+  position: relative;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+.sl-user-menu-panel {
+  position: fixed;
+  left: 86px;
+  bottom: 20px;
+  min-width: 230px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 8px 0;
+  z-index: 2500;
+  animation: slMenuFadeIn 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slMenuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+.sl-user-menu-header {
   display: flex;
   align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
+  gap: 10px;
+  padding: 8px 14px 10px;
 }
 
-/* User avatar button */
-.sl-avatar-btn {
+.sl-user-menu-info {
+  min-width: 0;
+  flex: 1;
+}
+
+.sl-user-menu-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-user-menu-sub {
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.sl-user-menu-divider {
+  height: 1px;
+  background: #f1f5f9;
+  margin: 4px 0;
+}
+
+.sl-user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  color: #334155;
+  text-decoration: none;
   background: none;
   border: none;
+  width: 100%;
   cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.sl-user-menu-item:hover {
+  background: #f8fafc;
+  color: #0068ff;
+}
+
+.sl-user-menu-item.text-error {
+  color: #ef4444;
+}
+
+.sl-user-menu-item.text-error:hover {
+  background: #fef2f2;
+  color: #dc2626;
+}
+
+.sl-menu-icon {
+  font-size: 18px !important;
+  color: inherit;
+}
+
+.sl-nav-user-btn {
   padding: 0;
-  display: flex;
-  align-items: center;
-  margin-left: 4px;
 }
 
 .sl-avatar-ring {
@@ -445,6 +667,12 @@ function logout() {
   padding: 2px;
   border-radius: 50%;
   background: linear-gradient(45deg, #ff9a9e, #fecfef, #a1c4fd);
+}
+
+.sl-user-name-label {
+  font-weight: 600;
+  color: #334155;
+  font-size: 13px;
 }
 
 /* ── SIMULATION BANNER ──────────────────────────────────── */
@@ -723,11 +951,31 @@ function logout() {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding-top: 12px;
+  padding-top: 8px;
   width: 100%;
   align-items: center;
   border-top: 1px solid rgba(0,0,0,0.06);
   flex-shrink: 0;
+}
+
+.sl-user-menu-section-title {
+  padding: 6px 14px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+}
+
+.sl-user-menu-item--active {
+  background: #f0fdfa;
+  color: #0d9488;
+  font-weight: 600;
+}
+
+.sl-menu-ws-label {
+  flex: 1;
+  text-align: left;
 }
 
 .sl-sidenav.sl-sidenav--expanded .sl-nav-footer {

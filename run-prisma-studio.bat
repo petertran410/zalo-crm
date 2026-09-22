@@ -2,11 +2,6 @@
 title Zalo CRM - Prisma Studio Launcher
 color 0B
 
-echo =======================================================
-echo          PRISMA STUDIO DATABASE VIEWER
-echo =======================================================
-echo.
-
 :: 1. Check if Node.js is installed
 echo [1/4] Checking Node.js installation...
 node -v >nul 2>&1

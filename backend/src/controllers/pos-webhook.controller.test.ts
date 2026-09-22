@@ -5,9 +5,9 @@ import { verifyPosWebhookSignature } from './pos-webhook.controller.js';
 import { config } from '../config/index.js';
 
 describe('PosWebhookController — HMAC-SHA256 Verification', () => {
-  const secret = config.posWebhookSecret || 'default_pos_webhook_secret_key_change_me_in_prod';
+  const secret = config.posWebhookSecret;
 
-  it('should verify a valid HMAC-SHA256 signature successfully', () => {
+  it('should verify the standard X-Webhook-Signature header successfully', () => {
     const payload = JSON.stringify({
       event: 'order.created',
       orgId: 'test-org-uuid',
@@ -16,13 +16,13 @@ describe('PosWebhookController — HMAC-SHA256 Verification', () => {
 
     const rawBody = Buffer.from(payload, 'utf-8');
     const computedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha256', secret || 'test-pos-webhook-secret')
       .update(rawBody)
       .digest('hex');
 
     const mockRequest = {
       headers: {
-        'x-pos-signature': computedSignature,
+        'x-webhook-signature': computedSignature,
       },
       rawBody,
     } as unknown as FastifyRequest;
@@ -36,13 +36,13 @@ describe('PosWebhookController — HMAC-SHA256 Verification', () => {
     const payload = JSON.stringify({ event: 'customer.updated', id: 50 });
     const rawBody = Buffer.from(payload, 'utf-8');
     const computedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha256', secret || 'test-pos-webhook-secret')
       .update(rawBody)
       .digest('hex');
 
     const mockRequest = {
       headers: {
-        'x-pos-signature': `sha256=${computedSignature}`,
+        'x-webhook-signature': `sha256=${computedSignature}`,
       },
       rawBody,
     } as unknown as FastifyRequest;
@@ -59,7 +59,7 @@ describe('PosWebhookController — HMAC-SHA256 Verification', () => {
 
     const result = verifyPosWebhookSignature(mockRequest);
     expect(result.valid).toBe(false);
-    expect(result.reason).toBe('Missing x-pos-signature header');
+    expect(result.reason).toBe('Missing X-Webhook-Signature header');
   });
 
   it('should reject invalid or tampered signatures', () => {
@@ -84,7 +84,7 @@ describe('PosWebhookController — HMAC-SHA256 Verification', () => {
   it('should reject when payload body was tampered after signing', () => {
     const originalBody = Buffer.from('{"total": 1000}', 'utf-8');
     const signature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha256', secret || 'test-pos-webhook-secret')
       .update(originalBody)
       .digest('hex');
 

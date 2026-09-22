@@ -19,7 +19,7 @@
       <!-- Bubble -->
       <div
         class="message-bubble"
-        :class="{ 'is-self': isSelf, 'is-other': !isSelf }"
+        :class="{ 'is-self': isSelf, 'is-other': !isSelf, 'is-ai-scanned': isAiScanned }"
         @contextmenu.prevent="emit('contextmenu', $event)"
       >
         <!-- Tên người gửi cho tin INBOUND — Anh chốt 2026-06-03 (4 case):
@@ -287,6 +287,12 @@
           Gửi thất bại: {{ sendFailReason }}
         </div>
 
+        <!-- 2026-07-27: tin đang chờ nick kết nối lại để gửi (xem isSendPending). -->
+        <div v-else-if="isSendPending" class="send-pending">
+          <v-icon size="13">mdi-clock-outline</v-icon>
+          Đang chờ kết nối lại để gửi…
+        </div>
+
         <!-- Timestamp -->
         <div class="bubble-time" :class="{ 'text-end': isSelf }">
           {{ formatTime(message.sentAt) }}
@@ -424,12 +430,8 @@ function parseContent(content: string | null): unknown {
 }
 
 /**
- * P5 2026-05-21: contact_card polymorphic theo action. Map sang type cụ thể để
- * special-message-renderer render UI khác nhau:
- *   show.profile      → 'contact_card_profile' (danh thiếp thật, avatar + name + phone + Mở chat)
- *   recommened.user   → 'user_suggest'         (gợi ý kết bạn — chip Gợi ý + Xem thông tin)
- *   recommened.link   → 'link'                 (share link có preview)
- *   khác (incl recall)→ giữ nguyên contentType (rich fallback)
+ * contact_card là polymorphic theo action nên phải map sang type cụ thể, để renderer hiện đúng
+ * danh thiếp, gợi ý kết bạn hay link có preview.
  */
 function resolveSpecialType(msg: Message): string {
   if (msg.contentType !== 'contact_card') return msg.contentType;
@@ -538,19 +540,10 @@ function escapeHtml(s: string): string {
 }
 
 /**
- * Apply mentions theo pos+len từ Zalo SDK (Anh chốt 2026-06-03 Lớp 2).
- * Pos là vị trí byte (UTF-8) trong raw text; len là độ dài full mention bao
- * gồm cả ký tự @ + tên đầy đủ (vd "@Trung Trường - Công Ty" = len 23).
+ * Escape HTML theo TỪNG segment chứ không escape cả chuỗi rồi mới cắt: escape làm chuỗi dài
+ * ra nên mọi vị trí mention phía sau đều lệch.
  *
- * Algorithm:
- *  1. Sort mentions theo pos tăng dần để xử lý từ đầu chuỗi.
- *  2. Cắt text thành các segment: [plain trước mention][mention][plain sau].
- *  3. Escape HTML từng segment riêng (KHÔNG escape cả chuỗi rồi cắt vì
- *     escape làm dài chuỗi → pos shift sai).
- *
- * Lưu ý UTF-8: Zalo dùng byte position, Js string là UTF-16. Với tin tiếng
- * Việt + emoji có thể lệch. Thử dùng string.substring trước, nếu sai shift
- * sẽ fix lần sau bằng TextEncoder/Decoder.
+ * Zalo đánh vị trí theo byte UTF-8 còn chuỗi JS là UTF-16, nên tin có emoji vẫn có thể lệch.
  */
 function applyMentionsFormat(
   raw: string,
@@ -600,9 +593,8 @@ function highlightText(raw: string): string {
 }
 
 /**
- * Anh chốt 2026-06-03: click vào mention span → load info user (giống avatar click).
- * Event delegation: bắt click trên div container, check target có class .mention + data-uid.
- * Stop propagation để không trigger sender-click của bubble cha.
+ * Event delegation trên container thay vì gắn listener từng span.
+ * Stop propagation để không kích hoạt sender-click của bubble cha.
  */
 function onMentionClick(ev: MouseEvent): void {
   const target = ev.target as HTMLElement | null;
@@ -636,17 +628,17 @@ const formattedText = computed(() => {
 });
 
 /**
- * Wave 1+2 (2026-05-21) — Read-receipt state cho tin OUTGOING (isSelf=true).
- *   seen      — KH đã mở conversation đọc tin (2 tick xanh primary)
- *   delivered — Zalo confirm device KH nhận packet, chưa đọc (1 tick xám)
- *   sending   — chưa có deliveredAt VÀ tin > 3s tuổi (clock outline)
- *   sent      — < 3s (vừa gửi, chưa có confirm) — hiện không icon (giảm noise)
+ * Trạng thái tin gửi đi: seen, delivered, và sending khi quá 3s chưa có deliveredAt.
+ * Dưới 3s cố tình không hiện icon để bớt nhiễu.
  */
 const receiptState = computed<'sending' | 'delivered' | 'seen' | 'sent'>(() => {
   const m = props.message;
   // 2026-06-24 — tin gửi THẤT BẠI (metadata.sendStatus='failed') → trả 'sent' để ẩn chip
   // receipt (tránh kẹt "Đang gửi"); badge "Gửi thất bại + lý do" đã hiện trong bubble.
-  if ((m.metadata as { sendStatus?: string } | null | undefined)?.sendStatus === 'failed') return 'sent';
+  // 2026-07-27 — tin 'pending' (nick mất kết nối) → cùng lý do: ẩn chip receipt, badge
+  // riêng "Đang chờ kết nối lại…" đã hiện trong bubble (xem sendPendingNotice).
+  const status = (m.metadata as { sendStatus?: string } | null | undefined)?.sendStatus;
+  if (status === 'failed' || status === 'pending') return 'sent';
   if (m.seenAt) return 'seen';
   if (m.deliveredAt) return 'delivered';
   // Multi-channel Phase 2 (2026-07-22) — tin kênh KHÔNG-Zalo (FB) có externalMsgId nghĩa là
@@ -679,9 +671,8 @@ const receiptLabel = computed<string>(() => {
 });
 
 /**
- * Caption text khi message vừa có media (image/video/sticker/gif/file) vừa có text.
- * Zalo gửi message kèm caption thường lưu trong content.title hoặc content.description.
- * Đặc biệt: bỏ qua nếu title trông giống URL/filename/path (vd ".jpg", "/photos/...").
+ * Caption của tin vừa có media vừa có text nằm ở content.title hoặc description.
+ * Bỏ qua nếu title trông như URL hay tên tệp.
  */
 const messageCaption = computed<string>(() => {
   const ct = props.message.contentType;
@@ -712,7 +703,14 @@ const sendFailReason = computed<string | null>(() => {
   return m?.sendStatus === 'failed' ? (m.failReason || 'không gửi được') : null;
 });
 
-// ── Sticker — fetch metadata + CSS sprite animation cho animated stickers ──
+// 2026-07-27 — tin soạn lúc nick mất kết nối Zalo, đang chờ flush worker gửi lại khi
+// nick kết nối lại (xem zalo-pending-send-queue.ts + chat:message-status handler).
+const isSendPending = computed<boolean>(() => {
+  const m = props.message.metadata as { sendStatus?: string } | null | undefined;
+  return m?.sendStatus === 'pending';
+});
+
+// Sticker : fetch metadata + CSS sprite animation cho animated stickers
 interface StickerMeta {
   type: number;
   staticUrl: string;
@@ -834,7 +832,12 @@ function isReminderMessage(msg: Message): boolean {
   } catch { return false; }
 }
 
-// ── Call message detection (Zalo lưu dưới content_type contact_card với action recommened.*) ─
+// Đánh dấu tin nhắn khách hàng trong đợt quét phân tích của AI (nền cầu vồng pastel)
+const isAiScanned = computed(() => {
+  return !props.isSelf && Boolean((props.message.metadata as any)?.aiScanned);
+});
+
+// Call message detection (Zalo lưu dưới content_type contact_card với action recommened.*)
 const isCallMessage = computed(() => {
   const p = safeParse(props.message.content);
   if (!p) return false;
@@ -856,7 +859,7 @@ const callContent = computed(() => {
   };
 });
 
-// ── Reply preview helpers ───────────────────────────────────────────────────
+// Reply preview helpers
 const replySenderLabel = computed(() => {
   const r = props.reply;
   if (!r) return '';
@@ -913,12 +916,9 @@ function onPickerReact(key: string) {
   emit('toggle-reaction', key);
 }
 
-// 2026-06-13 (anh báo tải file mất tên): kho lưu media/{hash}.ext nên mở thẳng URL → tải về
-// tên-hash. Tải QUA cổng CRM /media/download (cùng origin, gắn Content-Disposition tên thật) →
-// trình duyệt giữ đúng tên. Dùng axios api (kèm auth) → blob → <a download="tên thật">.
-// 2026-06-13 (anh báo 1 file tải ra tên hash + Chrome hỏi popup): lỗi cổng tải lúc đó là
-// TIMEOUT tạm thời → trước đây fallback window.open(href) = tải tên-hash (sai). Giờ: RETRY 1
-// lần (timeout 60s cho file lớn), nếu vẫn lỗi thì BÁO toast (KHÔNG window.open để tránh tên-hash).
+// Kho lưu media theo tên băm nên mở thẳng URL sẽ tải về tên băm, phải đi qua /media/download
+// để có Content-Disposition mang tên thật.
+// Lỗi thì retry một lần rồi báo toast, KHÔNG fallback window.open vì lại ra tên băm.
 const downloadingFiles = new Set<string>();
 async function openFile(href: string, name?: string) {
   if (downloadingFiles.has(href)) return; // chống double-click → tránh Chrome hỏi popup "tải nhiều"
@@ -1031,6 +1031,13 @@ async function openFile(href: string, name?: string) {
   color: var(--smax-text, #212121);
   border-radius: 4px 15px 15px 15px;
   border: 1px solid var(--smax-grey-200, #ebedf0);
+}
+
+/* Đánh dấu tin nhắn của khách hàng trong đoạn chat đã gửi quét AI (nền cầu vồng pastel nhẹ nhàng) */
+.message-bubble.is-other.is-ai-scanned {
+  background: linear-gradient(135deg, #fff1f2 0%, #fef3c7 25%, #ecfdf5 50%, #eff6ff 75%, #faf5ff 100%) !important;
+  border: 1px solid rgba(216, 180, 254, 0.75) !important;
+  box-shadow: 0 1px 4px rgba(216, 180, 254, 0.25) !important;
 }
 .message-bubble.is-self {
   background: var(--smax-bubble-self, #d7ecf7);
@@ -1231,6 +1238,16 @@ async function openFile(href: string, name?: string) {
   color: #d9534f;
 }
 .send-failed :deep(.v-icon) { color: #d9534f; }
+.send-pending {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #8a7500;
+}
+.send-pending :deep(.v-icon) { color: #8a7500; }
 .media-caption {
   margin-top: 6px;
   font-size: 13.5px;

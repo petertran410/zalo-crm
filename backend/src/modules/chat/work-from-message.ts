@@ -11,7 +11,7 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
-import { assertConversationReadAccess } from '../ai/ai-routes.js';
+import { assertConversationReadAccess } from './conversation-access.js';
 import { resolveOrCreateContact } from '../contacts/resolve-contact.js';
 
 export interface WorkItemSource {

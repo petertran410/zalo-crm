@@ -685,7 +685,8 @@ import MiniChatPanel from '../MiniChatPanel.vue';
 import InvoiceTemplateModal from '../InvoiceTemplateModal.vue';
 import ProductDetailPopover from '../ProductDetailPopover.vue';
 
-import type { POSProduct, POSBranch, CustomerInfo, PromotionProgram } from '../types';
+import type { POSProduct, POSBranch, CustomerInfo, PromotionProgram, CartItem } from '../types';
+import type { WorkspaceSession } from '@/stores/use-workspace-sessions';
 import { formatVND, PRICE_BOOKS, PAYMENT_METHODS, getEffectiveProductPrice, MOCK_PROMOTIONS, evaluatePromoCondition } from '../types';
 
 // ─── Props / Emits ────────────────────────────────────────────────
@@ -1156,6 +1157,14 @@ function changeItemQty(idx: number, delta: number) {
   handleUpdateQuantity(item.product.id, newQty);
 }
 
+/** Set số lượng tuyệt đối từ ô input (khác changeItemQty vốn cộng/trừ delta). */
+function setItemQty(idx: number, quantity: number) {
+  const item = cartItems.value[idx];
+  if (!item) return;
+  const newQty = Number.isFinite(quantity) ? Math.max(1, Math.trunc(quantity)) : 1;
+  handleUpdateQuantity(item.product.id, newQty);
+}
+
 // ─── Product Detail Popover (...) ──────────────────────────────
 interface ActiveDetailTarget {
   product: POSProduct;
@@ -1294,6 +1303,11 @@ function handleUpdateProductDiscount(productId: number, discount: number) {
 
 function handleUpdateOrderDiscount(discountVal: number) {
   draftStore.updateDraft(props.draftId, { orderDiscountValue: Math.max(0, discountVal) });
+}
+
+function handleUpdateOrderDiscountType(type: string) {
+  const discountType = type === 'percent' ? 'percent' : 'amount';
+  draftStore.updateDraft(props.draftId, { orderDiscountType: discountType });
 }
 
 function handleUpdateCartItemNote(idx: number, note: string) {

@@ -4,11 +4,12 @@ import { logger } from '../shared/utils/logger.js';
 import { processPosWebhookLog } from './pos-webhook.controller.js';
 import {
   syncPosProductsFromMcp,
-  syncPosCustomersFromMcp,
   syncPosOrdersFromMcp,
   syncPosInvoicesFromMcp,
   syncPosBranchInventoryFromMcp,
 } from '../shared/mcp/pos-sync-service.js';
+import { syncCustomerCohort } from '../modules/integrations/pos-customer-import-service.js';
+import { withPosSyncLock } from '../modules/pos/pos-sync-lock.js';
 
 export async function getPosDashboardStatsHandler(request: FastifyRequest, reply: FastifyReply) {
   try {
@@ -210,11 +211,11 @@ export async function triggerPosSyncHandler(request: FastifyRequest, reply: Fast
     // Trigger async background sync sequence (non-blocking)
     void (async () => {
       try {
-        await syncPosProductsFromMcp(orgId);
-        await syncPosCustomersFromMcp(orgId);
-        await syncPosOrdersFromMcp(orgId);
-        await syncPosInvoicesFromMcp(orgId);
-        await syncPosBranchInventoryFromMcp(orgId);
+        await withPosSyncLock(orgId, 'Product', () => syncPosProductsFromMcp(orgId));
+        await withPosSyncLock(orgId, 'Customer', () => syncCustomerCohort(orgId));
+        await withPosSyncLock(orgId, 'Order', () => syncPosOrdersFromMcp(orgId));
+        await withPosSyncLock(orgId, 'Invoice', () => syncPosInvoicesFromMcp(orgId));
+        await withPosSyncLock(orgId, 'BranchInventory', () => syncPosBranchInventoryFromMcp(orgId));
       } catch (err: any) {
         logger.error(`[pos-sync-dashboard] Background sync failed for org ${orgId}:`, err);
       }

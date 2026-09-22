@@ -14,6 +14,8 @@
     v-else
     v-model="open"
     :close-on-content-click="true"
+    scroll-strategy="none"
+    :scrim="false"
     location="bottom start"
   >
     <template #activator="{ props: act }">
@@ -188,7 +190,7 @@ async function select(newId: string | null) {
 }
 
 function goToSettings() {
-  window.location.assign('/settings/statuses');
+  window.location.assign('/settings/crm/statuses');
 }
 
 onMounted(() => {

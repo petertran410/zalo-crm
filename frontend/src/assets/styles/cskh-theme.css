@@ -1,0 +1,86 @@
+/* ==========================================================================
+   CSKH Theme — Care Teal (#0D9488)
+   ========================================================================== */
+
+:root {
+  --cskh-primary: #0D9488;
+  --cskh-primary-rgb: 13, 148, 136;
+  --cskh-primary-dark: #0F766E;
+  --cskh-primary-light: #14B8A6;
+  --cskh-primary-soft: rgba(13, 148, 136, 0.1);
+  --cskh-primary-border: rgba(13, 148, 136, 0.25);
+  --cskh-primary-shadow: rgba(13, 148, 136, 0.35);
+}
+
+.cskh-theme {
+  --zmp-theme-color: #0D9488;
+  --zmp-theme-color-rgb: 13, 148, 136;
+  --zmp-theme-color-shade: #0F766E;
+  --zmp-theme-color-tint: #14B8A6;
+  --nav-accent: #5eead4;
+}
+
+/* Nav Item hover & active states in SalesLayout when cskh-theme is active */
+.sl-app.cskh-theme .sl-nav-item:hover {
+  background: rgba(13, 148, 136, 0.08);
+  color: #0D9488;
+}
+
+.sl-app.cskh-theme .sl-nav-item--active {
+  background: #0D9488 !important;
+  color: #FFFFFF !important;
+  box-shadow: 0 4px 14px rgba(13, 148, 136, 0.35) !important;
+}
+
+.sl-app.cskh-theme .sl-nav-item--active:hover {
+  background: #0F766E !important;
+  color: #FFFFFF !important;
+}
+
+.sl-app.cskh-theme .sl-nav-sync-wrap :deep(.sync-trigger-btn:hover) {
+  background: rgba(13, 148, 136, 0.08);
+  color: #0D9488;
+}
+
+/* Care Teal Primary Button */
+.cskh-btn-primary {
+  background-color: #0D9488 !important;
+  color: #FFFFFF !important;
+  border: none;
+  font-weight: 600;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.cskh-btn-primary:hover {
+  background-color: #0F766E !important;
+  box-shadow: 0 4px 12px rgba(13, 148, 136, 0.3);
+}
+
+/* Scope & Safety Banners */
+.cskh-scope-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #F0FDFA 0%, #CCFBF1 100%);
+  border-bottom: 1px solid #99F6E4;
+  color: #0F766E;
+  font-size: 13px;
+  font-weight: 500;
+  z-index: 10;
+}
+
+.cskh-safety-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: #F0FDFA;
+  border: 1px dashed #5EEAD4;
+  border-radius: 8px;
+  margin: 6px 12px;
+  font-size: 12px;
+  color: #0F766E;
+  font-weight: 500;
+}

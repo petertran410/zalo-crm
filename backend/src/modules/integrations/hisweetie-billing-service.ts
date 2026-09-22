@@ -16,8 +16,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { config } from '../../config/index.js';
-import { getHisweetieClient, isHisweetieMcpConfigured } from './hisweetie-mcp-client.js';
-import { assertSandboxForPosWrite } from './hisweetie-sandbox-guard.js';
+import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from './hisweetie-public-api-client.js';
 import { buildOrderPayload, buildDispatchPayload, type BillingLineInput } from './hisweetie-billing.js';
 
 export interface CreateBillingDraftArgs {
@@ -97,7 +96,7 @@ export type DispatchBillingResult =
   | { ok: true; posOrderId: number | null }
   | {
       ok: false;
-      code: 'DISPATCH_DISABLED' | 'MCP_NOT_CONFIGURED' | 'NOT_FOUND' | 'ALREADY_SENT' | 'IN_FLIGHT' | 'POS_ERROR';
+      code: 'DISPATCH_DISABLED' | 'PUBLIC_API_NOT_CONFIGURED' | 'NOT_FOUND' | 'ALREADY_SENT' | 'IN_FLIGHT' | 'POS_ERROR';
       error: string;
       posOrderId?: number | null;
     };
@@ -125,11 +124,9 @@ export async function dispatchBillingToPos(args: { draftId: string; orgId: strin
   if (!isPosBillingDispatchEnabled()) {
     return { ok: false, code: 'DISPATCH_DISABLED', error: 'Gửi POS đang tắt (HISWEETIE_BILLING_DISPATCH chưa bật)' };
   }
-  if (!isHisweetieMcpConfigured()) {
-    return { ok: false, code: 'MCP_NOT_CONFIGURED', error: 'Hisweetie POS chưa cấu hình' };
+  if (!isPublicApiSyncEnabled()) {
+    return { ok: false, code: 'PUBLIC_API_NOT_CONFIGURED', error: 'Hisweetie POS chưa cấu hình' };
   }
-  // Tầng 2 — URL phải là sandbox, sai môi trường thì THROW (lỗi hệ thống, không phải lỗi người dùng).
-  assertSandboxForPosWrite(config.hisweetieMcpUrl, 'orders.create');
 
   const draft = await prisma.posBillingDraft.findFirst({
     where: { id: args.draftId, orgId: args.orgId },
@@ -159,9 +156,20 @@ export async function dispatchBillingToPos(args: { draftId: string; orgId: strin
   });
 
   try {
-    const resp = await getHisweetieClient().orders.create(
-      payload,
-      draft.idempotencyKey as `${string}-${string}-${string}-${string}-${string}`,
+    // Public API strict (PUBLIC-API.md §6): chỉ gửi {branchId, customerId,
+    // items[{productId, quantity, unitPrice}]} — khuyến mãi POS tự tính lại.
+    // buildDispatchPayload sinh shape MCP cũ (có note/discount) → cắt gọn tại đây.
+    const dp = payload as unknown as {
+      customerId: number; branchId: number;
+      items: Array<{ productId: number; quantity: number; unitPrice: number }>;
+    };
+    const resp = await getHisweetiePublicApiClient().createOrder(
+      {
+        customerId: dp.customerId,
+        branchId: dp.branchId,
+        items: dp.items.map((l) => ({ productId: l.productId, quantity: l.quantity, unitPrice: l.unitPrice })),
+      },
+      draft.idempotencyKey,
     );
     const posOrderId = extractPosOrderId(resp);
     if (posOrderId == null) {

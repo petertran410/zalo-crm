@@ -33,7 +33,7 @@
         <div v-if="loading" class="mpd-empty">Đang tải…</div>
         <div v-else-if="items.length === 0" class="mpd-empty">
           <template v-if="hasFilter">Không có {{ kindLabel }} nào khớp bộ lọc. Thử bỏ bớt điều kiện.</template>
-          <template v-else>Chưa có {{ kindLabel }} công khai trong kho. Vào trang <b>Kho phương tiện</b> tải lên (đặt Công khai) trước.</template>
+          <template v-else>Chưa có {{ kindLabel }} công khai trong kho. Vào trang <b>Kho lưu trữ</b> tải lên (đặt Công khai) trước.</template>
         </div>
         <div v-else class="mpd-grid">
           <button
@@ -68,7 +68,7 @@ import { ref, computed, onMounted } from 'vue';
 import { listMediaPaged, listMediaUploaders, type MediaAssetItem, type ListMediaParams } from '@/api/media';
 
 // publicOnly: CHỈ hiện media CÔNG KHAI (visibility='public'). Dùng khi gắn media vào
-// Block/automation — tránh ảnh nick Riêng tư lọt ra broadcast (privacy, anh chốt 2026-06-12).
+// Tránh ảnh nick Riêng tư lọt ra broadcast.
 // Default false → các chỗ dùng khác (vd chèn vào chat) không bị lọc, hành vi cũ giữ nguyên.
 const props = defineProps<{ multiple?: boolean; kind?: string; publicOnly?: boolean }>();
 const emit = defineEmits<{ close: []; pick: [assets: MediaAssetItem[]] }>();

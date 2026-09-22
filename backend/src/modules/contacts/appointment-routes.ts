@@ -9,6 +9,7 @@ import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { logActivity, computeDiff } from '../activity/activity-logger.js';
 import { getContactScope, assertContactVisible } from './contact-scope.js';
+import { userHasGrant } from '../rbac/permission-group-service.js';
 
 type QueryParams = Record<string, string>;
 
@@ -32,6 +33,55 @@ const APPOINTMENT_INCLUDE = {
   statusChangedBy: { select: { id: true, fullName: true, email: true } },
 } as const;
 
+/**
+ * Quyền thao tác lịch hẹn (anh chốt 2026-08-04): NGOÀI owner/admin, sale chỉ được
+ * tạo / sửa / xoá lịch hẹn CỦA CHÍNH MÌNH.
+ *
+ * Lịch sinh từ reminder card Zalo giờ đã được gán cho chủ nick nhận reminder
+ * (`reminder-sync.ts` set `assignedUserId = ZaloAccount.ownerUserId`) → chính sale đó
+ * sửa được, cộng owner/admin.
+ *
+ * Còn lại `assignedUserId = null` là dữ liệu cũ chưa quy được về ai: KHÔNG mở cho mọi
+ * người (làm vậy thành lỗ hổng — ai cũng sửa được) mà giới hạn owner/admin.
+ * Xem ghi chú backfill ở cuối file.
+ */
+function isOrgAdmin(role: string): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/** Được đụng vào lịch đang thuộc `ownerId` không? */
+function canMutateAppointment(user: { id: string; role: string }, ownerId: string | null): boolean {
+  return isOrgAdmin(user.role) || (!!ownerId && ownerId === user.id);
+}
+
+/** Được gán / chuyển lịch sang `targetUserId` không? */
+function canAssignTo(user: { id: string; role: string }, targetUserId: string | null | undefined): boolean {
+  return isOrgAdmin(user.role) || !targetUserId || targetUserId === user.id;
+}
+
+/**
+ * 2026-08-06 — "Xem lịch hẹn của người khác".
+ *
+ * Mặc định lịch hẹn bị bó theo KH mà user thấy được (contact-scope). Grant
+ * `appointment.view_all` NỚI ra: bỏ luôn bó đó → thấy lịch toàn org.
+ *
+ * Cố ý chỉ NỚI, không siết: nếu đổi mặc định thành "chỉ lịch của chính mình"
+ * thì mọi sale đang dùng sẽ mất hẳn lịch của KH mình phụ trách nhưng do người
+ * khác đặt. Admin tick ô cho từng người là cộng thêm, bỏ tick là quay về như cũ.
+ */
+async function canSeeAllAppointments(
+  user: { id: string; role: string },
+  isOrgAdminScope: boolean,
+): Promise<boolean> {
+  if (isOrgAdminScope || isOrgAdmin(user.role)) return true;
+  return userHasGrant(user.id, 'appointment', 'view_all').catch(() => false);
+}
+
+const FORBIDDEN_OTHERS = {
+  error: 'forbidden_not_owner',
+  message: 'Bạn chỉ thao tác được trên lịch hẹn của chính mình.',
+} as const;
+
 export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
@@ -45,8 +95,9 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
 
       // Phase Contact Scope Hybrid 2026-05-27: filter theo KH visible
       const cScope = await getContactScope(user.id, user.orgId, user.role);
+      const seeAllToday = await canSeeAllAppointments(user, cScope.isOrgAdmin);
       const whereToday: any = { orgId: user.orgId, appointmentDate: { gte: start, lte: end } };
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      if (!seeAllToday && cScope.accessibleContactIds !== null) {
         whereToday.contactId = { in: cScope.accessibleContactIds };
       }
       const appointments = await prisma.appointment.findMany({
@@ -77,7 +128,8 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         appointmentDate: { gte: now, lte: in7Days },
         status: 'scheduled',
       };
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      const seeAllUpcoming = await canSeeAllAppointments(user, cScope.isOrgAdmin);
+      if (!seeAllUpcoming && cScope.accessibleContactIds !== null) {
         whereUpcoming.contactId = { in: cScope.accessibleContactIds };
       }
       const appointments = await prisma.appointment.findMany({
@@ -114,7 +166,8 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       if (source && source !== 'all') where.source = source;
       // Phase Contact Scope Hybrid 2026-05-27
       const cScope = await getContactScope(user.id, user.orgId, user.role);
-      if (!cScope.isOrgAdmin && cScope.accessibleContactIds !== null) {
+      const seeAllList = await canSeeAllAppointments(user, cScope.isOrgAdmin);
+      if (!seeAllList && cScope.accessibleContactIds !== null) {
         // Intersect với contactId filter nếu đã có
         if (where.contactId) {
           if (!cScope.accessibleContactIds.includes(where.contactId)) {
@@ -130,8 +183,10 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         if (dateTo) where.appointmentDate.lte = new Date(dateTo);
       }
 
-      const pageNum = parseInt(page);
-      const limitNum = parseInt(limit);
+      const pageNum = Math.max(1, parseInt(page) || 1);
+      // Kẹp trần 2026-08-04: FE lịch tuần cần vài trăm dòng 1 lượt, nhưng vẫn phải
+      // chặn client hỏi limit khổng lồ (payload có include contact + friends).
+      const limitNum = Math.min(1000, Math.max(1, parseInt(limit) || 50));
 
       const [appointments, total, sourceCounts] = await Promise.all([
         prisma.appointment.findMany({
@@ -215,6 +270,11 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         return reply.status(400).send({ error: 'contactId and appointmentDate are required' });
       }
 
+      // Sale thường không được tạo lịch hộ người khác.
+      if (!canAssignTo(user, body.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
+
       // Chống trùng (anh chốt 2026-06-16): CHỈ chặn khi cùng KH + cùng NGÀY + cùng GIỜ và lịch
       // CÒN HIỆU LỰC (bỏ qua Hoàn thành/Huỷ/Vắng). Khác giờ trong ngày → cho phép. Khi trùng:
       // báo RÕ lịch đang vướng (tên/giờ/ngày/phụ trách) để sale biết xử lý.
@@ -279,22 +339,6 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
         },
       });
 
-      // Phase 6 — apply scoring signal cho mọi Friend của contact (per-pair).
-      // Sale có thể book lịch cho 1 nick cụ thể, nhưng signal apply lên all Friend
-      // vì appointment thuộc Contact-level (KH lớn), aggregate sẽ MAX về Contact.
-      void (async () => {
-        try {
-          const friends = await prisma.friend.findMany({
-            where: { contactId: appointment.contactId, orgId: user.orgId },
-            select: { id: true },
-          });
-          const { onAppointmentCreate } = await import('../scoring/scoring-hooks.js');
-          for (const f of friends) onAppointmentCreate(user.orgId, f.id);
-        } catch {
-          /* silent */
-        }
-      })();
-
       // 2026-06-16 — đẩy Nhắc hẹn Zalo (nick hệ thống) cho sale: tin báo + createReminder.
       // Fire-and-forget, lỗi Zalo KHÔNG ảnh hưởng tạo lịch (service tự nuốt lỗi).
       void import('./appointment-zalo-service.js')
@@ -320,11 +364,16 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       const existing = await prisma.appointment.findFirst({
         where: { id, orgId: user.orgId },
         select: {
-          id: true, status: true, contactId: true,
+          id: true, status: true, contactId: true, assignedUserId: true,
           appointmentDate: true, appointmentTime: true, type: true, notes: true,
         },
       });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      // Chỉ sửa được lịch của mình; và không được chuyển lịch sang sale khác.
+      if (!canMutateAppointment(user, existing.assignedUserId) || !canAssignTo(user, body.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       const statusChanging = body.status !== undefined && body.status !== existing.status;
       const dateChanging = body.appointmentDate && new Date(body.appointmentDate).getTime() !== existing.appointmentDate.getTime();
@@ -376,21 +425,6 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
           details: { appointmentId: updated.id, oldStatus: existing.status, newStatus: body.status, notes: body.notes },
         });
 
-        // Phase 6 — appointment_complete trigger scoring signal (+35 Intent)
-        if (body.status === 'completed' && updated.contactId) {
-          void (async () => {
-            try {
-              const friends = await prisma.friend.findMany({
-                where: { contactId: updated.contactId, orgId: user.orgId },
-                select: { id: true },
-              });
-              const { onAppointmentComplete } = await import('../scoring/scoring-hooks.js');
-              for (const f of friends) onAppointmentComplete(user.orgId, f.id);
-            } catch {
-              /* silent */
-            }
-          })();
-        }
       } else if (dateChanging) {
         logActivity({
           orgId: user.orgId,
@@ -451,9 +485,13 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
 
       const existing = await prisma.appointment.findFirst({
         where: { id, orgId: user.orgId },
-        select: { id: true, status: true, contactId: true },
+        select: { id: true, status: true, contactId: true, assignedUserId: true },
       });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      if (!canMutateAppointment(user, existing.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       const updated = await prisma.appointment.update({
         where: { id },
@@ -580,8 +618,15 @@ export async function appointmentRoutes(app: FastifyInstance): Promise<void> {
       const user = request.user!;
       const { id } = request.params as { id: string };
 
-      const existing = await prisma.appointment.findFirst({ where: { id, orgId: user.orgId }, select: { id: true } });
+      const existing = await prisma.appointment.findFirst({
+        where: { id, orgId: user.orgId },
+        select: { id: true, assignedUserId: true },
+      });
       if (!existing) return reply.status(404).send({ error: 'Appointment not found' });
+
+      if (!canMutateAppointment(user, existing.assignedUserId)) {
+        return reply.status(403).send(FORBIDDEN_OTHERS);
+      }
 
       await prisma.appointment.delete({ where: { id } });
       return { success: true };

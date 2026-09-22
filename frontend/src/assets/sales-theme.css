@@ -626,3 +626,22 @@
   border-radius: 18px !important;
   overflow: hidden !important;
 }
+
+/* ══════════════════════════════════════════════════════════
+   ANTI-WHITEOUT OVERLAY PROTECTION FOR SALES WORKSPACE
+   ══════════════════════════════════════════════════════════ */
+.v-overlay {
+  background: transparent !important;
+}
+
+.v-menu > .v-overlay__scrim {
+  display: none !important;
+}
+
+html.v-overlay-scroll-blocked {
+  position: static !important;
+  top: auto !important;
+  left: auto !important;
+  width: auto !important;
+  height: 100% !important;
+}

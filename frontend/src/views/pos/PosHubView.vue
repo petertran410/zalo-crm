@@ -27,7 +27,7 @@
           rounded="lg"
           @click="triggerSync"
         >
-          <v-icon left size="18" class="mr-1">mdi-sync</v-icon> Đồng bộ từ POS
+          <v-icon start size="18" class="mr-1">mdi-sync</v-icon> Đồng bộ từ POS
         </v-btn>
       </div>
     </header>
@@ -265,7 +265,7 @@ async function triggerSync() {
 
 <style scoped>
 .pos-hub-container {
-  min-height: calc(100vh - 48px);
+  min-height: calc(100vh - var(--smax-topnav-h));
   background-color: #f8fafc;
 }
 

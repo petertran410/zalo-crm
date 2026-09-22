@@ -134,7 +134,7 @@ function parseTags(tags: any) {
 <style scoped>
 .pos-customers-page {
   background-color: #f8fafc;
-  height: calc(100vh - 48px);
+  height: calc(100vh - var(--smax-topnav-h));
   display: flex;
   flex-direction: column;
   overflow: hidden;

@@ -15,10 +15,22 @@
  * Lưu ý: org-admin trả `isOrgAdmin=true` + `accessibleContactIds=null` (caller bỏ filter).
  */
 import { prisma } from '../../shared/database/prisma-client.js';
+import { userHasGrant } from '../rbac/permission-group-service.js';
 
 export interface ContactScope {
   /** True nếu user có quyền view toàn org (skip filter) */
   isOrgAdmin: boolean;
+  /**
+   * True nếu user là leader/deputy của 1 phòng ban — tức CHỨC VỤ quản lý, không phụ
+   * thuộc phòng có bao nhiêu người.
+   *
+   * FIX 2026-08-05: trước đây các route gate "chỉ quản lý" suy ra chức vụ từ
+   * `visibleUserIds.size > 1`. Suy luận đó sai với trưởng phòng của phòng RỖNG
+   * (chưa có nhân viên nào): set chỉ có chính mình → size === 1 → bị 403 như sale
+   * thường. Giờ đọc thẳng deptRole nên bổ nhiệm là có quyền ngay.
+   * isOrgAdmin = true cũng set cờ này để caller chỉ cần check 1 field.
+   */
+  isDeptManager: boolean;
   /** Set userIds mà KH gán cho họ user này được thấy (chính mình + dept-subtree members nếu leader) */
   visibleUserIds: Set<string>;
   /**
@@ -45,6 +57,7 @@ export async function getContactScope(
   if (isOrgAdmin) {
     return {
       isOrgAdmin: true,
+      isDeptManager: true,
       visibleUserIds: new Set<string>(),
       accessibleContactIds: null,
       primaryContactIds: new Set<string>(),
@@ -66,12 +79,24 @@ export async function getContactScope(
     },
   });
 
+  // Chức vụ quản lý đọc thẳng từ deptRole — KHÔNG suy ra từ số người trong phòng.
+  const deptRole = me?.departmentMember?.deptRole;
+  const isDeptManager = deptRole === 'leader' || deptRole === 'deputy';
+
+  // ── Grant contact.view_all (2026-08-06) ────────────────────────────────────
+  // TRƯỚC ĐÂY hàm này KHÔNG hề đọc ma trận phân quyền: ai thấy KH nào chỉ do
+  // legacy role + phòng ban quyết định. Nên ô "Xem tất cả → Khách hàng" trong
+  // ma trận là ô tick CHẾT — tick cho Marketing/CEO hay tick lẻ cho 1 người đều
+  // không đổi được gì, danh sách KH vẫn bó theo ContactAccess của họ.
+  //
+  // Tính cờ ở đây, ÁP ở cuối hàm (không return sớm) để trưởng/phó phòng vẫn giữ
+  // nguyên visibleUserIds theo nhánh phòng — cái đó Task/Ticket dùng để lọc theo
+  // người được giao, không liên quan quyền xem KH.
+  const canViewAllContacts = await userHasGrant(userId, 'contact', 'view_all').catch(() => false);
+
   // Build visibleUserIds: self + (if leader/deputy) all members of dept subtree
   const visibleUserIds = new Set<string>([userId]);
-  if (
-    me?.departmentMember &&
-    (me.departmentMember.deptRole === 'leader' || me.departmentMember.deptRole === 'deputy')
-  ) {
+  if (me?.departmentMember && isDeptManager) {
     const myDept = me.departmentMember.department;
     const subtreeDepts = await prisma.department.findMany({
       where: { orgId, path: { startsWith: myDept.path } },
@@ -100,8 +125,13 @@ export async function getContactScope(
 
   return {
     isOrgAdmin: false,
+    isDeptManager,
     visibleUserIds,
-    accessibleContactIds,
+    // null = KHÔNG lọc (quy ước sẵn có, mọi caller đã check `!== null` nên không
+    // phải sửa call-site nào). Có grant contact.view_all → bỏ bó theo ContactAccess.
+    // CỐ Ý không set isOrgAdmin=true: cờ đó còn mở cổng Báo cáo/Phân tích
+    // (report-routes, analytics-routes) — xem hết KH ≠ được xem báo cáo toàn đội.
+    accessibleContactIds: canViewAllContacts ? null : accessibleContactIds,
     primaryContactIds,
   };
 }

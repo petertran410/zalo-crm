@@ -10,6 +10,10 @@
   của Task vì không có trục thời gian chung hợp lý giữa 2 loại).
 -->
 <template>
+  <!-- Tab con Lịch hẹn | Công việc — để NGOÀI .tasks-view (vốn max-width 900px,
+       căn giữa) cho dải tab chạy hết chiều ngang, khớp với trang Lịch hẹn. -->
+  <ScheduleTabs />
+
   <div class="tasks-view">
     <!-- Header -->
     <div class="tv-head">
@@ -137,6 +141,7 @@ import { useConfirm } from '@/composables/use-confirm';
 import { useTasks, isOverdue as isTaskOverdue, isDueToday, dueLabel, type Task } from '@/composables/use-tasks';
 import { useTickets, PRIORITY_META, STATUS_META, COMPLAINT_CATEGORY_META, type Ticket, type TicketStatus } from '@/composables/use-tickets';
 import type { WorkAttachment } from '@/composables/work-attachment-types';
+import ScheduleTabs from '@/components/schedule/ScheduleTabs.vue';
 import WorkItemEditor, { type WorkEditItem } from '@/components/work/WorkItemEditor.vue';
 import ThumbStrip from '@/components/work/ThumbStrip.vue';
 import AttachmentManagerPopover from '@/components/work/AttachmentManagerPopover.vue';
