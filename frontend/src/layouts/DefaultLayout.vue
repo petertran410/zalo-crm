@@ -50,7 +50,6 @@
       <div class="topnav-spacer" />
 
       <div class="topnav-actions">
-        <SyncHeaderWidget />
         <GlobalSearch class="topnav-search" />
         <!-- 2026-06-13: trỏ tới trang quản lý nick Zalo. -->
         <RouterLink
@@ -201,7 +200,6 @@ import { isExtension } from "@ee/edition";
 import { useRouter } from "vue-router";
 import NotificationBell from "@/components/NotificationBell.vue";
 import GlobalSearch from "@/components/GlobalSearch.vue";
-import SyncHeaderWidget from "@/components/SyncHeaderWidget.vue";
 import ToastContainer from "@/components/ui/ToastContainer.vue";
 import Avatar from "@/components/ui/Avatar.vue";
 import OrderDraftTaskbar from "@/components/order-builder/workspace/OrderDraftTaskbar.vue";
@@ -226,6 +224,8 @@ import {
   Megaphone,
   ChevronDown,
   Smartphone,
+  GraduationCap,
+  RefreshCw,
   Moon,
   Sun,
 } from "lucide-vue-next";
@@ -392,6 +392,8 @@ interface NavTab {
   matchAny?: string[];
   // Resource cần để thấy tab. Không có resource nghĩa là luôn hiện.
   resource?: string;
+  /** Chỉ hiển thị cho Quản trị viên (Admin/Owner) */
+  adminOnly?: boolean;
 }
 
 // HD-first redesign 2026-05-28 (anh chốt Variant A): 7 primary tabs + 2 dropdown.
@@ -428,7 +430,14 @@ const primaryTabs: NavTab[] = [
     icon: FolderClosed,
     resource: "media",
   },
-  { path: "/pos", label: "Cửa hàng POS", short: "POS", icon: Store },
+  {
+    path: "/sync-center",
+    label: "Đồng bộ",
+    short: "Đồng bộ",
+    icon: RefreshCw,
+    matchAny: ["/sync-center", "/pos", "/workshops"],
+    adminOnly: true,
+  },
 ];
 
 // Tab Marketing gồm nhiều chức năng, hiện nếu user có quyền bất kỳ chức năng nào và trỏ
@@ -451,7 +460,9 @@ const marketingEntry = computed(
 // Chỉ hiện tab user có quyền, Dashboard và Lịch hẹn thì luôn hiện.
 const visiblePrimaryTabs = computed(() => {
   const tabs = primaryTabs.filter(
-    (t) => !t.resource || authStore.canAccess(t.resource)
+    (t) =>
+      (!t.resource || authStore.canAccess(t.resource)) &&
+      (!t.adminOnly || authStore.isAdmin)
   );
   // Tab Marketing khác nhau giữa hai edition:
   //  - EE: menu Marketing đầy đủ (triggers/sequences/…); hiện khi có quyền ≥1 chức năng.

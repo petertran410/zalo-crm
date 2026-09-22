@@ -60,6 +60,7 @@ import {
 } from './modules/channels/facebook/facebook-routes.js';
 import { hisweetieMcpRoutes } from './modules/integrations/hisweetie-mcp-routes.js';
 import { hisweetieBillingRoutes } from './modules/integrations/hisweetie-billing-routes.js';
+import { ckgRadarRoutes } from './modules/ckg/ckg-radar-routes.js';
 import { startInteractionCron } from './modules/contacts/interaction-cron.js';
 import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
 import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
@@ -88,6 +89,7 @@ import { publicApiRoutes } from './modules/api/public-api-routes.js';
 import { webhookSettingsRoutes } from './modules/api/webhook-settings-routes.js';
 import { startContactIntelligence } from './modules/contacts/contact-intelligence.js';
 import { integrationRoutes } from './modules/integrations/integration-routes.js';
+import { workshopRoutes } from './modules/workshops/workshop-routes.js';
 import { posRoutes } from './modules/pos/pos-routes.js';
 import { posSaleMappingRoutes } from './modules/pos/pos-sale-mapping-routes.js';
 import { syncRoutes } from './modules/pos/sync-routes.js';
@@ -297,6 +299,7 @@ async function bootstrap() {
   await app.register(contactRoutes);
   await app.register(contactFamilyRoutes);
   await app.register(customer360Routes);
+  await app.register(ckgRadarRoutes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
   await app.register(contactCareRoutes);
@@ -361,6 +364,7 @@ async function bootstrap() {
   await app.register(publicApiRoutes);
   await app.register(webhookSettingsRoutes);
   await app.register(integrationRoutes);
+  await app.register(workshopRoutes);
   await app.register(hisweetieMcpRoutes); // Hisweetie POS MCP (read APIs) 2026-07
   await app.register(hisweetieBillingRoutes); // Hoá đơn từ chat (goal 4) + catalogue POS cho sale 2026-07-16
   await app.register(posRoutes);

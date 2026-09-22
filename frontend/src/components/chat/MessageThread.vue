@@ -2640,11 +2640,35 @@ function onAiScanned(e: Event) {
     }
   }
 }
+function onInsertSuggestionEvent(e: Event) {
+  const detail = (e as CustomEvent<{ text: string }>).detail;
+  if (!detail || !detail.text) return;
+
+  const textToInsert = detail.text.trim();
+  if (!textToInsert) return;
+
+  if (inputText.value && inputText.value.trim()) {
+    inputText.value = inputText.value.trim() + '\n' + textToInsert;
+  } else {
+    inputText.value = textToInsert;
+  }
+
+  nextTick(() => {
+    try {
+      (editorRef.value as any)?.focus?.();
+    } catch {
+      // ignore
+    }
+  });
+}
+
 onMounted(() => {
   window.addEventListener('chat:ai-scanned', onAiScanned);
+  window.addEventListener('chat:insert-suggestion', onInsertSuggestionEvent);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('chat:ai-scanned', onAiScanned);
+  window.removeEventListener('chat:insert-suggestion', onInsertSuggestionEvent);
 });
 
 // Vị trí "/" mở popup — lưu để khi chọn mẫu chỉ cắt từ ĐÚNG dấu "/" này (không lastIndexOf
@@ -2876,6 +2900,7 @@ watch(() => props.editingMessage?.id, async (id) => {
     editorRef.value?.focus();
   }
 });
+
 </script>
 
 <style scoped>

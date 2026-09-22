@@ -19,80 +19,28 @@
       </div>
       <div class="header-actions">
         <v-btn
+          v-if="authStore.isAdmin"
+          to="/sync-center"
           color="primary"
-          :loading="syncing"
-          :disabled="syncing"
-          class="sync-btn text-capitalize px-5"
-          elevation="1"
+          variant="tonal"
+          class="sync-btn text-capitalize px-4"
+          elevation="0"
           rounded="lg"
-          @click="triggerSync"
         >
-          <v-icon start size="18" class="mr-1">mdi-sync</v-icon> Đồng bộ từ POS
+          <v-icon start size="18" class="mr-1">mdi-database-sync</v-icon> Trung tâm đồng bộ
         </v-btn>
+        <v-chip
+          v-else
+          color="success"
+          size="small"
+          variant="tonal"
+          prepend-icon="mdi-check-circle-outline"
+          class="font-weight-medium"
+        >
+          Dữ liệu đồng bộ sẵn sàng
+        </v-chip>
       </div>
     </header>
-
-    <!-- Sync Progress Panel (chỉ hiện khi đang hoặc vừa sync xong) -->
-    <v-expand-transition>
-      <div v-if="showProgress" class="sync-progress-panel mb-8">
-        <v-card class="pa-5" outlined>
-          <div class="d-flex align-center mb-4">
-            <v-icon :color="overallDone ? 'success' : 'primary'" size="22" class="mr-2">
-              {{ overallDone ? 'mdi-check-circle' : 'mdi-cloud-sync-outline' }}
-            </v-icon>
-            <span class="text-subtitle-1 font-weight-bold">
-              {{ overallDone ? 'Đồng bộ hoàn tất!' : 'Đang đồng bộ dữ liệu...' }}
-            </span>
-            <v-spacer />
-            <v-btn v-if="overallDone" icon size="small" variant="text" @click="showProgress = false">
-              <v-icon size="18">mdi-close</v-icon>
-            </v-btn>
-          </div>
-
-          <!-- Products progress -->
-          <div class="progress-row mb-4">
-            <div class="d-flex align-center justify-space-between mb-1">
-              <div class="d-flex align-center gap-1">
-                <v-icon size="16" :color="progressColor('products')">mdi-package-variant-closed</v-icon>
-                <span class="text-body-2 font-weight-medium">Sản phẩm</span>
-              </div>
-              <span class="text-caption" :class="progressTextClass('products')">
-                {{ progressLabel(productProgress) }}
-              </span>
-            </div>
-            <v-progress-linear
-              :model-value="progressPercent(productProgress)"
-              :color="progressColor('products')"
-              :indeterminate="productProgress.phase === 'fetching' && productProgress.total === -1"
-              height="8"
-              rounded
-              class="progress-bar"
-            />
-          </div>
-
-          <!-- Customers progress -->
-          <div class="progress-row">
-            <div class="d-flex align-center justify-space-between mb-1">
-              <div class="d-flex align-center gap-1">
-                <v-icon size="16" :color="progressColor('customers')">mdi-account-group-outline</v-icon>
-                <span class="text-body-2 font-weight-medium">Khách hàng</span>
-              </div>
-              <span class="text-caption" :class="progressTextClass('customers')">
-                {{ progressLabel(customerProgress) }}
-              </span>
-            </div>
-            <v-progress-linear
-              :model-value="progressPercent(customerProgress)"
-              :color="progressColor('customers')"
-              :indeterminate="customerProgress.phase === 'fetching' && customerProgress.total === -1"
-              height="8"
-              rounded
-              class="progress-bar"
-            />
-          </div>
-        </v-card>
-      </div>
-    </v-expand-transition>
 
     <!-- Bento Grid Section -->
     <v-row class="hub-grid" justify="start">
@@ -148,119 +96,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { api } from '@/api/index';
-import { useToast } from '@/composables/use-toast';
-import { createAppSocket } from '@/api/socket';
+import { useAuthStore } from '@/stores/auth';
 
-// ── Types ────────────────────────────────────────────────────────────────────
-interface SyncProgress {
-  table: 'products' | 'customers';
-  phase: 'fetching' | 'saving' | 'done' | 'error';
-  current: number;
-  total: number;
-  message?: string;
-}
-
-const INITIAL_PROGRESS: SyncProgress = { table: 'products', phase: 'fetching', current: 0, total: -1 };
-
-// ── State ────────────────────────────────────────────────────────────────────
-const toast = useToast();
-const syncing = ref(false);
-const showProgress = ref(false);
-
-const productProgress = ref<SyncProgress>({ ...INITIAL_PROGRESS, table: 'products' });
-const customerProgress = ref<SyncProgress>({ ...INITIAL_PROGRESS, table: 'customers' });
-
-const overallDone = computed(() =>
-  productProgress.value.phase === 'done' && customerProgress.value.phase === 'done'
-);
-
-// ── Socket.IO listener ──────────────────────────────────────────────────────
-const socket = createAppSocket();
-
-function onSyncProgress(data: SyncProgress) {
-  if (data.table === 'products') {
-    productProgress.value = data;
-  } else if (data.table === 'customers') {
-    customerProgress.value = data;
-  }
-
-  // Báo lỗi chi tiết từ socket event
-  if (data.phase === 'error') {
-    const tableName = data.table === 'products' ? 'sản phẩm' : 'khách hàng';
-    toast.error(`Lỗi đồng bộ ${tableName}: ${data.message || 'Không rõ nguyên nhân'}`);
-  }
-
-  // Tự động tắt syncing khi cả hai bảng done hoặc error
-  if (
-    (productProgress.value.phase === 'done' || productProgress.value.phase === 'error') &&
-    (customerProgress.value.phase === 'done' || customerProgress.value.phase === 'error')
-  ) {
-    syncing.value = false;
-    if (overallDone.value) {
-      toast.success(`Đồng bộ xong: ${productProgress.value.current} sản phẩm, ${customerProgress.value.current} khách hàng`);
-    }
-  }
-}
-
-onMounted(() => {
-  socket.on('pos:sync:progress', onSyncProgress);
-});
-
-onUnmounted(() => {
-  socket.off('pos:sync:progress', onSyncProgress);
-  socket.disconnect();
-});
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-function progressPercent(p: SyncProgress): number {
-  if (p.phase === 'done') return 100;
-  if (p.phase === 'error') return 100;
-  if (p.total > 0) return Math.min(Math.round((p.current / p.total) * 100), 99);
-  return 0; // indeterminate handled by v-progress-linear
-}
-
-function progressLabel(p: SyncProgress): string {
-  if (p.phase === 'done') return `✓ ${p.current} mục`;
-  if (p.phase === 'error') return p.message || 'Lỗi';
-  if (p.message) return p.message;
-  if (p.current > 0) return `${p.current} mục...`;
-  return 'Đang chờ...';
-}
-
-function progressColor(table: string): string {
-  const p = table === 'products' ? productProgress.value : customerProgress.value;
-  if (p.phase === 'done') return 'success';
-  if (p.phase === 'error') return 'error';
-  return 'primary';
-}
-
-function progressTextClass(table: string): string {
-  const p = table === 'products' ? productProgress.value : customerProgress.value;
-  if (p.phase === 'done') return 'text-success';
-  if (p.phase === 'error') return 'text-error';
-  return 'text-medium-emphasis';
-}
-
-// ── Sync trigger ─────────────────────────────────────────────────────────────
-async function triggerSync() {
-  syncing.value = true;
-  showProgress.value = true;
-
-  // Reset progress
-  productProgress.value = { table: 'products', phase: 'fetching', current: 0, total: -1 };
-  customerProgress.value = { table: 'customers', phase: 'fetching', current: 0, total: -1 };
-
-  try {
-    await api.post('/pos/sync', null, { timeout: 300_000 });
-  } catch (err: any) {
-    syncing.value = false;
-    // Báo lỗi chi tiết kèm mã lỗi nếu request thất bại (timeout/500/network)
-    const errMsg = err.response?.data?.error || err.message || 'Mất kết nối hoặc quá thời gian phản hồi (timeout)';
-    toast.error(`Đồng bộ dữ liệu POS thất bại: ${errMsg}`);
-  }
-}
+const authStore = useAuthStore();
 </script>
 
 <style scoped>

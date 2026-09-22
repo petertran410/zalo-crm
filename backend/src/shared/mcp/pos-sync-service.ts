@@ -7,6 +7,7 @@ import { prisma } from '../database/prisma-client.js';
 import { logger } from '../utils/logger.js';
 import { getIo } from '../event-buffer.js';
 import { config } from '../../config/index.js';
+import { ckgIngestionService } from '../../modules/ckg/ckg-ingestion-service.js';
 
 // Helper sleep và retry tránh rate limit (429)
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -33,7 +34,7 @@ async function fetchWithRetry(fetchFn: () => Promise<any>, maxRetries = 10, init
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface SyncProgress {
-  table: 'products' | 'customers' | 'orders' | 'invoices' | 'branch_inventory' | 'debts';
+  table: 'branches' | 'categories' | 'products' | 'customers' | 'orders' | 'invoices' | 'branch_inventory' | 'debts' | 'workshops' | 'workshop_guests' | 'checkin_logs' | 'registration_forms';
   phase: 'fetching' | 'saving' | 'done' | 'error';
   current: number;
   total: number;       // -1 = unknown yet
@@ -653,6 +654,56 @@ async function batchUpsertOrdersChunk(orgId: string, orders: any[]): Promise<num
   }
 
   emitPosDataUpdated(orgId, { type: 'order', action: 'synced' });
+
+  // CKG Hook: Bất đồng bộ liên kết các đơn hàng POS và sản phẩm vào CKG (<0.1ms main-thread)
+  void (async () => {
+    try {
+      const distinctCustIds = [...new Set(posCustomerIds.filter((id): id is number => id !== null))];
+      if (distinctCustIds.length === 0) return;
+
+      const matchedContacts = await prisma.contact.findMany({
+        where: {
+          orgId,
+          posCustomerId: { in: distinctCustIds },
+          mergedInto: null,
+        },
+        select: { id: true, posCustomerId: true, fullName: true },
+      });
+
+      if (matchedContacts.length === 0) return;
+
+      const contactMap = new Map<number, { id: string; fullName: string }>();
+      for (const c of matchedContacts) {
+        if (c.posCustomerId) contactMap.set(c.posCustomerId, { id: c.id, fullName: c.fullName || 'Khách hàng' });
+      }
+
+      for (const ord of validOrders) {
+        const cId = ord.customerId ? Number(ord.customerId) : (ord.posCustomerId ? Number(ord.posCustomerId) : null);
+        if (!cId) continue;
+        const contact = contactMap.get(cId);
+        if (!contact) continue;
+
+        const rawItems = ord.items || ord.orderDetails || ord.order_details || [];
+        const touchpointItems = Array.isArray(rawItems) ? rawItems.map((it: any) => ({
+          code: it.productCode || it.product?.code || String(it.productId || it.product?.id || ''),
+          name: it.productName || it.product?.name || 'Sản phẩm',
+          quantity: Number(it.quantity || 1),
+          price: Number(it.price || it.unitPrice || 0),
+        })).filter(i => Boolean(i.code)) : [];
+
+        if (touchpointItems.length > 0) {
+          ckgIngestionService.recordTouchpoint(orgId, contact.id, 'POS_ORDER', {
+            orderId: String(ord.id || ord.posOrderId || ord.orderCode),
+            totalAmount: Number(ord.finalAmount || ord.total || 0),
+            items: touchpointItems,
+            fullName: contact.fullName,
+          });
+        }
+      }
+    } catch (err) {
+      logger.error(`[ckg-hook] Lỗi đồng bộ CKG POS_ORDER trong pos-sync-service:`, err);
+    }
+  })();
 
   return validOrders.length;
 }
@@ -1320,3 +1371,134 @@ export async function syncPosBranchInventoryFromMcp(orgId: string): Promise<void
     emitProgress(orgId, { table: 'branch_inventory', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất đồng bộ tồn kho (${totalSynced} bản ghi)` });
   }
 }
+
+export async function syncPosBranchesFromMcp(orgId: string): Promise<number> {
+  const publicApi = getHisweetiePublicApiClient();
+  logger.info(`[pos-sync] Syncing branches for org ${orgId} via Public API`);
+  emitProgress(orgId, { table: 'branches', phase: 'fetching', current: 0, total: -1 });
+
+  const res = await fetchWithRetry(() => publicApi.listBranches({ pageSize: 100 }));
+  const branches = (res as any).data || (res as any).branches || [];
+
+  emitProgress(orgId, { table: 'branches', phase: 'saving', current: 0, total: branches.length });
+  let count = 0;
+  for (const b of branches) {
+    const branchId = Number(b.id);
+    const branchName = String(b.name || b.branchName || `Chi nhánh ${branchId}`);
+    const address = b.address ? String(b.address) : null;
+    const contactNumber = b.contactNumber || b.phone ? String(b.contactNumber || b.phone) : null;
+    const isActive = b.isActive !== false;
+
+    await (prisma as any).posBranch.upsert({
+      where: { orgId_branchId: { orgId, branchId } },
+      update: { branchName, address, contactNumber, isActive, updatedAt: new Date() },
+      create: { orgId, branchId, branchName, address, contactNumber, isActive },
+    });
+    count++;
+  }
+
+  emitProgress(orgId, { table: 'branches', phase: 'done', current: count, total: count, message: `Hoàn tất đồng bộ ${count} chi nhánh` });
+  return count;
+}
+
+export async function syncPosCategoriesFromMcp(orgId: string): Promise<number> {
+  const publicApi = getHisweetiePublicApiClient();
+  logger.info(`[pos-sync] Syncing categories for org ${orgId} via Public API`);
+  emitProgress(orgId, { table: 'categories', phase: 'fetching', current: 0, total: -1 });
+
+  let page = 1;
+  const limit = 100;
+  let hasMore = true;
+  let totalSynced = 0;
+
+  while (hasMore) {
+    const res = await fetchWithRetry(() => publicApi.listCategories({ page, limit }));
+    const categories = (res as any).data || [];
+    if (categories.length === 0) break;
+
+    emitProgress(orgId, { table: 'categories', phase: 'saving', current: totalSynced, total: -1 });
+    for (const cat of categories) {
+      const categoryId = Number(cat.id || cat.categoryId);
+      const categoryName = String(cat.name || cat.categoryName || `Danh mục ${categoryId}`);
+      const parentId = cat.parentId ? Number(cat.parentId) : null;
+      const isActive = cat.isActive !== false;
+
+      await (prisma as any).posCategory.upsert({
+        where: { orgId_categoryId: { orgId, categoryId } },
+        update: { categoryName, parentId, isActive, updatedAt: new Date() },
+        create: { orgId, categoryId, categoryName, parentId, isActive },
+      });
+      totalSynced++;
+    }
+
+    if (categories.length < limit) {
+      hasMore = false;
+    } else {
+      page++;
+      await sleep(800);
+    }
+  }
+
+  emitProgress(orgId, { table: 'categories', phase: 'done', current: totalSynced, total: totalSynced, message: `Hoàn tất đồng bộ ${totalSynced} danh mục` });
+  return totalSynced;
+}
+
+export async function syncPosCustomerDebtsFromMcp(orgId: string): Promise<number> {
+  logger.info(`[pos-sync] Calculating and syncing customer debts for org ${orgId}`);
+  emitProgress(orgId, { table: 'debts', phase: 'fetching', current: 0, total: -1 });
+
+  const rawDebts = await prisma.$queryRawUnsafe<any[]>(`
+    SELECT 
+      debts.pos_customer_id as "posCustomerId",
+      debts.pos_customer_code as "posCustomerCode",
+      COALESCE(c.full_name, ord.customer_name, 'Khách hàng') as "customerName",
+      COALESCE(c.phone, ord.customer_phone) as "customerPhone",
+      debts.total_debt as "totalDebt"
+    FROM (
+      SELECT 
+        sub.pos_customer_id,
+        MAX(sub.pos_customer_code) as pos_customer_code,
+        SUM(sub.remaining_debt) as total_debt
+      FROM (
+        SELECT pos_customer_id, pos_customer_code, remaining_debt 
+        FROM pos_invoices 
+        WHERE org_id = $1 AND remaining_debt > 0 AND pos_customer_id IS NOT NULL
+        UNION ALL
+        SELECT pos_customer_id, pos_customer_code, debt_amount as remaining_debt 
+        FROM pos_orders 
+        WHERE org_id = $1 AND debt_amount > 0 AND pos_customer_id IS NOT NULL
+      ) sub
+      GROUP BY sub.pos_customer_id
+    ) debts
+    LEFT JOIN (
+      SELECT DISTINCT ON (pos_customer_id) pos_customer_id, full_name, phone
+      FROM contacts
+      WHERE org_id = $1 AND pos_customer_id IS NOT NULL
+      ORDER BY pos_customer_id, created_at DESC
+    ) c ON c.pos_customer_id = debts.pos_customer_id
+    LEFT JOIN (
+      SELECT DISTINCT ON (pos_customer_id) pos_customer_id, customer_name, customer_phone
+      FROM pos_orders
+      WHERE org_id = $1 AND pos_customer_id IS NOT NULL AND customer_name IS NOT NULL
+      ORDER BY pos_customer_id, created_at DESC
+    ) ord ON ord.pos_customer_id = debts.pos_customer_id
+  `, orgId);
+
+  emitProgress(orgId, { table: 'debts', phase: 'saving', current: 0, total: rawDebts.length });
+
+  const debtItems = rawDebts.map(d => ({
+    posCustomerId: Number(d.posCustomerId),
+    posCustomerCode: d.posCustomerCode || null,
+    customerName: d.customerName || 'Khách hàng',
+    customerPhone: d.customerPhone || null,
+    totalDebt: Number(d.totalDebt || 0),
+    currentDebt: Number(d.totalDebt || 0),
+    overdueDebt: 0,
+    status: Number(d.totalDebt || 0) > 0 ? 'Warning' : 'Normal',
+  }));
+
+  const count = await batchUpsertCustomerDebts(orgId, debtItems);
+  emitProgress(orgId, { table: 'debts', phase: 'done', current: count, total: count, message: `Hoàn tất đồng bộ công nợ (${count} khách nợ)` });
+  return count;
+}
+

@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { requireAdmin } from '../auth/admin-guard.js';
 import { PosPaginationService } from '../../shared/mcp/pos-pagination-service.js';
 import { syncPosProductsFromMcp } from '../../shared/mcp/pos-sync-service.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
@@ -187,7 +188,10 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // POST /api/v1/pos/sync — trigger manual synchronization of products & customers Read Model
-  app.post('/api/v1/pos/sync', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post(
+    '/api/v1/pos/sync',
+    { preHandler: requireAdmin },
+    async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const user = request.user!;
       // Chạy tuần tự và có khoá: POS giới hạn 5000 request/giờ cho mỗi client,

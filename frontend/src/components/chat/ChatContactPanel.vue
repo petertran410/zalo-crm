@@ -273,6 +273,15 @@
       <div class="sp-tab-content">
         <!-- ─── OVERVIEW TAB ─── -->
         <div v-show="salesTab === 'overview'" class="sp-pane sp-overview-pane">
+          <!-- ════════ CKG SMART CUSTOMER RADAR WIDGET ════════ -->
+          <CustomerRadarWidget
+            v-if="props.contactId"
+            :contact-id="props.contactId"
+            :contact-name="props.contact?.fullName || headerFullName"
+            class="sp-radar-widget-wrap"
+            @insert-suggestion="onInsertSuggestionText"
+          />
+
           <!-- Dãy Icon tròn mini có nhãn chữ (5 Sub-items) -->
           <div class="sp-sub-circle-nav">
             <button
@@ -891,6 +900,7 @@ import Avatar from "@/components/ui/Avatar.vue";
 import ContactDealStageSelector from "@/components/chat/ContactDealStageSelector.vue";
 import OrderDetailModal from "./OrderDetailModal.vue";
 import LinkParentDialog from "@/components/chat/LinkParentDialog.vue";
+import CustomerRadarWidget from "@/components/radar/CustomerRadarWidget.vue";
 import { useOrderDraftStore } from "@/stores/use-workspace-sessions";
 
 const orderDraftStore = useOrderDraftStore();

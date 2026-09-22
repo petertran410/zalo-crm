@@ -38,16 +38,25 @@
           <CloudSync class="panel-header-icon" :size="20" :stroke-width="1.9" />
           <span class="panel-title">Trung tâm đồng bộ POS</span>
         </div>
-        <button
-          type="button"
-          class="panel-icon-btn"
-          :disabled="isFetching"
-          title="Tải lại"
-          aria-label="Tải lại"
-          @click="fetchJobs"
-        >
-          <RefreshCw :class="{ 'spin-anim': isFetching }" :size="16" :stroke-width="1.9" />
-        </button>
+        <div class="d-flex align-center gap-2">
+          <router-link
+            to="/sync-center"
+            class="text-caption font-weight-medium text-primary text-decoration-none text-nowrap mr-1"
+            @click="closeMenu"
+          >
+            Mở toàn màn hình ↗
+          </router-link>
+          <button
+            type="button"
+            class="panel-icon-btn"
+            :disabled="isFetching"
+            title="Tải lại"
+            aria-label="Tải lại"
+            @click="fetchJobs"
+          >
+            <RefreshCw :class="{ 'spin-anim': isFetching }" :size="16" :stroke-width="1.9" />
+          </button>
+        </div>
       </div>
       <div class="panel-divider" />
 

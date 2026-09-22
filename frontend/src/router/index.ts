@@ -120,6 +120,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import("@/views/TasksView.vue"),
     meta: { requiresAuth: true },
   },
+  {
+    path: "/workshops",
+    name: "Workshops",
+    component: () => import("@/views/WorkshopsView.vue"),
+    meta: { requiresAuth: true },
+  },
   // ════════ NEW Settings — 6-group sidebar layout ════════
   {
     path: "/settings",
@@ -463,9 +469,13 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/pos/sync-dashboard',
-    name: 'POS.SyncDashboard',
-    component: () => import('@/views/pos/SyncDashboardView.vue'),
-    meta: { requiresAuth: true },
+    redirect: '/sync-center',
+  },
+  {
+    path: '/sync-center',
+    name: 'SyncCenter',
+    component: () => import('@/views/sync/UnifiedSyncCenterView.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/pos/products',
@@ -605,6 +615,23 @@ router.beforeEach(async (to, _from, next) => {
       next("/");
       return;
     }
+
+    if (to.meta.requiresAdmin) {
+      const userRole = authStore.user?.role ?? '';
+      if (!['owner', 'admin'].includes(userRole)) {
+        try {
+          useToast().error('Chỉ Quản trị viên mới có quyền truy cập Trung tâm đồng bộ');
+        } catch {
+          /* toast chưa sẵn sàng */
+        }
+        if (_from?.name) {
+          next(false);
+          return;
+        }
+        next('/');
+        return;
+      }
+    }
   }
 
   next();
@@ -636,6 +663,7 @@ const ROUTE_TITLES: Record<string, string> = {
   Groups: "Nhóm",
   GroupScan: "Quét nhóm & thành viên",
   Friends: "Bạn bè",
+  SyncCenter: "Trung tâm Đồng bộ Dữ liệu",
   NotFound: "Không tìm thấy trang",
   // Cài đặt
   Settings: "Cài đặt",

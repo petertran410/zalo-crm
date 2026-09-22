@@ -1,0 +1,50 @@
+﻿erDiagram
+    Organization ||--o{ Team : "contains"
+    Organization ||--o{ Department : "contains"
+    Organization ||--o{ PermissionGroup : "defines"
+    Organization ||--o{ User : "members"
+    Team ||--o{ User : "assigns"
+    PermissionGroup ||--o{ User : "grants"
+    User ||--o{ ZaloAccountAccess : "accesses"
+
+    Organization {
+        String id PK
+        String name
+        String timezone
+        String logoUrl
+        String emailDomain
+        Boolean fbPullEnabled
+    }
+    Team {
+        String id PK
+        String orgId FK
+        String name
+    }
+    Department {
+        String id PK
+        String orgId FK
+        String name
+        String parentId FK
+    }
+    PermissionGroup {
+        String id PK
+        String orgId FK
+        String name
+        Json permissions
+    }
+    User {
+        String id PK
+        String orgId FK
+        String teamId FK
+        String permissionGroupId FK
+        String fullName
+        String role
+        String email UK
+        String phone UK
+    }
+    ZaloAccountAccess {
+        String id PK
+        String zaloAccountId FK
+        String userId FK
+        String permission
+    }

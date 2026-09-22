@@ -7,7 +7,11 @@ import {
   syncPosOrdersFromMcp,
   syncPosInvoicesFromMcp,
   syncPosBranchInventoryFromMcp,
+  syncPosBranchesFromMcp,
+  syncPosCategoriesFromMcp,
+  syncPosCustomerDebtsFromMcp,
 } from '../../shared/mcp/pos-sync-service.js';
+import { workshopService } from '../workshops/workshop-service.js';
 import { notifyAdminsOfIncidentAsync } from '../system-notifications/system-notify-service.js';
 import { linkPosCustomersToContacts } from '../../workers/pos-customer-linker.js';
 import {
@@ -378,6 +382,105 @@ async function runBackgroundSyncUnlocked(
         data: { status: 'Completed', endTime: new Date() }
       });
       emitSyncUpdate(orgId, { jobId, entity, processed: 5, total: 5, status: 'Completed' });
+    } else if (entity === 'Branch') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const count = await syncPosBranchesFromMcp(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: count, total: count } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: count, total: count, status: 'Completed' });
+    } else if (entity === 'Category') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const count = await syncPosCategoriesFromMcp(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: count, total: count } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: count, total: count, status: 'Completed' });
+    } else if (entity === 'Debt') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const count = await syncPosCustomerDebtsFromMcp(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: count, total: count } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: count, total: count, status: 'Completed' });
+    } else if (entity === 'Workshop') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const res = await workshopService.syncWorkshops(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: res.syncedCount, total: res.syncedCount } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: res.syncedCount, total: res.syncedCount, status: 'Completed' });
+    } else if (entity === 'WorkshopGuest') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const res = await workshopService.syncAllWorkshopGuests(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: res.syncedCount, total: res.syncedCount } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: res.syncedCount, total: res.syncedCount, status: 'Completed' });
+    } else if (entity === 'WorkshopCheckinLog') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const res = await workshopService.syncCheckinLogs(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: res.syncedCount, total: res.syncedCount } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: res.syncedCount, total: res.syncedCount, status: 'Completed' });
+    } else if (entity === 'WorkshopRegistrationForm') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: -1, status: 'Running' });
+      const res = await workshopService.syncRegistrationForms(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: res.syncedCount, total: res.syncedCount } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: res.syncedCount, total: res.syncedCount, status: 'Completed' });
+    } else if (entity === 'WorkshopAll') {
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: 4, status: 'Running' });
+      await workshopService.syncAll(orgId);
+      await prisma.syncJob.update({ where: { id: jobId }, data: { status: 'Completed', endTime: new Date(), processed: 4, total: 4 } });
+      emitSyncUpdate(orgId, { jobId, entity, processed: 4, total: 4, status: 'Completed' });
+    } else if (entity === 'SystemFull') {
+      const TOTAL_STEPS = 12;
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: TOTAL_STEPS, status: 'Running' });
+      logger.info(`[sync-worker] Starting SYSTEM FULL pipeline (POS + Workshops)`);
+
+      // 1. Branches
+      emitSyncUpdate(orgId, { jobId, entity, processed: 0, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosBranchesFromMcp(orgId);
+
+      // 2. Categories
+      emitSyncUpdate(orgId, { jobId, entity, processed: 1, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosCategoriesFromMcp(orgId);
+
+      // 3. Customers
+      emitSyncUpdate(orgId, { jobId, entity, processed: 2, total: TOTAL_STEPS, status: 'Running' });
+      await syncCustomerCohort(orgId, { shouldCancel });
+
+      // 4. Products
+      emitSyncUpdate(orgId, { jobId, entity, processed: 3, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosProductsFromMcp(orgId, shouldCancel);
+
+      // 5. Branch Inventory
+      emitSyncUpdate(orgId, { jobId, entity, processed: 4, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosBranchInventoryFromMcp(orgId);
+
+      // 6. Orders
+      emitSyncUpdate(orgId, { jobId, entity, processed: 5, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosOrdersFromMcp(orgId, shouldCancel);
+
+      // 7. Invoices
+      emitSyncUpdate(orgId, { jobId, entity, processed: 6, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosInvoicesFromMcp(orgId, shouldCancel);
+
+      // 8. Debts
+      emitSyncUpdate(orgId, { jobId, entity, processed: 7, total: TOTAL_STEPS, status: 'Running' });
+      await syncPosCustomerDebtsFromMcp(orgId);
+
+      // 9. Customer Linker
+      emitSyncUpdate(orgId, { jobId, entity, processed: 8, total: TOTAL_STEPS, status: 'Running' });
+      await linkPosCustomersToContacts(orgId);
+
+      // 10. Workshops
+      emitSyncUpdate(orgId, { jobId, entity, processed: 9, total: TOTAL_STEPS, status: 'Running' });
+      await workshopService.syncWorkshops(orgId);
+
+      // 11. Workshop Guests
+      emitSyncUpdate(orgId, { jobId, entity, processed: 10, total: TOTAL_STEPS, status: 'Running' });
+      await workshopService.syncAllWorkshopGuests(orgId);
+
+      // 12. Checkin Logs & Forms
+      emitSyncUpdate(orgId, { jobId, entity, processed: 11, total: TOTAL_STEPS, status: 'Running' });
+      await workshopService.syncCheckinLogs(orgId);
+      await workshopService.syncRegistrationForms(orgId);
+
+      await prisma.syncJob.update({
+        where: { id: jobId },
+        data: { status: 'Completed', endTime: new Date(), processed: TOTAL_STEPS, total: TOTAL_STEPS }
+      });
+      emitSyncUpdate(orgId, { jobId, entity, processed: TOTAL_STEPS, total: TOTAL_STEPS, status: 'Completed' });
     } else {
       throw new Error(`Unsupported sync entity: ${entity}`);
     }

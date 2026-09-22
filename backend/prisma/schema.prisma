@@ -39,6 +39,8 @@ model Organization {
   contacts                    Contact[]
   careProductInterests       ContactProductInterest[]
   careWorkshopAttendances    ContactWorkshopAttendance[]
+  workshops                   Workshop[]
+  workshopGuests              WorkshopGuest[]
   careComplaints             ContactComplaint[]
   zaloAccounts                ZaloAccount[]
   contactAccess               ContactAccess[]
@@ -201,8 +203,17 @@ model Organization {
   posBranchInventory      PosBranchInventory[]
   posWebhookLogs          PosWebhookLog[]
   posSaleMappings         PosSaleMapping[]
+  posBranches             PosBranch[]
+  posCategories           PosCategory[]
+  workshopRegistrationForms WorkshopRegistrationForm[]
+  workshopCheckinLogs     WorkshopCheckinLog[]
   syncJobs                SyncJob[]
   workspaceSessions       WorkspaceSession[]
+
+  // ── Customer Knowledge Graph (CKG) & Smart Customer Radar ───────────────────
+  graphNodes                  GraphNode[]
+  graphEdges                  GraphEdge[]
+  inferredCustomerProfiles    InferredCustomerProfile[]
 
   @@map("organizations")
 }
@@ -779,6 +790,10 @@ model Contact {
   posOrders   PosOrder[]        @relation("ContactPosOrders")
   posInvoices PosInvoice[]      @relation("ContactPosInvoices")
   posDebts    PosCustomerDebt[] @relation("ContactPosDebts")
+  workshopGuests WorkshopGuest[]
+
+  // ── Customer Knowledge Graph (CKG) & Smart Customer Radar ───────────────────
+  inferredProfile InferredCustomerProfile?
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
@@ -4511,6 +4526,7 @@ model SyncJob {
   // Dùng làm `lastModifiedFrom` cho lần đồng bộ tăng dần kế tiếp — PUBLIC-API.md
   // mục 4 yêu cầu dùng đồng hồ POS, không dùng giờ máy CRM (lệch giờ = sót bản ghi).
   posTimestamp DateTime? @map("pos_timestamp")
+  metadata     Json?     @default("{}")
 
   createdAt   DateTime  @default(now()) @map("created_at")
   updatedAt   DateTime  @updatedAt @map("updated_at")
@@ -4739,5 +4755,212 @@ model CustomerProductInterest {
   @@index([contactId, isDeleted])
   @@index([scannedAt])
   @@map("customer_product_interests")
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// Workshop Read-Model — Đồng bộ từ máy chủ Workshop Public API v1
+// ════════════════════════════════════════════════════════════════════════════
+
+model Workshop {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  externalId  String?  @map("external_id")
+  slug        String
+  title       String
+  description String?  @db.Text
+  location    String?
+  startsAt    DateTime @map("starts_at")
+  endsAt      DateTime @map("ends_at")
+  capacity    Int      @default(0)
+  status      String   @default("OPEN")
+  bannerUrl   String?  @map("banner_url")
+  metadata    Json?    @default("{}")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org         Organization    @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  guests      WorkshopGuest[]
+
+  @@unique([orgId, slug])
+  @@index([orgId, startsAt(sort: Desc)])
+  @@map("workshops")
+}
+
+model WorkshopGuest {
+  id              String    @id @default(uuid())
+  orgId           String    @map("org_id")
+  workshopId      String    @map("workshop_id")
+  contactId       String?   @map("contact_id")
+  externalGuestId String?   @map("external_guest_id")
+  fullName        String    @map("full_name")
+  phone           String
+  phoneNormalized String    @map("phone_normalized")
+  email           String?
+  partySize       Int       @default(1) @map("party_size")
+  status          String    @default("REGISTERED")
+  checkinQrCode   String?   @map("checkin_qr_code")
+  registeredAt    DateTime  @default(now()) @map("registered_at")
+  checkedInAt     DateTime? @map("checked_in_at")
+  source          String?
+  notes           String?   @db.Text
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  org             Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  workshop        Workshop     @relation(fields: [workshopId], references: [id], onDelete: Cascade)
+  contact         Contact?     @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([workshopId, phoneNormalized])
+  @@index([orgId, phoneNormalized])
+  @@index([orgId, contactId])
+  @@map("workshop_guests")
+}
+
+model PosBranch {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  branchId      Int      @map("branch_id")
+  branchName    String   @map("branch_name")
+  address       String?
+  contactNumber String?  @map("contact_number")
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, branchId])
+  @@index([orgId, isActive])
+  @@map("pos_branches")
+}
+
+model PosCategory {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  categoryId   Int      @map("category_id")
+  categoryName String   @map("category_name")
+  parentId     Int?     @map("parent_id")
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, categoryId])
+  @@index([orgId, isActive])
+  @@map("pos_categories")
+}
+
+model WorkshopCheckinLog {
+  id            String   @id @default(uuid())
+  orgId         String   @map("org_id")
+  externalLogId String   @map("external_log_id")
+  workshopId    String   @map("workshop_id")
+  guestId       String   @map("guest_id")
+  scannedAt     DateTime @map("scanned_at")
+  method        String?  @default("QR")
+  checkedInBy   String?  @map("checked_in_by")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, externalLogId])
+  @@index([orgId, workshopId])
+  @@index([orgId, scannedAt(sort: Desc)])
+  @@map("workshop_checkin_logs")
+}
+
+model WorkshopRegistrationForm {
+  id          String   @id @default(uuid())
+  orgId       String   @map("org_id")
+  token       String   @map("token")
+  workshopId  String   @map("workshop_id")
+  title       String?
+  description String?  @db.Text
+  fields      Json?    @default("[]")
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  org Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, token])
+  @@index([orgId, workshopId])
+  @@map("workshop_registration_forms")
+}
+
+// ==============================================================================
+// CUSTOMER KNOWLEDGE GRAPH (CKG) & SMART CUSTOMER RADAR (2026-09-16)
+// ==============================================================================
+
+/// Nút thực thể trong đồ thị tri thức khách hàng (Contact, Group, Product, Centroid...)
+model GraphNode {
+  id         String                      @id @default(uuid())
+  orgId      String                      @map("org_id")
+  entityType String                      @map("entity_type") // CONTACT, GROUP, PRODUCT, PERSONA_CENTROID, POS_BILLING_DRAFT
+  entityId   String                      @map("entity_id")   // UUID/ID thực thể nghiệp vụ tương ứng
+  label      String                                          // Tên hiển thị (Tên KH, Tên Group, Tên Persona...)
+  properties Json                        @default("{}")      // Metadata động, thuộc tính chi tiết, vector fallback
+  embedding  Unsupported("vector(768)")?                     // Vector embedding 768 chiều (Gemini text-embedding-004) cho pgvector
+  createdAt  DateTime                    @default(now()) @map("created_at")
+  updatedAt  DateTime                    @updatedAt @map("updated_at")
+
+  org           Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  outgoingEdges GraphEdge[]  @relation("SourceEdges")
+  incomingEdges GraphEdge[]  @relation("TargetEdges")
+
+  @@unique([orgId, entityType, entityId])
+  @@index([orgId, entityType])
+  @@index([orgId, entityId])
+  @@index([orgId, label])
+  @@map("graph_nodes")
+}
+
+/// Cạnh quan hệ có hướng và trọng số giữa 2 nút trong đồ thị tri thức
+model GraphEdge {
+  id           String   @id @default(uuid())
+  orgId        String   @map("org_id")
+  sourceNodeId String   @map("source_node_id")
+  targetNodeId String   @map("target_node_id")
+  relationType String   @map("relation_type") // IN_GROUP, PURCHASED, LOOKALIKE_TO, BELONGS_TO, REFERRED
+  weight       Float    @default(1.0)         // Trọng số liên kết (điều chỉnh qua Human Feedback)
+  properties   Json     @default("{}")        // Bằng chứng, ngữ cảnh xuất hiện quan hệ, số lần tương tác
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  org        Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  sourceNode GraphNode    @relation("SourceEdges", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode GraphNode    @relation("TargetEdges", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, sourceNodeId, targetNodeId, relationType])
+  @@index([sourceNodeId, relationType])
+  @@index([targetNodeId, relationType])
+  @@index([orgId, relationType, weight])
+  @@map("graph_edges")
+}
+
+/// Hồ sơ chân dung suy luận 360° và kịch bản Next Best Action kèm cache 24h
+model InferredCustomerProfile {
+  id                 String    @id @default(uuid())
+  orgId              String    @map("org_id")
+  contactId          String    @unique @map("contact_id")
+  personaId          String?   @map("persona_id")                    // ID persona mẫu (vd: WHOLESALE_BUYER, RETAIL_VIP...)
+  personaLabel       String    @map("persona_label")                 // Tên persona hiển thị cho Sale
+  confidenceScore    Float     @map("confidence_score")              // Điểm tin cậy lũy tiến (0.50 - 0.95)
+  evidenceSubgraph   Json      @default("{}") @map("evidence_subgraph") // Subgraph bằng chứng (nodes, edges, metrics)
+  nextBestAction     Json      @default("{}") @map("next_best_action")  // Kịch bản chốt đơn, sản phẩm gợi ý, voucher
+  synthesizedSummary String?   @map("synthesized_summary") @db.Text  // Tóm tắt chân dung 3 dòng dệt từ LLM
+  validUntil         DateTime  @map("valid_until")                   // Thời điểm hết hạn cache (mặc định 24h sau khi tính)
+  lastEventAt        DateTime? @default(now()) @map("last_event_at") // Mốc sự kiện mới nhất kích hoạt tái tính toán
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  org     Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
+  contact Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([orgId, personaId])
+  @@index([orgId, confidenceScore])
+  @@index([orgId, validUntil])
+  @@map("inferred_customer_profiles")
 }
 

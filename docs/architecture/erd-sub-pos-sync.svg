@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 680" width="1150" height="680" style="background:#ffffff; font-family:'Segoe UI', Arial, sans-serif;">
+  <defs>
+    <style>
+      .title { font-size: 22px; font-weight: bold; fill: #0f172a; }
+      .subtitle { font-size: 13px; fill: #64748b; }
+      .tbl-hdr { font-size: 13px; font-weight: bold; fill: #ffffff; }
+      .fld-name { font-size: 11px; fill: #1e293b; }
+      .fld-type { font-size: 10px; fill: #64748b; font-family: monospace; }
+      .badge-pk { font-size: 9px; font-weight: bold; fill: #854d0e; }
+      .badge-fk { font-size: 9px; font-weight: bold; fill: #1e40af; }
+      .badge-uq { font-size: 9px; font-weight: bold; fill: #6b21a8; }
+      .line-rel { stroke: #475569; stroke-width: 1.5; fill: none; }
+      .crow-text { font-size: 11px; font-weight: bold; fill: #334155; }
+    </style>
+  </defs>
+
+  <text x="575" y="40" text-anchor="middle" class="title">Sub-domain 3: Local POS Sync, Inventory &amp; Billing Read-Models</text>
+  <text x="575" y="62" text-anchor="middle" class="subtitle">Synchronization Models: PosProduct, PosBranchInventory, PosOrder, PosInvoice &amp; PosBillingDraft</text>
+
+  <!-- Relations -->
+  <!-- Product -> BranchInventory -->
+  <path d="M 330 180 L 440 180" class="line-rel" />
+  <text x="340" y="174" class="crow-text">1</text><text x="425" y="174" class="crow-text">N</text>
+
+  <!-- Branch -> BranchInventory -->
+  <path d="M 560 380 L 560 300" class="line-rel" />
+  <text x="566" y="375" class="crow-text">1</text><text x="566" y="315" class="crow-text">N</text>
+
+  <!-- Contact -> PosOrder -->
+  <path d="M 800 120 L 780 120 L 780 430 L 740 430" class="line-rel" stroke-dasharray="4,3"/>
+
+  <!-- PosOrder -> PosInvoice -->
+  <path d="M 740 460 L 800 460" class="line-rel" />
+  <text x="748" y="454" class="crow-text">1</text><text x="788" y="454" class="crow-text">N</text>
+
+  <!-- PosProduct Table -->
+  
+    <g transform="translate(80, 90)">
+      <rect width="250" height="210" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="250" height="28" rx="6" fill="#b45309"/>
+      <rect width="250" height="6" y="22" fill="#b45309"/>
+      <text x="125" y="19" text-anchor="middle" class="tbl-hdr">PosProduct (Sản phẩm)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="240" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      
+      <text x="34" y="68" class="fld-name">posId</text>
+      <text x="240" y="68" text-anchor="end" class="fld-type">Int (Unique POS)</text>
+    
+      
+      <text x="34" y="90" class="fld-name">code</text>
+      <text x="240" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">name</text>
+      <text x="240" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">basePrice</text>
+      <text x="240" y="134" text-anchor="end" class="fld-type">Float?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">createdAt</text>
+      <text x="240" y="156" text-anchor="end" class="fld-type">DateTime</text>
+    
+    </g>
+  
+
+  <!-- PosBranchInventory Table -->
+  
+    <g transform="translate(440, 90)">
+      <rect width="240" height="210" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#d97706"/>
+      <rect width="240" height="6" y="22" fill="#d97706"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">PosBranchInventory (Tồn kho)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">posProductId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">Int</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">branchId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">Int</text>
+    
+      
+      <text x="34" y="112" class="fld-name">onHand</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="134" class="fld-name">reserved</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="156" class="fld-name">available</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="178" class="fld-name">status</text>
+      <text x="230" y="178" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+
+  <!-- PosBranch Table -->
+  
+    <g transform="translate(440, 380)">
+      <rect width="240" height="160" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#92400e"/>
+      <rect width="240" height="6" y="22" fill="#92400e"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">PosBranch (Chi nhánh kho)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      
+      <text x="34" y="68" class="fld-name">branchId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">Int</text>
+    
+      
+      <text x="34" y="90" class="fld-name">branchName</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">address</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="134" class="fld-name">isActive</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">Boolean</text>
+    
+    </g>
+  
+
+  <!-- PosCustomer Table -->
+  
+    <g transform="translate(80, 380)">
+      <rect width="250" height="180" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="250" height="28" rx="6" fill="#78350f"/>
+      <rect width="250" height="6" y="22" fill="#78350f"/>
+      <text x="125" y="19" text-anchor="middle" class="tbl-hdr">PosCustomer (KH POS)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="240" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      
+      <text x="34" y="68" class="fld-name">posId</text>
+      <text x="240" y="68" text-anchor="end" class="fld-type">Int</text>
+    
+      
+      <text x="34" y="90" class="fld-name">code</text>
+      <text x="240" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">name</text>
+      <text x="240" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">phone</text>
+      <text x="240" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">customerType</text>
+      <text x="240" y="156" text-anchor="end" class="fld-type">String?</text>
+    
+    </g>
+  
+
+  <!-- PosOrder Table -->
+  
+    <g transform="translate(740, 380)">
+      <rect width="250" height="200" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="250" height="28" rx="6" fill="#b45309"/>
+      <rect width="250" height="6" y="22" fill="#b45309"/>
+      <text x="125" y="19" text-anchor="middle" class="tbl-hdr">PosOrder (Đơn hàng)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="240" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">contactId</text>
+      <text x="240" y="68" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="90" class="fld-name">posOrderId</text>
+      <text x="240" y="90" text-anchor="end" class="fld-type">Int</text>
+    
+      
+      <text x="34" y="112" class="fld-name">code</text>
+      <text x="240" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">totalAmount</text>
+      <text x="240" y="134" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="156" class="fld-name">finalAmount</text>
+      <text x="240" y="156" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="178" class="fld-name">status</text>
+      <text x="240" y="178" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+
+  <!-- PosInvoice Table -->
+  
+    <g transform="translate(800, 90)">
+      <rect width="240" height="200" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#b45309"/>
+      <rect width="240" height="6" y="22" fill="#b45309"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">PosInvoice (Hóa đơn)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">contactId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">posOrderId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">Int?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">invoiceCode</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">totalAmount</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="156" class="fld-name">paidAmount</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">Float</text>
+    
+      
+      <text x="34" y="178" class="fld-name">status</text>
+      <text x="230" y="178" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+</svg>

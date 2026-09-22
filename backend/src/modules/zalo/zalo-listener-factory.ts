@@ -14,6 +14,8 @@ import { refreshGroupInfoNow } from './group-info-refresh.js';
 import { consumeIfExpected as consumeReactionEcho } from '../chat/reaction-echo-cache.js';
 import { emitChatMessage } from '../../shared/realtime/emit-chat.js';
 import { notifyNewInboundMessage } from '../push/push-service.js';
+import { ckgIngestionService } from '../ckg/ckg-ingestion-service.js';
+import { CkgEntityType } from '../ckg/ckg-types.js';
 
 // Map Zalo Reactions enum code → display emoji (cùng map với chat-operations-routes)
 const ZALO_REACTION_DISPLAY: Record<string, string> = {
@@ -975,6 +977,52 @@ export function attachZaloListener(ctx: ListenerContext): void {
         await refreshGroupInfoNow(accountId, orgId, String(event.groupId), io).catch((err) =>
           logger.warn(`[zalo:${accountId}] group_event refresh failed:`, err),
         );
+      })();
+    }
+
+    // CKG Hook: Xử lý sự kiện Realtime thành viên gia nhập nhóm (join / add_member)
+    const isJoinEvent = eventType === 'join' || eventType === 'add_member' || eventType === 'member_join' || eventType === 'new_member';
+    if (isJoinEvent && event?.groupId) {
+      void (async () => {
+        try {
+          const orgId = await resolveOrgId();
+          if (!orgId) return;
+
+          const gId = String(event.groupId);
+          const rawMembers = Array.isArray(event.members) ? event.members : [];
+          const memberUids: string[] = rawMembers
+            .map((m: any) => (typeof m === 'string' ? m : m?.id || m?.uid))
+            .filter(Boolean);
+
+          // 1. Đảm bảo đỉnh GROUP tồn tại
+          ckgIngestionService.upsertNode(orgId, CkgEntityType.GROUP, gId, `Nhóm Zalo ${gId}`, {
+            lastEvent: eventType,
+            lastEventAt: new Date().toISOString(),
+          });
+
+          // 2. Tìm contact tương ứng với memberUids vừa tham gia
+          if (memberUids.length > 0) {
+            const matchedFriends = await prisma.friend.findMany({
+              where: {
+                zaloAccountId: accountId,
+                zaloUidInNick: { in: memberUids },
+              },
+              select: { contactId: true },
+            });
+
+            for (const f of matchedFriends) {
+              if (f.contactId) {
+                ckgIngestionService.recordTouchpoint(orgId, f.contactId, 'GROUP_JOIN', {
+                  groupId: gId,
+                  groupName: `Nhóm Zalo ${gId}`,
+                  role: 'member',
+                });
+              }
+            }
+          }
+        } catch (err) {
+          logger.error(`[ckg-hook] Lỗi xử lý realtime group_event join groupId=${event?.groupId}:`, err);
+        }
       })();
     }
     // Future: store as system message in the group conversation

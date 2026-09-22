@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780" style="background:#ffffff; font-family:'Segoe UI', Arial, sans-serif;">
+  <defs>
+    <style>
+      .title { font-size: 24px; font-weight: bold; fill: #0f172a; }
+      .subtitle { font-size: 13px; fill: #64748b; }
+      .tbl-hdr { font-size: 13px; font-weight: bold; fill: #ffffff; }
+      .fld-name { font-size: 11px; fill: #1e293b; }
+      .fld-type { font-size: 10px; fill: #64748b; font-family: monospace; }
+      .badge-pk { font-size: 9px; font-weight: bold; fill: #854d0e; }
+      .badge-fk { font-size: 9px; font-weight: bold; fill: #1e40af; }
+      .badge-uq { font-size: 9px; font-weight: bold; fill: #6b21a8; }
+      .line-rel { stroke: #475569; stroke-width: 1.5; fill: none; }
+      .crow-text { font-size: 11px; font-weight: bold; fill: #334155; }
+      .enum-title { font-size: 12px; font-weight: bold; fill: #ffffff; }
+      .enum-item { font-size: 10.5px; fill: #334155; font-family: monospace; }
+    </style>
+    <!-- Arrow marker -->
+    <marker id="circle-end" markerWidth="8" markerHeight="8" refX="4" refY="4">
+      <circle cx="4" cy="4" r="3" fill="#ffffff" stroke="#475569" stroke-width="1.5"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="600" y="42" text-anchor="middle" class="title">Hi-CRM Database Entity-Relationship Diagram (ERD)</text>
+  <text x="600" y="64" text-anchor="middle" class="subtitle">Core Architecture · Model Relational Schema (backend/prisma/schema.prisma)</text>
+
+  <!-- ═══════════════ RELATION LINES (Back Layer) ═══════════════ -->
+  <!-- User (1) to Contact (N) -->
+  <path d="M 280 180 L 440 180" class="line-rel" />
+  <text x="290" y="174" class="crow-text">1</text>
+  <text x="425" y="174" class="crow-text">N</text>
+
+  <!-- User (1) to PosBillingDraft (N) -->
+  <path d="M 200 310 L 200 490 L 440 490" class="line-rel" />
+  <text x="206" y="325" class="crow-text">1</text>
+  <text x="425" y="484" class="crow-text">N</text>
+
+  <!-- Contact (1) to Conversation (N) -->
+  <path d="M 700 180 L 820 180" class="line-rel" />
+  <text x="710" y="174" class="crow-text">1</text>
+  <text x="805" y="174" class="crow-text">N</text>
+
+  <!-- Conversation (1) to Message (N) -->
+  <path d="M 940 310 L 940 370" class="line-rel" />
+  <text x="946" y="325" class="crow-text">1</text>
+  <text x="946" y="362" class="crow-text">N</text>
+
+  <!-- Contact (1) to PosBillingDraft (N) -->
+  <path d="M 570 340 L 570 430" class="line-rel" />
+  <text x="576" y="355" class="crow-text">1</text>
+  <text x="576" y="422" class="crow-text">N</text>
+
+  <!-- PermissionGroup (1) to User (N) -->
+  <path d="M 165 370 L 165 310" class="line-rel" />
+  <text x="172" y="362" class="crow-text">1</text>
+  <text x="172" y="325" class="crow-text">N</text>
+
+  <!-- User (1) to ZaloAccount (N) -->
+  <path d="M 120 310 L 120 530" class="line-rel" />
+  <text x="126" y="325" class="crow-text">1</text>
+  <text x="126" y="522" class="crow-text">N</text>
+
+  <!-- ZaloAccount (1) to ZaloAccountAccess (N) -->
+  <path d="M 270 590 L 330 590" class="line-rel" />
+  <text x="278" y="584" class="crow-text">1</text>
+  <text x="315" y="584" class="crow-text">N</text>
+
+  <!-- Message (N) to User (1) (repliedBy) -->
+  <path d="M 820 440 L 750 440 L 750 250 L 280 250" class="line-rel" stroke-dasharray="4,3" />
+  <text x="805" y="434" class="crow-text">N</text>
+  <text x="290" y="244" class="crow-text">1</text>
+
+  <!-- ═══════════════ TABLE 1: User ═══════════════ -->
+  <g transform="translate(50, 90)">
+    <rect width="230" height="220" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="230" height="30" rx="6" fill="#1e40af"/>
+    <rect width="230" height="6" y="24" fill="#1e40af"/>
+    <text x="115" y="20" text-anchor="middle" class="tbl-hdr">User</text>
+    
+    <!-- Rows -->
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="222" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">permissionGroupId</text><text x="222" y="68" text-anchor="end" class="fld-type">String?</text>
+    
+    <text x="34" y="90" class="fld-name">fullName</text><text x="222" y="90" text-anchor="end" class="fld-type">String</text>
+    
+    <rect x="5" y="100" width="22" height="15" rx="3" fill="#f3e8ff" stroke="#d8b4fe" stroke-width="0.8"/><text x="10" y="111" class="badge-uq">UQ</text>
+    <text x="34" y="112" class="fld-name">email</text><text x="222" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+    <rect x="5" y="122" width="22" height="15" rx="3" fill="#f3e8ff" stroke="#d8b4fe" stroke-width="0.8"/><text x="10" y="133" class="badge-uq">UQ</text>
+    <text x="34" y="134" class="fld-name">phone</text><text x="222" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+    <text x="34" y="156" class="fld-name">role</text><text x="222" y="156" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="178" class="fld-name">isActive</text><text x="222" y="178" text-anchor="end" class="fld-type">Boolean</text>
+    <text x="34" y="200" class="fld-name">lastLoginAt</text><text x="222" y="200" text-anchor="end" class="fld-type">DateTime?</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 2: PermissionGroup ═══════════════ -->
+  <g transform="translate(50, 370)">
+    <rect width="230" height="110" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="230" height="28" rx="6" fill="#334155"/>
+    <rect width="230" height="6" y="22" fill="#334155"/>
+    <text x="115" y="19" text-anchor="middle" class="tbl-hdr">PermissionGroup</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="222" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    <text x="34" y="68" class="fld-name">name</text><text x="222" y="68" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="90" class="fld-name">permissions</text><text x="222" y="90" text-anchor="end" class="fld-type">Json</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 3: ZaloAccount ═══════════════ -->
+  <g transform="translate(50, 530)">
+    <rect width="220" height="180" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="220" height="28" rx="6" fill="#0284c7"/>
+    <rect width="220" height="6" y="22" fill="#0284c7"/>
+    <text x="110" y="19" text-anchor="middle" class="tbl-hdr">ZaloAccount</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="212" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">ownerUserId</text><text x="212" y="68" text-anchor="end" class="fld-type">String</text>
+
+    <text x="34" y="90" class="fld-name">displayName</text><text x="212" y="90" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="112" class="fld-name">zaloUid</text><text x="212" y="112" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="134" class="fld-name">phone</text><text x="212" y="134" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="156" class="fld-name">status</text><text x="212" y="156" text-anchor="end" class="fld-type">String</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 4: ZaloAccountAccess ═══════════════ -->
+  <g transform="translate(300, 530)">
+    <rect width="125" height="120" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="125" height="28" rx="6" fill="#0369a1"/>
+    <rect width="125" height="6" y="22" fill="#0369a1"/>
+    <text x="62" y="19" text-anchor="middle" class="tbl-hdr" font-size="11">AccountAccess</text>
+
+    <rect x="4" y="34" width="20" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="8" y="45" class="badge-pk">PK</text>
+    <text x="28" y="46" class="fld-name">id</text>
+
+    <rect x="4" y="56" width="20" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="8" y="67" class="badge-fk">FK</text>
+    <text x="28" y="68" class="fld-name">zaloAccId</text>
+
+    <rect x="4" y="78" width="20" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="8" y="89" class="badge-fk">FK</text>
+    <text x="28" y="90" class="fld-name">userId</text>
+    <text x="28" y="108" class="fld-name">permission</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 5: Contact ═══════════════ -->
+  <g transform="translate(440, 90)">
+    <rect width="260" height="250" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="260" height="30" rx="6" fill="#059669"/>
+    <rect width="260" height="6" y="24" fill="#059669"/>
+    <text x="130" y="20" text-anchor="middle" class="tbl-hdr">Contact</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="252" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">assignedUserId</text><text x="252" y="68" text-anchor="end" class="fld-type">String?</text>
+
+    <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+    <text x="34" y="90" class="fld-name">statusId</text><text x="252" y="90" text-anchor="end" class="fld-type">String?</text>
+
+    <text x="34" y="112" class="fld-name">fullName</text><text x="252" y="112" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="134" class="fld-name">phone</text><text x="252" y="134" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="156" class="fld-name">phoneNormalized</text><text x="252" y="156" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="178" class="fld-name">email</text><text x="252" y="178" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="200" class="fld-name">leadScore</text><text x="252" y="200" text-anchor="end" class="fld-type">Int</text>
+    <text x="34" y="222" class="fld-name">posCustomerId</text><text x="252" y="222" text-anchor="end" class="fld-type">Int?</text>
+    <text x="34" y="240" class="fld-name">source</text><text x="252" y="240" text-anchor="end" class="fld-type">String?</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 6: PosBillingDraft ═══════════════ -->
+  <g transform="translate(440, 430)">
+    <rect width="260" height="210" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="260" height="28" rx="6" fill="#b45309"/>
+    <rect width="260" height="6" y="22" fill="#b45309"/>
+    <text x="130" y="19" text-anchor="middle" class="tbl-hdr">PosBillingDraft</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="252" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">contactId</text><text x="252" y="68" text-anchor="end" class="fld-type">String?</text>
+
+    <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+    <text x="34" y="90" class="fld-name">createdByUserId</text><text x="252" y="90" text-anchor="end" class="fld-type">String?</text>
+
+    <text x="34" y="112" class="fld-name">posCustomerId</text><text x="252" y="112" text-anchor="end" class="fld-type">Int</text>
+    <text x="34" y="134" class="fld-name">branchId</text><text x="252" y="134" text-anchor="end" class="fld-type">Int</text>
+    <text x="34" y="156" class="fld-name">totalAmount</text><text x="252" y="156" text-anchor="end" class="fld-type">Decimal(14,2)</text>
+    
+    <rect x="5" y="166" width="22" height="15" rx="3" fill="#f3e8ff" stroke="#d8b4fe" stroke-width="0.8"/><text x="10" y="177" class="badge-uq">UQ</text>
+    <text x="34" y="178" class="fld-name">idempotencyKey</text><text x="252" y="178" text-anchor="end" class="fld-type">String</text>
+    
+    <text x="34" y="198" class="fld-name">status</text><text x="252" y="198" text-anchor="end" class="fld-type">String</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 7: Conversation ═══════════════ -->
+  <g transform="translate(820, 90)">
+    <rect width="250" height="220" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="250" height="30" rx="6" fill="#7c3aed"/>
+    <rect width="250" height="6" y="24" fill="#7c3aed"/>
+    <text x="125" y="20" text-anchor="middle" class="tbl-hdr">Conversation</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="242" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">contactId</text><text x="242" y="68" text-anchor="end" class="fld-type">String?</text>
+
+    <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+    <text x="34" y="90" class="fld-name">zaloAccountId</text><text x="242" y="90" text-anchor="end" class="fld-type">String?</text>
+
+    <text x="34" y="112" class="fld-name">channel</text><text x="242" y="112" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="134" class="fld-name">threadType</text><text x="242" y="134" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="156" class="fld-name">externalThreadId</text><text x="242" y="156" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="178" class="fld-name">unreadCount</text><text x="242" y="178" text-anchor="end" class="fld-type">Int</text>
+    <text x="34" y="200" class="fld-name">lastMessageAt</text><text x="242" y="200" text-anchor="end" class="fld-type">DateTime?</text>
+  </g>
+
+  <!-- ═══════════════ TABLE 8: Message ═══════════════ -->
+  <g transform="translate(820, 370)">
+    <rect width="250" height="210" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+    <rect width="250" height="28" rx="6" fill="#6d28d9"/>
+    <rect width="250" height="6" y="22" fill="#6d28d9"/>
+    <text x="125" y="19" text-anchor="middle" class="tbl-hdr">Message</text>
+
+    <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+    <text x="34" y="46" class="fld-name">id</text><text x="242" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+
+    <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+    <text x="34" y="68" class="fld-name">conversationId</text><text x="242" y="68" text-anchor="end" class="fld-type">String</text>
+
+    <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+    <text x="34" y="90" class="fld-name">repliedByUserId</text><text x="242" y="90" text-anchor="end" class="fld-type">String?</text>
+
+    <text x="34" y="112" class="fld-name">senderType</text><text x="242" y="112" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="134" class="fld-name">content</text><text x="242" y="134" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="156" class="fld-name">contentType</text><text x="242" y="156" text-anchor="end" class="fld-type">String</text>
+    <text x="34" y="178" class="fld-name">zaloMsgId</text><text x="242" y="178" text-anchor="end" class="fld-type">String?</text>
+    <text x="34" y="198" class="fld-name">sentAt</text><text x="242" y="198" text-anchor="end" class="fld-type">DateTime</text>
+  </g>
+
+  <!-- ═══════════════ ENUM 1: Role ═══════════════ -->
+  <g transform="translate(800, 615)">
+    <rect width="115" height="105" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+    <rect width="115" height="22" rx="5" fill="#1e3a8a"/>
+    <rect width="115" height="4" y="18" fill="#1e3a8a"/>
+    <text x="57" y="15" text-anchor="middle" class="enum-title">Role</text>
+    <text x="12" y="38" class="enum-item">• OWNER</text>
+    <text x="12" y="55" class="enum-item">• ADMIN</text>
+    <text x="12" y="72" class="enum-item">• MEMBER</text>
+    <text x="12" y="89" class="enum-item">• CSKH</text>
+  </g>
+
+  <!-- ═══════════════ ENUM 2: FunnelStage (Status) ═══════════════ -->
+  <g transform="translate(930, 615)">
+    <rect width="160" height="145" rx="5" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+    <rect width="160" height="22" rx="5" fill="#065f46"/>
+    <rect width="160" height="4" y="18" fill="#065f46"/>
+    <text x="80" y="15" text-anchor="middle" class="enum-title">FunnelStage / Status</text>
+    <text x="12" y="38" class="enum-item">• NEW_LEAD</text>
+    <text x="12" y="55" class="enum-item">• CONTACTED</text>
+    <text x="12" y="72" class="enum-item">• APPOINTMENT</text>
+    <text x="12" y="89" class="enum-item">• QUOTED</text>
+    <text x="12" y="106" class="enum-item">• CLOSED_WON</text>
+    <text x="12" y="123" class="enum-item">• CLOSED_LOST</text>
+  </g>
+</svg>

@@ -17,6 +17,7 @@ import { syncReminderFromMessage } from '../contacts/reminder-sync.js';
 import { uploadBuffer } from '../../shared/storage/minio-client.js';
 import { compressImage } from '../media/media-service.js';
 import { config } from '../../config/index.js';
+import { ckgIngestionService } from '../ckg/ckg-ingestion-service.js';
 // Open-core: customer-reply care-session reaction moved to extension engine
 // (emitted via the shared automation event bus below).
 
@@ -661,6 +662,20 @@ export async function handleIncomingMessage(
           // engine not loaded — silent
         }
       })();
+    }
+
+    // CKG Hook: Ghi nhận điểm chạm CHAT_MESSAGE và củng cố cạnh CHATTED_WITH (<0.05ms fire-and-forget)
+    if (contactId && !msg.isBackfill) {
+      void Promise.resolve().then(() => {
+        ckgIngestionService.recordTouchpoint(account.orgId, contactId, 'CHAT_MESSAGE', {
+          conversationId: conversation.id,
+          messageId: message.id,
+          content: message.content ?? '',
+          senderType: msg.isSelf ? 'staff' : 'customer',
+        });
+      }).catch((err) => {
+        logger.error(`[ckg-hook] Lỗi ghi nhận CHAT_MESSAGE touchpoint contactId=${contactId}:`, err);
+      });
     }
 
     // Resolve senderResolved ngay lúc nhận tin, nếu không FE phải đợi tải lại trang mới có pill.

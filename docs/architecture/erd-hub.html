@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Hi-CRM ERD Architecture Report Hub</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; background: #f8fafc; color: #1e293b; }
+    header { background: #0f172a; color: #fff; padding: 20px 32px; display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #3b82f6; }
+    header h1 { font-size: 20px; font-weight: 700; }
+    header p { font-size: 13px; color: #94a3b8; margin-top: 4px; }
+    .nav-tabs { display: flex; background: #ffffff; border-bottom: 1px solid #e2e8f0; padding: 0 32px; gap: 8px; position: sticky; top: 0; z-index: 50; }
+    .tab-btn { padding: 14px 20px; border: none; background: transparent; font-size: 14px; font-weight: 600; color: #64748b; cursor: pointer; border-bottom: 3px solid transparent; transition: all .2s; }
+    .tab-btn:hover { color: #1e40af; }
+    .tab-btn.active { color: #1d4ed8; border-bottom-color: #1d4ed8; background: #eff6ff; }
+    .container { max-width: 1300px; margin: 28px auto; padding: 0 24px; }
+    .tab-pane { display: none; }
+    .tab-pane.active { display: block; }
+    .card { background: #fff; border-radius: 10px; border: 1px solid #e2e8f0; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px; }
+    .card-title { font-size: 17px; font-weight: 700; color: #0f172a; }
+    .btn-group { display: flex; gap: 10px; }
+    .btn { padding: 7px 14px; border-radius: 6px; font-size: 12.5px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border: none; }
+    .btn-blue { background: #2563eb; color: #fff; }
+    .btn-blue:hover { background: #1d4ed8; }
+    .btn-gray { background: #f1f5f9; color: #334155; border: 1px solid #cbd5e1; }
+    .btn-gray:hover { background: #e2e8f0; }
+    .diagram-img-wrap { text-align: center; background: #ffffff; padding: 20px; border: 1px solid #f1f5f9; border-radius: 8px; overflow-x: auto; }
+    .diagram-img-wrap img { max-width: 100%; height: auto; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .report-note { background: #f0fdf4; border-left: 4px solid #16a34a; padding: 14px 18px; border-radius: 0 8px 8px 0; margin-top: 16px; font-size: 13.5px; line-height: 1.6; color: #166534; }
+    .meta-tag { display: inline-block; padding: 3px 9px; border-radius: 12px; font-size: 11.5px; font-weight: 600; margin-right: 6px; }
+    .tag-blue { background: #dbeafe; color: #1e40af; }
+    .tag-green { background: #dcfce7; color: #15803d; }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>📐 Hi-CRM Database ERD Report Hub</h1>
+    <p>Bộ tài liệu &amp; Sơ đồ quan hệ thực thể tối ưu cho Báo cáo kỹ thuật (schema.prisma)</p>
+  </div>
+  <div style="font-size: 13px; color: #cbd5e1;">Phiên bản: Khóa luận / Báo cáo 4.2</div>
+</header>
+
+<div class="nav-tabs">
+  <button class="tab-btn active" onclick="switchTab('core')">🌟 1. Sơ đồ Cốt lõi (Core ERD cho mục 4.2)</button>
+  <button class="tab-btn" onclick="switchTab('rbac')">🏢 2. Phân hệ Multi-tenant RBAC</button>
+  <button class="tab-btn" onclick="switchTab('care')">💬 3. Phân hệ Zalo Care &amp; Customer 360</button>
+  <button class="tab-btn" onclick="switchTab('pos')">📦 4. Phân hệ Đồng bộ POS Read-models</button>
+</div>
+
+<div class="container">
+
+  <!-- TAB 1: CORE ERD -->
+  <div id="tab-core" class="tab-pane active">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <span class="meta-tag tag-blue">Mục 4.2 Khuyến nghị</span>
+          <span class="meta-tag tag-green">8 Thực thể chính</span>
+          <h2 class="card-title" style="margin-top:6px;">Hi-CRM Core Database Relational Model (Khớp chính xác đoạn văn 4.2)</h2>
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-blue" href="./erd-core.png" download>⬇ Tải PNG nét cao (300 DPI)</a>
+          <a class="btn btn-gray" href="./erd-core.svg" download>⬇ Tải Vector SVG</a>
+          <a class="btn btn-gray" href="./erd-core.mmd" target="_blank">📄 Xem Mermaid</a>
+        </div>
+      </div>
+
+      <div class="diagram-img-wrap">
+        <img src="./erd-core.png" alt="Hi-CRM Core ERD" />
+      </div>
+
+      <div class="report-note">
+        <strong>💡 Đề xuất đưa vào báo cáo mục 4.2:</strong><br>
+        Hình trên mô hình hóa 8 thực thể trung tâm của Hi-CRM:
+        <strong>User</strong> (Nhân viên) thuộc <strong>PermissionGroup</strong> (Nhóm quyền), sở hữu tài khoản Zalo (<strong>ZaloAccount</strong>) và phân quyền chăm sóc qua <strong>ZaloAccountAccess</strong>.
+        Khách hàng (<strong>Contact</strong>) kết nối trực tiếp với luồng chat (<strong>Conversation</strong>, <strong>Message</strong>) và đơn hàng/dự thảo hóa đơn bán hàng tại chat (<strong>PosBillingDraft</strong>).
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 2: RBAC -->
+  <div id="tab-rbac" class="tab-pane">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <span class="meta-tag tag-blue">Tiểu phân hệ</span>
+          <h2 class="card-title">Phân hệ Multi-tenant &amp; Phân quyền Tổ chức (RBAC)</h2>
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-blue" href="./erd-sub-rbac.png" download>⬇ Tải PNG nét cao</a>
+          <a class="btn btn-gray" href="./erd-sub-rbac.svg" download>⬇ Tải SVG</a>
+        </div>
+      </div>
+      <div class="diagram-img-wrap">
+        <img src="./erd-sub-rbac.png" alt="RBAC Sub-domain ERD" />
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 3: CARE & CHAT -->
+  <div id="tab-care" class="tab-pane">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <span class="meta-tag tag-blue">Tiểu phân hệ</span>
+          <h2 class="card-title">Mô hình Hai Cuốn Sổ (Two-ledger: Contact &amp; Friend) &amp; Live Chat 360</h2>
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-blue" href="./erd-sub-care-chat.png" download>⬇ Tải PNG nét cao</a>
+          <a class="btn btn-gray" href="./erd-sub-care-chat.svg" download>⬇ Tải SVG</a>
+        </div>
+      </div>
+      <div class="diagram-img-wrap">
+        <img src="./erd-sub-care-chat.png" alt="Customer 360 ERD" />
+      </div>
+    </div>
+  </div>
+
+  <!-- TAB 4: POS -->
+  <div id="tab-pos" class="tab-pane">
+    <div class="card">
+      <div class="card-header">
+        <div>
+          <span class="meta-tag tag-blue">Tiểu phân hệ</span>
+          <h2 class="card-title">Phân hệ Đồng bộ Dữ liệu POS &amp; Tồn kho Read-Models</h2>
+        </div>
+        <div class="btn-group">
+          <a class="btn btn-blue" href="./erd-sub-pos-sync.png" download>⬇ Tải PNG nét cao</a>
+          <a class="btn btn-gray" href="./erd-sub-pos-sync.svg" download>⬇ Tải SVG</a>
+        </div>
+      </div>
+      <div class="diagram-img-wrap">
+        <img src="./erd-sub-pos-sync.png" alt="POS Sync ERD" />
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(tabId) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+    event.target.classList.add('active');
+    document.getElementById('tab-' + tabId).classList.add('active');
+  }
+</script>
+</body>
+</html>

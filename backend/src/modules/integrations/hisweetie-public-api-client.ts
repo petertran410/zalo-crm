@@ -183,6 +183,10 @@ export class HisweetiePublicApiClient {
     return this.list('branches', params);
   }
 
+  listCategories(params: PublicApiListParams = {}) {
+    return this.list('categories', params);
+  }
+
   listInventories(params: PublicApiListParams = {}) {
     return this.list('inventories', params);
   }

@@ -1,0 +1,91 @@
+﻿erDiagram
+    PermissionGroup ||--o{ User : "categorizes"
+    User ||--o{ ZaloAccount : "owns"
+    User ||--o{ ZaloAccountAccess : "granted"
+    ZaloAccount ||--o{ ZaloAccountAccess : "delegates"
+    User ||--o{ Contact : "assigned_to"
+    Contact ||--o{ Conversation : "chat_thread"
+    Conversation ||--o{ Message : "contains"
+    User ||--o{ Message : "replied_by"
+    Contact ||--o{ PosBillingDraft : "orders"
+    User ||--o{ PosBillingDraft : "created_by"
+
+    User {
+        String id PK
+        String permissionGroupId FK
+        String fullName
+        String email UK
+        String phone UK
+        String role
+        Boolean isActive
+        DateTime lastLoginAt
+    }
+
+    PermissionGroup {
+        String id PK
+        String name
+        Json permissions
+    }
+
+    ZaloAccount {
+        String id PK
+        String ownerUserId FK
+        String zaloUid UK
+        String displayName
+        String phone
+        String status
+        Int dailyMessageCap
+    }
+
+    ZaloAccountAccess {
+        String id PK
+        String zaloAccountId FK
+        String userId FK
+        String permission
+    }
+
+    Contact {
+        String id PK
+        String assignedUserId FK
+        String statusId FK
+        String fullName
+        String phone
+        String phoneNormalized
+        String email
+        Int leadScore
+        Int posCustomerId
+        String source
+    }
+
+    Conversation {
+        String id PK
+        String contactId FK
+        String zaloAccountId FK
+        String channel
+        String threadType
+        String externalThreadId
+        Int unreadCount
+        DateTime lastMessageAt
+    }
+
+    Message {
+        String id PK
+        String conversationId FK
+        String repliedByUserId FK
+        String senderType
+        String content
+        String contentType
+        String zaloMsgId
+        DateTime sentAt
+    }
+
+    PosBillingDraft {
+        String id PK
+        String contactId FK
+        String createdByUserId FK
+        Int posCustomerId
+        Int branchId
+        Decimal totalAmount
+        String idempotencyKey UK
+        String status
+    }

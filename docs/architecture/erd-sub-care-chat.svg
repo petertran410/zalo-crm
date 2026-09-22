@@ -1,0 +1,282 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1150 720" width="1150" height="720" style="background:#ffffff; font-family:'Segoe UI', Arial, sans-serif;">
+  <defs>
+    <style>
+      .title { font-size: 22px; font-weight: bold; fill: #0f172a; }
+      .subtitle { font-size: 13px; fill: #64748b; }
+      .tbl-hdr { font-size: 13px; font-weight: bold; fill: #ffffff; }
+      .fld-name { font-size: 11px; fill: #1e293b; }
+      .fld-type { font-size: 10px; fill: #64748b; font-family: monospace; }
+      .badge-pk { font-size: 9px; font-weight: bold; fill: #854d0e; }
+      .badge-fk { font-size: 9px; font-weight: bold; fill: #1e40af; }
+      .badge-uq { font-size: 9px; font-weight: bold; fill: #6b21a8; }
+      .line-rel { stroke: #475569; stroke-width: 1.5; fill: none; }
+      .crow-text { font-size: 11px; font-weight: bold; fill: #334155; }
+    </style>
+  </defs>
+
+  <text x="575" y="40" text-anchor="middle" class="title">Sub-domain 2: Customer 360 &amp; Delegated Zalo Care</text>
+  <text x="575" y="62" text-anchor="middle" class="subtitle">Two-ledger model (Contact KH Cha &amp; Friend Thẻ con), Conversation, Message &amp; Care Follow-ups</text>
+
+  <!-- Relations -->
+  <!-- Contact (1) -> Friend (N) -->
+  <path d="M 320 180 L 440 180" class="line-rel" />
+  <text x="330" y="174" class="crow-text">1</text><text x="425" y="174" class="crow-text">N</text>
+
+  <!-- ZaloAccount (1) -> Friend (N) -->
+  <path d="M 560 380 L 560 330" class="line-rel" />
+  <text x="566" y="375" class="crow-text">1</text><text x="566" y="345" class="crow-text">N</text>
+
+  <!-- Contact (1) -> Conversation (N) -->
+  <path d="M 190 330 L 190 440 L 440 440" class="line-rel" />
+  <text x="196" y="345" class="crow-text">1</text><text x="425" y="434" class="crow-text">N</text>
+
+  <!-- Conversation (1) -> Message (N) -->
+  <path d="M 680 440 L 780 440" class="line-rel" />
+  <text x="690" y="434" class="crow-text">1</text><text x="765" y="434" class="crow-text">N</text>
+
+  <!-- Message (1) -> MessageReaction (N) -->
+  <path d="M 900 560 L 900 600" class="line-rel" />
+  <text x="906" y="575" class="crow-text">1</text><text x="906" y="595" class="crow-text">N</text>
+
+  <!-- Contact (1) -> Appointment (N) -->
+  <path d="M 320 220 L 780 220" class="line-rel" stroke-dasharray="4,3"/>
+  <text x="330" y="214" class="crow-text">1</text><text x="765" y="214" class="crow-text">N</text>
+
+  <!-- Contact Table -->
+  
+    <g transform="translate(70, 90)">
+      <rect width="250" height="240" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="250" height="28" rx="6" fill="#059669"/>
+      <rect width="250" height="6" y="22" fill="#059669"/>
+      <text x="125" y="19" text-anchor="middle" class="tbl-hdr">Contact (KH Cha)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="240" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">assignedUserId</text>
+      <text x="240" y="68" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">statusId</text>
+      <text x="240" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">fullName</text>
+      <text x="240" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="134" class="fld-name">phone</text>
+      <text x="240" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">leadScore</text>
+      <text x="240" y="156" text-anchor="end" class="fld-type">Int (MAX)</text>
+    
+      
+      <text x="34" y="178" class="fld-name">posCustomerId</text>
+      <text x="240" y="178" text-anchor="end" class="fld-type">Int?</text>
+    
+      
+      <text x="34" y="200" class="fld-name">createdAt</text>
+      <text x="240" y="200" text-anchor="end" class="fld-type">DateTime</text>
+    
+    </g>
+  
+
+  <!-- Friend Table -->
+  
+    <g transform="translate(440, 90)">
+      <rect width="240" height="240" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#047857"/>
+      <rect width="240" height="6" y="22" fill="#047857"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">Friend (Thẻ Zalo con)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">contactId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">zaloAccountId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">zaloUidInNick</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">friendshipStatus</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="156" class="fld-name">relationshipKind</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="178" class="fld-name">leadScore</text>
+      <text x="230" y="178" text-anchor="end" class="fld-type">Int (Primary)</text>
+    
+      
+      <text x="34" y="200" class="fld-name">aliasInNick</text>
+      <text x="230" y="200" text-anchor="end" class="fld-type">String?</text>
+    
+    </g>
+  
+
+  <!-- ZaloAccount Table -->
+  
+    <g transform="translate(440, 380)">
+      <rect width="240" height="180" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#0284c7"/>
+      <rect width="240" height="6" y="22" fill="#0284c7"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">ZaloAccount (Nick Zalo)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">ownerUserId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">displayName</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">zaloUid</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="134" class="fld-name">phone</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">status</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+
+  <!-- Conversation Table -->
+  
+    <g transform="translate(440, 590)">
+      <rect width="240" height="110" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#7c3aed"/>
+      <rect width="240" height="6" y="22" fill="#7c3aed"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">Conversation</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">contactId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">zaloAccountId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">channel</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+
+  <!-- Message Table -->
+  
+    <g transform="translate(780, 380)">
+      <rect width="240" height="180" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#6d28d9"/>
+      <rect width="240" height="6" y="22" fill="#6d28d9"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">Message</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">conversationId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">repliedByUserId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">senderType</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="134" class="fld-name">content</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">Text?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">sentAt</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">DateTime</text>
+    
+    </g>
+  
+
+  <!-- MessageReaction Table -->
+  
+    <g transform="translate(780, 590)">
+      <rect width="240" height="100" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#8b5cf6"/>
+      <rect width="240" height="6" y="22" fill="#8b5cf6"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">MessageReaction</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">messageId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">emoji</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+
+  <!-- Appointment Table -->
+  
+    <g transform="translate(780, 90)">
+      <rect width="240" height="160" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#0f766e"/>
+      <rect width="240" height="6" y="22" fill="#0f766e"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">Appointment (Lịch hẹn)</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">contactId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">assignedUserId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="112" class="fld-name">appointmentDate</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">DateTime</text>
+    
+      
+      <text x="34" y="134" class="fld-name">status</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+</svg>
