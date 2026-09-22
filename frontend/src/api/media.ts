@@ -5,7 +5,7 @@ import { api } from './index';
 
 export interface MediaAssetItem {
   id: string;
-  kind: 'image' | 'video' | 'file';
+  kind: 'image' | 'video' | 'audio' | 'file';
   name: string;
   visibility: 'private' | 'public';
   ownerUserId: string | null;

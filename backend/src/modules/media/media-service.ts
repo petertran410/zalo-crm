@@ -35,7 +35,7 @@ const PNG_COMPRESSION_LEVEL = 9;
 // GIF không đi qua sharp vì sẽ mất animation.
 const COMPRESSIBLE = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
-export type MediaKind = 'image' | 'video' | 'file';
+export type MediaKind = 'image' | 'video' | 'audio' | 'file';
 export type MediaSource = 'upload' | 'saved_from_chat';
 /**
  * catalog là kho cũ, media.view_all xem được hết. private_upload là tệp tải lên từ tab Kho,

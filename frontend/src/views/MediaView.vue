@@ -19,7 +19,7 @@
         <button class="btn-trash" :class="{ on: trashMode }" :title="trashMode ? 'Đóng thùng rác' : 'Mở thùng rác'" @click="trashMode ? closeTrash() : openTrash()">
           <Trash2Icon :size="15" :stroke-width="1.9" /> Thùng rác
         </button>
-        <input ref="fileInput" type="file" multiple accept="image/*,video/*,.pdf,.xlsx,.docx,.zip" hidden @change="onFilesPicked" />
+        <input ref="fileInput" type="file" multiple accept="image/*,video/*,audio/*,.pdf,.xlsx,.docx,.zip" hidden @change="onFilesPicked" />
         <!-- Vue cần :webkitdirectory="true" vì đây không phải attribute HTML hợp lệ. -->
         <input
           ref="folderInput"
@@ -244,12 +244,12 @@ import {
   Trash2 as Trash2Icon, RotateCcw as RotateCcwIcon, X as XIcon, CheckSquare as CheckSquareIcon,
   Globe as GlobeIcon, Lock as LockIcon, Smartphone as NickIcon, Upload as UploadIcon,
   Image as ImageIcon, FileText as FileIcon, Video as VideoIcon, Folder as FolderIcon,
-  Lightbulb as LightbulbIcon, FolderUp as FolderUpIcon,
+  Lightbulb as LightbulbIcon, FolderUp as FolderUpIcon, Music as MusicIcon,
 } from 'lucide-vue-next';
 
 // Icon placeholder theo loại media.
 function kindIcon(kind: string) {
-  return kind === 'video' ? VideoIcon : kind === 'file' ? FileIcon : ImageIcon;
+  return kind === 'video' ? VideoIcon : kind === 'audio' ? MusicIcon : kind === 'file' ? FileIcon : ImageIcon;
 }
 
 const toast = useToast();
@@ -270,8 +270,9 @@ const tabs = [
   { kind: 'album', label: 'Album' },
   { kind: 'file', label: 'Tệp' },
   { kind: 'video', label: 'Video' },
+  { kind: 'audio', label: 'Âm thanh' },
 ];
-const activeKind = ref<'image' | 'album' | 'file' | 'video'>('image');
+const activeKind = ref<'image' | 'album' | 'file' | 'video' | 'audio'>('image');
 const items = ref<MediaAssetItem[]>([]);
 const folders = ref<MediaFolder[]>([]);
 const loading = ref(false);
@@ -492,8 +493,14 @@ function fmtSize(bytes: number | null | undefined): string {
 
 /** Phải khớp hạn mức ở media-routes.ts, lệch là người dùng ăn 413 giữa chừng. */
 const MAX_FILE_BYTES = 10 * 1024 * 1024;
-const MAX_BATCH_BYTES = 100 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+const MAX_BATCH_BYTES = 250 * 1024 * 1024;
 const UPLOAD_BATCH = 25;
+
+/** Trần theo loại tệp: video 100MB, còn lại 10MB — khớp maxForKind ở BE. */
+function capForFile(f: File): number {
+  return (f.type || '').startsWith('video/') ? MAX_VIDEO_BYTES : MAX_FILE_BYTES;
+}
 
 /** Chỉ đếm số tệp là chưa đủ vì 25 tệp x 10MB = 250MB, vượt trần 100MB mỗi lượt. */
 function batchFiles(files: File[]): File[][] {
@@ -517,7 +524,7 @@ function batchFiles(files: File[]): File[][] {
 function splitOversize(files: File[]): { ok: File[]; tooBig: File[] } {
   const ok: File[] = [];
   const tooBig: File[] = [];
-  for (const f of files) (f.size > MAX_FILE_BYTES ? tooBig : ok).push(f);
+  for (const f of files) (f.size > capForFile(f) ? tooBig : ok).push(f);
   return { ok, tooBig };
 }
 
@@ -553,7 +560,7 @@ async function onFilesPicked(e: Event) {
 
   const { ok: sendable, tooBig } = splitOversize(files);
   if (tooBig.length) {
-    toast.warning(`Bỏ qua ${tooBig.length} tệp quá 10MB: ${listNames(tooBig, false)}`, 6000);
+    toast.warning(`Bỏ qua ${tooBig.length} tệp quá cỡ cho phép: ${listNames(tooBig, false)}`, 6000);
   }
   if (!sendable.length) return;
 

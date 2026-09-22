@@ -2,7 +2,7 @@
   <!-- Atlas People — màn gộp "Bạn bè" + "Khách hàng" (design CRM Atlas No-Blur, 2026-07-29).
        Toàn bộ token màu nằm trong :root của .people → dark mode chỉ đổi data-theme,
        KHÔNG đụng theme global (index.html khai báo color-scheme: light only). -->
-  <div class="people" :data-theme="theme">
+  <div class="people" :data-theme="uiTheme.isDark ? 'dark' : 'light'">
     <!-- ═══════════ HEADER ═══════════ -->
     <header class="ppl-head">
       <div class="ppl-head-row">
@@ -10,83 +10,78 @@
           <h1>Khách hàng</h1>
         </div>
 
-        <label class="ppl-search" :class="{ on: !!q }">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.5" /><path d="M13.2 13.2 17 17" /></svg>
-          <input v-model="q" placeholder="Tìm khách hàng…" title="Tìm theo tên, SĐT, UID hoặc @username" @input="onQueryInput" />
-          <span v-if="q" class="ppl-search-x" @click="clearQuery">×</span>
-        </label>
-
         <!-- 2026-07-31: modal giờ làm 2 việc — liên kết KH có sẵn bên POS, hoặc
              tạo KH mới (Zalo/Facebook chưa có ở POS). Nhãn giữ "Thêm khách". -->
         <button class="ppl-btn-primary" @click="openAdd">
           <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M10 4v12M4 10h12" /></svg>
           Thêm khách
         </button>
-
-        <button class="ppl-theme" :title="theme === 'dark' ? 'Chuyển nền sáng' : 'Chuyển nền tối'" @click="toggleTheme">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 12.4A6.2 6.2 0 0 1 7.6 4.5a6.5 6.5 0 1 0 7.9 7.9Z" /></svg>
-          <span class="ppl-theme-label">{{ theme === 'dark' ? 'Sáng' : 'Tối' }}</span>
-        </button>
       </div>
 
-      <!-- ─── Thanh lọc ─── -->
+      <!-- ─── Thanh lọc ngang ───
+           Mọi bộ lọc dồn sau nút "+"; sắp xếp neo phải vì đổi thứ tự chứ không thu hẹp.
+           Mọi thay đổi áp dụng ngay, không có nút "Áp dụng". -->
       <div class="ppl-tools">
-        <button class="ppl-chip-btn" :class="{ open: menu === 'filters', armed: activeCount > 0 }" @click="toggleMenu('filters')">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 5.5h14M6 10h8M8.5 14.5h3" /></svg>
-          Bộ lọc
-          <span v-if="activeCount" class="ppl-count-badge">{{ activeCount }}</span>
-        </button>
+        <label class="ppl-search" :class="{ on: !!q }">
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="9" r="5.5" /><path d="M13.2 13.2 17 17" /></svg>
+          <input v-model="q" placeholder="Tìm khách hàng…" title="Tìm theo tên, SĐT, UID hoặc @username" @input="onQueryInput" />
+          <span v-if="q" class="ppl-search-x" @click="clearQuery">×</span>
+        </label>
 
-        <!-- Thùng rác đã gỡ khỏi màn này 2026-07-31 (anh chốt) — xem/khôi phục/xoá
-             vĩnh viễn đều ở Cài đặt › Thùng rác, owner-only. -->
-        <button class="ppl-chip-btn" :class="{ open: menu === 'sort' }" @click="toggleMenu('sort')">
-          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><rect x="3" y="4" width="14" height="12.5" rx="2.2" /><path d="M3 8h14M7 2.5v3M13 2.5v3" /></svg>
-          Thời gian &amp; sắp xếp
-          <span class="ppl-chip-sum">{{ sortSummary }}</span>
-        </button>
+        <!-- Wrapper riêng để popover neo đúng dưới nút "+". -->
+        <div class="ppl-morewrap">
+          <button
+            class="ppl-more"
+            :class="{ open: menu === 'more', armed: advCount > 0 }"
+            title="Thêm bộ lọc"
+            aria-label="Thêm bộ lọc"
+            @click="toggleMenu('more')"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 4.5v11M4.5 10h11" /></svg>
+            <span v-if="advCount" class="ppl-count-badge">{{ advCount }}</span>
+          </button>
 
-        <span v-if="activeCount" class="ppl-clear" @click="clearAll">Xoá lọc</span>
-
-        <div class="ppl-meta">
-          <span :title="countApprox ? 'Máy chủ phân trang theo lần tương tác cuối; đang lọc thêm theo mốc khác nên tổng là ước lượng.' : ''">
-            <strong>{{ rows.length }}</strong> / {{ countApprox ? '~' : '' }}{{ total }} khách
-          </span>
-          <span class="ppl-live"><span class="ppl-live-dot"></span>Trực tiếp</span>
-        </div>
-
-        <!-- ── MENU: Bộ lọc ── -->
-        <template v-if="menu === 'filters'">
-          <div class="ppl-scrim" @click="menu = null"></div>
-          <div class="ppl-menu ppl-menu--filters">
+          <!-- ── POPOVER: bộ lọc ít dùng ── -->
+          <template v-if="menu === 'more'">
+            <div class="ppl-scrim" @click="closeMore"></div>
+            <div class="ppl-menu ppl-menu--more">
             <div class="ppl-grp">
-              <div class="ppl-grp-t">Bộ lọc đã lưu</div>
-              <div class="ppl-set-row">
-                <span
-                  v-for="s in savedSets" :key="s.key"
-                  class="ppl-set" :class="{ on: f.set === s.key }"
-                  @click="pickSet(s)"
-                >
-                  {{ s.name }}
-                  <span v-if="s.builtin" class="ppl-set-n">•</span>
-                  <span v-else class="ppl-set-x" @click.stop="deleteSet(s)">×</span>
-                </span>
+              <div class="ppl-field">
+                <span class="ppl-field-l">Khoảng thời gian</span>
+                <div class="ppl-btns">
+                  <button
+                    v-for="p in PERIOD_OPTIONS" :key="p.value"
+                    type="button" class="ppl-btns-i" :class="{ on: period === p.value }"
+                    @click="pickPeriod(p.value)"
+                  >{{ p.label }}</button>
+                </div>
               </div>
-              <div class="ppl-set-save">
-                <input v-model="setName" placeholder="Tên bộ lọc…" @keyup.enter="saveSet" />
-                <button @click="saveSet">Lưu hiện tại</button>
-              </div>
-            </div>
 
-            <div class="ppl-grp">
-              <div class="ppl-grp-t">Quan hệ Zalo</div>
-              <div class="ppl-seg">
-                <span
-                  v-for="r in REL_OPTIONS" :key="r.value"
-                  class="ppl-seg-i" :class="{ on: f.rel.includes(r.value) }"
-                  @click="toggleRel(r.value)"
-                >{{ r.label }}</span>
+              <div class="ppl-field">
+                <span class="ppl-field-l">Trạng thái</span>
+                <div class="ppl-btns">
+                  <button
+                    type="button" class="ppl-btns-i" :class="{ on: !f.statusId }"
+                    @click="pickStatus('')"
+                  >Tất cả</button>
+                  <button
+                    v-for="s in statuses" :key="s.id"
+                    type="button" class="ppl-btns-i" :class="{ on: f.statusId === s.id }"
+                    @click="pickStatus(s.id)"
+                  >{{ s.name }}</button>
+                </div>
               </div>
-            </div>
+
+              <div class="ppl-field">
+                <span class="ppl-field-l">Quan hệ Zalo</span>
+                <div class="ppl-seg">
+                  <span
+                    v-for="r in REL_OPTIONS" :key="r.value"
+                    class="ppl-seg-i" :class="{ on: f.rel.includes(r.value) }"
+                    @click="toggleRel(r.value)"
+                  >{{ r.label }}</span>
+                </div>
+              </div>
 
             <!-- CKG Milestone 4: Lookalike Cluster Filter -->
             <div class="ppl-grp">
@@ -141,63 +136,59 @@
                   <option v-for="u in users" :key="u.id" :value="u.id">{{ u.fullName }}</option>
                 </select>
               </div>
-              <div class="ppl-field">
-                <span class="ppl-field-l">Trạng thái KH</span>
-                <select v-model="f.statusId" @change="applyFilters">
-                  <option value="">Tất cả trạng thái</option>
-                  <option v-for="s in statuses" :key="s.id" :value="s.id">{{ s.name }}</option>
-                </select>
-              </div>
+
               <div class="ppl-field">
                 <span class="ppl-field-l">Nguồn khách</span>
-                <select v-model="f.source" @change="applyFilters">
-                  <option value="">Tất cả nguồn</option>
-                  <option v-for="o in SOURCE_OPTIONS" :key="o.value" :value="o.value">{{ o.text }}</option>
-                </select>
+                <div class="ppl-btns">
+                  <button
+                    type="button" class="ppl-btns-i" :class="{ on: !f.source }"
+                    @click="pickSource('')"
+                  >Tất cả</button>
+                  <button
+                    v-for="o in SOURCE_OPTIONS" :key="o.value"
+                    type="button" class="ppl-btns-i" :class="{ on: f.source === o.value }"
+                    @click="pickSource(o.value)"
+                  >{{ o.text }}</button>
+                </div>
               </div>
+
               <div class="ppl-field">
                 <span class="ppl-field-l">Loại liên hệ</span>
-                <select v-model="f.type" @change="applyFilters">
-                  <option value="">Cá nhân hoặc nhóm</option>
-                  <option value="user">Cá nhân</option>
-                  <option value="group">Nhóm</option>
-                </select>
+                <div class="ppl-btns">
+                  <button
+                    v-for="t in TYPE_OPTIONS" :key="t.value"
+                    type="button" class="ppl-btns-i" :class="{ on: f.type === t.value }"
+                    @click="pickType(t.value)"
+                  >{{ t.label }}</button>
+                </div>
               </div>
-            </div>
 
-            <div class="ppl-grp">
-              <div class="ppl-grp-t">Có Zalo</div>
-              <div class="ppl-seg">
-                <span
-                  v-for="z in ZALO_OPTIONS" :key="z.value"
-                  class="ppl-seg-i" :class="{ on: f.zalo === z.value }"
-                  @click="f.zalo = z.value; applyFilters()"
-                >{{ z.label }}</span>
+              <div class="ppl-field">
+                <span class="ppl-field-l">Có Zalo</span>
+                <div class="ppl-btns">
+                  <button
+                    v-for="z in ZALO_OPTIONS" :key="z.value"
+                    type="button" class="ppl-btns-i" :class="{ on: f.zalo === z.value }"
+                    @click="pickZalo(z.value)"
+                  >{{ z.label }}</button>
+                </div>
               </div>
+
+              <label class="ppl-adv--inline">
+                <input type="checkbox" v-model="f.multiNick" @change="applyFilters" />
+                <span>Chỉ khách có nhiều nick Zalo</span>
+              </label>
+
+              <!-- Lọc điểm tiềm năng tạm ẩn; giữ state + param. -->
             </div>
 
-            <div class="ppl-menu-foot">
-              <span class="ppl-clear" @click="clearAll">Xoá tất cả</span>
-              <button class="ppl-btn-primary sm" @click="menu = null">Xem {{ total }} kết quả</button>
-            </div>
-          </div>
-        </template>
+            <!-- Nhóm "Hoạt động" (giờ trong ngày / số lần gắn sequence / số lần gửi kết bạn)
+                 tạm ẩn khỏi UI; state + query param + chip giữ nguyên để mở lại sau. -->
 
-        <!-- ── MENU: Thời gian & sắp xếp ── -->
-        <template v-if="menu === 'sort'">
-          <div class="ppl-scrim" @click="menu = null"></div>
-          <div class="ppl-menu ppl-menu--sort">
             <div class="ppl-grp">
               <div class="ppl-grp-row">
-                <div class="ppl-grp-t">Khoảng ngày</div>
+                <div class="ppl-grp-t">Khoảng ngày tuỳ chọn</div>
                 <div class="ppl-range-lbl">{{ rangeLabel }}</div>
-              </div>
-              <div class="ppl-preset-row">
-                <span
-                  v-for="p in PRESETS" :key="p.label"
-                  class="ppl-preset" :class="{ on: isPresetOn(p) }"
-                  @click="pickPreset(p)"
-                >{{ p.label }}</span>
               </div>
               <div class="ppl-cals">
                 <div class="ppl-cal">
@@ -229,48 +220,75 @@
               </div>
             </div>
 
-            <div class="ppl-time-row">
-              <div class="ppl-field">
-                <span class="ppl-field-l">Giờ trong ngày từ</span>
-                <input v-model="f.tFrom" type="time" class="ppl-time" />
-              </div>
-              <div class="ppl-field">
-                <span class="ppl-field-l">đến</span>
-                <input v-model="f.tTo" type="time" class="ppl-time" />
-              </div>
-              <div class="ppl-field grow">
-                <span class="ppl-field-l">Thứ tự</span>
-                <div class="ppl-seg">
-                  <span class="ppl-seg-i" :class="{ on: f.dir === 'desc' }" @click="f.dir = 'desc'">Mới nhất trước</span>
-                  <span class="ppl-seg-i" :class="{ on: f.dir === 'asc' }" @click="f.dir = 'asc'">Cũ nhất trước</span>
-                </div>
-              </div>
-            </div>
-            <!-- Cuối menu (anh chốt 2026-07-29): mặc định "Tất cả", bấm lại ô đang
-                 bật để tắt. Giải thích chuyển sang title= cho gọn. -->
             <div class="ppl-grp">
-              <div class="ppl-grp-t">Mốc</div>
-              <div class="ppl-seg">
+              <div class="ppl-grp-t">Bộ lọc đã lưu</div>
+              <div v-if="userSets.length" class="ppl-set-row">
                 <span
-                  class="ppl-seg-i" :class="{ on: !f.field }"
-                  title="Không lọc theo mốc — giữ thứ tự tương tác mới nhất trước"
-                  @click="f.field = ''"
-                >Tất cả</span>
-                <span
-                  v-for="o in FIELD_OPTIONS" :key="o.value"
-                  class="ppl-seg-i" :class="{ on: f.field === o.value }"
-                  :title="`Lọc & sắp xếp theo ${o.label}. KH trống mốc này sẽ bị loại. Bấm lại để tắt.`"
-                  @click="pickField(o.value)"
-                >{{ o.label }}</span>
+                  v-for="s in userSets" :key="s.key"
+                  class="ppl-set" :class="{ on: f.set === s.key }"
+                  @click="pickSet(s)"
+                >
+                  {{ s.name }}
+                  <span class="ppl-set-x" @click.stop="deleteSet(s)">×</span>
+                </span>
+              </div>
+              <div v-else class="ppl-set-empty">Chưa có bộ lọc nào được lưu</div>
+              <div class="ppl-set-save">
+                <input v-model="setName" placeholder="Tên bộ lọc…" @keyup.enter="saveSet" />
+                <button @click="saveSet">Lưu hiện tại</button>
               </div>
             </div>
 
             <div class="ppl-menu-foot">
-              <span class="ppl-clear" @click="resetTime">Đặt lại ngày &amp; giờ</span>
-              <button class="ppl-btn-primary sm" @click="onApplySort">Áp dụng</button>
+              <span class="ppl-clear" @click="clearAll">Xoá tất cả</span>
+              <button class="ppl-btn-primary sm" @click="closeMore">Xong</button>
             </div>
-          </div>
-        </template>
+            </div>
+          </template>
+        </div>
+
+        <!-- Sắp xếp neo phải, tách khỏi cụm lọc: lọc thu hẹp danh sách, sắp xếp đổi thứ tự. -->
+        <div class="ppl-sortwrap">
+          <button
+            class="ppl-sort"
+            :class="{ open: menu === 'sort', on: f.sort !== DEFAULT_SORT }"
+            title="Sắp xếp"
+            aria-haspopup="menu"
+            :aria-expanded="menu === 'sort'"
+            @click="toggleMenu('sort')"
+          >
+            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 4v12M6 16l-2.4-2.6M6 16l2.4-2.6" /><path d="M14 16V4M14 4l-2.4 2.6M14 4l2.4 2.6" /></svg>
+            <span>Sắp xếp</span>
+            <svg class="ppl-sort-caret" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M6 8.5l4 4 4-4" /></svg>
+          </button>
+
+          <template v-if="menu === 'sort'">
+            <div class="ppl-scrim" @click="closeMore"></div>
+            <div class="ppl-menu ppl-menu--sort" role="menu">
+              <button
+                v-for="o in SORT_OPTIONS" :key="o.value"
+                type="button" role="menuitem"
+                class="ppl-sort-i" :class="{ on: f.sort === o.value }"
+                @click="pickSort(o.value)"
+              >{{ o.label }}</button>
+            </div>
+          </template>
+        </div>
+
+        <div class="ppl-meta">
+          <span :title="countApprox ? 'Đang lọc thêm theo giờ trong ngày ở phía máy khách nên tổng là ước lượng.' : ''">
+            <strong>{{ countApprox ? '~' : '' }}{{ total }}</strong> / {{ grandTotal }} khách
+          </span>
+        </div>
+      </div>
+
+      <!-- ─── Chip bộ lọc đang áp dụng ─── -->
+      <div v-if="activeChips.length" class="ppl-chips">
+        <span v-for="c in activeChips" :key="c.key" class="ppl-chip">
+          {{ c.label }}
+          <button class="ppl-chip-x" :title="`Bỏ lọc ${c.label}`" @click="c.clear()">×</button>
+        </span>
+        <span class="ppl-clear" @click="clearAll">Xoá tất cả</span>
       </div>
     </header>
 
@@ -294,9 +312,9 @@
         <span class="c-radar">Chân dung Radar</span>
         <span class="c-chan">Kênh phụ trách</span>
         <span class="c-tags">Thẻ</span>
-        <span class="c-sent" :class="{ on: f.field === 'sent' }" @click="setField('sent')">Nhắn cuối {{ arrow('sent') }}</span>
-        <span class="c-created" :class="{ on: f.field === 'created' }" @click="setField('created')">Ngày tạo {{ arrow('created') }}</span>
-        <span class="c-inter" :class="{ on: f.field === 'inter' }" @click="setField('inter')">Tương tác {{ arrow('inter') }}</span>
+        <span class="c-sent" :class="{ on: sortFieldIs('sent') }" @click="setField('sent')">Nhắn cuối {{ arrow('sent') }}</span>
+        <span class="c-created" :class="{ on: sortFieldIs('created') }" @click="setField('created')">Ngày tạo {{ arrow('created') }}</span>
+        <span class="c-inter" :class="{ on: sortFieldIs('inter') }" @click="setField('inter')">Tương tác {{ arrow('inter') }}</span>
       </div>
 
       <!-- Skeleton lần tải đầu -->
@@ -453,6 +471,11 @@
             <div class="ppl-dr-pills">
               <span v-if="relLabel(primaryRelOf(detail))" class="ppl-dr-pill"><span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(detail)) }"></span>{{ relLabel(primaryRelOf(detail)) }}</span>
               <span v-if="detail.email" class="ppl-dr-pill">{{ detail.email }}</span>
+              <span class="ppl-dr-pill ppl-dr-debt" :class="debtStatusClass" :title="debtTooltip">
+                <span class="ppl-dr-debt-ico">💳</span>
+                Công nợ
+                <b>{{ debtDisplay }}</b>
+              </span>
             </div>
           </div>
           <button class="ppl-dr-x" @click="closeDrawer">×</button>
@@ -462,6 +485,85 @@
           <button class="ppl-btn-primary sm" :disabled="openingChat" @click="openChat">
             {{ openingChat ? 'Đang mở…' : (channelOf(detail) ? 'Mở chat Zalo' : 'Mở chat nội bộ') }}
           </button>
+          <div ref="familyWrapRef" class="ppl-fam-wrap">
+            <button
+              class="ppl-btn-ghost sm ppl-fam-btn" :class="{ on: familyOpen }"
+              type="button" @click.stop="toggleFamilyMenu"
+            >
+              nick liên quan
+              <span v-if="familyOtherCount" class="ppl-fam-count">{{ familyOtherCount }}</span>
+              <span class="ppl-fam-caret" :class="{ up: familyOpen }">▾</span>
+            </button>
+            <div v-if="familyOpen" class="ppl-fam-panel" @click.stop>
+              <div class="ppl-fam-sec">
+                <div class="ppl-fam-title">Cùng số điện thoại</div>
+                <div v-if="familyLoading" class="ppl-fam-empty">Đang tải…</div>
+                <div v-else-if="!familyMembers.length" class="ppl-fam-empty">
+                  Không có nick nào khác
+                </div>
+                <div v-else class="ppl-fam-list">
+                  <button
+                    v-for="m in familyMembers" :key="m.id"
+                    class="ppl-fam-item" :class="{ current: m.isCurrent, locked: !m.accessible }"
+                    type="button" :disabled="m.isCurrent"
+                    @click="openFamilyMember(m)"
+                  >
+                    <span class="ppl-fam-av" :style="{ background: hueOf(m.id) }">
+                      <img
+                        v-if="m.avatarUrl" :src="m.avatarUrl" alt=""
+                        referrerpolicy="no-referrer" @error="onAvatarError"
+                      />
+                      <template v-else>{{ familyInitials(m) }}</template>
+                    </span>
+                    <span class="ppl-fam-txt">
+                      <span class="ppl-fam-zalo">
+                        <span class="ppl-fam-zname" :title="familyZaloName(m)">{{ familyZaloName(m) }}</span>
+                        <span v-if="m.isCurrent" class="ppl-fam-badge">đang xem</span>
+                        <span v-else-if="!m.accessible" class="ppl-fam-badge alt">sale khác</span>
+                        <span v-if="m.phoneSuffix" class="ppl-fam-sfx">{{ m.phoneSuffix }}</span>
+                      </span>
+                      <span class="ppl-fam-pos" :title="familyPosName(m)">
+                        {{ familyPosName(m) || '— chưa có tên POS —' }}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div class="ppl-fam-sec alt">
+                <div class="ppl-fam-title">chuỗi</div>
+                <div v-if="chainLoading" class="ppl-fam-empty">Đang tải…</div>
+                <div v-else-if="!chainMembers.length" class="ppl-fam-empty">
+                  Không có nick nào cùng chuỗi
+                </div>
+                <div v-else class="ppl-fam-list">
+                  <button
+                    v-for="m in chainMembers" :key="m.id"
+                    class="ppl-fam-item" :class="{ current: m.isCurrent, locked: !m.accessible }"
+                    type="button" :disabled="m.isCurrent"
+                    @click="openFamilyMember(m)"
+                  >
+                    <span class="ppl-fam-av" :style="{ background: hueOf(m.id) }">
+                      <img
+                        v-if="m.avatarUrl" :src="m.avatarUrl" alt=""
+                        referrerpolicy="no-referrer" @error="onAvatarError"
+                      />
+                      <template v-else>{{ familyInitials(m) }}</template>
+                    </span>
+                    <span class="ppl-fam-txt">
+                      <span class="ppl-fam-zalo">
+                        <span class="ppl-fam-zname" :title="familyZaloName(m)">{{ familyZaloName(m) }}</span>
+                        <span v-if="m.isCurrent" class="ppl-fam-badge">đang xem</span>
+                        <span v-else-if="!m.accessible" class="ppl-fam-badge alt">sale khác</span>
+                      </span>
+                      <span class="ppl-fam-pos" :title="familyPosName(m)">
+                        {{ familyPosName(m) || '— chưa có tên POS —' }}
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
           <div class="ppl-dr-tags">
             <span v-for="t in (draft.tags || [])" :key="t" class="ppl-tag editable">
               {{ t }}<span class="ppl-tag-x" @click="removeTag(t)">×</span>
@@ -728,26 +830,6 @@
       </div>
     </div>
 
-    <!-- ═══════════ CẢNH BÁO: chọn ngày bắt đầu mà chưa chọn ngày kết thúc ═══════════ -->
-    <div v-if="warnNoEndDate" class="ppl-modal-wrap">
-      <div class="ppl-modal-scrim" @click="warnNoEndDate = false"></div>
-      <div class="ppl-modal ppl-modal--warn">
-        <div class="ppl-warn-head">
-          <span class="ppl-warn-ico">
-            <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M10 3.5 17 16H3z" /><path d="M10 8v3.5M10 13.5v.5" /></svg>
-          </span>
-          <div>
-            <h3>Chưa chọn ngày kết thúc</h3>
-            <div class="ppl-modal-sub">Đang có {{ f.from ? fmtDate(f.from) : '' }} → chưa chốt khoảng.</div>
-          </div>
-        </div>
-        <div class="ppl-modal-foot">
-          <span class="ppl-clear" @click="warnNoEndDate = false">Để tôi chọn tiếp</span>
-          <button class="ppl-btn-primary sm" @click="applyToToday">Lấy đến hôm nay</button>
-        </div>
-      </div>
-    </div>
-
     <div v-if="toastMsg" class="ppl-toast">{{ toastMsg }}</div>
   </div>
 </template>
@@ -768,6 +850,9 @@ import {
   SOURCE_OPTIONS,
   type Contact,
   type ContactCareFields,
+  type PhoneFamilyMember,
+  type PhoneFamilyResponse,
+  type ChainFamilyResponse,
 } from '@/composables/use-contacts';
 import { useFriendSocket, type FriendUpdatedPayload } from '@/composables/use-friend-socket';
 import { useContactPhoneSearch, candidateDisplayName, candidateKey, type PosLinkCandidate } from '@/composables/use-contact-phone-search';
@@ -775,6 +860,7 @@ import { displayCustomerName, customerInitials } from '@/composables/use-friend-
 import { TEMPLATE_VARIABLES } from '@/constants/template-variables';
 import { useToast } from '@/composables/use-toast';
 import { useAuthStore } from '@/stores/auth';
+import { useUiThemeStore } from '@/stores/ui-theme';
 import { useConfirm } from '@/composables/use-confirm';
 import CustomerRadarWidget from '@/components/radar/CustomerRadarWidget.vue';
 
@@ -835,12 +921,35 @@ const FIELD_OPTIONS = [
   { value: 'created', label: 'Ngày tạo' },
   { value: 'sent', label: 'Nhắn cuối' },
 ] as const;
-const PRESETS = [
-  { label: 'Mọi lúc', days: null as number | null },
-  { label: '7 ngày qua', days: 7 },
-  { label: '30 ngày qua', days: 30 },
-  { label: '90 ngày qua', days: 90 },
+
+const TYPE_OPTIONS: Array<{ value: '' | 'user' | 'group'; label: string }> = [
+  { value: '', label: 'Tất cả' },
+  { value: 'user', label: 'Cá nhân' },
+  { value: 'group', label: 'Nhóm' },
 ];
+/** Mỗi lựa chọn gộp sẵn field + chiều, map thẳng sang ?sort=&sortDir= của backend. */
+const SORT_OPTIONS = [
+  { value: 'activity_desc', label: 'Tương tác mới nhất' },
+  { value: 'activity_asc', label: 'Tương tác cũ nhất' },
+  { value: 'created_desc', label: 'Ngày tạo mới nhất' },
+  { value: 'created_asc', label: 'Ngày tạo cũ nhất' },
+  { value: 'sent_desc', label: 'Nhắn cuối mới nhất' },
+  { value: 'sent_asc', label: 'Nhắn cuối cũ nhất' },
+  { value: 'name_asc', label: 'Tên A–Z' },
+  { value: 'name_desc', label: 'Tên Z–A' },
+  { value: 'score_desc', label: 'Điểm tiềm năng cao nhất' },
+  { value: 'score_asc', label: 'Điểm tiềm năng thấp nhất' },
+] as const;
+const DEFAULT_SORT = 'activity_desc';
+
+// 'custom' không còn là nút — lịch "Khoảng ngày tuỳ chọn" bên dưới đã đảm nhận (pickDay).
+const PERIOD_OPTIONS = [
+  { value: 'all', label: 'Mọi lúc', days: null as number | null },
+  { value: '7', label: '7 ngày qua', days: 7 },
+  { value: '30', label: '30 ngày qua', days: 30 },
+  { value: '90', label: '90 ngày qua', days: 90 },
+] as const;
+
 const TABS = [
   { value: 'over', label: 'Tổng quan' },
   { value: 'chan', label: 'Kênh' },
@@ -850,15 +959,7 @@ const TABS = [
 
 type FieldKey = 'inter' | 'created' | 'sent';
 
-// Theme (scoped, không đụng global)
-const LS_THEME = 'peopleview.theme.v1';
-const theme = ref<'light' | 'dark'>(
-  (localStorage.getItem(LS_THEME) as 'light' | 'dark') || 'light',
-);
-function toggleTheme() {
-  theme.value = theme.value === 'dark' ? 'light' : 'dark';
-  try { localStorage.setItem(LS_THEME, theme.value); } catch { /* ignore */ }
-}
+const uiTheme = useUiThemeStore();
 
 // State danh sách
 /** Dữ liệu thô từ server. KHÔNG lọc/sắp xếp trực tiếp trên ref này. */
@@ -871,7 +972,7 @@ const listEl = ref<HTMLElement | null>(null);
 const flashId = ref<string | null>(null);
 
 const q = ref('');
-const menu = ref<'filters' | 'sort' | null>(null);
+const menu = ref<'more' | 'sort' | null>(null);
 const fetchError = ref<string | null>(null);
 
 // Chọn nhiều để chuyển vào thùng rác (owner-only từ 2026-07-31)
@@ -911,6 +1012,7 @@ async function onBulkArchive() {
     selected.value = new Set();
     showToast(`Đã chuyển ${n} khách vào thùng rác`);
     await fetchPage(true);
+    void loadGrandTotal();
   } finally {
     bulkWorking.value = false;
   }
@@ -926,6 +1028,12 @@ const f = reactive({
   confidenceTier: '' as '' | 'CONSOLIDATED' | 'PRELIMINARY',
   field: '' as FieldKey | '',   // '' = Tất cả (mặc định, không lọc theo mốc nào)
   dir: 'desc' as 'desc' | 'asc',
+  multiNick: false,
+  scoreMin: '',
+  scoreMax: '',
+  seqMin: '',
+  inviteMin: '',
+  sort: DEFAULT_SORT as string,
   from: null as Date | null,
   to: null as Date | null,
   tFrom: '',
@@ -933,26 +1041,100 @@ const f = reactive({
   set: null as string | null,
 });
 
+/** Bật/tắt các lọc ít dùng cần checkbox. */
+const adv = reactive({ score: false, hours: false, seq: false, invite: false });
+
+/** Period toolbar; 'custom' = lấy theo lịch. */
+const period = ref('all');
+
 const users = ref<Array<{ id: string; fullName: string }>>([]);
 const statuses = ref<Array<{ id: string; name: string; color: string | null }>>([]);
 
+/** Tổng KH không lọc — vế phải bộ đếm. */
+const grandTotal = ref(0);
+
 const allLoaded = computed(() => rawRows.value.length > 0 && rawRows.value.length >= total.value);
 
-const activeCount = computed(() => {
+/** Lọc đang bật; dùng cho empty-state và "Xoá tất cả". */
+const toolbarPeriodOn = computed(() => ['7', '30', '90'].includes(period.value));
+const customRangeOn = computed(() => period.value === 'custom' && !!(f.from || f.to));
+/** Badge nút "+" = số lọc đang bật TRONG popover (period + trạng thái nay nằm trong đó). */
+const advCount = computed(() => {
   let n = 0;
-  if (q.value.trim()) n++;
+  if (toolbarPeriodOn.value) n++;
+  if (f.statusId) n++;
   if (f.rel.length) n++;
   if (f.employee) n++;
-  if (f.statusId) n++;
   if (f.source) n++;
   if (f.type) n++;
   if (f.zalo) n++;
   if (f.personaCluster) n++;
   if (f.confidenceTier) n++;
-  if (f.from || f.to) n++;
+  if (f.multiNick) n++;
+  if (f.scoreMin || f.scoreMax) n++;
   if (f.tFrom || f.tTo) n++;
-  if (f.set) n++;
+  if (f.seqMin) n++;
+  if (f.inviteMin) n++;
+  if (customRangeOn.value) n++;
   return n;
+});
+/** Tổng lọc đang bật (search ở toolbar + phần còn lại trong popover); dùng cho empty-state. */
+const activeCount = computed(() => {
+  let n = 0;
+  if (q.value.trim()) n++;
+  return n + advCount.value;
+});
+
+/** Chip cho từng lọc; mỗi chip tự gỡ riêng. */
+const activeChips = computed<Array<{ key: string; label: string; clear: () => void }>>(() => {
+  const out: Array<{ key: string; label: string; clear: () => void }> = [];
+  if (toolbarPeriodOn.value) {
+    const lbl = PERIOD_OPTIONS.find((p) => p.value === period.value)?.label ?? '';
+    out.push({ key: 'period', label: `Khoảng thời gian: ${lbl}`, clear: () => { period.value = 'all'; onPeriodChange(); } });
+  }
+  if (customRangeOn.value) {
+    out.push({ key: 'range', label: `Ngày: ${rangeLabel.value}`, clear: clearRange });
+  }
+  if (f.statusId) {
+    const nm = statuses.value.find((s) => s.id === f.statusId)?.name ?? '';
+    out.push({ key: 'status', label: `Trạng thái: ${nm}`, clear: () => { f.statusId = ''; applyFilters(); } });
+  }
+  if (f.rel.length) {
+    const names = f.rel.map((v) => REL_OPTIONS.find((r) => r.value === v)?.label ?? v);
+    const txt = names.length > 1 ? `${names[0]} +${names.length - 1}` : names[0];
+    out.push({ key: 'rel', label: `Quan hệ Zalo: ${txt}`, clear: () => { f.rel = []; applyFilters(); } });
+  }
+  if (f.employee) {
+    const nm = users.value.find((u) => u.id === f.employee)?.fullName ?? '';
+    out.push({ key: 'employee', label: `Nhân viên: ${nm}`, clear: () => { f.employee = ''; applyFilters(); } });
+  }
+  if (f.source) {
+    const txt = SOURCE_OPTIONS.find((o) => o.value === f.source)?.text ?? f.source;
+    out.push({ key: 'source', label: `Nguồn: ${txt}`, clear: () => { f.source = ''; applyFilters(); } });
+  }
+  if (f.type) {
+    out.push({ key: 'type', label: `Loại: ${f.type === 'user' ? 'Cá nhân' : 'Nhóm'}`, clear: () => { f.type = ''; applyFilters(); } });
+  }
+  if (f.zalo) {
+    const txt = ZALO_OPTIONS.find((z) => z.value === f.zalo)?.label ?? '';
+    out.push({ key: 'zalo', label: `Zalo: ${txt}`, clear: () => { f.zalo = ''; applyFilters(); } });
+  }
+  if (f.multiNick) {
+    out.push({ key: 'multiNick', label: 'Nhiều nick Zalo', clear: () => { f.multiNick = false; applyFilters(); } });
+  }
+  if (f.scoreMin || f.scoreMax) {
+    out.push({ key: 'score', label: `Điểm: ${f.scoreMin || '0'}–${f.scoreMax || '100'}`, clear: () => { adv.score = false; f.scoreMin = ''; f.scoreMax = ''; applyFilters(); } });
+  }
+  if (f.tFrom || f.tTo) {
+    out.push({ key: 'hours', label: `Giờ: ${f.tFrom || '00:00'}–${f.tTo || '23:59'}`, clear: () => { adv.hours = false; f.tFrom = ''; f.tTo = ''; applyFilters(); } });
+  }
+  if (f.seqMin) {
+    out.push({ key: 'seq', label: `Sequence ≥ ${f.seqMin}`, clear: () => { adv.seq = false; f.seqMin = ''; applyFilters(); } });
+  }
+  if (f.inviteMin) {
+    out.push({ key: 'invite', label: `Kết bạn ≥ ${f.inviteMin}`, clear: () => { adv.invite = false; f.inviteMin = ''; applyFilters(); } });
+  }
+  return out;
 });
 
 // Tải dữ liệu
@@ -977,6 +1159,7 @@ async function fetchPage(reset: boolean) {
   }
   fetchError.value = null;
   try {
+    const [sortField, sortDir] = splitSort(f.sort);
     const res = await api.get('/contacts', {
       params: {
         page: page.value,
@@ -990,8 +1173,15 @@ async function fetchPage(reset: boolean) {
         hasZalo: f.zalo || undefined,
         personaCluster: f.personaCluster || undefined,
         confidenceTier: f.confidenceTier || undefined,
+        multiNick: f.multiNick ? 'true' : undefined,
+        scoreMin: f.scoreMin || undefined,
+        scoreMax: f.scoreMax || undefined,
+        sequenceAttachMin: f.seqMin || undefined,
+        friendInviteMin: f.inviteMin || undefined,
         dateFrom: f.from ? toDayParam(f.from) : undefined,
         dateTo: f.to ? toDayParam(f.to) : undefined,
+        sort: sortField || undefined,
+        sortDir: sortDir || undefined,
       },
     });
     const list: Contact[] = res.data.contacts ?? res.data ?? [];
@@ -1020,60 +1210,42 @@ async function fetchPage(reset: boolean) {
   }
 }
 
-/**
- * Cột ánh xạ sang field thật: "Nhắn cuối" là lastOutboundAt (tin cuối do mình gửi), "Tương tác
- * cuối" là lastActivity (tin cuối của bất kỳ bên nào), "Ngày tạo" là createdAt.
- * Đừng dùng lastInteractionAt: đó là mốc sự kiện riêng, không phải field backend lọc mặc định.
- */
-const FIELD_MAP: Record<FieldKey, keyof Contact> = {
-  inter: 'lastActivity',
-  created: 'createdAt',
-  sent: 'lastOutboundAt',
-};
+/** 'created_asc' → ['created', 'asc']; lạ thì về mặc định. */
+function splitSort(v: string): [string, string] {
+  const i = v.lastIndexOf('_');
+  const field = v.slice(0, i);
+  const dir = v.slice(i + 1);
+  if (dir !== 'asc' && dir !== 'desc') return ['', ''];
+  return [field, dir];
+}
 
-/**
- * Là computed chứ không ghi đè rows.value, nếu không thì tắt bộ lọc sẽ mất luôn các dòng
- * đã bị loại cho tới lần refetch sau.
- *
- * Phải lọc thêm ở client vì backend chỉ lọc khoảng ngày theo lastActivity, nên chọn mốc
- * "Nhắn cuối" vẫn trả về KH có lastOutboundAt rỗng hoặc ngoài khoảng.
- */
+/** Tổng KH không lọc (vế phải bộ đếm); gọi lại sau thêm/archive. */
+function loadGrandTotal() {
+  return api.get('/contacts/stats')
+    .then((r) => { grandTotal.value = r.data?.total ?? 0; })
+    .catch((err) => console.error('[PeopleView] load stats failed:', err));
+}
+
+/** Chỉ lọc giờ-trong-ngày ở client; backend không hỗ trợ. */
 const rows = computed<Contact[]>(() => {
   const list = rawRows.value;
-  if (!f.field) return list;           // "Tất cả" → giữ nguyên thứ tự server (lastActivity desc)
-  const k = FIELD_MAP[f.field];
   const mF = minsOf(f.tFrom);
   const mT = minsOf(f.tTo);
-  const fromT = f.from ? new Date(f.from.getFullYear(), f.from.getMonth(), f.from.getDate()).getTime() : null;
-  const toT = f.to ? new Date(f.to.getFullYear(), f.to.getMonth(), f.to.getDate(), 23, 59, 59, 999).getTime() : null;
-  const hasRange = fromT !== null || toT !== null;
-  const hasTime = mF !== null || mT !== null;
+  if (mF === null && mT === null) return list;
 
-  const out = list.filter((c) => {
-    const raw = c[k] as string | null | undefined;
-    if (!hasRange && !hasTime) return true;
-    if (!raw) return false;            // mốc đang lọc mà KH không có giá trị → loại
+  return list.filter((c) => {
+    const raw = c.lastActivity;
+    if (!raw) return false;
     const d = new Date(raw);
-    const t = d.getTime();
-    if (fromT !== null && t < fromT) return false;
-    if (toT !== null && t > toT) return false;
-    if (hasTime) {
-      const m = d.getHours() * 60 + d.getMinutes();
-      if (mF !== null && m < mF) return false;
-      if (mT !== null && m > mT) return false;
-    }
+    const m = d.getHours() * 60 + d.getMinutes();
+    if (mF !== null && m < mF) return false;
+    if (mT !== null && m > mT) return false;
     return true;
-  });
-
-  return out.sort((a, b) => {
-    const av = a[k] ? new Date(a[k] as string).getTime() : 0;
-    const bv = b[k] ? new Date(b[k] as string).getTime() : 0;
-    return f.dir === 'desc' ? bv - av : av - bv;
   });
 });
 
-/** Server đếm theo lastActivity → khi lọc client theo mốc khác, tổng sẽ lệch. */
-const countApprox = computed(() => !!f.field && (!!f.from || !!f.to || !!f.tFrom || !!f.tTo));
+/** Lọc giờ chạy client trên trang đã tải → tổng server không còn đúng. */
+const countApprox = computed(() => !!f.tFrom || !!f.tTo);
 
 function minsOf(hhmm: string): number | null {
   if (!hhmm) return null;
@@ -1112,25 +1284,73 @@ function toggleRel(v: string) {
   applyFilters();
 }
 
-/**
- * Click header cột: chưa chọn → bật (mới nhất trước) → đổi sang cũ nhất trước →
- * TẮT hẳn (về "Tất cả"). Cho phép bỏ mốc mà không cần mở menu (2026-07-29).
- */
-function setField(v: FieldKey) {
-  if (f.field !== v) { f.field = v; f.dir = 'desc'; return; }
-  if (f.dir === 'desc') { f.dir = 'asc'; return; }
-  f.field = '';
+/** Bấm nút lọc trong popover: gán giá trị rồi áp dụng ngay (chọn 1, không cộng dồn). */
+function pickPeriod(v: string) {
+  period.value = v;
+  onPeriodChange();
 }
-/** Click ô trong menu: đang bật thì tắt, chưa bật thì bật. */
-function pickField(v: FieldKey) {
-  f.field = f.field === v ? '' : v;
+function pickStatus(v: string) {
+  f.statusId = v;
+  applyFilters();
 }
+function pickSource(v: string) {
+  f.source = v;
+  applyFilters();
+}
+function pickType(v: '' | 'user' | 'group') {
+  f.type = v;
+  applyFilters();
+}
+function pickZalo(v: '' | 'true' | 'false') {
+  f.zalo = v;
+  applyFilters();
+}
+function pickSort(v: string) {
+  f.sort = v;
+  applyFilters();
+  closeMore();
+}
+
+/** Cột nào đang là khoá sắp xếp (tô sáng header). */
+function sortFieldIs(k: FieldKey): boolean {
+  const [field] = splitSort(f.sort);
+  const map: Record<FieldKey, string> = { inter: 'activity', created: 'created', sent: 'sent' };
+  return field === map[k];
+}
+/** Mũi tên ↑/↓ cho cột đang sắp. */
 function arrow(k: FieldKey) {
-  return f.field === k ? (f.dir === 'desc' ? '↓' : '↑') : '';
+  if (!sortFieldIs(k)) return '';
+  const [, dir] = splitSort(f.sort);
+  return dir === 'asc' ? '↑' : '↓';
+}
+/** Click header cột: đổi cột hoặc đảo chiều; luôn có thứ tự. */
+function setField(v: FieldKey) {
+  const map: Record<FieldKey, string> = { inter: 'activity', created: 'created', sent: 'sent' };
+  const cur = splitSort(f.sort);
+  if (cur[0] === map[v]) f.sort = `${map[v]}_${cur[1] === 'asc' ? 'desc' : 'asc'}`;
+  else f.sort = `${map[v]}_desc`;
+  applyFilters();
+}
+
+/** Preset gán from/to, 'all' xoá; khoảng tuỳ chọn do lịch bên dưới đảm nhận (pickDay). */
+function onPeriodChange() {
+  const opt = PERIOD_OPTIONS.find((p) => p.value === period.value);
+  pendingDay.value = null;
+  if (period.value === 'all') {
+    f.from = null;
+    f.to = null;
+  } else if (opt?.days) {
+    const to = new Date();
+    to.setHours(0, 0, 0, 0);
+    f.from = new Date(to.getTime() - (opt.days - 1) * 86400000);
+    f.to = to;
+  }
+  applyFilters();
 }
 
 function clearAll() {
   q.value = '';
+  period.value = 'all';
   f.rel = [];
   f.employee = '';
   f.statusId = '';
@@ -1139,26 +1359,49 @@ function clearAll() {
   f.zalo = '';
   f.personaCluster = '';
   f.confidenceTier = '';
+  f.multiNick = false;
+  f.scoreMin = '';
+  f.scoreMax = '';
+  f.seqMin = '';
+  f.inviteMin = '';
   f.from = null;
   f.to = null;
   f.tFrom = '';
   f.tTo = '';
   f.set = null;
-  f.field = '';
-  f.dir = 'desc';
+  f.sort = DEFAULT_SORT;
+  adv.score = false;
+  adv.hours = false;
+  adv.seq = false;
+  adv.invite = false;
   pendingDay.value = null;
   fetchPage(true);
 }
-function resetTime() {
+
+/** Gỡ chip khoảng ngày tuỳ chọn; trả period về 'all' nếu đang ở 'custom'. */
+function clearRange() {
   f.from = null;
   f.to = null;
-  f.tFrom = '';
-  f.tTo = '';
   pendingDay.value = null;
-  fetchPage(true);
+  if (period.value === 'custom') period.value = 'all';
+  applyFilters();
 }
-function toggleMenu(m: 'filters' | 'sort') {
+function toggleMenu(m: 'more' | 'sort') {
   menu.value = menu.value === m ? null : m;
+}
+function closeMore() {
+  menu.value = null;
+}
+/** Bật checkbox lọc ít dùng; tắt thì xoá luôn giá trị để không lọc ngầm. */
+function toggleAdv(k: keyof typeof adv) {
+  adv[k] = !adv[k];
+  if (!adv[k]) {
+    if (k === 'score') { f.scoreMin = ''; f.scoreMax = ''; }
+    if (k === 'hours') { f.tFrom = ''; f.tTo = ''; }
+    if (k === 'seq') f.seqMin = '';
+    if (k === 'invite') f.inviteMin = '';
+  }
+  applyFilters();
 }
 
 // Bộ lọc đã lưu
@@ -1264,9 +1507,13 @@ function monthGrid(off: number) {
 }
 function pickDay(day: Date) {
   if (!pendingDay.value) {
+    // Click đầu: coi như khoảng một ngày [day, day] để lọc áp dụng ngay (không chờ
+    // ngày kết thúc, vì thanh lọc giờ live và không còn nút "Áp dụng").
     pendingDay.value = day;
     f.from = day;
-    f.to = null;
+    f.to = day;
+    period.value = 'custom';
+    fetchPage(true);
     return;
   }
   let a = pendingDay.value;
@@ -1275,61 +1522,13 @@ function pickDay(day: Date) {
   pendingDay.value = null;
   f.from = a;
   f.to = b;
-  fetchPage(true);
-}
-function isPresetOn(p: { days: number | null }) {
-  if (p.days === null) return !f.from && !f.to;
-  if (!f.from || !f.to) return false;
-  const to = new Date();
-  to.setHours(0, 0, 0, 0);
-  const from = new Date(to.getTime() - (p.days - 1) * 86400000);
-  return f.from.toDateString() === from.toDateString() && f.to.toDateString() === to.toDateString();
-}
-function pickPreset(p: { days: number | null }) {
-  pendingDay.value = null;
-  if (p.days === null) {
-    f.from = null;
-    f.to = null;
-  } else {
-    const to = new Date();
-    to.setHours(0, 0, 0, 0);
-    f.from = new Date(to.getTime() - (p.days - 1) * 86400000);
-    f.to = to;
-  }
-  fetchPage(true);
-}
-
-/**
- * Chọn mới một đầu ngày rồi bấm Áp dụng thì cảnh báo thay vì đóng im lặng, vì pickDay chỉ fetch
- * ở click thứ hai nên lúc đó chưa có bộ lọc nào chạy.
- */
-const warnNoEndDate = ref(false);
-function onApplySort() {
-  if (f.from && !f.to) { warnNoEndDate.value = true; return; }
-  menu.value = null;
-  fetchPage(true);
-}
-function applyToToday() {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  if (f.from && f.from > today) f.to = f.from, f.from = today;
-  else f.to = today;
-  pendingDay.value = null;
-  warnNoEndDate.value = false;
-  menu.value = null;
+  period.value = 'custom';
   fetchPage(true);
 }
 
 const rangeLabel = computed(() => {
   if (!f.from) return 'Mọi ngày';
-  return fmtDate(f.from) + (f.to ? ` → ${fmtDate(f.to)}` : ' → chọn ngày kết thúc');
-});
-const sortSummary = computed(() => {
-  const lbl = FIELD_OPTIONS.find((o) => o.value === f.field)?.label ?? '';
-  let s = lbl ? `${lbl} ${f.dir === 'desc' ? '↓' : '↑'}` : 'Tất cả';
-  if (f.from) s += ` · ${rangeLabel.value}`;
-  if (f.tFrom || f.tTo) s += ` · ${f.tFrom || '00:00'}–${f.tTo || '23:59'}`;
-  return s;
+  return fmtDate(f.from) + (f.to ? ` → ${fmtDate(f.to)}` : '');
 });
 
 // Định dạng / hiển thị
@@ -1483,12 +1682,73 @@ const copiedCode = ref<string | null>(null);
 const copiedPosId = ref<number | null>(null);
 const chanEdit = reactive<Record<string, { alias?: string; statusId?: string }>>({});
 
+// "nick liên quan" — Contact cùng SĐT thật + cùng "chuỗi" (thương hiệu/công ty).
+const familyOpen = ref(false);
+const familyLoading = ref(false);
+const familyMembers = ref<PhoneFamilyMember[]>([]);
+const chainLoading = ref(false);
+const chainMembers = ref<PhoneFamilyMember[]>([]);
+const familyWrapRef = ref<HTMLElement | null>(null);
+let familyLoadedFor: string | null = null;
+let chainLoadedFor: string | null = null;
+// Số nick LIÊN QUAN (không tính Contact đang xem, dedupe theo id giữa 2 list).
+const familyOtherCount = computed(() => {
+  const ids = new Set<string>();
+  for (const m of [...familyMembers.value, ...chainMembers.value]) {
+    if (!m.isCurrent) ids.add(m.id);
+  }
+  return ids.size;
+});
+
 const timeline = ref<Array<{ title: string; desc: string; when: string }>>([]);
 const loadingTimeline = ref(false);
 const notes = ref<Array<{ id: string; author: string; body: string; when: string }>>([]);
 const loadingNotes = ref(false);
 const noteDraft = ref('');
 const savingNote = ref(false);
+
+// Công nợ = số tiền KH đang nợ công ty, lấy từ POS (snapshot + fallback hoá đơn chưa thanh toán).
+const debt = ref<{ totalDebt: number; overdueDebt: number; dueDate: string | null; status: string } | null>(null);
+const debtLoading = ref(false);
+
+async function loadDebt(contactId: string) {
+  debtLoading.value = true;
+  debt.value = null;
+  try {
+    const res = await api.get(`/pos/customers/${contactId}/debts`);
+    // Khách có thể đã đổi khi request về — chỉ ghi nếu vẫn đang xem đúng người đó.
+    if (selectedId.value !== contactId) return;
+    const d = res.data?.data;
+    debt.value = {
+      totalDebt: Number(d?.totalDebt) || 0,
+      overdueDebt: Number(d?.overdueDebt) || 0,
+      dueDate: d?.dueDate ?? null,
+      status: d?.status ?? 'Normal',
+    };
+  } catch (err) {
+    // Không phải lỗi của người dùng (KH chưa link POS / sale không có quyền xem) → im lặng, chip hiện 0 ₫.
+    console.error('[PeopleView] load debt failed:', err);
+    if (selectedId.value === contactId) debt.value = null;
+  } finally {
+    if (selectedId.value === contactId) debtLoading.value = false;
+  }
+}
+
+const VND_FMT = new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' });
+const debtDisplay = computed(() => (debtLoading.value ? '…' : VND_FMT.format(debt.value?.totalDebt ?? 0)));
+const debtStatusClass = computed(() => {
+  const d = debt.value;
+  if (!d || d.totalDebt <= 0) return 'clean';
+  return d.overdueDebt > 0 || d.status === 'Danger' ? 'danger' : 'warn';
+});
+const debtTooltip = computed(() => {
+  const d = debt.value;
+  if (!d || d.totalDebt <= 0) return 'Khách không có công nợ';
+  const bits = [`Tổng nợ: ${VND_FMT.format(d.totalDebt)}`];
+  if (d.overdueDebt > 0) bits.push(`Quá hạn: ${VND_FMT.format(d.overdueDebt)}`);
+  if (d.dueDate) bits.push(`Hạn thanh toán: ${new Date(d.dueDate).toLocaleDateString('vi-VN')}`);
+  return bits.join(' · ');
+});
 
 const careFields = reactive({
   productInterest: '',
@@ -1549,6 +1809,7 @@ async function openDrawer(row: Contact) {
   drawerOpen.value = true;
   detail.value = row;
   hydrateDraft(row);
+  void loadDebt(row.id);
   try {
     const res = await api.get(`/contacts/${row.id}`);
     if (res.data && selectedId.value === row.id) {
@@ -1612,12 +1873,124 @@ async function loadCareFields(contactId: string) {
 function closeDrawer() {
   drawerOpen.value = false;
   selectedId.value = null;
+  closeFamilyMenu();
+  debt.value = null;
+  debtLoading.value = false;
   // Bỏ ?focus= khỏi URL sau khi đóng — không thì F5 lại tự mở lại drawer vừa đóng.
   if (route.query.focus) {
     const q = { ...route.query };
     delete q.focus;
     void router.replace({ path: route.path, query: q });
   }
+}
+
+// ── "nick liên quan": Contact cùng SĐT thật + cùng "chuỗi" ─────────────────
+function closeFamilyMenu() {
+  familyOpen.value = false;
+}
+
+// Click ngoài đóng menu — cùng idiom với pos-menu ở ChatContactPanel.vue.
+// Listener chỉ gắn khi menu mở, tránh document listener sống suốt đời component.
+function onFamilyOutside(e: MouseEvent) {
+  const wrap = familyWrapRef.value;
+  if (wrap && !wrap.contains(e.target as Node)) closeFamilyMenu();
+}
+watch(familyOpen, (open) => {
+  if (open) document.addEventListener('mousedown', onFamilyOutside);
+  else document.removeEventListener('mousedown', onFamilyOutside);
+});
+
+async function toggleFamilyMenu() {
+  if (familyOpen.value) { familyOpen.value = false; return; }
+  if (!detail.value) return;
+  familyOpen.value = true;
+  await Promise.all([loadFamily(), loadChain()]);
+}
+
+/**
+ * Fetch family (cache theo contactId). Gọi khi mở drawer (để chip có số) VÀ khi
+ * bấm mở dropdown. `silent=true` (từ drawer) nuốt lỗi để không toast khi chỉ tải
+ * số nền — dropdown bấm tay vẫn báo lỗi.
+ */
+async function loadFamily(silent = false) {
+  if (!detail.value) return;
+  const anchorId = detail.value.id;
+  // Đã tải cho đúng Contact này rồi thì dùng lại — drawer có thể mở lại liên tục.
+  if (familyLoadedFor === anchorId) return;
+  // Xoá list của Contact trước ngay, đừng để flash dữ liệu cũ trong lúc chờ fetch.
+  familyMembers.value = [];
+  familyLoading.value = true;
+  try {
+    const res = await api.get<PhoneFamilyResponse>(`/contacts/${anchorId}/phone-family`);
+    // Đổi Contact giữa lúc chờ fetch → bỏ kết quả, không ghi đè family của Contact mới.
+    if (selectedId.value !== anchorId) return;
+    familyMembers.value = res.data?.contacts ?? [];
+    familyLoadedFor = anchorId;
+  } catch (err) {
+    if (selectedId.value !== anchorId) return;
+    console.error('[PeopleView] load phone family failed:', err);
+    if (!silent) toast.error('Không tải được các nick khác của khách này');
+    familyMembers.value = [];
+  } finally {
+    if (selectedId.value === anchorId) familyLoading.value = false;
+  }
+}
+
+/**
+ * Fetch "chuỗi" — cùng logic cache/guard như loadFamily, chỉ khác endpoint.
+ * `silent=true` từ drawer để chip có số nền mà không toast khi lỗi.
+ */
+async function loadChain(silent = false) {
+  if (!detail.value) return;
+  const anchorId = detail.value.id;
+  if (chainLoadedFor === anchorId) return;
+  chainMembers.value = [];
+  chainLoading.value = true;
+  try {
+    const res = await api.get<ChainFamilyResponse>(`/contacts/${anchorId}/chain-family`);
+    if (selectedId.value !== anchorId) return;
+    chainMembers.value = res.data?.contacts ?? [];
+    chainLoadedFor = anchorId;
+  } catch (err) {
+    if (selectedId.value !== anchorId) return;
+    console.error('[PeopleView] load chain family failed:', err);
+    if (!silent) toast.error('Không tải được các nick cùng chuỗi của khách này');
+    chainMembers.value = [];
+  } finally {
+    if (selectedId.value === anchorId) chainLoading.value = false;
+  }
+}
+
+/**
+ * Tên Zalo hiển thị ở dropdown. Cố tình KHÔNG dùng displayCustomerName(): chain đó
+ * fallback về fullName, mà fullName ở repo này là TÊN POS — dùng nó sẽ làm hai dòng
+ * (Zalo / POS) trùng nhau. Ở đây chỉ lấy tên thật từ Zalo/CRM.
+ */
+function familyZaloName(m: PhoneFamilyMember) {
+  const pick = (s?: string | null) =>
+    s && s.trim() && s.trim().toLowerCase() !== 'unknown' ? s.trim() : null;
+  return (
+    pick(m.crmName) ||
+    pick(m.zaloDisplayName) ||
+    pick(m.aliasInNick) ||
+    (m.zaloUid ? `KH-${m.zaloUid.slice(-4)}` : '') ||
+    'Chưa có tên Zalo'
+  );
+}
+function familyPosName(m: PhoneFamilyMember) {
+  return m.posName || m.fullName || '';
+}
+function familyInitials(m: PhoneFamilyMember) {
+  return initialsOfName(familyZaloName(m));
+}
+async function openFamilyMember(m: PhoneFamilyMember) {
+  if (m.isCurrent) { closeFamilyMenu(); return; }
+  closeFamilyMenu();
+  if (!m.accessible) {
+    toast.error('Khách này do sale khác phụ trách');
+    return;
+  }
+  await openDrawerById(m.id);
 }
 
 // Deep-link ?focus=<contactId> 2026-07-31 — KH cần mở có thể KHÔNG nằm trong
@@ -1633,6 +2006,7 @@ async function openDrawerById(id: string) {
     drawerOpen.value = true;
     detail.value = res.data;
     hydrateDraft(res.data);
+    void loadDebt(id);
     await loadCareFields(id);
   } catch (err) {
     console.error('[PeopleView] deep-link load failed:', err);
@@ -1727,6 +2101,7 @@ async function onPromote(ch: { id: string; zaloAccount?: { displayName?: string 
     showToast('Đã tách thành khách hàng riêng');
     closeDrawer();
     await fetchPage(true);
+    void loadGrandTotal();
   } catch (err) {
     console.error('[PeopleView] promote failed:', err);
     toast.error('Không tách được kênh này');
@@ -1896,6 +2271,9 @@ watch(selectedId, () => {
   timeline.value = [];
   notes.value = [];
   Object.keys(chanEdit).forEach((k) => delete chanEdit[k]);
+  // Tải family + chuỗi nền để chip "nick liên quan" có số ngay — silent=true.
+  void loadFamily(true);
+  void loadChain(true);
 });
 
 async function saveNote() {
@@ -1986,6 +2364,7 @@ async function submitCreate() {
     closeAdd();
     showToast(res.data?.exists ? 'Khách đã có sẵn — mở hồ sơ' : 'Đã tạo khách mới');
     await fetchPage(true);
+    void loadGrandTotal();
     if (created?.id) await openDrawerById(created.id);
   } catch (err) {
     console.error('[PeopleView] quick-create failed:', err);
@@ -2029,6 +2408,7 @@ async function submitLink() {
     closeAdd();
     showToast(res.data?.exists ? 'Khách đã có sẵn — mở hồ sơ' : 'Đã liên kết khách từ POS');
     await fetchPage(true);
+    void loadGrandTotal();
     if (linked?.id) await openDrawerById(linked.id);
   } catch (err) {
     console.error('[PeopleView] link-pos failed:', err);
@@ -2059,7 +2439,7 @@ useFriendSocket((payload: FriendUpdatedPayload) => {
 // Lifecycle
 function onKey(e: KeyboardEvent) {
   if (e.key !== 'Escape') return;
-  if (warnNoEndDate.value) { warnNoEndDate.value = false; return; }
+  if (familyOpen.value) { closeFamilyMenu(); return; }
   if (addOpen.value) { closeAdd(); return; }
   if (menu.value) { menu.value = null; return; }
   if (drawerOpen.value) closeDrawer();
@@ -2080,6 +2460,7 @@ onMounted(async () => {
   void fetchPage(true).then(() => {
     if (typeof focus === 'string') void openDrawerById(focus);
   });
+  void loadGrandTotal();
   try {
     const [u, s] = await Promise.all([
       api.get('/users'),
@@ -2102,6 +2483,7 @@ watch(() => route.query.focus, (focus) => {
 });
 onBeforeUnmount(() => {
   document.removeEventListener('keydown', onKey);
+  document.removeEventListener('mousedown', onFamilyOutside);
   clearTimeout(searchTimer);
   clearTimeout(toastTimer);
 });
@@ -2169,15 +2551,20 @@ onBeforeUnmount(() => {
 @keyframes ppPop { from { transform: translateY(8px) scale(.98); opacity: 0 } to { transform: none; opacity: 1 } }
 
 /* ═══════════ Header ═══════════ */
-.ppl-head { padding: 14px 24px 0; display: flex; flex-direction: column; gap: 10px; z-index: 15; }
+/* Nền đặc + position:relative để z-index có tác dụng: danh sách trượt phía sau
+   không lọt qua khe giữa toolbar và bảng. padding-bottom 10px bù cho phần
+   padding-top đã bỏ ở .ppl-list — giữ nguyên khoảng thở mà header bảng dính
+   sát mép dưới của dải nền đặc, không còn khe hở cho dòng cuộn ló vào. */
+.ppl-head {
+  padding: 14px 24px 10px; display: flex; flex-direction: column; gap: 10px;
+  position: relative; z-index: 15; background: var(--pp-bg);
+}
 .ppl-head-row { display: flex; align-items: center; gap: 12px; }
 .ppl-title h1 { margin: 0; font-family: var(--pp-display); font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; }
 
-/* Ô tìm kiếm: neo về bên phải cạnh các nút hành động (mẫu tham chiếu đặt tìm
-   kiếm + bộ lọc cùng một hàng bên phải tiêu đề) thay vì căn giữa tuyệt đối.
-   margin-left:auto đẩy cả cụm sang phải; bỏ margin:0 auto cũ. */
+/* Ô tìm kiếm: nằm đầu hàng lọc (cùng hàng với các dropdown), không còn ở hàng tiêu đề. */
 .ppl-search {
-  flex: 1; max-width: 360px; margin-left: auto;
+  flex: 0 1 280px; min-width: 180px;
   display: flex; align-items: center; gap: 9px;
   height: var(--app-control-h-lg); padding: 0 14px;
   border-radius: var(--app-radius-md);
@@ -2215,57 +2602,77 @@ onBeforeUnmount(() => {
 }
 .ppl-btn-ghost.sm { height: 30px; padding: 0 12px; font-size: 12px; align-self: flex-start; background: var(--pp-panel); }
 
-/* Nút đổi nền sáng/tối: thu về dạng icon-only cho đỡ chiếm chỗ trên hàng đầu,
-   nhãn chữ chỉ hiện ở màn rộng. */
-.ppl-theme {
-  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: var(--app-control-h-lg); padding: 0 11px;
-  border-radius: var(--app-radius-md);
-  border: 1px solid var(--pp-line); background: var(--pp-panel);
-  color: var(--pp-muted); font-size: 12.5px; font-weight: 600; cursor: pointer;
-}
-.ppl-theme:hover { color: var(--pp-fg); background: var(--pp-card); }
-.ppl-theme:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
-.ppl-theme svg { width: 16px; height: 16px; }
-.ppl-theme-label { display: none; }
-@media (min-width: 1280px) { .ppl-theme-label { display: inline; } }
-
-/* ── Thanh lọc ── */
+/* ── Thanh lọc ngang ──
+   Tìm kiếm + nút "+" ở trái; sắp xếp và bộ đếm neo phải. */
 .ppl-tools { display: flex; align-items: center; gap: 8px; position: relative; }
-.ppl-chip-btn {
-  display: inline-flex; align-items: center; gap: 8px;
-  height: var(--app-control-h-md); padding: 0 13px;
+
+/* Wrapper để menu sắp xếp neo đúng dưới nút, và đẩy cụm phải sang mép. */
+.ppl-sortwrap { position: relative; flex: none; margin-left: auto; }
+.ppl-sort {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: var(--app-control-h-lg); padding: 0 12px;
   border-radius: var(--app-radius-md);
   border: 1px solid var(--pp-line); background: var(--pp-panel);
-  color: var(--pp-fg); font-size: 12.5px; font-weight: 600; cursor: pointer;
+  color: var(--pp-fg); font-size: 12.5px; font-weight: 700; cursor: pointer;
+  transition: border-color .14s, color .14s;
 }
-.ppl-chip-btn.armed, .ppl-chip-btn.open { border-color: var(--pp-accent); color: var(--pp-accent); }
-.ppl-chip-btn.open { background: var(--pp-chip); }
-.ppl-chip-btn:hover { border-color: var(--pp-accent); }
-.ppl-chip-btn:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
-.ppl-chip-btn svg { width: 14px; height: 14px; }
-.ppl-chip-sum { font-weight: 500; color: var(--pp-muted); }
-.ppl-count-badge {
+.ppl-sort:hover { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-sort.on, .ppl-sort.open { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-sort.open { background: var(--pp-chip); }
+.ppl-sort:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
+.ppl-sort svg { width: 16px; height: 16px; flex: none; }
+.ppl-sort-caret { width: 13px; height: 13px; opacity: .6; }
+
+/* Wrapper riêng để popover neo đúng dưới nút "+". */
+.ppl-morewrap { position: relative; flex: none; }
+/* Nút "+" mở popover lọc ít dùng — vuông, cùng chiều cao dropdown. */
+.ppl-more {
+  position: relative; flex: none;
+  width: var(--app-control-h-lg); height: var(--app-control-h-lg);
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: var(--app-radius-md);
+  border: 1px solid var(--pp-line); background: var(--pp-panel);
+  color: var(--pp-muted); cursor: pointer;
+}
+.ppl-more:hover { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-more.open, .ppl-more.armed { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-more.open { background: var(--pp-chip); }
+.ppl-more:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
+.ppl-more svg { width: 16px; height: 16px; }
+.ppl-count-badge {
+  position: absolute; top: -5px; right: -5px;
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px; padding: 0 4px;
   border-radius: var(--app-radius-pill);
-  background: var(--pp-accent); color: var(--pp-onAccent); font-size: 11px; font-weight: 700;
+  background: var(--pp-accent); color: var(--pp-onAccent); font-size: 10px; font-weight: 700;
 }
 .ppl-clear {
   font-size: 13px; font-weight: 600; color: var(--pp-muted); cursor: pointer;
   text-decoration: underline; text-underline-offset: 3px; white-space: nowrap;
 }
+/* Bộ đếm đứng sát nút sắp xếp — .ppl-sortwrap giữ margin-left: auto duy nhất. */
 .ppl-meta {
-  margin-left: auto; display: flex; align-items: center; gap: 9px;
+  display: flex; align-items: center; gap: 9px; flex: none;
   font-size: 12.5px; color: var(--pp-muted); white-space: nowrap;
 }
 .ppl-meta strong { color: var(--pp-fg); font-weight: 700; }
-.ppl-live {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 4px 10px; border-radius: 999px; background: var(--pp-card);
-  font-size: 11.5px; font-weight: 600;
+
+/* ── Chip lọc đang áp dụng ── */
+.ppl-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 7px; }
+.ppl-chip {
+  display: inline-flex; align-items: center; gap: 7px;
+  height: 28px; padding: 0 6px 0 12px; border-radius: 999px;
+  background: var(--pp-chip); color: var(--pp-chipFg);
+  border: 1px solid transparent;
+  font-size: 12px; font-weight: 600; white-space: nowrap;
 }
-.ppl-live-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--pp-good); }
+.ppl-chip-x {
+  width: 18px; height: 18px; border-radius: 50%; border: 0; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; color: var(--pp-chipFg); font-size: 14px; line-height: 1;
+}
+.ppl-chip-x:hover { background: color-mix(in srgb, var(--pp-chipFg) 22%, transparent); }
+
 
 /* ── Menu dropdown ── */
 .ppl-scrim { position: fixed; inset: 0; z-index: 38; }
@@ -2278,13 +2685,28 @@ onBeforeUnmount(() => {
   display: flex; flex-direction: column; gap: 12px;
   animation: ppPop .16s ease-out;
 }
-.ppl-menu--filters { left: 0; width: 520px; }
-.ppl-menu--sort { left: 128px; width: 560px; }
+/* Neo TRÁI vì nút "+" nay sát ô tìm kiếm; neo phải sẽ đẩy popover tràn khỏi màn hình. */
+.ppl-menu--more { left: 0; width: 560px; max-width: calc(100vw - 32px); }
+.ppl-menu--sort { right: 0; width: 230px; gap: 2px; padding: 7px; }
+.ppl-sort-i {
+  display: block; width: 100%; text-align: left;
+  padding: 9px 11px; border: 0; border-radius: 9px;
+  background: transparent; color: var(--pp-fg);
+  font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.ppl-sort-i:hover { background: var(--pp-card); }
+.ppl-sort-i.on { background: var(--pp-accent); color: var(--pp-onAccent); font-weight: 700; }
 .ppl-menu-foot {
   display: flex; align-items: center; gap: 11px;
   padding-top: 10px; border-top: 1px solid var(--pp-line);
 }
 .ppl-menu-foot .ppl-btn-primary { margin-left: auto; }
+
+/* ── Lọc ít dùng: hàng checkbox ── */
+/* Ô tick 15px, không theo mặc định trình duyệt. */
+.ppl-adv--inline { display: flex; flex-direction: row; align-items: center; gap: 8px; }
+.ppl-adv--inline input { width: 15px; height: 15px; accent-color: var(--pp-accent); cursor: pointer; flex: none; }
+.ppl-adv--inline span { font-size: 12.5px; font-weight: 600; }
 
 .ppl-grp { display: flex; flex-direction: column; gap: 7px; }
 .ppl-grp-t { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--pp-muted); font-weight: 800; }
@@ -2323,6 +2745,20 @@ onBeforeUnmount(() => {
 }
 .ppl-seg-i.on { background: var(--pp-accent); color: var(--pp-onAccent); }
 
+/* Nút lọc xếp khít, tự xuống dòng — thay cho dropdown khi số lựa chọn ít. */
+.ppl-btns { display: flex; flex-wrap: wrap; gap: 5px; }
+.ppl-btns-i {
+  padding: 7px 12px; border-radius: 9px;
+  background: var(--pp-card); color: var(--pp-muted);
+  border: 1px solid var(--pp-line);
+  font-size: 12px; font-weight: 700; cursor: pointer;
+  transition: border-color .14s, color .14s;
+}
+.ppl-btns-i:hover { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-btns-i.on { background: var(--pp-accent); color: var(--pp-onAccent); border-color: var(--pp-accent); }
+.ppl-btns-i:focus-visible { outline: 2px solid var(--pp-accent); outline-offset: 2px; }
+.ppl-set-empty { font-size: 12px; color: var(--pp-faint); }
+
 .ppl-grid2 { display: grid; grid-template-columns: 1fr; gap: 11px; }
 .ppl-field { display: flex; flex-direction: column; gap: 6px; }
 .ppl-field.grow { flex: 1; }
@@ -2337,13 +2773,6 @@ onBeforeUnmount(() => {
 
 /* ── Lịch ── */
 .ppl-range-lbl { margin-left: auto; font-size: 12px; font-weight: 600; color: var(--pp-accent); }
-.ppl-preset-row { display: flex; gap: 6px; flex-wrap: wrap; }
-.ppl-preset {
-  padding: 6px 12px; border-radius: 999px; background: transparent;
-  color: var(--pp-muted); border: 1px solid var(--pp-line);
-  font-size: 11.5px; font-weight: 700; cursor: pointer;
-}
-.ppl-preset.on { background: var(--pp-chip); color: var(--pp-chipFg); border-color: var(--pp-chip); }
 .ppl-cals { display: flex; gap: 16px; padding: 12px; border-radius: 14px; background: var(--pp-card); }
 .ppl-cal { flex: 1; display: flex; flex-direction: column; gap: 6px; }
 .ppl-cal-h { display: flex; align-items: center; }
@@ -2373,7 +2802,7 @@ onBeforeUnmount(() => {
    theo cột — card rời làm mắt phải nhảy qua từng khoảng trống và tốn ~40% chiều
    cao cho khoảng cách + bóng đổ, nên mỗi màn thấy được ít dòng hơn hẳn.
    Hàng tiêu đề nay dính (sticky) để cuộn sâu vẫn biết đang đọc cột nào. */
-.ppl-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 10px 24px 24px; transition: opacity .16s; }
+.ppl-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 24px 24px; transition: opacity .16s; }
 .ppl-cols, .ppl-row { display: flex; align-items: center; min-width: 1330px; }
 .ppl-cols {
   position: sticky; top: 0; z-index: 2;
@@ -2644,12 +3073,103 @@ onBeforeUnmount(() => {
   font-size: 12px; font-weight: 600; white-space: nowrap;
   max-width: 200px; overflow: hidden; text-overflow: ellipsis;
 }
+
+/* Công nợ: cùng khung pill nhưng KHÔNG cắt bớt (số tiền là nội dung chính). */
+.ppl-dr-debt { max-width: none; overflow: visible; gap: 5px; color: var(--pp-muted); }
+.ppl-dr-debt b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.ppl-dr-debt-ico { font-size: 11px; }
+.ppl-dr-debt.clean { background: var(--pp-card); }
+.ppl-dr-debt.clean b { color: var(--pp-good); }
+.ppl-dr-debt.warn {
+  background: color-mix(in srgb, var(--pp-warn) 15%, transparent);
+  color: color-mix(in srgb, var(--pp-warn) 72%, var(--pp-fg));
+}
+.ppl-dr-debt.warn b { color: inherit; }
+.ppl-dr-debt.danger {
+  background: color-mix(in srgb, var(--pp-bad) 15%, transparent);
+  color: color-mix(in srgb, var(--pp-bad) 72%, var(--pp-fg));
+}
+.ppl-dr-debt.danger b { color: inherit; }
 .ppl-dr-x {
   flex: none; width: 32px; height: 32px; border: 0; border-radius: 11px;
   background: var(--pp-card); color: var(--pp-muted); cursor: pointer; font-size: 16px; line-height: 1;
 }
 .ppl-dr-x:hover { color: var(--pp-fg); }
 .ppl-dr-actions { display: flex; align-items: center; gap: 9px; }
+
+/* ── "nick liên quan" dropdown (cùng SĐT thật + cùng "chuỗi") ── */
+.ppl-fam-wrap { position: relative; display: inline-flex; flex: none; }
+.ppl-fam-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-weight: 700;
+}
+.ppl-fam-btn.on { border-color: var(--pp-accent); color: var(--pp-accent); }
+.ppl-fam-count {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 17px; height: 17px; padding: 0 4px;
+  border-radius: var(--app-radius-pill);
+  background: var(--pp-accent); color: var(--pp-onAccent);
+  font-size: 10px; font-weight: 700; line-height: 1;
+}
+.ppl-fam-caret { font-size: 9px; transition: transform .14s ease; }
+.ppl-fam-caret.up { transform: rotate(180deg); }
+.ppl-fam-panel {
+  position: absolute; top: calc(100% + 7px); left: 0; z-index: 80;
+  width: 330px; max-width: calc(92vw - 48px);
+  display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 14px; background: var(--pp-panel);
+  border: 1px solid var(--pp-line); box-shadow: 0 26px 52px -20px var(--pp-shadow);
+  animation: ppPop .16s ease-out;
+}
+.ppl-fam-sec { display: flex; flex-direction: column; flex: none; min-height: 0; }
+/* Section "chuỗi" ngăn với section SĐT bằng một đường kẻ. */
+.ppl-fam-sec.alt { border-top: 1px solid var(--pp-line); }
+.ppl-fam-title {
+  flex: none; padding: 11px 14px 8px;
+  font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
+  color: var(--pp-faint);
+}
+.ppl-fam-empty { padding: 4px 14px 14px; font-size: 12.5px; color: var(--pp-muted); }
+/* max-height trên flex container + overflow-y trên body = cặp quy ước của repo
+   (NickPickerPopup, quick-template-popup) để list cuộn mà header vẫn cố định.
+   Cap 200px (thay vì 296) để hai section cùng nằm gọn trong panel. */
+.ppl-fam-list { flex: 1 1 auto; min-height: 0; max-height: 200px; overflow-y: auto; padding: 0 6px 6px; }
+.ppl-fam-item {
+  width: 100%; display: flex; align-items: flex-start; gap: 10px;
+  padding: 8px; border: 0; border-radius: 11px; background: transparent;
+  cursor: pointer; text-align: left; color: inherit;
+}
+.ppl-fam-item:hover:not(:disabled) { background: var(--pp-card); }
+.ppl-fam-item:disabled { cursor: default; }
+.ppl-fam-item.current { background: var(--pp-chip); cursor: default; }
+.ppl-fam-item.locked { opacity: .62; }
+.ppl-fam-av {
+  width: 34px; height: 34px; flex: none; border-radius: 12px; overflow: hidden;
+  color: #1B1024; display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800;
+}
+.ppl-fam-av img { width: 100%; height: 100%; object-fit: cover; }
+.ppl-fam-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.ppl-fam-zalo {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; font-weight: 700; color: var(--pp-fg);
+  white-space: nowrap; overflow: hidden;
+}
+/* Flex child cần min-width:0 mới ellipsis được — không có thì tên dài đẩy badge
+   ra khỏi panel (text-overflow không áp lên flex container). */
+.ppl-fam-zname { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ppl-fam-badge {
+  flex: none; padding: 1px 7px; border-radius: 999px;
+  background: var(--pp-chip); color: var(--pp-chipFg);
+  font-size: 9.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+}
+.ppl-fam-badge.alt { background: var(--pp-card); color: var(--pp-muted); }
+.ppl-fam-sfx { flex: none; font-size: 11px; font-weight: 700; color: var(--pp-faint); font-variant-numeric: tabular-nums; }
+.ppl-fam-pos {
+  font-size: 12px; color: var(--pp-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 .ppl-dr-tags { margin-left: auto; display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
 .ppl-tag-input {
   width: 64px; height: 26px; padding: 0 10px; border-radius: 999px;
@@ -2795,10 +3315,10 @@ onBeforeUnmount(() => {
    ≤700px: bảng 6 cột → card 2 hàng, drawer → sheet toàn màn. */
 @media (max-width: 900px) {
   .ppl-head-row { flex-wrap: wrap; }
-  /* Xuống hàng riêng và chiếm trọn bề ngang; margin:0 ở đây CỐ Ý ghi đè
-     margin-left:auto của bố cục desktop. */
-  .ppl-search { order: 3; max-width: none; width: 100%; margin: 0; }
-  .ppl-menu--filters, .ppl-menu--sort { left: 0; width: min(520px, calc(100vw - 40px)); }
+  /* Thanh lọc cuộn ngang thay vì dồn ép; tìm kiếm giữ min-width để không bẹp. */
+  .ppl-tools { flex-wrap: wrap; }
+  .ppl-search { flex: 1 1 220px; }
+  .ppl-menu--more { left: 0; width: min(560px, calc(100vw - 32px)); }
   .ppl-cals { flex-direction: column; }
   .ppl-grid2 { grid-template-columns: 1fr; }
 }

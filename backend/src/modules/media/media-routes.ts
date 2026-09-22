@@ -46,6 +46,7 @@ const ALLOWED_IMAGE = [
   'image/x-icon', 'image/vnd.microsoft.icon',
 ];
 const ALLOWED_VIDEO = ['video/mp4', 'video/quicktime', 'video/webm'];
+const ALLOWED_AUDIO = ['audio/mpeg'];
 // Tái dùng đúng list của chat-attachment, không mở rộng tuỳ tiện.
 const ALLOWED_FILE = [
   'application/pdf',
@@ -58,16 +59,24 @@ const ALLOWED_FILE = [
   'application/zip', 'application/x-zip-compressed',
 ];
 /**
- * Hạn mức tải lên kho, áp cho mọi loại tệp. Đặt theo từng request qua request.parts()
+ * Hạn mức tải lên kho. Đặt theo từng request qua request.parts()
  * chứ không sửa multipart toàn cục, vì gửi tệp trong chat cần trần rộng hơn nhiều.
  */
 const PER_FILE_MAX = 10 * 1024 * 1024;
-// 25 x 10MB = 250MB nên trần này chạm trước, cố ý để chặn một lượt tải ngốn hết RAM.
-const REQUEST_TOTAL_MAX = 100 * 1024 * 1024;
+// Video quay bằng điện thoại vượt 10MB trong vài giây → cho mp4/mov/webm trần riêng.
+const VIDEO_FILE_MAX = 100 * 1024 * 1024;
+// Trần luồng busboy = loại lớn nhất, để video không bị cắt cụt; cỡ thật kiểm theo kind bên dưới.
+const STREAM_FILE_MAX = VIDEO_FILE_MAX;
+// Trần tổng một lượt: đủ chỗ cho 1 video 100MB + vài tệp nhỏ, vẫn chặn RAM phình to.
+const REQUEST_TOTAL_MAX = 250 * 1024 * 1024;
 const MAX_FILES_PER_REQUEST = 25;
 
-// TODO(video): kho chưa dùng cho video. Trần 10MB chỉ đủ vài giây quay bằng điện thoại,
-// muốn hỗ trợ thật thì phải cho kind='video' một trần riêng và tính lại chỗ lưu trữ.
+/** Trần theo loại: video được 100MB, còn lại 10MB. */
+function maxForKind(kind: MediaKind): number {
+  return kind === 'video' ? VIDEO_FILE_MAX : PER_FILE_MAX;
+}
+
+// TODO(video): trần video đã nâng lên 100MB; cân nhắc trần riêng cho audio nếu file dài.
 
 // GĐ13a Thùng rác Media (2026-06-12): giữ trong thùng rác 30 ngày rồi cron tự dọn (xóa hàng DB,
 // KHÔNG đụng byte MinIO). TRASH_EMPTY_BATCH: dọn-sạch-thủ-công xóa tối đa N/lần tránh khóa DB lâu.
@@ -77,6 +86,7 @@ const TRASH_EMPTY_BATCH = 500;
 function classify(mime: string): MediaKind | null {
   if (ALLOWED_IMAGE.includes(mime)) return 'image';
   if (ALLOWED_VIDEO.includes(mime)) return 'video';
+  if (ALLOWED_AUDIO.includes(mime)) return 'audio';
   if (ALLOWED_FILE.includes(mime)) return 'file';
   return null;
 }
@@ -348,9 +358,9 @@ export async function mediaRoutes(app: FastifyInstance) {
       let totalBytes = 0;
       try {
         // fileSize chặn ngay ở tầng luồng nên tệp quá cỡ bị cắt từ lúc đọc, không nuốt trọn
-        // 500MB vào RAM rồi mới từ chối.
+        // vào RAM rồi mới từ chối. Đặt theo loại lớn nhất (video); cỡ thật kiểm theo kind.
         const parts = request.parts({
-          limits: { fileSize: PER_FILE_MAX, files: MAX_FILES_PER_REQUEST },
+          limits: { fileSize: STREAM_FILE_MAX, files: MAX_FILES_PER_REQUEST },
         });
         for await (const part of parts) {
           if (part.type === 'field') {
@@ -370,10 +380,11 @@ export async function mediaRoutes(app: FastifyInstance) {
           const buf = await part.toBuffer();
 
           // Busboy chỉ cắt cụt tệp chứ không nói tệp nào hỏng, nên vẫn cần kiểm ở đây để
-          // báo đúng tên tệp cho người dùng.
-          if (buf.length > PER_FILE_MAX || (part.file as any)?.truncated) {
+          // báo đúng tên tệp cho người dùng. Trần theo kind: video 100MB, còn lại 10MB.
+          const cap = maxForKind(kind);
+          if (buf.length > cap || (part.file as any)?.truncated) {
             return reply.status(413).send({
-              error: `Tệp "${part.filename}" vượt quá ${PER_FILE_MAX / 1024 / 1024}MB mỗi tệp`,
+              error: `Tệp "${part.filename}" vượt quá ${cap / 1024 / 1024}MB mỗi tệp`,
               code: 'FILE_TOO_LARGE',
             });
           }
@@ -622,7 +633,7 @@ export async function mediaRoutes(app: FastifyInstance) {
           zaloAccount: conversation.zaloAccount,
           repliedByUserId: user.id,
           zaloMsgId,
-          contentType: asset.kind as 'image' | 'video' | 'file',
+          contentType: (asset.kind === 'audio' ? 'file' : asset.kind) as 'image' | 'video' | 'file',
           content,
           metadata: { sender: { kind: 'user_crm', name: userFullName } },
           sentVia: 'user',

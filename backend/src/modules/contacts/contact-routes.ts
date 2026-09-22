@@ -72,7 +72,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           zaloAccountId = "", // lọc KH mà nick CRM này (ZaloAccount) đang chăm (≥1 Friend row)
           dateFrom = "",
           dateTo = "",
-          sort = "", // 'score' = lead score cao lên đầu; mặc định = lastActivity desc
+          // 'score' | 'name' | 'created' | 'sent' | 'activity' (mặc định).
+          sort = "",
+          sortDir = "", // 'asc' | 'desc' — mặc định desc
           sequenceAttachMin = "", // #4: lọc KH đã gắn ≥ N sequence (đếm CareSession, auto+manual)
           friendInviteMin = "", // #3: lọc KH đã được gửi kết bạn ≥ N lần
           archived = "", // 'true' = chỉ trả Thùng rác; mặc định = bỏ archived
@@ -257,8 +259,40 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
 
-        // Sort: tương tác mới nhất lên đầu (theo design D2 trong office-hours doc).
-        // lastActivity null → cuối cùng. Indexed @@index([orgId, lastActivity]).
+        // Sort server-side: client sort chỉ xáo trộn các trang đã tải.
+        const dir = sortDir === "asc" ? "asc" : "desc";
+        const orderBy = ((): any[] => {
+          if (sort === "score") {
+            // leadScore không nullable → Prisma chỉ nhận SortOrder thuần.
+            return [
+              { leadScore: sortDir === "asc" ? "asc" : "desc" },
+              { lastActivity: { sort: "desc", nulls: "last" } },
+            ];
+          }
+          if (sort === "name") {
+            // crmName trước vì displayCustomerName() ở FE ưu tiên nó.
+            return [
+              { crmName: { sort: dir, nulls: "last" } },
+              { fullName: { sort: dir, nulls: "last" } },
+              { lastActivity: { sort: "desc", nulls: "last" } },
+            ];
+          }
+          if (sort === "created") {
+            return [{ createdAt: dir }];
+          }
+          if (sort === "sent") {
+            return [
+              { lastOutboundAt: { sort: dir, nulls: "last" } },
+              { lastActivity: { sort: "desc", nulls: "last" } },
+            ];
+          }
+          // Mặc định: tương tác mới nhất; null đẩy cuối cả hai chiều.
+          return [
+            { lastActivity: { sort: dir, nulls: "last" } },
+            { updatedAt: dir },
+          ];
+        })();
+
         const [contacts, total] = await Promise.all([
           prisma.contact.findMany({
             where,
@@ -269,18 +303,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               _count: { select: { conversations: true, appointments: true } },
               ...AGGREGATE_INCLUDE,
             },
-            // sort=score → lead score cao lên đầu; mặc định = tương tác mới nhất.
-            orderBy: (sort === "score"
-              ? [
-                  // leadScore Int @default(0) — KHÔNG nullable → Prisma chỉ nhận
-                  // SortOrder thuần ('desc'), không nhận {sort,nulls} (gây 500).
-                  { leadScore: "desc" },
-                  { lastActivity: { sort: "desc", nulls: "last" } },
-                ]
-              : [
-                  { lastActivity: { sort: "desc", nulls: "last" } },
-                  { updatedAt: "desc" },
-                ]) as any,
+            orderBy,
             skip: (pageNum - 1) * limitNum,
             take: limitNum,
           }),
