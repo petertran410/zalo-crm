@@ -47,3 +47,22 @@ Quyết định gốc: mô hình **"2 cuốn sổ"**.
 
 ### Cập nhật sơ đồ
 Sửa file `.mmd` tương ứng rồi chạy lại `/diagram` (re-render từ nguồn). Hoặc sửa `.excalidraw` trên excalidraw.com rồi re-render từ scene đã sửa.
+
+---
+
+## 4. Sơ đồ Quan hệ Thực thể ERD (Database Relational Models - Mục 4.2)
+
+Dành riêng cho báo cáo kỹ thuật / luận văn (khớp sát cấu trúc `schema.prisma` và đoạn mô tả 4.2):
+
+### 4.2.1. Sơ đồ Cốt lõi (Core ERD - Đề xuất chèn báo cáo chính)
+![Core ERD](./erd-core.png)
+
+> **File nguồn:** [erd-core.svg](./erd-core.svg) (vector), [erd-core.png](./erd-core.png) (300 DPI), [erd-core.mmd](./erd-core.mmd) (Mermaid).
+
+### 4.2.2. Các tiểu sơ đồ phân hệ (Sub-domain ERDs)
+1. **Multi-tenant RBAC & Phân quyền:** [erd-sub-rbac.png](./erd-sub-rbac.png) | [erd-sub-rbac.svg](./erd-sub-rbac.svg)
+2. **Customer 360 & Chăm sóc Zalo (Two-ledger):** [erd-sub-care-chat.png](./erd-sub-care-chat.png) | [erd-sub-care-chat.svg](./erd-sub-care-chat.svg)
+3. **Đồng bộ POS Read-models & Tồn kho:** [erd-sub-pos-sync.png](./erd-sub-pos-sync.png) | [erd-sub-pos-sync.svg](./erd-sub-pos-sync.svg)
+
+👉 **Xem trực quan toàn bộ tại:** [erd-hub.html](./erd-hub.html)
+

@@ -276,6 +276,221 @@ export class WorkshopService {
   }
 
   /**
+   * Đồng bộ toàn bộ khách mời cho tất cả các workshop thuộc tổ chức
+   */
+  public async syncAllWorkshopGuests(orgId: string): Promise<{ success: boolean; syncedCount: number; linkedCount: number; message: string }> {
+    const dbWorkshop = (prisma as any).workshop;
+    const workshops = await dbWorkshop.findMany({
+      where: { orgId },
+      select: { id: true, title: true, slug: true, externalId: true },
+    });
+
+    let totalSynced = 0;
+    let totalLinked = 0;
+
+    for (const w of workshops) {
+      try {
+        const res = await this.syncWorkshopGuests(orgId, w.id);
+        totalSynced += res.syncedCount;
+        totalLinked += res.linkedCount;
+        // Delay 500ms để tuân thủ giới hạn 120 req/phút của Workshop API
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } catch (err) {
+        logger.warn(`[workshop-service] Bỏ qua lỗi sync guests cho workshop ${w.title}:`, err);
+      }
+    }
+
+    return {
+      success: true,
+      syncedCount: totalSynced,
+      linkedCount: totalLinked,
+      message: `Đã đồng bộ ${totalSynced} lượt khách mời (${totalLinked} đã khớp Contact CRM) trên ${workshops.length} workshop`,
+    };
+  }
+
+  /**
+   * Đồng bộ nhật ký Check-in từ máy chủ Workshop về CRM
+   */
+  public async syncCheckinLogs(orgId: string): Promise<{ success: boolean; syncedCount: number; message: string }> {
+    if (!workshopApiClient.isConfigured()) {
+      throw new Error('Chưa cấu hình WORKSHOP_API_BASE_URL hoặc WORKSHOP_API_KEY');
+    }
+
+    const dbWorkshop = (prisma as any).workshop;
+    const dbCheckinLog = (prisma as any).workshopCheckinLog;
+    const workshops = await dbWorkshop.findMany({
+      where: { orgId },
+      select: { id: true, title: true, slug: true, externalId: true },
+    });
+
+    let totalSynced = 0;
+    for (const w of workshops) {
+      const extId = w.externalId || w.slug || w.id;
+      try {
+        let page = 1;
+        let hasMore = true;
+        while (hasMore) {
+          const res = await workshopApiClient.fetchCheckinLogs({
+            workshop_id: extId,
+            page,
+            per_page: 100,
+          });
+          const logs = (res.data || []) as any[];
+          for (const l of logs) {
+            const extLogId = String(l.id || l.external_log_id || l.externalLogId || `${w.id}_${l.guest_id || l.guestId}_${Date.now()}`);
+            const scannedAt = l.scanned_at || l.checked_in_at || l.created_at ? new Date(l.scanned_at || l.checked_in_at || l.created_at) : new Date();
+            const guestId = String(l.guest_id || l.guestId || 'UNKNOWN');
+            const method = l.method || 'QR';
+            const checkedInBy = l.checked_in_by || l.checkedInBy || null;
+
+            try {
+              const existing = await dbCheckinLog.findFirst({
+                where: {
+                  orgId,
+                  externalLogId: extLogId,
+                },
+                select: { id: true },
+              });
+              if (!existing) {
+                await dbCheckinLog.create({
+                  data: {
+                    orgId,
+                    externalLogId: extLogId,
+                    workshopId: w.id,
+                    guestId,
+                    scannedAt,
+                    method,
+                    checkedInBy,
+                  },
+                });
+                totalSynced++;
+              }
+            } catch (createErr: any) {
+              if (!String(createErr?.message).includes('Unique constraint')) {
+                logger.warn(`[workshop-service] Lỗi lưu checkin log ${extLogId}:`, createErr);
+              }
+            }
+          }
+          const totalPages = res.meta?.total_pages ?? 1;
+          if (page >= totalPages || logs.length === 0) {
+            hasMore = false;
+          } else {
+            page++;
+          }
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      } catch (err) {
+        logger.warn(`[workshop-service] Lỗi đồng bộ checkin logs cho workshop ${w.title}:`, err);
+      }
+    }
+
+    return {
+      success: true,
+      syncedCount: totalSynced,
+      message: `Đã đồng bộ ${totalSynced} nhật ký check-in`,
+    };
+  }
+
+  /**
+   * Đồng bộ cấu hình Biểu mẫu Đăng ký (Forms) về CRM
+   */
+  public async syncRegistrationForms(orgId: string): Promise<{ success: boolean; syncedCount: number; message: string }> {
+    if (!workshopApiClient.isConfigured()) {
+      throw new Error('Chưa cấu hình WORKSHOP_API_BASE_URL hoặc WORKSHOP_API_KEY');
+    }
+
+    const dbWorkshop = (prisma as any).workshop;
+    const dbForm = (prisma as any).workshopRegistrationForm;
+    const workshops = await dbWorkshop.findMany({
+      where: { orgId },
+      select: { id: true, title: true, slug: true, metadata: true },
+    });
+
+    let count = 0;
+    for (const w of workshops) {
+      const meta = (w.metadata || {}) as any;
+      const shortUrl = meta.registration_short_url as string | undefined;
+      const explicitToken = meta.registration_form_token || meta.form_token;
+      let token = explicitToken;
+      if (!token && shortUrl) {
+        const match = shortUrl.match(/\/register\/([a-zA-Z0-9_-]+)/);
+        token = match ? match[1] : null;
+      }
+
+      if (token) {
+        try {
+          const formRes = await workshopApiClient.fetchRegistrationForm(token);
+          if (formRes.data) {
+            const formData = formRes.data as any;
+            const existingForm = await dbForm.findFirst({
+              where: {
+                orgId,
+                token,
+              },
+              select: { id: true },
+            });
+
+            const formDataToSave = {
+              title: formData.workshop_name || formData.title || w.title,
+              description: formData.description || formData.greeting || null,
+              fields: formData.fields || formData.workshops || [],
+              isActive: formData.is_active !== false,
+              updatedAt: new Date(),
+            };
+
+            if (existingForm) {
+              await dbForm.update({
+                where: { id: existingForm.id },
+                data: formDataToSave,
+              });
+            } else {
+              await dbForm.create({
+                data: {
+                  orgId,
+                  workshopId: w.id,
+                  token,
+                  ...formDataToSave,
+                },
+              });
+            }
+            count++;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        } catch (err) {
+          logger.warn(`[workshop-service] Không thể kéo form cho token ${token}:`, err);
+        }
+      }
+    }
+
+    return {
+      success: true,
+      syncedCount: count,
+      message: `Đã đồng bộ ${count} biểu mẫu đăng ký`,
+    };
+  }
+
+  /**
+   * Đồng bộ toàn diện hệ thống Workshop (Workshops + Khách + Checkin Logs + Biểu mẫu)
+   */
+  public async syncAll(orgId: string): Promise<{ success: boolean; details: Record<string, any>; message: string }> {
+    const wsResult = await this.syncWorkshops(orgId);
+    const guestsResult = await this.syncAllWorkshopGuests(orgId);
+    const logsResult = await this.syncCheckinLogs(orgId);
+    const formsResult = await this.syncRegistrationForms(orgId);
+
+    return {
+      success: true,
+      details: {
+        workshops: wsResult.syncedCount,
+        guests: guestsResult.syncedCount,
+        checkinLogs: logsResult.syncedCount,
+        forms: formsResult.syncedCount,
+      },
+      message: `Đồng bộ toàn bộ Workshop hoàn tất: ${wsResult.syncedCount} workshops, ${guestsResult.syncedCount} khách, ${logsResult.syncedCount} logs, ${formsResult.syncedCount} forms.`,
+    };
+  }
+
+  /**
    * Lấy danh sách Workshops lưu trong Database CRM (kèm số lượng khách)
    */
   public async getWorkshops(orgId: string) {

@@ -24,6 +24,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
+import { ckgIngestionService } from '../ckg/ckg-ingestion-service.js';
 
 const ENRICH_CACHE_TTL_MS = 5 * 60 * 1000;
 const enrichCache = new Map<string, { profile: any; expiresAt: number }>();
@@ -67,6 +68,34 @@ export interface ResolveContactResult {
 }
 
 /**
+ * Hook bắn sự kiện ghi nhận Contact Node vào CKG Ingestion Engine (Fire-and-forget, <0.05ms)
+ */
+function hookCkgContactIngestion(
+  res: ResolveContactResult,
+  input: ResolveContactInput,
+  meta: {
+    fullName?: string | null;
+    phone?: string | null;
+    zaloGlobalId?: string | null;
+    gender?: string | null;
+  }
+): void {
+  void Promise.resolve().then(() => {
+    const contactName = (meta.fullName || input.fallbackFullName || '').trim() || `KH ${res.id.slice(0, 8)}`;
+    const contactPhone = meta.phone || input.phoneNormalized || input.phone || undefined;
+
+    ckgIngestionService.recordTouchpoint(res.orgId, res.id, res.created ? 'CONTACT_CREATE' : 'CONTACT_UPDATE', {
+      fullName: contactName,
+      phone: contactPhone,
+      source: input.zaloAccountId ? `zalo:${res.matchedVia}` : `crm:${res.matchedVia}`,
+      tags: res.created ? ['new_contact'] : undefined,
+    });
+  }).catch((err) => {
+    logger.error(`[ckg-hook] Lỗi ghi nhận Contact Node cho contactId=${res.id}:`, err);
+  });
+}
+
+/**
  * Canonical Contact resolver. Use this from any code path that needs to bind a
  * phone/uid/displayName to a Contact row. Avoids creating duplicates by going
  * through the rule-correct lookup order.
@@ -95,7 +124,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
     });
     if (friend?.contact) {
       const canonical = await followMergedInto(friend.contact.id);
-      return { id: canonical.id, orgId: canonical.orgId, created: false, matchedVia: 'friend' };
+      const result: ResolveContactResult = { id: canonical.id, orgId: canonical.orgId, created: false, matchedVia: 'friend' };
+      hookCkgContactIngestion(result, input, { fullName: enrichedFullName, phone: phoneNormalized || enrichedPhone, zaloGlobalId: enrichedGlobalId, gender: enrichedGender });
+      return result;
     }
   }
 
@@ -159,7 +190,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
     });
     if (byGlobalId) {
       const canonical = await followMergedInto(byGlobalId.id);
-      return { id: canonical.id, orgId: canonical.orgId, created: false, matchedVia: 'globalId' };
+      const result: ResolveContactResult = { id: canonical.id, orgId: canonical.orgId, created: false, matchedVia: 'globalId' };
+      hookCkgContactIngestion(result, input, { fullName: enrichedFullName, phone: phoneNormalized || enrichedPhone, zaloGlobalId: enrichedGlobalId, gender: enrichedGender });
+      return result;
     }
   }
 
@@ -177,7 +210,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
       select: { id: true, orgId: true },
     });
     if (byPhone) {
-      return { id: byPhone.id, orgId: byPhone.orgId, created: false, matchedVia: 'phone' };
+      const result: ResolveContactResult = { id: byPhone.id, orgId: byPhone.orgId, created: false, matchedVia: 'phone' };
+      hookCkgContactIngestion(result, input, { fullName: enrichedFullName, phone: phoneNormalized || enrichedPhone, zaloGlobalId: enrichedGlobalId, gender: enrichedGender });
+      return result;
     }
   }
 
@@ -224,7 +259,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
     `;
     if (rows.length > 0) {
       logger.info(`[resolve-contact] stub created id=${rows[0].id} phone=${phoneNormalized} fullName="${fullName}" matchedVia=stub`);
-      return { id: rows[0].id, orgId, created: true, matchedVia: 'stub' };
+      const result: ResolveContactResult = { id: rows[0].id, orgId, created: true, matchedVia: 'stub' };
+      hookCkgContactIngestion(result, input, { fullName, phone: stubPhone, zaloGlobalId: enrichedGlobalId, gender: stubGender });
+      return result;
     }
     // Race lost — another worker just inserted. Re-fetch.
     const winner = await prisma.contact.findFirst({
@@ -233,7 +270,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
     });
     if (winner) {
       logger.info(`[resolve-contact] race lost — using existing id=${winner.id} phone=${phoneNormalized} matchedVia=race`);
-      return { id: winner.id, orgId: winner.orgId, created: false, matchedVia: 'race' };
+      const result: ResolveContactResult = { id: winner.id, orgId: winner.orgId, created: false, matchedVia: 'race' };
+      hookCkgContactIngestion(result, input, { fullName: enrichedFullName, phone: phoneNormalized || enrichedPhone, zaloGlobalId: enrichedGlobalId, gender: enrichedGender });
+      return result;
     }
     // Should not reach here. Falls through to create-without-phone path.
     logger.warn(`[resolve-contact] ON CONFLICT returned 0 rows AND re-fetch found nothing for phone=${phoneNormalized} — falling back to no-phone stub`);
@@ -257,7 +296,9 @@ export async function resolveOrCreateContact(input: ResolveContactInput): Promis
     select: { id: true, orgId: true },
   });
   logger.info(`[resolve-contact] stub created (no phone) id=${created.id} fullName="${fullName}" matchedVia=stub`);
-  return { id: created.id, orgId: created.orgId, created: true, matchedVia: 'stub' };
+  const result: ResolveContactResult = { id: created.id, orgId: created.orgId, created: true, matchedVia: 'stub' };
+  hookCkgContactIngestion(result, input, { fullName, phone: enrichedPhone, zaloGlobalId: enrichedGlobalId, gender: stubGender });
+  return result;
 }
 
 /**

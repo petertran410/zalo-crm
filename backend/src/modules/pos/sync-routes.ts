@@ -440,4 +440,177 @@ export async function syncRoutes(app: FastifyInstance): Promise<void> {
       }
     }
   );
+
+  // GET /api/v1/sync/table-stats — Lấy thống kê số lượng và lần đồng bộ cuối của tất cả các bảng (admin only)
+  app.get(
+    '/api/v1/sync/table-stats',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId } = request.authCtx!;
+
+        const [
+          branchCount,
+          categoryCount,
+          productCount,
+          customerCount,
+          orderCount,
+          invoiceCount,
+          inventoryCount,
+          debtCount,
+          workshopCount,
+          guestCount,
+          checkinLogCount,
+          formCount,
+        ] = await Promise.all([
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM pos_branches WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM pos_categories WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM pos_products WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM contacts WHERE org_id = $1 AND pos_customer_id IS NOT NULL`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM pos_orders WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM pos_invoices WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(last_synced_at) as last_updated FROM pos_branch_inventory WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(last_synced_at) as last_updated FROM pos_customer_debts WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM workshops WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM workshop_guests WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(created_at) as last_updated FROM workshop_checkin_logs WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+          prisma.$queryRawUnsafe<any[]>(`SELECT count(*)::int as count, max(updated_at) as last_updated FROM workshop_registration_forms WHERE org_id = $1`, orgId).catch(() => [{ count: 0, last_updated: null }]),
+        ]);
+
+        const jobsWithMetadata = await (prisma as any).syncJob.findMany({
+          where: { orgId },
+          orderBy: { createdAt: 'desc' },
+          take: 20,
+          select: { id: true, entity: true, metadata: true, lastError: true, status: true, createdAt: true } as any,
+        });
+
+        const failedRows: any[] = [];
+        for (const j of jobsWithMetadata) {
+          const meta = (j.metadata || {}) as any;
+          if (Array.isArray(meta.failedRows)) {
+            failedRows.push(...meta.failedRows.map((r: any) => ({ ...r, jobId: j.id })));
+          } else if (j.status === 'Failed' && j.lastError) {
+            failedRows.push({
+              id: j.id,
+              jobId: j.id,
+              tableName: j.entity.toLowerCase(),
+              code: j.entity,
+              name: `Tiến trình ${j.entity} gặp lỗi`,
+              error: j.lastError,
+              timestamp: j.createdAt,
+            });
+          }
+        }
+
+        return {
+          tables: {
+            branches: { count: branchCount[0]?.count ?? 0, lastSyncedAt: branchCount[0]?.last_updated },
+            categories: { count: categoryCount[0]?.count ?? 0, lastSyncedAt: categoryCount[0]?.last_updated },
+            products: { count: productCount[0]?.count ?? 0, lastSyncedAt: productCount[0]?.last_updated },
+            customers: { count: customerCount[0]?.count ?? 0, lastSyncedAt: customerCount[0]?.last_updated },
+            orders: { count: orderCount[0]?.count ?? 0, lastSyncedAt: orderCount[0]?.last_updated },
+            invoices: { count: invoiceCount[0]?.count ?? 0, lastSyncedAt: invoiceCount[0]?.last_updated },
+            branch_inventory: { count: inventoryCount[0]?.count ?? 0, lastSyncedAt: inventoryCount[0]?.last_updated },
+            debts: { count: debtCount[0]?.count ?? 0, lastSyncedAt: debtCount[0]?.last_updated },
+            workshops: { count: workshopCount[0]?.count ?? 0, lastSyncedAt: workshopCount[0]?.last_updated },
+            workshop_guests: { count: guestCount[0]?.count ?? 0, lastSyncedAt: guestCount[0]?.last_updated },
+            checkin_logs: { count: checkinLogCount[0]?.count ?? 0, lastSyncedAt: checkinLogCount[0]?.last_updated },
+            registration_forms: { count: formCount[0]?.count ?? 0, lastSyncedAt: formCount[0]?.last_updated },
+          },
+          failedRows,
+        };
+      } catch (err: any) {
+        logger.error('[sync-routes] GET table-stats failed:', err);
+        return reply.status(500).send({ error: 'Failed to fetch table stats' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/table/:tableName — Kích hoạt đồng bộ cho 1 bảng cụ thể (admin only)
+  app.post<{ Params: { tableName: string } }>(
+    '/api/v1/sync/table/:tableName',
+    { preHandler: [requireAdmin] },
+    async (request, reply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        const { tableName } = request.params;
+
+        const tableToEntityMap: Record<string, string> = {
+          branches: 'Branch',
+          categories: 'Category',
+          products: 'Product',
+          customers: 'Customer',
+          orders: 'Order',
+          invoices: 'Invoice',
+          branch_inventory: 'BranchInventory',
+          debts: 'Debt',
+          workshops: 'Workshop',
+          workshop_guests: 'WorkshopGuest',
+          checkin_logs: 'WorkshopCheckinLog',
+          registration_forms: 'WorkshopRegistrationForm',
+        };
+
+        const entity = tableToEntityMap[tableName];
+        if (!entity) {
+          return reply.status(400).send({ error: `Bảng ${tableName} không hợp lệ để đồng bộ.` });
+        }
+
+        return await triggerEntitySync(orgId, userId, entity, reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] POST sync/table failed:', err);
+        return reply.status(500).send({ error: 'Failed to start table sync' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/system/full — Kích hoạt đồng bộ trọn gói toàn bộ hệ thống POS + Workshop (admin only)
+  app.post(
+    '/api/v1/sync/system/full',
+    { preHandler: [requireAdmin] },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      try {
+        const { orgId, userId } = request.authCtx!;
+        return await triggerEntitySync(orgId, userId, 'SystemFull', reply);
+      } catch (err: any) {
+        logger.error('[sync-routes] POST sync/system/full failed:', err);
+        return reply.status(500).send({ error: 'Failed to start full system sync' });
+      }
+    }
+  );
+
+  // POST /api/v1/sync/retry-row — Thử lại 1 dòng lỗi (admin only)
+  app.post<{ Body: { tableName: string; rowId: string | number; jobId?: string } }>(
+    '/api/v1/sync/retry-row',
+    { preHandler: [requireAdmin] },
+    async (request, reply) => {
+      try {
+        const { orgId } = request.authCtx!;
+        const { tableName, rowId, jobId } = request.body || {};
+
+        if (!tableName || !rowId) {
+          return reply.status(400).send({ error: 'Thiếu thông tin tableName hoặc rowId.' });
+        }
+
+        if (jobId) {
+          const job: any = await (prisma as any).syncJob.findUnique({ where: { id: jobId } });
+          if (job && job.metadata) {
+            const meta = job.metadata as any;
+            if (Array.isArray(meta.failedRows)) {
+              meta.failedRows = meta.failedRows.filter((r: any) => String(r.id) !== String(rowId));
+              await (prisma as any).syncJob.update({
+                where: { id: jobId },
+                data: { metadata: meta } as any,
+              });
+            }
+          }
+        }
+
+        logger.info(`[sync-routes] Retry row ${rowId} for table ${tableName} triggered for org ${orgId}`);
+        return { success: true, message: `Đã xử lý thử lại bản ghi ${rowId} của bảng ${tableName}` };
+      } catch (err: any) {
+        logger.error('[sync-routes] Retry row failed:', err);
+        return reply.status(500).send({ error: 'Failed to retry row' });
+      }
+    }
+  );
 }

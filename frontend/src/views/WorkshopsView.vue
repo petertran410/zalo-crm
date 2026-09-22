@@ -18,13 +18,24 @@
 
       <div class="d-flex align-center ga-2">
         <v-btn
+          v-if="authStore.isAdmin"
           color="primary"
-          prepend-icon="mdi-sync"
-          :loading="syncingAll"
-          @click="syncAllWorkshops"
+          prepend-icon="mdi-cloud-sync"
+          to="/sync-center"
+          class="text-none font-weight-medium"
         >
-          Đồng bộ ngay
+          Trung tâm đồng bộ
         </v-btn>
+        <v-chip
+          v-else
+          color="success"
+          variant="tonal"
+          size="small"
+          prepend-icon="mdi-database-check"
+          class="font-weight-medium"
+        >
+          Dữ liệu đồng bộ sẵn sàng
+        </v-chip>
         <v-btn
           variant="tonal"
           icon="mdi-refresh"
@@ -507,6 +518,7 @@
 
             <div class="d-flex align-center ga-2">
               <v-btn
+                v-if="authStore.isAdmin"
                 size="small"
                 color="primary"
                 variant="flat"
@@ -517,6 +529,14 @@
               >
                 Đồng bộ khách buổi này
               </v-btn>
+              <v-btn
+                size="small"
+                variant="outlined"
+                icon="mdi-refresh"
+                title="Tải lại danh sách khách từ DB"
+                :loading="loadingGuests"
+                @click="selectedWorkshop && loadGuestsForWorkshop(selectedWorkshop.id)"
+              />
             </div>
           </v-card-title>
 
@@ -1383,6 +1403,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue';
 import { api } from '@/api';
+import { useAuthStore } from '@/stores/auth';
+
+const authStore = useAuthStore();
 
 // Scroll management
 const workshopViewRef = ref<HTMLElement | null>(null);

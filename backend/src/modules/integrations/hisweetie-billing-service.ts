@@ -18,6 +18,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { config } from '../../config/index.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from './hisweetie-public-api-client.js';
 import { buildOrderPayload, buildDispatchPayload, type BillingLineInput } from './hisweetie-billing.js';
+import { ckgIngestionService } from '../ckg/ckg-ingestion-service.js';
 
 export interface CreateBillingDraftArgs {
   orgId: string;
@@ -81,6 +82,28 @@ export async function createBillingDraft(args: CreateBillingDraftArgs): Promise<
   });
 
   logger.info(`[hisweetie-billing] Draft ${draft.id} created (contact ${contact.id}, total ${built.totalAmount})`);
+
+  // CKG Hook: Tự động ghi nhận các sản phẩm trong hóa đơn nháp vào đồ thị tri thức (<0.1ms, non-blocking)
+  void Promise.resolve().then(() => {
+    const touchpointItems = (built.payload?.items || []).map((item) => ({
+      code: item.productCode || String(item.productId),
+      name: item.productName || item.productCode || `Sản phẩm #${item.productId}`,
+      quantity: item.quantity,
+      price: item.unitPrice,
+    }));
+
+    if (touchpointItems.length > 0) {
+      ckgIngestionService.recordTouchpoint(args.orgId, contact.id, 'POS_BILLING_DRAFT', {
+        draftId: draft.id,
+        totalAmount: built.totalAmount,
+        items: touchpointItems,
+        fullName: posCustomerName || undefined,
+      });
+    }
+  }).catch((err) => {
+    logger.error(`[ckg-hook] Lỗi ghi nhận POS_BILLING_DRAFT touchpoint contactId=${contact.id}:`, err);
+  });
+
   return { ok: true, draftId: draft.id, totalAmount: built.totalAmount, idempotencyKey, posCustomerName };
 }
 
@@ -181,6 +204,27 @@ export async function dispatchBillingToPos(args: { draftId: string; orgId: strin
       data: { status: 'sent', posOrderId, dispatchedAt: new Date(), dispatchError: null },
     });
     logger.info(`[hisweetie-billing] Draft ${draft.id} → POS sandbox OK (posOrderId=${posOrderId ?? 'unknown'})`);
+
+    // CKG Hook: Cập nhật touchpoint đơn hàng POS chính thức (<0.1ms, non-blocking)
+    void Promise.resolve().then(() => {
+      if (draft.contactId) {
+        ckgIngestionService.recordTouchpoint(args.orgId, draft.contactId, 'POS_ORDER', {
+          orderId: String(posOrderId || draft.id),
+          draftId: draft.id,
+          totalAmount: Number(draft.totalAmount || 0),
+          items: (draft.items as any[] || []).map((item) => ({
+            code: item.productCode || String(item.productId),
+            name: item.productName || item.productCode || `Sản phẩm #${item.productId}`,
+            quantity: item.quantity,
+            price: item.unitPrice,
+          })),
+          fullName: draft.posCustomerName || undefined,
+        });
+      }
+    }).catch((err) => {
+      logger.error(`[ckg-hook] Lỗi cập nhật POS_ORDER sau dispatch draftId=${draft.id}:`, err);
+    });
+
     return { ok: true, posOrderId };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

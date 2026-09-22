@@ -1,0 +1,239 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 620" width="1050" height="620" style="background:#ffffff; font-family:'Segoe UI', Arial, sans-serif;">
+  <defs>
+    <style>
+      .title { font-size: 22px; font-weight: bold; fill: #0f172a; }
+      .subtitle { font-size: 13px; fill: #64748b; }
+      .tbl-hdr { font-size: 13px; font-weight: bold; fill: #ffffff; }
+      .fld-name { font-size: 11px; fill: #1e293b; }
+      .fld-type { font-size: 10px; fill: #64748b; font-family: monospace; }
+      .badge-pk { font-size: 9px; font-weight: bold; fill: #854d0e; }
+      .badge-fk { font-size: 9px; font-weight: bold; fill: #1e40af; }
+      .badge-uq { font-size: 9px; font-weight: bold; fill: #6b21a8; }
+      .line-rel { stroke: #475569; stroke-width: 1.5; fill: none; }
+      .crow-text { font-size: 11px; font-weight: bold; fill: #334155; }
+    </style>
+  </defs>
+
+  <text x="525" y="40" text-anchor="middle" class="title">Sub-domain 1: Multi-tenant RBAC &amp; Organization Hierarchy</text>
+  <text x="525" y="62" text-anchor="middle" class="subtitle">Organization, Team, Department, User, PermissionGroup &amp; ZaloAccountAccess</text>
+
+  <!-- Relations -->
+  <!-- Org -> Team -->
+  <path d="M 330 140 L 420 140" class="line-rel" />
+  <text x="340" y="134" class="crow-text">1</text><text x="405" y="134" class="crow-text">N</text>
+
+  <!-- Org -> Department -->
+  <path d="M 250 250 L 250 330 L 420 330" class="line-rel" />
+  <text x="256" y="265" class="crow-text">1</text><text x="405" y="324" class="crow-text">N</text>
+
+  <!-- Team -> User -->
+  <path d="M 640 140 L 730 140" class="line-rel" />
+  <text x="650" y="134" class="crow-text">1</text><text x="715" y="134" class="crow-text">N</text>
+
+  <!-- PermGroup -> User -->
+  <path d="M 640 460 L 830 460 L 830 330" class="line-rel" />
+  <text x="650" y="454" class="crow-text">1</text><text x="836" y="345" class="crow-text">N</text>
+
+  <!-- User -> ZaloAccountAccess -->
+  <path d="M 830 330 L 830 430" class="line-rel" />
+  <text x="836" y="355" class="crow-text">1</text><text x="836" y="420" class="crow-text">N</text>
+
+  <!-- Org Table -->
+  
+    <g transform="translate(80, 90)">
+      <rect width="250" height="210" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="250" height="28" rx="6" fill="#1e3a8a"/>
+      <rect width="250" height="6" y="22" fill="#1e3a8a"/>
+      <text x="125" y="19" text-anchor="middle" class="tbl-hdr">Organization</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="240" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      
+      <text x="34" y="68" class="fld-name">name</text>
+      <text x="240" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">timezone</text>
+      <text x="240" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">logoUrl</text>
+      <text x="240" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="134" class="fld-name">emailDomain</text>
+      <text x="240" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="156" class="fld-name">fbPullEnabled</text>
+      <text x="240" y="156" text-anchor="end" class="fld-type">Boolean</text>
+    
+      
+      <text x="34" y="178" class="fld-name">createdAt</text>
+      <text x="240" y="178" text-anchor="end" class="fld-type">DateTime</text>
+    
+      
+      <text x="34" y="200" class="fld-name">updatedAt</text>
+      <text x="240" y="200" text-anchor="end" class="fld-type">DateTime</text>
+    
+    </g>
+  
+
+  <!-- Team Table -->
+  
+    <g transform="translate(420, 90)">
+      <rect width="220" height="140" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="220" height="28" rx="6" fill="#2563eb"/>
+      <rect width="220" height="6" y="22" fill="#2563eb"/>
+      <text x="110" y="19" text-anchor="middle" class="tbl-hdr">Team</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="210" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">orgId</text>
+      <text x="210" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">name</text>
+      <text x="210" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">createdAt</text>
+      <text x="210" y="112" text-anchor="end" class="fld-type">DateTime</text>
+    
+    </g>
+  
+
+  <!-- Department Table -->
+  
+    <g transform="translate(420, 260)">
+      <rect width="220" height="140" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="220" height="28" rx="6" fill="#475569"/>
+      <rect width="220" height="6" y="22" fill="#475569"/>
+      <text x="110" y="19" text-anchor="middle" class="tbl-hdr">Department</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="210" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">orgId</text>
+      <text x="210" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">name</text>
+      <text x="210" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="100" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="111" class="badge-fk">FK</text>
+      <text x="34" y="112" class="fld-name">parentId</text>
+      <text x="210" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+    </g>
+  
+
+  <!-- PermissionGroup Table -->
+  
+    <g transform="translate(420, 430)">
+      <rect width="220" height="140" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="220" height="28" rx="6" fill="#334155"/>
+      <rect width="220" height="6" y="22" fill="#334155"/>
+      <text x="110" y="19" text-anchor="middle" class="tbl-hdr">PermissionGroup</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="210" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">orgId</text>
+      <text x="210" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="90" class="fld-name">name</text>
+      <text x="210" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">permissions</text>
+      <text x="210" y="112" text-anchor="end" class="fld-type">Json</text>
+    
+    </g>
+  
+
+  <!-- User Table -->
+  
+    <g transform="translate(730, 90)">
+      <rect width="240" height="240" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#1d4ed8"/>
+      <rect width="240" height="6" y="22" fill="#1d4ed8"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">User</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">orgId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">teamId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="100" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="111" class="badge-fk">FK</text>
+      <text x="34" y="112" class="fld-name">permissionGroupId</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="122" width="22" height="15" rx="3" fill="#f3e8ff" stroke="#d8b4fe" stroke-width="0.8"/><text x="10" y="133" class="badge-uq">UQ</text>
+      <text x="34" y="134" class="fld-name">email</text>
+      <text x="230" y="134" text-anchor="end" class="fld-type">String?</text>
+    
+      <rect x="5" y="144" width="22" height="15" rx="3" fill="#f3e8ff" stroke="#d8b4fe" stroke-width="0.8"/><text x="10" y="155" class="badge-uq">UQ</text>
+      <text x="34" y="156" class="fld-name">phone</text>
+      <text x="230" y="156" text-anchor="end" class="fld-type">String?</text>
+    
+      
+      <text x="34" y="178" class="fld-name">fullName</text>
+      <text x="230" y="178" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="200" class="fld-name">role</text>
+      <text x="230" y="200" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="222" class="fld-name">isActive</text>
+      <text x="230" y="222" text-anchor="end" class="fld-type">Boolean</text>
+    
+    </g>
+  
+
+  <!-- ZaloAccountAccess Table -->
+  
+    <g transform="translate(730, 430)">
+      <rect width="240" height="140" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1.2" filter="drop-shadow(0 2px 4px rgba(0,0,0,0.06))"/>
+      <rect width="240" height="28" rx="6" fill="#0284c7"/>
+      <rect width="240" height="6" y="22" fill="#0284c7"/>
+      <text x="120" y="19" text-anchor="middle" class="tbl-hdr">ZaloAccountAccess</text>
+      
+      <rect x="5" y="34" width="22" height="15" rx="3" fill="#fef9c3" stroke="#fde047" stroke-width="0.8"/><text x="10" y="45" class="badge-pk">PK</text>
+      <text x="34" y="46" class="fld-name">id</text>
+      <text x="230" y="46" text-anchor="end" class="fld-type">String/UUID</text>
+    
+      <rect x="5" y="56" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="67" class="badge-fk">FK</text>
+      <text x="34" y="68" class="fld-name">zaloAccountId</text>
+      <text x="230" y="68" text-anchor="end" class="fld-type">String</text>
+    
+      <rect x="5" y="78" width="22" height="15" rx="3" fill="#dbeafe" stroke="#93c5fd" stroke-width="0.8"/><text x="10" y="89" class="badge-fk">FK</text>
+      <text x="34" y="90" class="fld-name">userId</text>
+      <text x="230" y="90" text-anchor="end" class="fld-type">String</text>
+    
+      
+      <text x="34" y="112" class="fld-name">permission</text>
+      <text x="230" y="112" text-anchor="end" class="fld-type">String</text>
+    
+    </g>
+  
+</svg>

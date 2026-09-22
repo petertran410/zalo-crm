@@ -102,6 +102,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
       { id: 'zalo', label: 'Tài khoản Zalo', icon: 'mdi-cellphone-link', route: '/settings/channels/zalo', permission: 'admin', resource: 'zalo_account', aliases: ['nick', 'zalo account'] },
       { id: 'integrations', label: 'Tích hợp', icon: 'mdi-puzzle-outline', route: '/settings/channels/integrations', permission: 'admin', resource: 'settings', aliases: ['tích hợp', 'integration', '3rd party'] },
       { id: 'hisweetie-pos', label: 'Hisweetie POS (MCP)', icon: 'mdi-storefront-outline', route: '/settings/channels/hisweetie-pos', permission: 'admin', resource: 'settings', aliases: ['hisweetie', 'pos', 'mcp', 'pos data', 'kho pos'] },
+      { id: 'sync-center', label: 'Trung tâm đồng bộ', icon: 'mdi-database-sync', route: '/sync-center', permission: 'admin', resource: 'settings', aliases: ['đồng bộ', 'sync', 'sync center', 'pos sync', 'workshop sync'] },
     ],
   },
 

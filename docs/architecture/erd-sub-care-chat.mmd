@@ -1,0 +1,61 @@
+﻿erDiagram
+    Contact ||--o{ Friend : "sub_cards (N per nick)"
+    ZaloAccount ||--o{ Friend : "owns_sub_card"
+    Contact ||--o{ Conversation : "threads"
+    Conversation ||--o{ Message : "contains"
+    Message ||--o{ MessageReaction : "reactions"
+    Contact ||--o{ Appointment : "scheduled"
+
+    Contact {
+        String id PK
+        String assignedUserId FK
+        String statusId FK
+        String fullName
+        String phone
+        Int leadScore "MAX across friends"
+        Int posCustomerId
+    }
+    Friend {
+        String id PK
+        String contactId FK
+        String zaloAccountId FK
+        String zaloUidInNick
+        String friendshipStatus
+        String relationshipKind
+        Int leadScore "Primary per-pair score"
+        String aliasInNick
+    }
+    ZaloAccount {
+        String id PK
+        String ownerUserId FK
+        String displayName
+        String zaloUid
+        String phone
+        String status
+    }
+    Conversation {
+        String id PK
+        String contactId FK
+        String zaloAccountId FK
+        String channel
+    }
+    Message {
+        String id PK
+        String conversationId FK
+        String repliedByUserId FK
+        String senderType
+        String content
+        DateTime sentAt
+    }
+    MessageReaction {
+        String id PK
+        String messageId FK
+        String emoji
+    }
+    Appointment {
+        String id PK
+        String contactId FK
+        String assignedUserId FK
+        DateTime appointmentDate
+        String status
+    }

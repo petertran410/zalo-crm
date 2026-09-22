@@ -59,6 +59,7 @@ import {
 } from './modules/channels/facebook/facebook-routes.js';
 import { hisweetieMcpRoutes } from './modules/integrations/hisweetie-mcp-routes.js';
 import { hisweetieBillingRoutes } from './modules/integrations/hisweetie-billing-routes.js';
+import { ckgRadarRoutes } from './modules/ckg/ckg-radar-routes.js';
 import { startInteractionCron } from './modules/contacts/interaction-cron.js';
 import { crmTagRoutes } from './modules/contacts/crm-tag-routes.js';
 import { crmTagGroupRoutes } from './modules/contacts/crm-tag-group-routes.js';
@@ -296,6 +297,7 @@ async function bootstrap() {
   await app.register(chatArchiveRoutes);
   await app.register(contactRoutes);
   await app.register(customer360Routes);
+  await app.register(ckgRadarRoutes);
   await app.register(statusRoutes);
   await app.register(contactSubResourceRoutes);
   await app.register(contactCareRoutes);

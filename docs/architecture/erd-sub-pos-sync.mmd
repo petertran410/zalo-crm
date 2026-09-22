@@ -1,0 +1,55 @@
+﻿erDiagram
+    PosProduct ||--o{ PosBranchInventory : "stocks"
+    PosBranch ||--o{ PosBranchInventory : "located_at"
+    PosCustomer ||--o{ PosOrder : "places"
+    PosOrder ||--o{ PosInvoice : "bills"
+
+    PosProduct {
+        String id PK
+        Int posId UK
+        String code
+        String name
+        Float basePrice
+    }
+    PosBranchInventory {
+        String id PK
+        Int posProductId FK
+        Int branchId FK
+        Float onHand
+        Float reserved
+        Float available
+        String status
+    }
+    PosBranch {
+        String id PK
+        Int branchId UK
+        String branchName
+        String address
+        Boolean isActive
+    }
+    PosCustomer {
+        String id PK
+        Int posId UK
+        String code
+        String name
+        String phone
+        String customerType
+    }
+    PosOrder {
+        String id PK
+        String contactId FK
+        Int posOrderId UK
+        String code
+        Float totalAmount
+        Float finalAmount
+        String status
+    }
+    PosInvoice {
+        String id PK
+        String contactId FK
+        Int posOrderId FK
+        String invoiceCode
+        Float totalAmount
+        Float paidAmount
+        String status
+    }

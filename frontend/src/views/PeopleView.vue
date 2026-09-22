@@ -88,6 +88,51 @@
               </div>
             </div>
 
+            <!-- CKG Milestone 4: Lookalike Cluster Filter -->
+            <div class="ppl-grp">
+              <div class="ppl-grp-t">Chân dung Radar (Lookalike Cluster)</div>
+              <div class="ppl-set-row" style="display: flex; gap: 6px; flex-wrap: wrap;">
+                <span
+                  class="ppl-set"
+                  :class="{ on: !f.personaCluster }"
+                  @click="f.personaCluster = ''; applyFilters()"
+                >
+                  Tất cả chân dung
+                </span>
+                <span
+                  v-for="cluster in PERSONA_OPTIONS"
+                  :key="cluster.value"
+                  class="ppl-set"
+                  :class="{ on: f.personaCluster === cluster.value }"
+                  @click="f.personaCluster = f.personaCluster === cluster.value ? '' : cluster.value; applyFilters()"
+                >
+                  <span class="ppl-set-dot" :style="{ background: cluster.color, width: '7px', height: '7px', borderRadius: '50%', display: 'inline-block' }"></span>
+                  {{ cluster.label }}
+                </span>
+              </div>
+            </div>
+
+            <div class="ppl-grp">
+              <div class="ppl-grp-t">Mức độ tin cậy</div>
+              <div class="ppl-seg">
+                <span
+                  class="ppl-seg-i"
+                  :class="{ on: !f.confidenceTier }"
+                  @click="f.confidenceTier = ''; applyFilters()"
+                >Tất cả</span>
+                <span
+                  class="ppl-seg-i"
+                  :class="{ on: f.confidenceTier === 'CONSOLIDATED' }"
+                  @click="f.confidenceTier = f.confidenceTier === 'CONSOLIDATED' ? '' : 'CONSOLIDATED'; applyFilters()"
+                >Củng cố (85–95%)</span>
+                <span
+                  class="ppl-seg-i"
+                  :class="{ on: f.confidenceTier === 'PRELIMINARY' }"
+                  @click="f.confidenceTier = f.confidenceTier === 'PRELIMINARY' ? '' : 'PRELIMINARY'; applyFilters()"
+                >Sơ bộ (50–65%)</span>
+              </div>
+            </div>
+
             <div class="ppl-grid2">
               <div class="ppl-field">
                 <span class="ppl-field-l">Nhân viên phụ trách</span>
@@ -246,6 +291,7 @@
           <input type="checkbox" :checked="allSelected" title="Chọn tất cả đang hiển thị" @change="toggleSelectAll(($event.target as HTMLInputElement).checked)" />
         </span>
         <span class="c-person">Khách hàng</span>
+        <span class="c-radar">Chân dung Radar</span>
         <span class="c-chan">Kênh phụ trách</span>
         <span class="c-tags">Thẻ</span>
         <span class="c-sent" :class="{ on: f.field === 'sent' }" @click="setField('sent')">Nhắn cuối {{ arrow('sent') }}</span>
@@ -305,6 +351,31 @@
                 <span>{{ r.phone || 'Chưa có SĐT' }}</span>
               </span>
             </span>
+          </span>
+
+          <!-- CKG Milestone 4: Customer Radar Cell -->
+          <span class="c-radar ppl-radar-cell">
+            <template v-if="(r as any).radar">
+              <span
+                class="ppl-radar-badge whitespace-nowrap"
+                :class="`cluster-${(r as any).radar.persona.id.toLowerCase()}`"
+                :title="(r as any).radar.persona.summary || (r as any).radar.persona.label"
+              >
+                <span class="ppl-radar-ico mr-1">{{ getPersonaClusterIcon((r as any).radar.persona.id) }}</span>
+                <span class="ppl-radar-label">{{ (r as any).radar.persona.clusterBadge || (r as any).radar.persona.label }}</span>
+              </span>
+              <span
+                class="ppl-conf-chip whitespace-nowrap"
+                :class="(r as any).radar.confidence.tier === 'CONSOLIDATED' || (r as any).radar.confidence.score >= 0.8 ? 'conf-emerald' : 'conf-amber'"
+                :title="`Độ tin cậy: ${(r as any).radar.confidence.percentage}%`"
+              >
+                <span class="conf-dot"></span>
+                <span class="tabular-nums">{{ (r as any).radar.confidence.percentage }}&nbsp;%</span>
+              </span>
+            </template>
+            <template v-else>
+              <span class="ppl-radar-empty text-caption text-medium-emphasis whitespace-nowrap">—</span>
+            </template>
           </span>
 
           <span class="c-chan ppl-chan">
@@ -411,6 +482,14 @@
       <div class="ppl-dr-body">
         <!-- ── Tổng quan ── -->
         <div v-if="tab === 'over'" class="ppl-pane">
+          <!-- CKG Milestone 4: Customer Radar Widget in Detail Drawer -->
+          <div v-if="detail?.id" class="mb-3">
+            <CustomerRadarWidget
+              :contact-id="detail.id"
+              :contact-name="detail.fullName || detail.crmName || (detail as any).zaloUsername || 'Khách hàng'"
+            />
+          </div>
+
           <div class="ppl-grp">
             <div class="ppl-grp-t">Thông tin cá nhân</div>
             <div class="ppl-grid2">
@@ -697,6 +776,7 @@ import { TEMPLATE_VARIABLES } from '@/constants/template-variables';
 import { useToast } from '@/composables/use-toast';
 import { useAuthStore } from '@/stores/auth';
 import { useConfirm } from '@/composables/use-confirm';
+import CustomerRadarWidget from '@/components/radar/CustomerRadarWidget.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -732,6 +812,24 @@ const ZALO_OPTIONS: Array<{ value: '' | 'true' | 'false'; label: string }> = [
   { value: 'true', label: 'Có Zalo' },
   { value: 'false', label: 'Không Zalo' },
 ];
+const PERSONA_OPTIONS = [
+  { value: 'FNB_WORKSHOP_STUDENT', label: 'Học viên WS', color: '#4F46E5' },
+  { value: 'FNB_SHOP_OWNER', label: 'Chủ quán', color: '#D97706' },
+  { value: 'WHOLESALE_DISTRIBUTOR', label: 'Đại lý sỉ', color: '#7C3AED' },
+  { value: 'HOME_CAFE_RETAIL', label: 'Pha tại nhà', color: '#059669' },
+  { value: 'TRIAL_EXPLORER', label: 'Dùng thử', color: '#2563EB' },
+];
+
+function getPersonaClusterIcon(id?: string): string {
+  switch (String(id).toUpperCase()) {
+    case 'FNB_WORKSHOP_STUDENT': return '🎓';
+    case 'FNB_SHOP_OWNER': return '🧋';
+    case 'WHOLESALE_DISTRIBUTOR': return '🏢';
+    case 'HOME_CAFE_RETAIL': return '🏠';
+    case 'TRIAL_EXPLORER': return '🎁';
+    default: return '🎯';
+  }
+}
 const FIELD_OPTIONS = [
   { value: 'inter', label: 'Tương tác cuối' },
   { value: 'created', label: 'Ngày tạo' },
@@ -824,6 +922,8 @@ const f = reactive({
   source: '',
   type: '' as '' | 'user' | 'group',
   zalo: '' as '' | 'true' | 'false',
+  personaCluster: '' as string,
+  confidenceTier: '' as '' | 'CONSOLIDATED' | 'PRELIMINARY',
   field: '' as FieldKey | '',   // '' = Tất cả (mặc định, không lọc theo mốc nào)
   dir: 'desc' as 'desc' | 'asc',
   from: null as Date | null,
@@ -847,6 +947,8 @@ const activeCount = computed(() => {
   if (f.source) n++;
   if (f.type) n++;
   if (f.zalo) n++;
+  if (f.personaCluster) n++;
+  if (f.confidenceTier) n++;
   if (f.from || f.to) n++;
   if (f.tFrom || f.tTo) n++;
   if (f.set) n++;
@@ -886,6 +988,8 @@ async function fetchPage(reset: boolean) {
         source: f.source || undefined,
         threadType: f.type || undefined,
         hasZalo: f.zalo || undefined,
+        personaCluster: f.personaCluster || undefined,
+        confidenceTier: f.confidenceTier || undefined,
         dateFrom: f.from ? toDayParam(f.from) : undefined,
         dateTo: f.to ? toDayParam(f.to) : undefined,
       },
@@ -1033,6 +1137,8 @@ function clearAll() {
   f.source = '';
   f.type = '';
   f.zalo = '';
+  f.personaCluster = '';
+  f.confidenceTier = '';
   f.from = null;
   f.to = null;
   f.tFrom = '';
@@ -1095,6 +1201,8 @@ function pickSet(s: SavedSet) {
   f.source = '';
   f.type = '';
   f.zalo = '';
+  f.personaCluster = '';
+  f.confidenceTier = '';
   Object.assign(f, s.snap);
   f.set = s.key;
   fetchPage(true);
@@ -1108,6 +1216,7 @@ function saveSet() {
     snap: {
       rel: [...f.rel], employee: f.employee, statusId: f.statusId,
       source: f.source, type: f.type, zalo: f.zalo,
+      personaCluster: f.personaCluster, confidenceTier: f.confidenceTier,
     },
   });
   persistSets();
@@ -2265,7 +2374,7 @@ onBeforeUnmount(() => {
    cao cho khoảng cách + bóng đổ, nên mỗi màn thấy được ít dòng hơn hẳn.
    Hàng tiêu đề nay dính (sticky) để cuộn sâu vẫn biết đang đọc cột nào. */
 .ppl-list { flex: 1; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 10px 24px 24px; transition: opacity .16s; }
-.ppl-cols, .ppl-row { display: flex; align-items: center; min-width: 1120px; }
+.ppl-cols, .ppl-row { display: flex; align-items: center; min-width: 1330px; }
 .ppl-cols {
   position: sticky; top: 0; z-index: 2;
   padding: 10px 16px; font-size: 10.5px; letter-spacing: .08em;
@@ -2277,6 +2386,57 @@ onBeforeUnmount(() => {
 .c-check { width: 34px; flex: none; display: flex; align-items: center; }
 .c-check input { width: 15px; height: 15px; accent-color: var(--pp-accent); cursor: pointer; }
 .c-person { flex: 1 1 auto; min-width: 240px; }
+.c-radar { width: 210px; flex: none; }
+.ppl-radar-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+.ppl-radar-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  max-width: 125px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ppl-radar-badge.cluster-wholesale_buyer { background: #ede9fe; color: #6d28d9; }
+.ppl-radar-badge.cluster-office_skincare { background: #e0f2fe; color: #0369a1; }
+.ppl-radar-badge.cluster-mom_baby { background: #fce7f3; color: #be185d; }
+.ppl-radar-badge.cluster-genz_acne_glow { background: #fef3c7; color: #b45309; }
+.ppl-radar-badge.cluster-trial_explorer { background: #d1fae5; color: #047857; }
+
+.ppl-conf-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 6px;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  border: 1px solid transparent;
+}
+.ppl-conf-chip.conf-amber {
+  background: #fffbeb;
+  color: #b45309;
+  border-color: #fde68a;
+}
+.ppl-conf-chip.conf-emerald {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+.conf-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+  margin-right: 4px;
+}
 .c-chan { width: 180px; flex: none; }
 .c-tags { width: 220px; flex: none; }
 /* 3 cột mốc dùng chung format "17:30 22/07/2026" → cùng bề rộng 152px

@@ -8,6 +8,7 @@ import { prisma } from './shared/database/prisma-client.js';
 import { getBullMQRedis, closeBullMQRedis } from './shared/queue/redis-connection.js';
 import { startGroupScanWorker, stopGroupScanWorker } from './modules/zalo/group-scan-queue.js';
 import { startListEnrichmentWorker, stopListEnrichmentWorker } from './modules/lists/list-enrichment-service.js';
+import { ckgIngestionService } from './modules/ckg/ckg-ingestion-service.js';
 
 type ExtensionBundle = {
   registerExtensionEarly?: (app: any) => Promise<void>;
@@ -68,7 +69,15 @@ async function shutdown(signal: string) {
       logger.warn('[worker shutdown] closeBullMQRedis error:', err),
     );
 
-    // 4. Disconnect Prisma DB client
+    // 4. Drain CKG Ingestion buffer
+    try {
+      await ckgIngestionService.shutdown();
+      logger.info('[worker shutdown] CKG Ingestion buffer drained successfully.');
+    } catch (err) {
+      logger.error('[worker shutdown] Error draining CKG Ingestion buffer:', err);
+    }
+
+    // 5. Disconnect Prisma DB client
     await prisma.$disconnect().catch((err) =>
       logger.warn('[worker shutdown] prisma.$disconnect error:', err),
     );

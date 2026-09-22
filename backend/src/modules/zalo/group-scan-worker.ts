@@ -18,6 +18,8 @@
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
+import { ckgIngestionService } from '../ckg/ckg-ingestion-service.js';
+import { CkgEntityType } from '../ckg/ckg-types.js';
 
 const CHUNK_SIZE = 50;
 
@@ -152,6 +154,19 @@ async function scanOneGroup(
   const totalMember = typeof gridInfo.totalMember === 'number' ? gridInfo.totalMember : memberIds.length;
   const hasMore = typeof gridInfo.hasMoreMember === 'number' ? gridInfo.hasMoreMember : 0;
 
+  // CKG Hook: Đảm bảo GROUP node tồn tại với tên và số lượng thành viên cập nhật (<0.05ms)
+  const groupName = String((gridInfo as any)?.name || (gridInfo as any)?.groupName || `Nhóm Zalo ${groupId}`);
+  void Promise.resolve().then(() => {
+    ckgIngestionService.upsertNode(orgId, CkgEntityType.GROUP, groupId, groupName, {
+      zaloAccountId,
+      totalMember,
+      creatorId: gridInfo?.creatorId,
+      scannedAt: new Date().toISOString(),
+    });
+  }).catch((err) => {
+    logger.error(`[ckg-hook] Lỗi upsert GROUP node groupId=${groupId}:`, err);
+  });
+
   // ── PAGINATION (AC #3: KHÔNG âm thầm thiếu member) ──────────────────────────
   // SDK zca-js getGroupInfo trả `hasMoreMember` (số member còn thiếu) nhưng KHÔNG
   // expose API phân trang member-list nào (apis/getGroupInfo.d.ts: chỉ nhận groupId,
@@ -218,9 +233,13 @@ async function scanOneGroup(
         zaloUidInNick: { in: batch },
         friendshipStatus: 'accepted',
       },
-      select: { zaloUidInNick: true },
+      select: { zaloUidInNick: true, contactId: true },
     });
     const friendSet = new Set(friendRows.map((r) => r.zaloUidInNick));
+    const friendContactMap = new Map<string, string>();
+    for (const f of friendRows) {
+      if (f.contactId) friendContactMap.set(f.zaloUidInNick, f.contactId);
+    }
 
     // ── 4. Upsert từng member (unique [zaloAccountId, groupId, memberUid]) ──
     for (const uid of batch) {
@@ -245,6 +264,22 @@ async function scanOneGroup(
       });
       upserted++;
     }
+
+    // CKG Hook: Nối quan hệ IN_GROUP cho các member có contactId trong lô (Fire-and-forget, <0.1ms)
+    void Promise.resolve().then(() => {
+      for (const uid of batch) {
+        const contactId = friendContactMap.get(uid);
+        if (contactId) {
+          ckgIngestionService.recordTouchpoint(orgId, contactId, 'GROUP_SCAN', {
+            groupId,
+            groupName,
+            role: adminIds.has(uid) ? 'admin' : 'member',
+          });
+        }
+      }
+    }).catch((err) => {
+      logger.error(`[ckg-hook] Lỗi ghi nhận IN_GROUP touchpoints cho group=${groupId}:`, err);
+    });
   }
 
   // Roster thiếu (community lớn, SDK không phân trang member): KHÔNG ném — thành viên

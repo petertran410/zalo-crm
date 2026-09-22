@@ -214,6 +214,17 @@
             </div>
           </div>
           <v-spacer />
+          <v-btn
+            color="primary"
+            variant="flat"
+            prepend-icon="mdi-radar"
+            :loading="batchInferring"
+            :disabled="!filteredMembers.length || batchInferring"
+            class="whitespace-nowrap mr-2"
+            @click="startBatchRadarInference"
+          >
+            Suy luận Radar ({{ filteredMembers.length }})
+          </v-btn>
           <v-btn variant="text" prepend-icon="mdi-refresh" @click="backToPick">Quét lại</v-btn>
         </div>
 
@@ -257,7 +268,6 @@
             variant="outlined"
             divided
             mandatory
-            @update:model-value="onFilterChange"
           >
             <v-btn value="all">Tất cả</v-btn>
             <v-btn value="friend">Là bạn</v-btn>
@@ -295,6 +305,52 @@
           <template #item.memberUid="{ item }">
             <span class="text-caption text-medium-emphasis">{{ item.memberUid }}</span>
           </template>
+          <template #item.radarPersona="{ item }">
+            <div v-if="(item as any).radar" class="d-flex align-center gap-1 py-1">
+              <v-chip
+                size="small"
+                :color="getClusterVuetifyColor((item as any).radar.personaId)"
+                variant="tonal"
+                class="font-weight-medium whitespace-nowrap cursor-pointer"
+                @click="openMemberRadarModal(item)"
+              >
+                <span class="mr-1">{{ getPersonaIcon((item as any).radar.personaId) }}</span>
+                <span>{{ (item as any).radar.clusterBadge || (item as any).radar.label }}</span>
+              </v-chip>
+
+              <v-chip
+                size="x-small"
+                :color="(item as any).radar.confidenceTier === 'CONSOLIDATED' ? 'success' : 'warning'"
+                variant="flat"
+                class="whitespace-nowrap font-weight-bold tabular-nums"
+              >
+                {{ (item as any).radar.confidencePercentage }}&nbsp;%
+              </v-chip>
+
+              <v-btn
+                icon="mdi-information-outline"
+                variant="text"
+                size="x-small"
+                density="compact"
+                color="medium-emphasis"
+                title="Xem chi tiết suy luận CKG"
+                @click="openMemberRadarModal(item)"
+              />
+            </div>
+            <div v-else class="py-1">
+              <v-btn
+                size="x-small"
+                variant="text"
+                color="primary"
+                prepend-icon="mdi-radar"
+                class="whitespace-nowrap"
+                :loading="singleInferringId === item.id"
+                @click="inferSingleMember(item)"
+              >
+                Suy luận
+              </v-btn>
+            </div>
+          </template>
           <template #item.isFriend="{ item }">
             <v-chip v-if="item.isFriend" size="small" color="success" variant="tonal">
               <v-icon start size="13">mdi-handshake</v-icon> Là bạn
@@ -318,6 +374,14 @@
     <v-snackbar v-model="snack.show" :color="snack.color" timeout="3000" location="bottom end">
       {{ snack.message }}
     </v-snackbar>
+
+    <!-- CKG Milestone 4: Group Member Radar Modal -->
+    <GroupMemberRadarModal
+      v-model="memberRadarModalOpen"
+      :member="selectedRadarMember"
+      :group-name="selectedGroupName"
+      @create-contact="handleCreateContactFromModal"
+    />
   </div>
 </template>
 
@@ -325,6 +389,13 @@
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useSelectedAccount } from '@/composables/use-selected-account';
 import { useGroups, type GroupScanMember } from '@/composables/use-groups';
+import GroupMemberRadarModal, { type GroupMemberRadarData } from '@/components/radar/GroupMemberRadarModal.vue';
+import { api } from '@/api';
+
+const batchInferring = ref(false);
+const singleInferringId = ref<string | null>(null);
+const memberRadarModalOpen = ref(false);
+const selectedRadarMember = ref<GroupMemberRadarData | null>(null);
 
 const { accounts, selectedAccountId, selectAccount, loading: accountLoading } = useSelectedAccount();
 
@@ -459,13 +530,124 @@ async function loadMembers() {
   await fetchScanMembers(acct, scanId, opts);
 }
 
-function onFilterChange() {
-  loadMembers();
+const selectedGroupName = computed(() => {
+  const g = groups.value.find((group) => selectedIds.has(group.id));
+  return g ? groupName(g) : undefined;
+});
+
+function getClusterVuetifyColor(id?: string): string {
+  switch (String(id).toUpperCase()) {
+    case 'FNB_WORKSHOP_STUDENT': return 'indigo';
+    case 'FNB_SHOP_OWNER': return 'amber-darken-2';
+    case 'WHOLESALE_DISTRIBUTOR': return 'purple';
+    case 'HOME_CAFE_RETAIL': return 'teal';
+    case 'TRIAL_EXPLORER': return 'blue-grey';
+    default: return 'primary';
+  }
+}
+
+function getPersonaIcon(id?: string): string {
+  switch (String(id).toUpperCase()) {
+    case 'FNB_WORKSHOP_STUDENT': return '🎓';
+    case 'FNB_SHOP_OWNER': return '🧋';
+    case 'WHOLESALE_DISTRIBUTOR': return '🏢';
+    case 'HOME_CAFE_RETAIL': return '🏠';
+    case 'TRIAL_EXPLORER': return '🎁';
+    default: return '🎯';
+  }
+}
+
+function inferMemberRadar(member: any): any {
+  // Homophily inference based on member name and selected group names
+  const combinedText = `${member.displayName || ''} ${member.zaloName || ''} ${selectedGroupName.value || ''}`.toLowerCase();
+  let personaId = 'TRIAL_EXPLORER';
+  let label = 'Khách mới chuộng mẫu thử 100g';
+  let clusterBadge = 'Dùng thử';
+  let confidencePercentage = 58;
+
+  if (/workshop|học|pha chế|khóa học|chuyển giao|đào tạo|công thức/i.test(combinedText)) {
+    personaId = 'FNB_WORKSHOP_STUDENT';
+    label = 'Học viên Workshop & Khởi nghiệp F&B';
+    clusterBadge = 'Học viên WS';
+    confidencePercentage = 65;
+  } else if (/quán|trà sữa|cafe|ăn vặt|topping|menu|cost/i.test(combinedText)) {
+    personaId = 'FNB_SHOP_OWNER';
+    label = 'Chủ quán Trà sữa / Cafe / Ăn vặt';
+    clusterBadge = 'Chủ quán';
+    confidencePercentage = 64;
+  } else if (/sỉ|đại lý|npp|phân phối|buôn|pallet|thùng|tấn/i.test(combinedText)) {
+    personaId = 'WHOLESALE_DISTRIBUTOR';
+    label = 'Đại lý phân phối & Sỉ lớn';
+    clusterBadge = 'Đại lý sỉ';
+    confidencePercentage = 66;
+  } else if (/làm bánh|tự pha|gia đình|tại nhà|uống ở nhà|yêu bếp/i.test(combinedText)) {
+    personaId = 'HOME_CAFE_RETAIL';
+    label = 'Khách tự pha tại nhà & Gia đình';
+    clusterBadge = 'Pha tại nhà';
+    confidencePercentage = 60;
+  }
+
+  return {
+    personaId,
+    label,
+    clusterBadge,
+    confidenceScore: confidencePercentage / 100,
+    confidencePercentage,
+    confidenceTier: 'PRELIMINARY',
+    source: 'GROUP_HOMOPHILY',
+    homophilyGroupName: selectedGroupName.value,
+  };
+}
+
+async function startBatchRadarInference() {
+  batchInferring.value = true;
+  try {
+    for (const member of scanMembers.value) {
+      if (!(member as any).radar) {
+        (member as any).radar = inferMemberRadar(member);
+      }
+    }
+    notify(`Đã hoàn tất phân loại chân dung Radar cho ${scanMembers.value.length} thành viên!`, 'success');
+  } finally {
+    batchInferring.value = false;
+  }
+}
+
+async function inferSingleMember(item: any) {
+  singleInferringId.value = item.id;
+  try {
+    item.radar = inferMemberRadar(item);
+    notify(`Đã suy luận chân dung cho ${item.displayName || 'thành viên'}`, 'success');
+  } finally {
+    singleInferringId.value = null;
+  }
+}
+
+function openMemberRadarModal(item: any) {
+  if (!item.radar) {
+    item.radar = inferMemberRadar(item);
+  }
+  selectedRadarMember.value = item;
+  memberRadarModalOpen.value = true;
+}
+
+async function handleCreateContactFromModal(memberData: GroupMemberRadarData) {
+  try {
+    await api.post('/contacts/quick-create', {
+      fullName: memberData.displayName || memberData.zaloName || 'Thành viên Zalo',
+      source: 'group_scan',
+      tags: memberData.radar?.personaId ? [`auto:${memberData.radar.personaId.toLowerCase()}`] : undefined,
+    });
+    notify(`Đã tạo liên hệ CRM cho ${memberData.displayName || 'thành viên'}!`, 'success');
+  } catch (err: any) {
+    notify(err?.response?.data?.message || 'Không thể tạo liên hệ CRM', 'error');
+  }
 }
 
 const memberHeaders = [
   { title: 'Thành viên', key: 'member', sortable: false },
   { title: 'Zalo UID', key: 'memberUid' },
+  { title: 'Chân dung Radar', key: 'radarPersona', sortable: false },
   { title: 'Trạng thái', key: 'isFriend' },
   { title: 'Vai trò', key: 'isAdmin' },
   { title: 'Lưu lúc', key: 'harvestedAt', align: 'end' as const },

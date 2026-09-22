@@ -1,5 +1,6 @@
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
+import { requireAdmin } from '../auth/admin-guard.js';
 import { logger } from '../../shared/utils/logger.js';
 import { workshopService } from './workshop-service.js';
 
@@ -22,9 +23,9 @@ export async function workshopRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/v1/workshops/sync
-   * Đồng bộ danh sách Workshops từ API ngoài về CRM (Master sync)
+   * Đồng bộ danh sách Workshops từ API ngoài về CRM (Admin only)
    */
-  app.post('/api/v1/workshops/sync', async (request: FastifyRequest, reply: FastifyReply) => {
+  app.post('/api/v1/workshops/sync', { preHandler: [requireAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
     try {
       const { orgId } = request.user!;
       const result = await workshopService.syncWorkshops(orgId);
@@ -33,6 +34,70 @@ export async function workshopRoutes(app: FastifyInstance): Promise<void> {
       const msg = err instanceof Error ? err.message : String(err);
       logger.error('[workshops] POST sync error:', err);
       return reply.status(500).send({ error: msg || 'Đồng bộ workshops thất bại' });
+    }
+  });
+
+  /**
+   * POST /api/v1/workshops/sync-all-guests
+   * Đồng bộ khách mời của toàn bộ workshops (Admin only)
+   */
+  app.post('/api/v1/workshops/sync-all-guests', { preHandler: [requireAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { orgId } = request.user!;
+      const result = await workshopService.syncAllWorkshopGuests(orgId);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('[workshops] POST sync-all-guests error:', err);
+      return reply.status(500).send({ error: msg || 'Đồng bộ toàn bộ khách mời thất bại' });
+    }
+  });
+
+  /**
+   * POST /api/v1/workshops/sync-checkin-logs
+   * Đồng bộ nhật ký check-in từ server ngoài (Admin only)
+   */
+  app.post('/api/v1/workshops/sync-checkin-logs', { preHandler: [requireAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { orgId } = request.user!;
+      const result = await workshopService.syncCheckinLogs(orgId);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('[workshops] POST sync-checkin-logs error:', err);
+      return reply.status(500).send({ error: msg || 'Đồng bộ nhật ký check-in thất bại' });
+    }
+  });
+
+  /**
+   * POST /api/v1/workshops/sync-forms
+   * Đồng bộ cấu hình các biểu mẫu đăng ký (Admin only)
+   */
+  app.post('/api/v1/workshops/sync-forms', { preHandler: [requireAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { orgId } = request.user!;
+      const result = await workshopService.syncRegistrationForms(orgId);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('[workshops] POST sync-forms error:', err);
+      return reply.status(500).send({ error: msg || 'Đồng bộ biểu mẫu thất bại' });
+    }
+  });
+
+  /**
+   * POST /api/v1/workshops/sync-all
+   * Đồng bộ toàn diện hệ thống workshop (Workshops + Khách + Checkin Logs + Biểu mẫu) (Admin only)
+   */
+  app.post('/api/v1/workshops/sync-all', { preHandler: [requireAdmin] }, async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const { orgId } = request.user!;
+      const result = await workshopService.syncAll(orgId);
+      return result;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      logger.error('[workshops] POST sync-all error:', err);
+      return reply.status(500).send({ error: msg || 'Đồng bộ toàn diện workshop thất bại' });
     }
   });
 
@@ -53,9 +118,9 @@ export async function workshopRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * POST /api/v1/workshops/:id/sync-guests
-   * Kéo và làm mới danh sách khách mời của 1 workshop cụ thể (Lazy sync)
+   * Kéo và làm mới danh sách khách mời của 1 workshop cụ thể (Lazy sync - Admin only)
    */
-  app.post('/api/v1/workshops/:id/sync-guests', async (request: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+  app.post<{ Params: { id: string } }>('/api/v1/workshops/:id/sync-guests', { preHandler: [requireAdmin] }, async (request, reply) => {
     try {
       const { orgId } = request.user!;
       const { id } = request.params;
