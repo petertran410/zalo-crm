@@ -2,7 +2,7 @@
  * contact-family-routes.ts — dropdown "nick liên quan": các Contact liên quan tới
  * Contact đang mở. Hai route, cùng một shape dòng (PhoneFamilyMember):
  *   /phone-family — cùng SĐT thật (team bán tách KH bằng hậu tố ".1").
- *   /chain-family — cùng "chuỗi"/thương hiệu (PosCustomer.organization).
+ *   /chain-family — cùng "chuỗi"/thương hiệu, suy ra từ prefix tên "Chuỗi <Brand>".
  *
  * Bối cảnh: team bán hàng tách một khách thành nhiều Contact bằng cách gắn hậu tố
  * thập phân vào SĐT — `0335862112` = "(Sale 1 - A1)", `0335862112.1` = "(Sale 2 - A2)".
@@ -56,6 +56,43 @@ const FAMILY_SELECT = {
 } as const satisfies Prisma.ContactSelect;
 
 type FamilyRow = Prisma.ContactGetPayload<{ select: typeof FAMILY_SELECT }>;
+
+/**
+ * Brand = token đầu sau prefix "Chuỗi" trong tên KH (team bán tự đặt, không có cột nào lưu).
+ * Từ chung chỉ ngành (matcha/bánh/...) phải lấy thêm token kế, kẻo gộp nhầm brand khác nhau.
+ */
+const CHAIN_GENERIC_WORDS = new Set([
+  "cà", "phê", "cafe", "coffee", "matcha", "bánh", "trà", "chè", "kem", "sữa", "mì",
+]);
+
+function normalizeChainToken(s: string): string {
+  return s
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[‘’]/g, "'")
+    .replace(/[^\p{L}\p{N}']/gu, "");
+}
+
+export function chainBrandOf(name: string | null | undefined): string | null {
+  const m = name?.normalize("NFC").trim().match(/^chuỗi\s+(.+)$/i);
+  if (!m) return null;
+  const tokens = m[1].trim().split(/\s+/).map(normalizeChainToken).filter(Boolean);
+  let brandEnd = 0;
+  while (brandEnd < tokens.length && CHAIN_GENERIC_WORDS.has(tokens[brandEnd])) brandEnd++;
+  if (brandEnd >= tokens.length) return null;
+  return tokens.slice(0, brandEnd + 1).join(" ");
+}
+
+/** Repo này coi fullName là TÊN POS — chuỗi nằm ở đó khi crmName trống. */
+function chainBrandOfContact(c: {
+  crmName: string | null;
+  fullName: string | null;
+}): string | null {
+  return chainBrandOf(c.crmName) ?? chainBrandOf(c.fullName);
+}
+
+/** Giới hạn quét candidate prefix "Chuỗi" — thực tế ~210 dòng/3400 contact. */
+const CHAIN_CANDIDATE_LIMIT = 1000;
 
 export interface PhoneFamilyMember {
   id: string;
@@ -232,8 +269,8 @@ export async function contactFamilyRoutes(
     }
   );
 
-  // "chuỗi" — các Contact cùng công ty/thương hiệu (PosCustomer.organization).
-  // Org-wide + cờ accessible như phone-family: chuỗi một brand trải nhiều sale.
+  // "chuỗi" — các Contact cùng thương hiệu, suy ra từ prefix tên "Chuỗi <Brand>".
+  // Org-wide + cờ accessible như phone-family: một brand trải nhiều sale.
   app.get(
     "/api/v1/contacts/:id/chain-family",
     {
@@ -251,57 +288,46 @@ export async function contactFamilyRoutes(
 
         const anchor = await prisma.contact.findFirst({
           where: { id, orgId: user.orgId },
-          select: { id: true, posCustomerId: true },
+          select: { id: true, crmName: true, fullName: true },
         });
         if (!anchor) {
           return reply.status(404).send({ error: "Contact not found" });
         }
-        if (anchor.posCustomerId == null) {
+        const brand = chainBrandOfContact(anchor);
+        if (!brand) {
           return { chainKey: null, contacts: [], truncated: false };
         }
 
-        const anchorPos = await prisma.posCustomer.findFirst({
-          where: { orgId: user.orgId, posId: anchor.posCustomerId },
-          select: { organization: true, isOrganization: true },
-        });
-        const orgName = anchorPos?.organization?.trim();
-        // Chỉ group khi là hồ sơ tổ chức thật — tránh "chuỗi" giả từ org rỗng/chung.
-        if (!anchorPos || anchorPos.isOrganization !== true || !orgName) {
-          return { chainKey: null, contacts: [], truncated: false };
-        }
-
-        const sameOrg = await prisma.posCustomer.findMany({
-          where: {
-            orgId: user.orgId,
-            organization: { equals: orgName, mode: "insensitive" },
-          },
-          select: { posId: true },
-        });
-        const posIds = sameOrg.map((p) => p.posId);
-
-        // (orgId, posCustomerId) đã có index nên query thẳng, không cần contains+verify.
-        const matched = await prisma.contact.findMany({
+        // Không index được brand (suy ra từ tên) → quét mọi contact prefix "Chuỗi"
+        // trong org rồi match brand in-memory. Prefix "Chuỗi" thu hẹp còn ~210 dòng.
+        const candidates = await prisma.contact.findMany({
           where: {
             orgId: user.orgId,
             mergedInto: null,
             archivedAt: null,
-            posCustomerId: { in: posIds },
+            OR: [
+              { crmName: { startsWith: "Chuỗi", mode: "insensitive" } },
+              { fullName: { startsWith: "Chuỗi", mode: "insensitive" } },
+            ],
           },
           select: FAMILY_SELECT,
-          take: FAMILY_LIMIT * 4,
+          take: CHAIN_CANDIDATE_LIMIT,
         });
 
+        const matched = candidates.filter((c) => chainBrandOfContact(c) === brand);
         if (matched.length <= 1) {
-          return { chainKey: orgName, contacts: [], truncated: false };
+          return { chainKey: brand, contacts: [], truncated: false };
         }
 
-        matched.sort((a, b) => (a.crmName ?? "").localeCompare(b.crmName ?? ""));
+        matched.sort((a, b) =>
+          (a.crmName ?? a.fullName ?? "").localeCompare(b.crmName ?? b.fullName ?? "")
+        );
         const truncated = matched.length > FAMILY_LIMIT;
         const rows = matched.slice(0, FAMILY_LIMIT);
 
         const contacts = await buildFamilyMembers(rows, anchor.id, user);
 
-        return { chainKey: orgName, contacts, truncated };
+        return { chainKey: brand, contacts, truncated };
       } catch (err) {
         logger.error("[contacts] chain-family error:", err);
         return reply
