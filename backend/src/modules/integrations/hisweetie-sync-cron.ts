@@ -9,8 +9,11 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { withPosSyncLock } from '../pos/pos-sync-lock.js';
 import { syncCustomerCohort, getCustomerCohortState } from './pos-customer-import-service.js';
+import { syncCrmCommerce } from '../pos/crm-commerce-sync.js';
+import { withTenant } from '../../shared/tenant/tenant-context.js';
+import { config } from '../../config/index.js';
 
-const CRON_SCHEDULE = '0 1 * * *';
+const CRON_SCHEDULE = '*/5 * * * *';
 let cronRunning = false;
 let cronTask: ReturnType<typeof cron.schedule> | null = null;
 
@@ -44,24 +47,13 @@ export function stopHisweetieSyncCron(): void {
 }
 
 async function runCycle(): Promise<void> {
-  const org = await prisma.organization.findFirst({ select: { id: true } });
+  if (process.env.CRM_POS_SYNC_ENABLED !== 'true' || !config.posWebhookOrgId) return;
+  const org = await prisma.organization.findUnique({ where: { id: config.posWebhookOrgId }, select: { id: true } });
   if (!org) {
     logger.warn('[hisweetie-sync] No organization found, skip cycle');
     return;
   }
-  await withPosSyncLock(org.id, 'Customer', async () => {
-    const state = await getCustomerCohortState(org.id);
-    if (state.import.status !== 'completed') {
-      logger.info('[hisweetie-sync] Initial customer import is not complete; skip nightly cohort sync');
-      return;
-    }
-    const result = await syncCustomerCohort(org.id);
-    logger.info(
-      `[hisweetie-sync] Cohort sync selected=${result.cohort.stats.eligibleCustomers} `
-      + `created=${result.projection.created} updated=${result.projection.updated} `
-      + `restored=${result.projection.restored}`,
-    );
-  });
+  await withTenant(org.id, () => syncCrmCommerce(org.id));
 }
 
 /** Exported for a manual scheduler/test trigger; maxPages is retained for API compatibility. */

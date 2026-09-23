@@ -3,6 +3,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { assertContactVisible, getContactScope } from './contact-scope.js';
+import { linkedPosIds, authoritativeBalances, summarizeDebt } from './customer-workspace-service.js';
 
 const CANCELLED_INVOICE_STATUSES = ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'];
 /** POS trả status tiếng Việt; giữ cả biến thể dấu và bản tiếng Anh cho chắc. */
@@ -262,12 +263,10 @@ export async function customer360Routes(app: FastifyInstance): Promise<void> {
       });
       if (!contact) return reply.status(404).send({ error: 'Contact not found' });
 
-      const posCustomerFilter = contact.posCustomerId
-        ? [{ posCustomerId: contact.posCustomerId }]
-        : [];
+      const customerIds = await linkedPosIds(user.orgId, contactId);
       const linkedCustomerWhere = {
         orgId: user.orgId,
-        OR: [{ contactId }, ...posCustomerFilter],
+        posCustomerId: { in: customerIds },
       };
 
       const [scope, collaborators, appointments, notes, tasks, tickets, orders, recentOrdersForProducts, orderAggregate, debtRecord, unpaidInvoices, debtAggregate, overdueAggregate] = await Promise.all([
@@ -373,8 +372,9 @@ export async function customer360Routes(app: FastifyInstance): Promise<void> {
       const purchasedProducts = summarizePurchasedProducts(recentOrdersForProducts);
       const recentTimeline = buildRecentTimeline({ appointments, notes, tasks, tickets, orders });
       const invoiceDebt = debtAggregate._sum.remainingDebt ?? 0;
-      const totalDebt = debtRecord?.totalDebt ?? invoiceDebt;
-      const overdueDebt = debtRecord?.overdueDebt ?? (overdueAggregate._sum.remainingDebt ?? 0);
+      const balance = summarizeDebt(await authoritativeBalances(user.orgId, customerIds), customerIds.length);
+      const totalDebt = balance.amount;
+      const overdueDebt = null;
       const viewerRole = scope.isOrgAdmin
         ? 'admin'
         : scope.primaryContactIds.has(contactId) ? 'primary' : 'collaborator';
@@ -398,13 +398,20 @@ export async function customer360Routes(app: FastifyInstance): Promise<void> {
           })
         : null;
 
-      const journey = await buildJourneySignals(user.orgId, contactId, contact.posCustomerId);
+      // Legacy journey inferred purchases from draft orders. Retire those signals;
+      // the CRM workspace exposes invoice-backed purchases and a paginated timeline.
+      const journey: JourneySignals = {
+        firstOrderAt: null, lastOrderAt: null, tenureDays: null, totalOrders: 0, avgOrderValue: 0,
+        monthlyTrend: [], churnedProducts: [], newProducts: [], debtAging: [],
+        thresholds: { quietDays: QUIET_DAYS_THRESHOLD, newProductDays: NEW_PRODUCT_WINDOW_DAYS },
+      };
 
       return {
         contact: { ...contact, viewerRole },
         access: { assignedUser: contact.assignedUser, viewerRole, collaborators },
         commerce: {
           posLink: {
+            posCustomerIds: customerIds,
             posCustomerId: contact.posCustomerId,
             posCustomerCode: contact.posCustomerCode,
             posSyncedAt: contact.posSyncedAt,
@@ -412,23 +419,24 @@ export async function customer360Routes(app: FastifyInstance): Promise<void> {
           orders: {
             items: orders,
             total: orderAggregate._count.id,
-            lifetimeValue: orderAggregate._sum.finalAmount ?? 0,
+            lifetimeValue: null,
             latestOrder: orders[0] ?? null,
           },
           purchasedProducts: {
-            items: purchasedProducts,
+            items: [],
+            state: 'unknown',
             scannedOrders: recentOrdersForProducts.length,
             truncated: recentOrdersForProducts.length === 200,
           },
           debt: {
             totalDebt,
-            currentDebt: debtRecord?.currentDebt ?? totalDebt,
+            currentDebt: null,
             overdueDebt,
-            dueDate: debtRecord?.dueDate ?? null,
-            status: debtRecord?.status ?? (overdueDebt > 0 ? 'Danger' : totalDebt > 0 ? 'Warning' : 'Normal'),
+            dueDate: null,
+            status: balance.state,
             invoices: unpaidInvoices,
             invoiceCount: debtAggregate._count.id,
-            lastSyncedAt: debtRecord?.lastSyncedAt ?? contact.posSyncedAt ?? null,
+            lastSyncedAt: balance.updatedAt,
           },
         },
         profile: {
@@ -444,7 +452,7 @@ export async function customer360Routes(app: FastifyInstance): Promise<void> {
         },
         journey,
         service: { appointments, notes, tasks, tickets, recentTimeline },
-        meta: { limit, generatedAt: new Date().toISOString() },
+        meta: { limit, generatedAt: new Date().toISOString(), legacyCommerceSignalsRetired: true, workspacePath: `/api/v1/crm/customers/${contactId}` },
       };
     } catch (error) {
       logger.error('[customer-360] Read model error:', error);

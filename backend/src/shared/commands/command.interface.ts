@@ -18,6 +18,7 @@ export interface CommandHandler<T extends Command = Command, TResult = any> {
 
 export interface CommandResponse<TData = any> {
   success: boolean;
+  code?: string;
   message: string;
   data?: TData;
   errors?: Record<string, string>;

@@ -73,7 +73,7 @@ describe('collectInvoiceBackedCustomerCohort', () => {
       client: clientWith(listInvoices, listCustomers),
     });
 
-    expect(result.customers.map((row) => row.id)).toEqual([1, 2, 3, 4]);
+    expect(result.customers.map((row) => row.id)).toEqual([1, 2, 3, 4, 5]);
     expect(result.invoices).toHaveLength(6);
     expect(result.stats).toEqual({
       invoiceRows: 6,
@@ -82,9 +82,9 @@ describe('collectInvoiceBackedCustomerCohort', () => {
       customerRows: 5,
       activeCustomers: 5,
       activeWithPhone: 5,
-      eligibleCustomers: 4,
+      eligibleCustomers: 5,
       debtPositive: 1,
-      debtNotPositive: 3,
+      debtNotPositive: 4,
     });
   });
 
@@ -115,11 +115,12 @@ describe('collectInvoiceBackedCustomerCohort', () => {
       pageSize: 100,
       toDate: TS_INVOICES,
     });
-    expect(listCustomers).toHaveBeenNthCalledWith(1, { currentItem: 0, pageSize: 100 });
+    expect(listCustomers).toHaveBeenNthCalledWith(1, { currentItem: 0, pageSize: 100, includeInactive: true });
     expect(listCustomers).toHaveBeenNthCalledWith(2, {
       currentItem: 100,
       pageSize: 100,
       toDate: TS_CUSTOMERS,
+      includeInactive: true,
     });
     expect(result.invoiceTimestamp?.toISOString()).toBe(TS_INVOICES);
     expect(result.customerTimestamp?.toISOString()).toBe(TS_CUSTOMERS);

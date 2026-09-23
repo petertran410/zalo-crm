@@ -72,6 +72,15 @@ const PROFILE_TOUCH_COOLDOWN_MS = 5 * 60_000;
 
 export async function chatRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.method !== 'POST') return;
+    const match = request.url.split('?')[0]?.match(/^\/api\/v1\/conversations\/([^/]+)\/(?:messages|send-block|upload-image)$/);
+    if (!match) return;
+    const closed = await prisma.conversation.findFirst({
+      where: { id: match[1], orgId: request.user!.orgId, dissolvedAt: { not: null } }, select: { id: true },
+    });
+    if (closed) return reply.code(409).send({ error: 'Nhóm đã giải tán. Chỉ xem lại lịch sử.', code: 'GROUP_DISSOLVED' });
+  });
 
   // Conversation filter counts (unread, unreplied, total)
   // NOTE: Must be registered BEFORE /api/v1/conversations/:id to avoid route conflict

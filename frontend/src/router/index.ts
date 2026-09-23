@@ -11,6 +11,18 @@ import { useWorkspaceStore } from "@/workspaces/resolver";
 
 const routes: RouteRecordRaw[] = [
   {
+    path: '/customers',
+    name: 'CustomersWorkspace',
+    component: () => import('@/views/CustomersWorkspaceView.vue'),
+    meta: { requiresAuth: true, resource: 'contact' },
+  },
+  {
+    path: '/customers/:id',
+    name: 'CustomerWorkspace',
+    component: () => import('@/views/CustomerWorkspaceView.vue'),
+    meta: { requiresAuth: true, resource: 'contact' },
+  },
+  {
     path: "/login",
     name: "Login",
     component: () => import("@/views/LoginView.vue"),

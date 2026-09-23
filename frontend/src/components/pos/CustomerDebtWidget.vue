@@ -18,7 +18,7 @@
         class="text-caption px-2 py-0-5 rounded font-weight-bold"
         :class="isOverdue ? 'bg-red-100 text-red-700' : hasDebt ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-700'"
       >
-        {{ isOverdue ? '🚨 NỢ QUÁ HẠN' : hasDebt ? '⚠️ CÓ CÔNG NỢ' : '🟢 AN TOÀN' }}
+        {{ loading ? 'ĐANG TẢI' : debtData.totalDebt == null ? 'CHƯA XÁC ĐỊNH' : debtData.status === 'stale' ? 'DỮ LIỆU CŨ' : hasDebt ? 'CÓ CÔNG NỢ' : 'SỐ DƯ POS' }}
       </span>
     </div>
 
@@ -27,7 +27,7 @@
       <!-- Total Debt -->
       <div class="sp-debt-card pa-2 rounded bg-white border">
         <div class="text-caption text-grey-darken-1">Tổng nợ</div>
-        <div class="text-subtitle-2 font-weight-bold" :class="debtData.totalDebt > 0 ? 'text-red-600' : 'text-grey-darken-3'">
+        <div class="text-subtitle-2 font-weight-bold" :class="(debtData.totalDebt ?? 0) > 0 ? 'text-red-600' : 'text-grey-darken-3'">
           {{ formatVnd(debtData.totalDebt) }}
         </div>
       </div>
@@ -41,7 +41,7 @@
       </div>
 
       <!-- Overdue Debt -->
-      <div class="sp-debt-card pa-2 rounded bg-white border" :class="{ 'border-red-400 bg-red-50': debtData.overdueDebt > 0 }">
+      <div class="sp-debt-card pa-2 rounded bg-white border" :class="{ 'border-red-400 bg-red-50': (debtData.overdueDebt ?? 0) > 0 }">
         <div class="text-caption text-grey-darken-1">Nợ quá hạn</div>
         <div class="text-subtitle-2 font-weight-bold text-red-600">
           {{ formatVnd(debtData.overdueDebt) }}
@@ -57,7 +57,7 @@
 
       <!-- "Chèn tin nhắc nợ" Button -->
       <v-btn
-        v-if="hasDebt"
+        v-if="hasDebt && debtData.status === 'available'"
         size="x-small"
         color="error"
         variant="flat"
@@ -78,11 +78,11 @@ import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 
 export interface PosDebtInfo {
-  totalDebt: number;
-  currentDebt: number;
-  overdueDebt: number;
+  totalDebt: number | null;
+  currentDebt: number | null;
+  overdueDebt: number | null;
   dueDate: string | null;
-  status: 'Normal' | 'Warning' | 'Danger';
+  status: string;
   quickReminderText?: string;
 }
 
@@ -100,17 +100,17 @@ const emit = defineEmits<{
 const toast = useToast();
 
 const debtData = ref<PosDebtInfo>({
-  totalDebt: 0,
-  currentDebt: 0,
-  overdueDebt: 0,
+  totalDebt: null,
+  currentDebt: null,
+  overdueDebt: null,
   dueDate: null,
   status: 'Normal',
 });
 
 const loading = ref(false);
 
-const hasDebt = computed(() => debtData.value.totalDebt > 0);
-const isOverdue = computed(() => debtData.value.overdueDebt > 0 || debtData.value.status === 'Danger');
+const hasDebt = computed(() => (debtData.value.totalDebt ?? 0) > 0);
+const isOverdue = computed(() => (debtData.value.overdueDebt ?? 0) > 0 || debtData.value.status === 'Danger');
 
 async function fetchDebts() {
   if (!props.contactId) return;
@@ -119,15 +119,16 @@ async function fetchDebts() {
     const res = await api.get(`/pos/customers/${props.contactId}/debts`);
     if (res.data?.success && res.data.data) {
       debtData.value = {
-        totalDebt: res.data.data.totalDebt || 0,
-        currentDebt: res.data.data.currentDebt || 0,
-        overdueDebt: res.data.data.overdueDebt || 0,
+        totalDebt: res.data.data.totalDebt ?? null,
+        currentDebt: res.data.data.currentDebt ?? null,
+        overdueDebt: res.data.data.overdueDebt ?? null,
         dueDate: res.data.data.dueDate || null,
         status: res.data.data.status || 'Normal',
         quickReminderText: res.data.data.quickReminderText,
       };
     }
   } catch (err) {
+    debtData.value = { totalDebt: null, currentDebt: null, overdueDebt: null, dueDate: null, status: 'unknown' };
     console.error('[CustomerDebtWidget] Error fetching debts:', err);
   } finally {
     loading.value = false;
@@ -138,8 +139,8 @@ watch(() => props.contactId, (newId) => {
   if (newId) fetchDebts();
 }, { immediate: true });
 
-function formatVnd(val: number): string {
-  return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
+function formatVnd(val: number | null): string {
+  return val == null ? 'Chưa xác định' : new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val);
 }
 
 function formatDate(isoStr: string): string {
@@ -157,7 +158,7 @@ function generateDebtReminderText(): string {
   const name = props.customerName || 'Quý khách';
   const code = props.customerCode ? ` (Mã KH: ${props.customerCode})` : '';
   const total = formatVnd(debtData.value.totalDebt);
-  const overdue = debtData.value.overdueDebt > 0 ? formatVnd(debtData.value.overdueDebt) : '0 đ';
+  const overdue = formatVnd(debtData.value.overdueDebt);
   const dueDateStr = debtData.value.dueDate ? formatDate(debtData.value.dueDate) : '—';
 
   return `Xin chào ${name}${code},\nCRM Hi Sweetie xin gửi thông tin công nợ tính đến hiện tại:\n- Tổng công nợ: ${total}\n- Nợ quá hạn: ${overdue}\n- Hạn thanh toán: ${dueDateStr}\n\nQuý khách vui lòng kiểm tra và thanh toán sớm giúp Shop nhé. Xin cảm ơn!`;

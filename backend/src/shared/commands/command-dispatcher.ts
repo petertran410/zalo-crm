@@ -28,6 +28,7 @@ class CommandDispatcher {
           return {
             success: false,
             message: 'Dữ liệu không hợp lệ',
+            code: 'CRM_VALIDATION',
             errors: validationResult.errors,
           };
         }
@@ -61,6 +62,7 @@ class CommandDispatcher {
       return {
         success: false,
         message: err.message || 'Lỗi hệ thống xảy ra trong quá trình xử lý',
+        code: err.code,
       };
     }
   }

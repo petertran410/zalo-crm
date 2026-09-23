@@ -177,6 +177,10 @@
       </div>
 
       <!-- T11 2026-06-20: Banner cho nick đã xóa — chỉ xem lại lịch sử, không gửi/nhận. -->
+      <div v-if="isDissolvedGroup" class="virtual-banner archived-banner">
+        <div class="virtual-banner-icon"><InfoIcon :size="14" :stroke-width="2" /></div>
+        <div class="virtual-banner-title">Nhóm đã giải tán · Lịch sử được giữ trong CRM</div>
+      </div>
       <div v-if="isArchivedNick" class="virtual-banner archived-banner">
         <div class="virtual-banner-icon"><InfoIcon :size="14" :stroke-width="2" /></div>
         <div class="virtual-banner-body">
@@ -449,7 +453,7 @@
           </div>
           </NickAvatarLock>
 
-          <div ref="editorWrapRef" class="editor-wrap" :class="{ 'editor-locked': !privacyVisibility.canSendInConv(conversation) || isArchivedNick }">
+          <div ref="editorWrapRef" class="editor-wrap" :class="{ 'editor-locked': !privacyVisibility.canSendInConv(conversation) || isArchivedNick || isDissolvedGroup }">
             <QuickTemplatePopup
               ref="templatePopupRef"
               :visible="showTemplatePopup"
@@ -486,11 +490,11 @@
             </div>
             <!-- T11 2026-06-20: nick đã xóa → overlay khóa ô soạn (khóa mềm UX, KHÔNG thay guard server) -->
             <div
-              v-else-if="isArchivedNick"
+              v-else-if="isArchivedNick || isDissolvedGroup"
               class="editor-lock-overlay"
               @click.stop
             >
-              <span class="editor-lock-pill">🗑 Nick đã xóa — không gửi được. Kết nối lại để gửi tin.</span>
+              <span class="editor-lock-pill">{{ isDissolvedGroup ? 'Nhóm đã giải tán, không thể gửi tin.' : 'Nick đã xóa, không thể gửi tin.' }}</span>
             </div>
           </div>
 
@@ -501,9 +505,9 @@
           <button
             class="send-btn"
             :class="{ 'send-btn-virtual': isVirtualConv }"
-            :disabled="!inputText.trim() || sending || isArchivedNick"
+            :disabled="!inputText.trim() || sending || isArchivedNick || isDissolvedGroup"
             @click="handleSend"
-            :title="isArchivedNick ? 'Nick đã xóa — không gửi được.' : isVirtualConv ? 'Lưu nội bộ (Enter) — KHÔNG gửi đi Zalo' : 'Gửi (Enter)'"
+            :title="isDissolvedGroup ? 'Nhóm đã giải tán' : isArchivedNick ? 'Nick đã xóa — không gửi được.' : isVirtualConv ? 'Lưu nội bộ (Enter) — KHÔNG gửi đi Zalo' : 'Gửi (Enter)'"
           >
             <v-icon v-if="sending" size="20">mdi-loading mdi-spin</v-icon>
             <template v-else-if="isVirtualConv">
@@ -1550,6 +1554,7 @@ const isVirtualConv = computed(() => {
 // soạn tin (khóa mềm UX, KHÔNG thay guard server). CHỈ dùng archivedAt!=null — KHÔNG suy từ
 // status='disconnected' (nick sống cũng có thể disconnected tạm).
 const isArchivedNick = computed(() => !!props.conversation?.zaloAccount?.archivedAt);
+const isDissolvedGroup = computed(() => !!props.conversation?.dissolvedAt);
 
 // M55 2026-05-30 — Cùng chăm chip + tooltip cho header chat
 const contactAccessList = computed(() => {
@@ -2138,7 +2143,7 @@ async function onAcceptInvite() {
 
 const inputPlaceholder = computed(() => {
   // T11 2026-06-20: nick đã xóa → placeholder khóa
-  if (isArchivedNick.value) {
+  if (isArchivedNick.value || isDissolvedGroup.value) {
     return 'Nick đã xóa — không gửi được.';
   }
   // M53 2026-05-30: virtual conv → placeholder rõ ràng là nhật ký nội bộ
@@ -2786,7 +2791,7 @@ async function dispatchBlockComponents(blockId: string) {
 // ── Send ────────────────────────────────────────────────────────────────────
 function handleSend() {
   if (showTemplatePopup.value) { showTemplatePopup.value = false; return; }
-  if (isArchivedNick.value) return; // T11: nick đã xóa → chặn gửi (Enter + nút). Khóa mềm UX.
+  if (isArchivedNick.value || isDissolvedGroup.value) return;
   if (!inputText.value.trim()) return;
 
   // 2026-05-21 fix: lấy rich payload {text, styles} từ editor để gửi format đi Zalo.

@@ -89,6 +89,7 @@ export interface FriendshipInfo {
 }
 
 export interface Conversation {
+  dissolvedAt?: string | null;
   id: string;
   threadType: 'user' | 'group';
   contact: Contact | null;

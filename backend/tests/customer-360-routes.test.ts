@@ -3,6 +3,9 @@ import Fastify from 'fastify';
 
 const prismaMock = {
   contact: { findFirst: vi.fn() },
+  appSetting: { findUnique: vi.fn() },
+  contactPosLink: { findMany: vi.fn() },
+  posSnapshot: { findMany: vi.fn() },
   contactAccess: { findMany: vi.fn() },
   appointment: { findMany: vi.fn() },
   note: { findMany: vi.fn() },
@@ -51,6 +54,12 @@ beforeEach(() => {
   assertContactVisible.mockResolvedValue(true);
   getContactScope.mockResolvedValue({ isOrgAdmin: false, primaryContactIds: new Set(['contact-1']) });
   prismaMock.contact.findFirst.mockResolvedValue(contact);
+  prismaMock.appSetting.findUnique.mockResolvedValue(null);
+  prismaMock.contactPosLink.findMany.mockResolvedValue([{ posCustomerId: 99 }, { posCustomerId: 100 }]);
+  prismaMock.posSnapshot.findMany.mockResolvedValue([
+    { posId: 99, payload: { totalDebt: 765000 }, receivedAt: new Date() },
+    { posId: 100, payload: { totalDebt: 0 }, receivedAt: new Date() },
+  ]);
   prismaMock.contactAccess.findMany.mockResolvedValue([]);
   prismaMock.appointment.findMany.mockResolvedValue([]);
   prismaMock.note.findMany.mockResolvedValue([]);
@@ -105,21 +114,20 @@ describe('GET /api/v1/contacts/:id/customer-360', () => {
     expect(body.contact.id).toBe('contact-1');
     expect(body.contact.viewerRole).toBe('primary');
     expect(body.commerce.orders.total).toBe(2);
-    expect(body.commerce.orders.lifetimeValue).toBe(1250000);
-    expect(body.commerce.debt.totalDebt).toBe(1656423732);
+    expect(body.commerce.orders.lifetimeValue).toBeNull();
+    expect(body.commerce.debt.totalDebt).toBe(765000);
     expect(body.commerce.debt.invoiceCount).toBe(88);
-    expect(body.commerce.purchasedProducts.items).toEqual([expect.objectContaining({
-      productName: 'Trà sữa', quantity: 2, orderCount: 1, grossRevenue: 100000,
-    })]);
+    expect(body.commerce.purchasedProducts.items).toEqual([]);
+    expect(body.commerce.posLink.posCustomerIds).toEqual([99, 100]);
     expect(body.meta.limit).toBe(50);
     expect(prismaMock.posOrder.findMany).toHaveBeenCalledWith(expect.objectContaining({
-      where: expect.objectContaining({ orgId: 'org-1' }),
+      where: expect.objectContaining({ orgId: 'org-1', posCustomerId: { in: [99, 100] } }),
       take: 50,
     }));
   });
 
   // Phương án C (2026-08-25): khách đã liên kết POS → nhóm/công ty/mã sale lấy từ POS.
-  it('trả profile POS + tín hiệu hành trình cho khách đã liên kết', async () => {
+  it('keeps legacy profile but retires draft-derived journey metrics', async () => {
     const response = await app().inject({ method: 'GET', url: '/api/v1/contacts/contact-1/customer-360' });
     const body = response.json();
 
@@ -131,17 +139,19 @@ describe('GET /api/v1/contacts/:id/customer-360', () => {
       posSaleCode: 'phuongnt',
       posSaleUser: expect.objectContaining({ fullName: 'Nguyễn Thị Phương' }),
     }));
-    expect(body.journey.tenureDays).toBeGreaterThan(0);
-    expect(body.journey.monthlyTrend[0]).toEqual({ month: '2026-08', orders: 44, revenue: 2165889200 });
-    expect(body.journey.churnedProducts[0].productName).toBe('Trân châu Olong Nhài');
-    expect(body.journey.newProducts[0].productName).toBe('Siro Nho Xanh');
-    expect(body.journey.debtAging).toEqual([{ bucket: '0-30', invoices: 88, debt: 1656423732 }]);
+    expect(body.journey.tenureDays).toBeNull();
+    expect(body.journey.monthlyTrend).toEqual([]);
+    expect(body.journey.churnedProducts).toEqual([]);
+    expect(body.journey.debtAging).toEqual([]);
+    expect(body.meta.legacyCommerceSignalsRetired).toBe(true);
   });
 
   // Khách CHƯA liên kết POS → segment = null (không tự chế), phân loại bằng
   // trạng thái chăm sóc CRM sẵn có; không truy vấn hồ sơ POS.
   it('không trả segment POS khi chưa liên kết — dùng trạng thái CRM', async () => {
     prismaMock.contact.findFirst.mockResolvedValue({ ...contact, posCustomerId: null, status: 'interested' });
+    prismaMock.contactPosLink.findMany.mockResolvedValue([]);
+    prismaMock.posSnapshot.findMany.mockResolvedValue([]);
     const response = await app().inject({ method: 'GET', url: '/api/v1/contacts/contact-1/customer-360' });
     const body = response.json();
 

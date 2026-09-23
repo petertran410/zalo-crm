@@ -959,9 +959,19 @@ export function attachZaloListener(ctx: ListenerContext): void {
 
   // Group system events: member join/leave/kick, name change, etc.
   listener.on('group_event', (event: any) => {
+    void (async () => {
+      const { verifiedDissolutionGroup, recordGroupDissolution } = await import('./group-lifecycle-service.js');
+      const groupId = verifiedDissolutionGroup(event);
+      if (!groupId) return;
+      const orgId = await resolveOrgId();
+      if (!orgId) return;
+      const { withTenant } = await import('../../shared/tenant/tenant-context.js');
+      await withTenant(orgId, () => recordGroupDissolution(orgId, accountId, groupId, 'zalo_event'));
+    })().catch(error => logger.warn('[group-lifecycle] Could not record verified event:', error));
     const eventType = event?.type ?? 'unknown';
     logger.info(`[zalo:${accountId}] Group event: type=${eventType}`, {
-      groupId: event?.groupId,
+      groupId: event?.threadId ?? event?.groupId,
+      rawAction: event?.act,
       actorId: event?.actorId,
       members: event?.members,
     });

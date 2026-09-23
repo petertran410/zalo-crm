@@ -560,6 +560,9 @@ model ZaloAccountAccess {
 
 // CRM contact record — generic pipeline with status field
 model Contact {
+  workspace        CustomerWorkspace?
+  posLinks         ContactPosLink[]
+  customerThreads  CustomerConversationLink[]
   id               String    @id @default(uuid())
   orgId            String    @map("org_id")
   zaloUid          String?   @map("zalo_uid")
@@ -843,6 +846,9 @@ model Status {
 
 // A chat thread between a Zalo account and a contact (or group)
 model Conversation {
+  customerLink      CustomerConversationLink?
+  dissolvedAt       DateTime? @map("dissolved_at")
+  dissolvedSource   String?   @map("dissolved_source")
   id                String    @id @default(uuid())
   orgId             String    @map("org_id")
   // Multi-channel Phase 2 (2026-07-21) — nới nullable: row kênh FB/TikTok KHÔNG có zaloAccount.
@@ -1290,6 +1296,8 @@ model AppointmentActionLink {
 // giá trị standalone); assignee Cascade (user chỉ soft-deactivate trong app flow, Cascade
 // giữ org-delete order an toàn — Restrict sẽ deadlock cascade org → users → tasks).
 model Task {
+  posCustomerId   Int?      @map("pos_customer_id")
+  conversationId String?   @map("conversation_id")
   id              String    @id @default(uuid())
   orgId           String    @map("org_id")
   title           String
@@ -1440,6 +1448,8 @@ model WorkItemAttachment {
 // Manager có thể reply vào note của sale. Reaction emoji per (note, user, emoji).
 // AI có thể parse note body ("Thứ 6 gọi lại khách") → suggest Appointment (linked via Appointment.noteId).
 model Note {
+  posCustomerId   Int?      @map("pos_customer_id")
+  conversationId String?   @map("conversation_id")
   id                     String   @id @default(uuid())
   orgId                  String   @map("org_id")
   contactId              String   @map("contact_id")
@@ -4717,6 +4727,9 @@ model CustomerProductInterest {
   id              String    @id @default(uuid())
   orgId           String?   @map("org_id")
   contactId       String    @map("contact_id")          // ID khách hàng được quét
+  posCustomerId   Int?      @map("pos_customer_id")
+  sourceMessageId String?   @map("source_message_id")
+  origin          String    @default("manual")
   customerName    String?   @map("customer_name")       // Tên khách hàng tại thời điểm quét
   scannedByUserId String?   @map("scanned_by_user_id")  // ID nhân viên Sale đã bấm quét
   scannedByName   String?   @map("scanned_by_name")     // Tên nhân viên Sale đã bấm quét
@@ -4735,3 +4748,73 @@ model CustomerProductInterest {
   @@map("customer_product_interests")
 }
 
+model CustomerWorkspace {
+  contactId         String   @id @map("contact_id")
+  orgId             String   @map("org_id")
+  segment           String   @default("retail")
+  potential         String   @default("unrated")
+  potentialNotes    String?  @map("potential_notes") @db.Text
+  accountantUserId  String?  @map("accountant_user_id")
+  careStatus        String   @default("active") @map("care_status")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  contact           Contact  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, segment, potential])
+  @@map("customer_workspaces")
+}
+
+model ContactPosLink {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  posCustomerId   Int      @map("pos_customer_id")
+  createdById     String?  @map("created_by_id")
+  createdAt       DateTime @default(now()) @map("created_at")
+  contact         Contact  @relation(fields: [contactId], references: [id], onDelete: Restrict)
+
+  @@unique([orgId, posCustomerId])
+  @@index([orgId, contactId])
+  @@map("contact_pos_links")
+}
+
+model CustomerConversationLink {
+  conversationId String       @id @map("conversation_id")
+  orgId          String       @map("org_id")
+  contactId      String       @map("contact_id")
+  createdById    String       @map("created_by_id")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  contact        Contact      @relation(fields: [contactId], references: [id], onDelete: Restrict)
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Restrict)
+
+  @@index([orgId, contactId])
+  @@map("customer_conversation_links")
+}
+
+model PosWriteOperation {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  userId          String   @map("user_id")
+  operationKey    String   @map("operation_key")
+  fingerprint     String
+  status          String   @default("pending")
+  result          Json?
+  error           String?  @db.Text
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@unique([orgId, operationKey])
+  @@index([orgId, status])
+  @@map("pos_write_operations")
+}
+
+model PosSnapshot {
+  orgId           String   @map("org_id")
+  resource        String
+  posId           Int      @map("pos_id")
+  sourceUpdatedAt DateTime @map("source_updated_at")
+  receivedAt      DateTime @default(now()) @map("received_at")
+  payload         Json
+
+  @@id([orgId, resource, posId])
+  @@map("pos_snapshots")
+}

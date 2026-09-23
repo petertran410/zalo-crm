@@ -133,6 +133,7 @@
 import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { api } from '@/api/index';
+import { useConfirm } from '@/composables/use-confirm';
 import { useSelectedAccount } from '@/composables/use-selected-account';
 import { useGroups } from '@/composables/use-groups';
 import { usePolls } from '@/composables/use-polls';
@@ -144,6 +145,7 @@ import PollCreateDialog from '@/components/groups/poll-create-dialog.vue';
 import InviteLinkManager from '@/components/groups/invite-link-manager.vue';
 
 const router = useRouter();
+const { confirm } = useConfirm();
 
 const { accounts, selectedAccountId, selectAccount, loading: accountLoading } = useSelectedAccount();
 const {
@@ -253,7 +255,20 @@ async function onLeaveGroup() {
 }
 
 async function onDisperseGroup() {
-  const result = await disperseGroup(selectedAccountId.value, selectedGroupId.value);
+  const accountId = selectedAccountId.value, groupId = selectedGroupId.value;
+  try {
+    const { data } = await api.get(`/zalo-accounts/${accountId}/groups/${groupId}/disperse-preview`);
+    const debt = data.debt?.amount == null ? 'Chưa xác định' : new Intl.NumberFormat('vi-VN').format(data.debt.amount) + ' đ';
+    if (!await confirm({
+      title: 'Giải tán nhóm trên Zalo?', tone: 'danger', confirmText: 'Giải tán nhóm',
+      message: `Công nợ: ${debt}. Công việc còn mở: ${data.openTasks ?? 'chưa xác định'}. Lịch sử đã lưu và hồ sơ khách hàng trong CRM vẫn giữ nguyên.`,
+      requireTypedConfirm: 'GIẢI TÁN',
+    })) return;
+  } catch {
+    notify('Chưa kiểm tra được công nợ và công việc. Vui lòng thử lại.', 'error');
+    return;
+  }
+  const result = await disperseGroup(accountId, groupId, true);
   if (result !== null) {
     notify('Đã giải tán nhóm');
     selectedGroupId.value = '';

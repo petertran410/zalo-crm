@@ -47,6 +47,11 @@ type QueryParams = Record<string, string>;
 
 export async function contactRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", authMiddleware);
+  app.addHook("preHandler", async (request, reply) => {
+    if (request.method === 'POST' && request.url.split('?')[0] === '/api/v1/contacts/link-pos') {
+      return reply.code(409).send({ error: 'Mở hồ sơ khách CRM và chọn các mã POS cần liên kết. Không tạo người CRM từ quán POS tự động.' });
+    }
+  });
 
   // GET /api/v1/contacts : list with filters and pagination
   app.get(

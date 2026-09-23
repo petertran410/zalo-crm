@@ -6,6 +6,8 @@ import type { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloOps } from '../../shared/zalo-operations.js';
 import { resolveAccount, checkAccess, handleError } from './zalo-route-helpers.js';
+import { prisma } from '../../shared/database/prisma-client.js';
+import { linkedPosIds, requireCustomer, summarizeDebt, authoritativeBalances } from '../contacts/customer-workspace-service.js';
 
 export async function groupModerationRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
@@ -94,6 +96,24 @@ export async function groupModerationRoutes(app: FastifyInstance) {
 
   // ── Lifecycle ───────────────────────────────────────────────────────────────
 
+  app.get<{ Params: { accountId: string; groupId: string } }>(`${BASE}/:groupId/disperse-preview`, async (request, reply) => {
+    const { accountId, groupId } = request.params;
+    const actor = request.user!;
+    await resolveAccount(accountId, actor.orgId);
+    if (!await checkAccess(request, reply, accountId, 'admin')) return;
+    const conversation = await prisma.conversation.findFirst({
+      where: { orgId: actor.orgId, zaloAccountId: accountId, externalThreadId: groupId, threadType: 'group' },
+      include: { customerLink: true },
+    });
+    const contactId = conversation?.customerLink?.contactId;
+    if (!contactId) return { linked: false, debt: { amount: null }, openTasks: null, dissolvedAt: conversation?.dissolvedAt };
+    await requireCustomer(actor, contactId);
+    const ids = await linkedPosIds(actor.orgId, contactId);
+    const debts = await authoritativeBalances(actor.orgId, ids);
+    const openTasks = await prisma.task.count({ where: { orgId: actor.orgId, contactId, status: { notIn: ['done', 'cancelled'] } } });
+    return { linked: true, debt: summarizeDebt(debts, ids.length), openTasks, dissolvedAt: conversation?.dissolvedAt };
+  });
+
   app.post<{ Params: { accountId: string; groupId: string } }>(`${BASE}/:groupId/leave`, async (request, reply) => {
     const { accountId, groupId } = request.params;
     try {
@@ -103,12 +123,18 @@ export async function groupModerationRoutes(app: FastifyInstance) {
     } catch (err) { return handleError(reply, err, 'leaveGroup'); }
   });
 
-  app.post<{ Params: { accountId: string; groupId: string } }>(`${BASE}/:groupId/disperse`, async (request, reply) => {
+  app.post<{ Params: { accountId: string; groupId: string }; Body: { confirmed?: boolean } }>(`${BASE}/:groupId/disperse`, async (request, reply) => {
     const { accountId, groupId } = request.params;
     try {
       await resolveAccount(accountId, request.user!.orgId);
       if (!(await checkAccess(request, reply, accountId, 'admin'))) return;
-      return { result: await zaloOps.disperseGroup(accountId, groupId) };
+      if (request.body?.confirmed !== true) return reply.code(400).send({ error: 'Cần xác nhận giải tán nhóm. Dữ liệu CRM vẫn được giữ.' });
+      const where = { orgId: request.user!.orgId, zaloAccountId: accountId, externalThreadId: groupId, threadType: 'group' };
+      const existing = await prisma.conversation.findFirst({ where });
+      if (existing?.dissolvedAt) return { result: { alreadyDissolved: true } };
+      const result = await zaloOps.disperseGroup(accountId, groupId);
+      await prisma.conversation.updateMany({ where, data: { dissolvedAt: new Date(), dissolvedSource: 'crm' } });
+      return { result };
     } catch (err) { return handleError(reply, err, 'disperseGroup'); }
   });
 

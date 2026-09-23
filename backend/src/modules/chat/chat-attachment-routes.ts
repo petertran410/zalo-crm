@@ -77,6 +77,7 @@ export async function chatAttachmentRoutes(app: FastifyInstance) {
         include: { zaloAccount: true },
       });
       if (!conversation) return reply.status(404).send({ error: 'Conversation not found' });
+      if (conversation.dissolvedAt) return reply.status(409).send({ error: 'Nhóm đã giải tán. Chỉ xem lại lịch sử.' });
       // Multi-channel Phase 2 (2026-07-21): route gửi file NÀY chỉ phục vụ hội thoại Zalo
       // (zaloPool/rate-limit). Hội thoại kênh khác (FB) không có zaloAccount → chặn sớm để narrow type.
       if (!conversation.zaloAccount || !conversation.zaloAccountId) {

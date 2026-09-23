@@ -4,10 +4,24 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone, phoneVariants } from '../../shared/utils/phone.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
+import { addPosLinks, requireCustomer } from './customer-workspace-service.js';
 
 export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
   // Require auth middleware
   app.addHook('preHandler', authMiddleware);
+  app.addHook('preHandler', async (request, reply) => {
+    const { id } = request.params as { id: string };
+    try {
+      await requireCustomer(request.user!, id, request.method === 'POST');
+      if (request.method === 'POST') {
+        const body = request.body as { posCustomerId: number };
+        const items = await addPosLinks(request.user!, id, [body.posCustomerId]);
+        return reply.send({ success: true, items, contact: { id, posCustomerId: body.posCustomerId } });
+      }
+    } catch (error) {
+      return reply.code((error as any).statusCode ?? 500).send({ error: (error as Error).message });
+    }
+  });
 
   /**
    * GET /api/v1/contacts/:id/pos-suggestions

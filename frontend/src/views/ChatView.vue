@@ -151,7 +151,7 @@
 
       <!-- Resizer giữa Cột 3 và Cột 4 -->
       <div
-        v-if="showContactPanel && selectedConv?.contact"
+        v-if="showContactPanel && selectedConv"
         class="sl-resizer"
         :class="{ 'is-active': isResizingInfo }"
         title="Kéo thả điều chỉnh chiều rộng thông tin 360"
@@ -171,9 +171,10 @@
 
       <!-- COL 4: contact info panel (chỉ hiện khi có contact) -->
       <ChatContactPanel
-        v-if="showContactPanel && selectedConv?.contact"
+        :key="selectedConv?.id"
+        v-if="showContactPanel && selectedConv"
         ref="contactPanelRef"
-        :contact-id="selectedConv.contact.id"
+        :contact-id="selectedConv.contact?.id"
         :contact="selectedConv.contact"
         :conversation="selectedConv"
         :avatar-url="selectedConv.threadType === 'group' ? selectedConv.groupAvatarUrl : (selectedConv.contact?.avatarUrl || (selectedConv.friendship as any)?.zaloAvatarUrl)"
@@ -201,7 +202,7 @@ import { useToast } from '@/composables/use-toast';
 import '@/assets/sales-theme.css';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';
-import ChatContactPanel from '@/components/chat/ChatContactPanel.vue';
+import ChatContactPanel from '@/components/contacts/CustomerWorkspacePanel.vue';
 import ConversationFilterSidebar from '@/components/chat/ConversationFilterSidebar.vue';
 import ConversationFilterBar from '@/components/chat/ConversationFilterBar.vue';
 import FolderManagePopup from '@/components/chat/FolderManagePopup.vue';
@@ -985,7 +986,7 @@ function startResizeInfo(e: MouseEvent) {
 }
 
 const gridStyle = computed(() => {
-  const hasInfo = showContactPanel.value && selectedConv.value?.contact;
+  const hasInfo = showContactPanel.value && selectedConv.value;
   if (hasInfo) {
     return {
       gridTemplateColumns: `76px ${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,

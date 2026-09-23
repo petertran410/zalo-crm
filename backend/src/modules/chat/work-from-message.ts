@@ -1,18 +1,13 @@
 /**
  * work-from-message.ts — "Tạo công việc / khiếu nại từ 1 tin nhắn" trong chat nhóm (2026-07-10).
  *
- * Bối cảnh: nhóm gồm nhiều KH + nhiều nhân viên. BẤT KỲ nhân viên nào ở trong nhóm được tạo
- * task/ticket thẳng từ tin nhắn (khiếu nại). Anh chốt:
- *   • Quyền = quyền ĐỌC hội thoại chứa tin (assertConversationReadAccess) = "ở trong nhóm".
- *     KHÔNG dùng contact-visibility (KH khiếu nại có thể chưa được gán cho nhân viên này).
- *   • Tin do KH gửi → resolve sender uid → Contact + TỰ CẤP quyền xem KH đó cho người tạo
- *     (ContactAccess) — "thành viên nhóm = có quyền".
+ * Reading a group does not grant access to its CRM customer. Resolve the explicit
+ * customer link independently of the sender; never create contacts or access rows.
  */
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
-import { logger } from '../../shared/utils/logger.js';
 import { assertConversationReadAccess } from './conversation-access.js';
-import { resolveOrCreateContact } from '../contacts/resolve-contact.js';
+import { requireCustomer } from '../contacts/customer-workspace-service.js';
 
 export interface WorkItemSource {
   conversationId: string;
@@ -24,7 +19,7 @@ export interface WorkItemSource {
 
 /**
  * Xác thực + resolve nguồn tin nhắn. Trả null nếu fail (reply ĐÃ được gửi bên trong).
- * Grant ContactAccess best-effort (không chặn tạo nếu grant lỗi).
+ * Customer access is checked separately from conversation access.
  */
 export async function resolveWorkItemFromMessage(
   request: FastifyRequest,
@@ -40,7 +35,7 @@ export async function resolveWorkItemFromMessage(
       senderType: true,
       senderUid: true,
       conversationId: true,
-      conversation: { select: { zaloAccountId: true } },
+      conversation: { select: { zaloAccountId: true, contactId: true, threadType: true, customerLink: true } },
     },
   });
   if (!message) {
@@ -55,24 +50,15 @@ export async function resolveWorkItemFromMessage(
   let contactId: string | null = null;
   const senderIsCustomer = message.senderType !== 'self' && !!message.senderUid;
 
-  if (senderIsCustomer && message.conversation?.zaloAccountId) {
+  const linkedContactId = message.conversation.customerLink?.contactId
+    ?? (message.conversation.threadType === 'user' ? message.conversation.contactId : null);
+  if (linkedContactId) {
     try {
-      const resolved = await resolveOrCreateContact({
-        orgId: user.orgId,
-        zaloAccountId: message.conversation.zaloAccountId,
-        zaloUidInNick: message.senderUid,
-        enrichViaGetUserInfo: true,
-      });
-      contactId = resolved.id;
-      // Tự cấp quyền xem KH cho người tạo (idempotent qua @@unique([contactId,userId])).
-      await prisma.contactAccess.upsert({
-        where: { contactId_userId: { contactId, userId: user.id } },
-        create: { orgId: user.orgId, contactId, userId: user.id, role: 'collaborator', source: 'group_work' },
-        update: {},
-      });
+      await requireCustomer(user, linkedContactId);
+      contactId = linkedContactId;
     } catch (err) {
-      logger.error('[work-from-message] resolve/grant contact error:', err);
-      // best-effort: giữ senderIsCustomer=true nhưng contactId=null → caller quyết định chặn hay không.
+      reply.status(403).send({ error: 'Có quyền đọc nhóm không đồng nghĩa có quyền truy cập hồ sơ khách hàng.' });
+      return null;
     }
   }
 

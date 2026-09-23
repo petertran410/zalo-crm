@@ -27,7 +27,7 @@ export const salesMenu: MenuItemConfig[] = [
     title: 'Khách hàng',
     icon: 'mdi-account-outline',
     materialIcon: 'groups',
-    to: '/contacts',
+    to: '/customers',
     resource: 'contact',
   },
   {

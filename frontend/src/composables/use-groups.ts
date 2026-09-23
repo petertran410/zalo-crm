@@ -305,10 +305,10 @@ export function useGroups() {
     }
   }
 
-  async function disperseGroup(accountId: string, groupId: string) {
+  async function disperseGroup(accountId: string, groupId: string, confirmed = false) {
     actionLoading.value = true;
     try {
-      const res = await api.post(`${base(accountId)}/${groupId}/disperse`);
+      const res = await api.post(`${base(accountId)}/${groupId}/disperse`, { confirmed });
       await fetchGroups(accountId);
       return res.data.result;
     } catch (err) {
