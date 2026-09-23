@@ -17,6 +17,7 @@ workshop/
 .docs/
 .intern_report/
 .playwright-mcp/
+.snapshot/
 
 ui-smax
 
