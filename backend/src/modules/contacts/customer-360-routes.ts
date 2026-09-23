@@ -4,7 +4,7 @@ import { logger } from '../../shared/utils/logger.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { assertContactVisible, getContactScope } from './contact-scope.js';
 
-const CANCELLED_INVOICE_STATUSES = ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'];
+export const CANCELLED_INVOICE_STATUSES = ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'];
 /** POS trả status tiếng Việt; giữ cả biến thể dấu và bản tiếng Anh cho chắc. */
 const CANCELLED_ORDER_STATUSES = ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'];
 
@@ -15,7 +15,7 @@ const CANCELLED_ORDER_STATUSES = ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void
  * Hoá đơn đã huỷ vẫn giữ nguyên remaining_debt trong POS nên phải loại trừ,
  * nếu không sẽ cộng ra khoản nợ không có thật.
  */
-function unpaidInvoiceWhere(base: Record<string, unknown>) {
+export function unpaidInvoiceWhere(base: Record<string, unknown>) {
   return {
     ...base,
     remainingDebt: { gt: 0 },

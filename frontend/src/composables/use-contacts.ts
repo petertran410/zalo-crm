@@ -106,6 +106,11 @@ export interface Contact {
   posCustomerId?: number | null;
   posCustomerCode?: string | null;
 
+  // Công nợ (list /contacts trả kèm): current = đang nợ bây giờ; lifetime = tổng còn ghi
+  // trên mọi hoá đơn kể cả đã trả hết → luôn ≥ current. Dùng cho sort "debt" + tooltip chip.
+  currentDebt?: number;
+  lifetimeDebt?: number;
+
   // Nick CRM (ZaloAccount) đang chăm KH này — backend trả qua AGGREGATE_INCLUDE.friends[].
   // Mỗi Friend = 1 cặp (KH × nick). 1 nick có thể nhiều Friend row → dedup theo zaloAccountId
   // ở helper linkedNicksOf(). Dùng cho cột "Nick chăm" bảng /contacts (2026-06-30).

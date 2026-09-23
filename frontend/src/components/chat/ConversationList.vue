@@ -30,6 +30,51 @@
         <button class="cl-label-filter" type="button" title="Lọc theo nhãn">
           Nhãn <span class="cl-label-caret">⌄</span>
         </button>
+        <!-- Dropdown lọc kênh (Zalo / Messenger / TikTok). Chỉ hiện khi parent wire filter. -->
+        <v-menu
+          v-if="channelFilter !== undefined"
+          v-model="channelMenuOpen"
+          location="bottom start"
+          :close-on-content-click="true"
+        >
+          <template #activator="{ props: actProps }">
+            <button
+              v-bind="actProps"
+              type="button"
+              class="cl-channel-filter"
+              :class="{ 'is-active': channelFilter !== null }"
+              :title="`Lọc theo kênh: ${activeChannelOption.label}`"
+              :aria-label="`Lọc theo kênh, đang chọn ${activeChannelOption.label}`"
+              aria-haspopup="menu"
+              :aria-expanded="channelMenuOpen"
+            >
+              <span v-if="activeChannelOption.value === null" class="cl-ch-icon"><LayersIcon :size="15" /></span>
+              <span v-else class="cl-channel-mark" :class="`cl-channel-mark--${activeChannelOption.mark}`">{{ activeChannelOption.glyph }}</span>
+              <span class="cl-channel-text">{{ activeChannelOption.label }}</span>
+              <ChevronDownIcon :size="14" class="cl-channel-caret" />
+            </button>
+          </template>
+          <div class="cl-channel-menu" role="menu">
+            <button
+              v-for="opt in CHANNEL_OPTIONS"
+              :key="opt.value ?? 'all'"
+              type="button"
+              role="menuitemradio"
+              class="cl-channel-opt"
+              :class="{ 'is-active': opt.value === channelFilter, 'is-disabled': opt.disabled }"
+              :aria-checked="opt.value === channelFilter"
+              :disabled="opt.disabled"
+              :title="opt.disabled ? opt.tooltip : opt.label"
+              @click="!opt.disabled && selectChannel(opt.value)"
+            >
+              <span v-if="opt.value === null" class="cl-ch-icon"><LayersIcon :size="15" /></span>
+              <span v-else class="cl-channel-mark" :class="`cl-channel-mark--${opt.mark}`">{{ opt.glyph }}</span>
+              <span class="cl-channel-opt-label">{{ opt.label }}</span>
+              <span v-if="opt.disabled" class="cl-channel-soon">Sắp có</span>
+              <CheckIcon v-else-if="opt.value === channelFilter" :size="14" class="cl-channel-check" />
+            </button>
+          </div>
+        </v-menu>
         <button
           ref="newMsgBtnEl"
           class="cl-new-msg"
@@ -240,7 +285,7 @@ import { ref, reactive, watch, onMounted, onBeforeUnmount, computed, nextTick } 
 import type { Conversation } from '@/composables/use-chat';
 import { api } from '@/api/index';
 // Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự thô).
-import { ChevronUp as ChevronUpIcon, X as XIcon } from 'lucide-vue-next';
+import { ChevronUp as ChevronUpIcon, X as XIcon, ChevronDown as ChevronDownIcon, Check as CheckIcon, Layers as LayersIcon } from 'lucide-vue-next';
 import Avatar from '@/components/ui/Avatar.vue';
 import NewMessageDialog from '@/components/chat/NewMessageDialog.vue';
 import ConversationContextMenu from '@/components/chat/conversation-context-menu.vue';
@@ -284,6 +329,8 @@ const props = defineProps<{
   followingPairs?: Set<string>;
   /** 2026-07-22 — khi true thì ẩn cl-search-row + cl-label-bar (user đã thu gọn bộ lọc). */
   filterCollapsed?: boolean;
+  /** Kênh đang lọc (null = tất cả). Dropdown Messenger/Zalo/TikTok ở header. */
+  channelFilter?: 'facebook' | 'zalo' | 'tiktok_shop' | null;
 }>();
 
 // Perf 2026-07 — tắt .conv-list-move khi đổi tab (ChatView dispatch 'conv-tab-switch').
@@ -311,6 +358,7 @@ const emit = defineEmits<{
   'update:search': [value: string];
   'filter-account': [accountId: string | null];
   'update:filters': [params: Record<string, string>];
+  'update:channelFilter': [channel: 'facebook' | 'zalo' | 'tiktok_shop' | null];
   'tab-changed': [tab: string];
   'conversation-moved': [id: string, tab: string];
   'conversation-deleted': [id: string];
@@ -353,6 +401,34 @@ function onClickNewMessage() {
   }
   // State B: mở NickPickerPopup xổ từ button "Tin nhắn mới"
   newMsgPickerOpen.value = !newMsgPickerOpen.value;
+}
+
+// Dropdown lọc kênh. 'tiktok_shop' khớp ChannelKind BE nhưng route chưa có → disabled.
+interface ChannelOption {
+  value: 'facebook' | 'zalo' | 'tiktok_shop' | null;
+  label: string;
+  mark: '' | 'zalo' | 'fb' | 'tt';
+  glyph: string;
+  disabled?: boolean;
+  tooltip?: string;
+}
+const CHANNEL_OPTIONS: readonly ChannelOption[] = [
+  { value: null, label: 'Tất cả kênh', mark: '', glyph: '' },
+  { value: 'zalo', label: 'Zalo', mark: 'zalo', glyph: 'Z' },
+  { value: 'facebook', label: 'Messenger', mark: 'fb', glyph: 'f' },
+  { value: 'tiktok_shop', label: 'TikTok Shop', mark: 'tt', glyph: '♪', disabled: true, tooltip: 'TikTok chưa được triển khai' },
+];
+
+const channelMenuOpen = ref(false);
+
+const activeChannelOption = computed<ChannelOption>(
+  () => CHANNEL_OPTIONS.find((o) => o.value === props.channelFilter) ?? CHANNEL_OPTIONS[0],
+);
+
+// Parent giữ state (extraFilters → refetch). Giá trị kênh không đổi → no-op.
+function selectChannel(value: ChannelOption['value']) {
+  if (value === props.channelFilter) return;
+  emit('update:channelFilter', value);
 }
 
 // 2026-06-20 (anh báo: nhập SĐT vào ô tìm kiếm + Enter phải mở "Tin nhắn mới", đỡ phải click):
@@ -841,6 +917,11 @@ function fmtDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+// Video/voice duration = ms; >1000 thì chia 1000 (khớp message-bubble.vue).
+function mediaSec(raw: number): number {
+  return raw > 1000 ? Math.floor(raw / 1000) : raw;
+}
+
 // 2026-06-11 (perf) — memoize: lastMessagePreviewResult được gọi 2 lần/hàng (preview +
 // tone) × 100 hàng × mỗi render → nặng (JSON.parse). Cache theo conv object (WeakMap),
 // invalidate khi tin nhắn đầu đổi (id) hoặc thu hồi. Wrapper giữ API cũ.
@@ -948,13 +1029,13 @@ function computeLastMessagePreview(conv: Conversation): PreviewResult {
     case 'sticker': return { text: prefix + '🎴 Sticker' };
     case 'video': {
       // E08: kèm duration nếu lấy được từ params
-      const vdur = Number(params?.duration ?? 0);
+      const vdur = mediaSec(Number(params?.duration ?? 0));
       return { text: prefix + '🎥 Video' + (vdur > 0 ? ` (${fmtDuration(vdur)})` : '') };
     }
     case 'voice':
     case 'audio': {
       // E10/E11: tin thoại có duration
-      const adur = Number(params?.duration ?? 0);
+      const adur = mediaSec(Number(params?.duration ?? 0));
       return { text: prefix + '🎤 Tin thoại' + (adur > 0 ? ` (${fmtDuration(adur)})` : '') };
     }
     case 'gif': return { text: prefix + '🎞 GIF' };
@@ -1115,6 +1196,8 @@ function onPatternLeave() {
   border-bottom: 1px solid var(--app-border-subtle);
   background: var(--app-surface-panel);
   flex-shrink: 0;
+  /* Cột 2 kéo thả được → @container bên dưới ẩn chữ "Messenger" khi hẹp. */
+  container-type: inline-size;
 }
 .cl-label-filter {
   display: inline-flex;
@@ -1134,6 +1217,93 @@ function onPatternLeave() {
 }
 .cl-label-filter:hover { background: var(--app-surface-hover); }
 .cl-label-caret { font-size: 15px; line-height: 1; }
+/* Dropdown lọc kênh — cùng khung .cl-label-filter; mark tròn giống badge Avatar. */
+.cl-channel-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 42px;
+  padding: 0 9px 0 11px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cl-channel-filter:hover { background: var(--app-surface-hover); }
+.cl-channel-caret { opacity: .55; flex-shrink: 0; }
+.cl-ch-icon { display: inline-flex; color: var(--app-text-muted); }
+/* Mark tròn theo kênh: Z (Zalo #0068ff), f (Messenger #0866ff), ♪ (TikTok đen). */
+.cl-channel-mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.cl-channel-mark--zalo { background: #0068ff; }
+.cl-channel-mark--fb { background: #0866ff; font-family: Georgia, 'Times New Roman', serif; }
+.cl-channel-mark--tt { background: #010101; font-size: 11px; }
+.cl-channel-filter.is-active {
+  border-color: color-mix(in srgb, var(--app-accent) 35%, transparent);
+  background: var(--app-accent-soft);
+  color: var(--app-accent);
+}
+/* Popup menu — scoped style vẫn áp dụng vì content slot compile trong component (như .tag-overflow-popup). */
+.cl-channel-menu {
+  background: var(--app-surface-panel, #fff);
+  border-radius: 10px;
+  box-shadow: var(--app-shadow-lg);
+  padding: 5px;
+  min-width: 184px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.cl-channel-opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+.cl-channel-opt:hover:not(.is-disabled) { background: var(--app-surface-hover); }
+.cl-channel-opt.is-active { color: var(--app-accent); }
+.cl-channel-opt-label { flex: 1; }
+.cl-channel-check { color: var(--app-accent); flex-shrink: 0; }
+.cl-channel-opt.is-disabled { color: var(--app-text-muted); cursor: not-allowed; opacity: .7; }
+.cl-channel-soon {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: var(--app-surface-sunken);
+  color: var(--app-text-muted);
+}
+/* Cột 2 kéo hẹp → bỏ chữ, giữ mark + caret (search co giãn nên không vỡ layout). */
+@container (max-width: 340px) {
+  .cl-channel-filter { padding: 0 6px 0 8px; }
+  .cl-channel-filter .cl-channel-text { display: none; }
+}
 .cl-new-msg-more { font-size: 24px; line-height: .65; transform: translateY(-1px); }
 .cl-title-row,
 .cl-eyebrow,

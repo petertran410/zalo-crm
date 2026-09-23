@@ -88,7 +88,9 @@
           :auto-compose-phone="autoComposePhone"
           :following-pairs="followingPairs"
           :filter-collapsed="filterCollapsed"
+          :channel-filter="inboxFilters.state.channel"
           v-model:search="searchQuery"
+          @update:channel-filter="inboxFilters.setChannel($event)"
           @select="onSelectConv"
           @filter-account="onFilterAccount"
           @update:filters="onFiltersUpdate"
@@ -569,6 +571,7 @@ watch(
   () => [
     inboxFilters.state.folderId,
     inboxFilters.state.saleAssigneeId,
+    inboxFilters.state.channel,
     Array.from(inboxFilters.state.quickPills).join(','),
     inboxFilters.state.tagsZalo.join(','),
     inboxFilters.state.tagsCrm.join(','),

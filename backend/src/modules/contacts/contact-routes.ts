@@ -37,6 +37,10 @@ import {
   assertContactEditable,
 } from "./contact-scope.js";
 import { getZaloScope } from "../zalo/zalo-scope.js";
+import {
+  CANCELLED_INVOICE_STATUSES,
+  unpaidInvoiceWhere,
+} from "./customer-360-routes.js";
 import { runAutomationRules } from "../../shared/ee-registry/automation.js";
 import { normalizePhone } from "../../shared/utils/phone.js";
 import { logActivity, computeDiff } from "../activity/activity-logger.js";
@@ -44,6 +48,79 @@ import { emitWebhook } from "../api/webhook-service.js";
 import { scheduleHisweetiePush } from "../integrations/hisweetie-push-queue.js";
 
 type QueryParams = Record<string, string>;
+
+/**
+ * Công nợ theo contactId — CÙNG luật với endpoint /pos/.../debts và chip Công nợ:
+ * current = snapshot pos_customer_debts thắng, không có thì cộng hoá đơn chưa thanh
+ * toán (loại hoá đơn huỷ); lifetime = tổng remaining_debt trên mọi hoá đơn KHÔNG huỷ
+ * (hoá đơn đã trả góp 0) → luôn ≥ current. Khớp cả row chưa link contactId qua
+ * posCustomerId giống endpoint, để sort/chip/endpoint không lệch nhau.
+ */
+async function debtMapsFor(
+  orgId: string,
+  rows?: Array<{ id: string; posCustomerId: number | null }>
+): Promise<{ current: Map<string, number>; lifetime: Map<string, number> }> {
+  // rows = cửa sổ trang (rẻ); không truyền = cả org (chỉ khi sort "debt").
+  let match: any = {};
+  const byPos = new Map<number, string>();
+  if (rows) {
+    const ids = rows.map((r) => r.id);
+    const posIds = rows
+      .map((r) => r.posCustomerId)
+      .filter((x): x is number => x != null);
+    for (const r of rows) if (r.posCustomerId != null) byPos.set(r.posCustomerId, r.id);
+    match = {
+      OR: [
+        { contactId: { in: ids } },
+        ...(posIds.length ? [{ posCustomerId: { in: posIds } }] : []),
+      ],
+    };
+  } else {
+    const links = await prisma.contact.findMany({
+      where: { orgId, posCustomerId: { not: null } },
+      select: { id: true, posCustomerId: true },
+    });
+    for (const c of links) if (c.posCustomerId != null) byPos.set(c.posCustomerId, c.id);
+  }
+  const [snap, unpaidAgg, allAgg] = await Promise.all([
+    prisma.posCustomerDebt.findMany({
+      where: { orgId, ...match },
+      select: { contactId: true, posCustomerId: true, totalDebt: true },
+    }),
+    prisma.posInvoice.groupBy({
+      by: ["contactId", "posCustomerId"],
+      where: { orgId, ...unpaidInvoiceWhere(match) },
+      _sum: { remainingDebt: true },
+    }),
+    // lifetime: tổng totalAmount mọi hoá đơn không huỷ.
+    prisma.posInvoice.groupBy({
+      by: ["contactId", "posCustomerId"],
+      where: {
+        orgId,
+        ...match,
+        NOT: { status: { in: CANCELLED_INVOICE_STATUSES } },
+      },
+      _sum: { totalAmount: true },
+    }),
+  ]);
+  const resolve = (cid: string | null, pid: number | null): string | null =>
+    cid ?? (pid != null ? byPos.get(pid) ?? null : null);
+  const lifetime = new Map<string, number>();
+  for (const g of allAgg) {
+    const cid = resolve(g.contactId, g.posCustomerId);
+    if (cid) lifetime.set(cid, (lifetime.get(cid) ?? 0) + (g._sum.totalAmount ?? 0));
+  }
+  const current = new Map<string, number>();
+  for (const g of unpaidAgg) {
+    const cid = resolve(g.contactId, g.posCustomerId);
+    if (cid) current.set(cid, (current.get(cid) ?? 0) + (g._sum.remainingDebt ?? 0));
+  }
+  for (const s of snap) {
+    const cid = resolve(s.contactId, s.posCustomerId);
+    if (cid) current.set(cid, s.totalDebt);
+  }
+  return { current, lifetime };
+}
 
 export async function contactRoutes(app: FastifyInstance): Promise<void> {
   app.addHook("preHandler", authMiddleware);
@@ -259,6 +336,28 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         const pageNum = parseInt(page);
         const limitNum = parseInt(limit);
 
+        // Sort "debt": công nợ KHÔNG phải cột Contact, và orderBy theo relation _sum
+        // không loại được hoá đơn huỷ → tính map nợ trước (CÙNG luật với chip Công nợ
+        // và endpoint /debts), rồi phân trang theo danh sách id đã sắp.
+        const debtSort = sort === "debt";
+        let debtMaps: { current: Map<string, number>; lifetime: Map<string, number> } | null = null;
+        let pageWindow: string[] | null = null;
+        if (debtSort) {
+          debtMaps = await debtMapsFor(user.orgId);
+          const ranked = (
+            await prisma.contact.findMany({ where, select: { id: true } })
+          )
+            .map((c) => ({ id: c.id, debt: debtMaps!.current.get(c.id) ?? 0 }))
+            .sort(
+              (a, b) =>
+                (sortDir === "asc" ? a.debt - b.debt : b.debt - a.debt) ||
+                a.id.localeCompare(b.id)
+            );
+          pageWindow = ranked
+            .slice((pageNum - 1) * limitNum, pageNum * limitNum)
+            .map((x) => x.id);
+        }
+
         // Sort server-side: client sort chỉ xáo trộn các trang đã tải.
         const dir = sortDir === "asc" ? "asc" : "desc";
         const orderBy = ((): any[] => {
@@ -293,9 +392,13 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           ];
         })();
 
+        // Sort debt: where đã bị thu về đúng cửa sổ trang (đếm total vẫn dùng where gốc).
+        const listWhere = pageWindow
+          ? { ...where, id: { in: pageWindow } }
+          : where;
         const [contacts, total] = await Promise.all([
           prisma.contact.findMany({
-            where,
+            where: listWhere,
             include: {
               assignedUser: {
                 select: { id: true, fullName: true, email: true },
@@ -304,11 +407,16 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               ...AGGREGATE_INCLUDE,
             },
             orderBy,
-            skip: (pageNum - 1) * limitNum,
+            skip: pageWindow ? 0 : (pageNum - 1) * limitNum,
             take: limitNum,
           }),
           prisma.contact.count({ where }),
         ]);
+        // findMany theo `id in (...)` KHÔNG giữ thứ tự đã sắp → xếp lại đúng cửa sổ.
+        if (pageWindow) {
+          const pos = new Map(pageWindow.map((id, i) => [id, i]));
+          contacts.sort((a, b) => (pos.get(a.id) ?? 0) - (pos.get(b.id) ?? 0));
+        }
 
         // #4: đếm số lần gắn sequence (CareSession) cho các KH trong TRANG này — tổng + đang chạy.
         // 1 query groupBy theo (contactId, state), indexed @@index([orgId, contactId, nickId, state]).
@@ -339,6 +447,15 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         const visibleZaloIds: Set<string> | null = zScope
           ? new Set(zScope.accessibleIds)
           : null;
+
+        // Công nợ theo trang: current = đang nợ; lifetime = tổng giá trị hoá đơn.
+        if (!debtMaps) {
+          debtMaps = await debtMapsFor(
+            user.orgId,
+            contacts.map((c) => ({ id: c.id, posCustomerId: c.posCustomerId ?? null }))
+          );
+        }
+        const dm = debtMaps;
 
         // Aggregate + multiNick post-filter (childrenCount requires friends count after load)
         const multiNickOnly = multiNick === "true";
@@ -372,6 +489,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
               // #4: số lần gắn sequence (auto+manual) ở mức Cha (SĐT) — tổng + đang chạy.
               sequenceAttachCount: seqCountMap.get(c.id)?.total ?? 0,
               sequenceActiveCount: seqCountMap.get(c.id)?.active ?? 0,
+              // current = đang nợ; lifetime = tổng giá trị hoá đơn.
+              currentDebt: dm.current.get(c.id) ?? 0,
+              lifetimeDebt: dm.lifetime.get(c.id) ?? 0,
             };
           })
           .filter((c) => !multiNickOnly || (c.childrenCount ?? 0) > 1);
@@ -695,11 +815,17 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           contact.id,
           privacyCtx
         );
+        // Công nợ cho chip: cùng luật với list/sort/endpoint.
+        const dm = await debtMapsFor(user.orgId, [
+          { id: contact.id, posCustomerId: contact.posCustomerId ?? null },
+        ]);
         const merged = {
           ...contact,
           ...(preview ?? {}),
           ...display,
           viewerRole,
+          currentDebt: dm.current.get(contact.id) ?? 0,
+          lifetimeDebt: dm.lifetime.get(contact.id) ?? 0,
         };
         return shouldRedact ? redactContact(merged as any, privacyCtx) : merged;
       } catch (err) {
