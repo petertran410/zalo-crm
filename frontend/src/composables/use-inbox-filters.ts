@@ -73,6 +73,8 @@ export type ScoreTier = 'cold' | 'warm' | 'hot' | 'champion' | null;
 export type StuckDuration = '>3d' | '>7d' | '>14d' | '>30d' | null;
 // '>7d' khớp định nghĩa "KH đình trệ" của Dashboard (deep-link từ KPI đó).
 export type LastMessageWithin = '24h' | '7d' | '30d' | '>7d' | '>30d' | 'custom' | null;
+/** Kênh lọc hội thoại. 'tiktok_shop' khớp ChannelKind BE — UI disable tới khi có route. */
+export type ChannelFilter = 'facebook' | 'zalo' | 'tiktok_shop' | null;
 export type SaleAssigneeFilter = string | null | 'all' | 'unassigned';
 // 2026-06-09 — Nhóm lọc "Tin nhắn" (user vs bot), radio 1-of-3 (null = không lọc).
 //   unanswered  = tin cuối là khách, chưa ai trả lời
@@ -85,6 +87,8 @@ export interface FilterState {
   saleAssigneeId: SaleAssigneeFilter;
   /** Tab single-active (1 trong 4: personal/group/main/other). Default = main. */
   activeTab: ActiveTab;
+  /** Kênh nhắn đang lọc: null = tất cả. FB không có nick → lọc riêng, không dùng folder. */
+  channel: ChannelFilter;
   quickPills: Set<QuickPillKey>;
   tagsZalo: string[];
   tagsCrm: string[];
@@ -120,6 +124,7 @@ export function defaultFilterState(): FilterState {
     folderId: null,
     saleAssigneeId: null,
     activeTab: null, // 2026-07-24: null = load tất cả hội thoại, không lọc theo tab
+    channel: null,
     quickPills: new Set(),
     tagsZalo: [],
     tagsCrm: [],
@@ -271,6 +276,11 @@ export function useInboxFilters() {
     activePresetId.value = null;
   }
 
+  function setChannel(ch: ChannelFilter) {
+    state.channel = ch;
+    activePresetId.value = null;
+  }
+
   function clearAll() {
     Object.assign(state, defaultFilterState());
     activePresetId.value = null;
@@ -313,6 +323,7 @@ export function useInboxFilters() {
     // 2026-07-24: Tabs đã bị ẩn → không gửi threadType/tab filter, tải tất cả hội thoại.
     // (activeTab = null → skip toàn bộ switch, backend trả về mọi conv)
     if (state.sortMode === 'unread-first') params.sortMode = 'unread-first';
+    if (state.channel) params.channel = state.channel;
 
     // Quick pills → individual query params
     if (state.quickPills.has('unread')) params.unread = 'true';
@@ -387,7 +398,8 @@ export function useInboxFilters() {
       state.appointmentWithin24h ||
       state.appointmentOverdue ||
       state.engagementPatterns.length > 0 ||
-      state.messageReplyState !== null
+      state.messageReplyState !== null ||
+      state.channel !== null
     );
   });
 
@@ -566,6 +578,7 @@ export function useInboxFilters() {
     toggleQuickPill,
     setSortMode,
     setActiveTab,
+    setChannel,
     clearAll,
     hydrateFromQuery,
     // Query

@@ -355,6 +355,7 @@ export async function chatRoutes(app: FastifyInstance) {
       search = '',
       accountId = '',          // single — backward compat
       accountIds = '',          // CSV — multi-nick support (preferred)
+      channel = '',             // 'facebook' | 'zalo' — lọc theo kênh nhắn
       // Filter params
       unread = '',
       unreplied = '',
@@ -440,11 +441,20 @@ export async function chatRoutes(app: FastifyInstance) {
     }
 
     // Multi-channel Phase 2 (2026-07-22): hội thoại FB hiện CHUNG tab chat với Zalo.
-    // Điều kiện "nick hiển thị được" chỉ có nghĩa với hội thoại Zalo → OR cùng channel='facebook'.
+    // Điều kiện "nick hiển thị được" chỉ có nghĩa với Zalo → OR cùng channel='facebook'.
     // Khi user LỌC theo nick/folder cụ thể → giữ thuần Zalo (không trộn FB vào bộ lọc nick).
     const nickFiltered = accountIdList.length > 0 || (folderAccountIds !== null && folderAccountIds.length === 0);
+    // Kênh KHÔNG-Zalo (FB, TikTok Shop…): hội thoại không có nick → bỏ nick filter,
+    // lọc thẳng where.channel. Khớp ChannelKind (channel-driver.ts); giá trị lạ → ignore.
+    const nonZaloChannel = ['facebook', 'tiktok_shop'].includes(channel) ? channel : null;
     where.AND = where.AND ?? [];
-    if (nickFiltered) {
+    if (nonZaloChannel) {
+      delete where.zaloAccountId; // nick/folder filter ở trên sẽ làm rỗng (conv kênh này zaloAccountId=null).
+      where.channel = nonZaloChannel;
+    } else if (channel === 'zalo') {
+      where.channel = 'zalo';
+      where.zaloAccount = DISPLAYABLE_NICK_WHERE;
+    } else if (nickFiltered) {
       where.zaloAccount = DISPLAYABLE_NICK_WHERE;
     } else {
       where.AND.push({ OR: [{ channel: 'facebook' }, { zaloAccount: DISPLAYABLE_NICK_WHERE }] });
@@ -711,7 +721,9 @@ export async function chatRoutes(app: FastifyInstance) {
     if (!zScope2.isOrgAdmin) {
       // T6-consumer (YC2): danh sách hội thoại dùng displayableIds (gồm nick xóa-có-uid).
       const displayableIds = zScope2.displayableIds;
-      if (accountIdList.length > 0) {
+      if (nonZaloChannel) {
+        // Lọc kênh không-Zalo (FB/TikTok): KHÔNG áp nick scope (conv không có nick). Đã org-scoped.
+      } else if (accountIdList.length > 0) {
         const allowed = accountIdList.filter(id => displayableIds.includes(id));
         where.zaloAccountId = allowed.length === 1 ? allowed[0] : (allowed.length > 0 ? { in: allowed } : 'NO_ACCESS_EMPTY_MATCH');
       } else {

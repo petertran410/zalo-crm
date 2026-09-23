@@ -400,9 +400,12 @@
               <span v-if="relLabel(primaryRelOf(detail))" class="ppl-dr-pill"><span class="ppl-chan-dot" :style="{ background: relColor(primaryRelOf(detail)) }"></span>{{ relLabel(primaryRelOf(detail)) }}</span>
               <span v-if="detail.email" class="ppl-dr-pill">{{ detail.email }}</span>
               <span class="ppl-dr-pill ppl-dr-debt" :class="debtStatusClass" :title="debtTooltip">
-                <span class="ppl-dr-debt-ico">💳</span>
                 Công nợ
                 <b>{{ debtDisplay }}</b>
+              </span>
+              <span v-if="lifetimeDisplay" class="ppl-dr-pill ppl-dr-debt life" :title="lifetimeTooltip">
+                Tổng
+                <b>{{ lifetimeDisplay }}</b>
               </span>
             </div>
           </div>
@@ -424,7 +427,10 @@
             </button>
             <div v-if="familyOpen" class="ppl-fam-panel" @click.stop>
               <div class="ppl-fam-sec">
-                <div class="ppl-fam-title">Cùng số điện thoại</div>
+                <div class="ppl-fam-title">
+                  Cùng số điện thoại
+                  <span class="ppl-fam-tcount">{{ phoneOtherCount }}</span>
+                </div>
                 <div v-if="familyLoading" class="ppl-fam-empty">Đang tải…</div>
                 <div v-else-if="!familyMembers.length" class="ppl-fam-empty">
                   Không có nick nào khác
@@ -458,7 +464,10 @@
                 </div>
               </div>
               <div class="ppl-fam-sec alt">
-                <div class="ppl-fam-title">chuỗi</div>
+                <div class="ppl-fam-title">
+                  chuỗi
+                  <span class="ppl-fam-tcount">{{ chainOtherCount }}</span>
+                </div>
                 <div v-if="chainLoading" class="ppl-fam-empty">Đang tải…</div>
                 <div v-else-if="!chainMembers.length" class="ppl-fam-empty">
                   Không có nick nào cùng chuỗi
@@ -834,6 +843,8 @@ const SORT_OPTIONS = [
   { value: 'name_desc', label: 'Tên Z–A' },
   { value: 'score_desc', label: 'Điểm tiềm năng cao nhất' },
   { value: 'score_asc', label: 'Điểm tiềm năng thấp nhất' },
+  { value: 'debt_desc', label: 'Công nợ cao nhất' },
+  { value: 'debt_asc', label: 'Công nợ thấp nhất' },
 ] as const;
 const DEFAULT_SORT = 'activity_desc';
 
@@ -1574,6 +1585,12 @@ const familyWrapRef = ref<HTMLElement | null>(null);
 let familyLoadedFor: string | null = null;
 let chainLoadedFor: string | null = null;
 // Số nick LIÊN QUAN (không tính Contact đang xem, dedupe theo id giữa 2 list).
+const phoneOtherCount = computed(
+  () => familyMembers.value.filter((m) => !m.isCurrent).length,
+);
+const chainOtherCount = computed(
+  () => chainMembers.value.filter((m) => !m.isCurrent).length,
+);
 const familyOtherCount = computed(() => {
   const ids = new Set<string>();
   for (const m of [...familyMembers.value, ...chainMembers.value]) {
@@ -1589,7 +1606,7 @@ const loadingNotes = ref(false);
 const noteDraft = ref('');
 const savingNote = ref(false);
 
-// Công nợ = số tiền KH đang nợ công ty, lấy từ POS (snapshot + fallback hoá đơn chưa thanh toán).
+// Công nợ: snapshot POS, fallback hoá đơn chưa trả.
 const debt = ref<{ totalDebt: number; overdueDebt: number; dueDate: string | null; status: string } | null>(null);
 const debtLoading = ref(false);
 
@@ -1629,6 +1646,18 @@ const debtTooltip = computed(() => {
   const bits = [`Tổng nợ: ${VND_FMT.format(d.totalDebt)}`];
   if (d.overdueDebt > 0) bits.push(`Quá hạn: ${VND_FMT.format(d.overdueDebt)}`);
   if (d.dueDate) bits.push(`Hạn thanh toán: ${new Date(d.dueDate).toLocaleDateString('vi-VN')}`);
+  return bits.join(' · ');
+});
+
+// Tổng: giá trị mọi hoá đơn không huỷ, kể cả đã trả.
+const lifetimeValue = computed(() => Number((detail.value as any)?.lifetimeDebt) || 0);
+const lifetimeDisplay = computed(() => (lifetimeValue.value > 0 ? VND_FMT.format(lifetimeValue.value) : ''));
+const lifetimeTooltip = computed(() => {
+  const life = lifetimeValue.value;
+  const cur = debt.value?.totalDebt ?? 0;
+  if (life <= 0) return 'Chưa có hoá đơn';
+  const bits = [`Tổng giá trị hoá đơn (kể cả đã trả): ${VND_FMT.format(life)}`];
+  if (life > cur) bits.push(`Đã trả: ${VND_FMT.format(life - cur)}`);
   return bits.join(' · ');
 });
 
@@ -2905,10 +2934,9 @@ onBeforeUnmount(() => {
   max-width: 200px; overflow: hidden; text-overflow: ellipsis;
 }
 
-/* Công nợ: cùng khung pill nhưng KHÔNG cắt bớt (số tiền là nội dung chính). */
+/* Công nợ: khung pill nhưng không cắt số tiền. */
 .ppl-dr-debt { max-width: none; overflow: visible; gap: 5px; color: var(--pp-muted); }
 .ppl-dr-debt b { font-weight: 800; font-variant-numeric: tabular-nums; }
-.ppl-dr-debt-ico { font-size: 11px; }
 .ppl-dr-debt.clean { background: var(--pp-card); }
 .ppl-dr-debt.clean b { color: var(--pp-good); }
 .ppl-dr-debt.warn {
@@ -2921,6 +2949,9 @@ onBeforeUnmount(() => {
   color: color-mix(in srgb, var(--pp-bad) 72%, var(--pp-fg));
 }
 .ppl-dr-debt.danger b { color: inherit; }
+/* Tổng = lịch sử, không phải tình trạng → tông trung tính. */
+.ppl-dr-debt.life { background: var(--pp-card); color: var(--pp-muted); }
+.ppl-dr-debt.life b { color: var(--pp-fg); }
 .ppl-dr-x {
   flex: none; width: 32px; height: 32px; border: 0; border-radius: 11px;
   background: var(--pp-card); color: var(--pp-muted); cursor: pointer; font-size: 16px; line-height: 1;
@@ -2957,8 +2988,16 @@ onBeforeUnmount(() => {
 .ppl-fam-sec.alt { border-top: 1px solid var(--pp-line); }
 .ppl-fam-title {
   flex: none; padding: 11px 14px 8px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
   font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase;
   color: var(--pp-faint);
+}
+/* Số dòng của section — muted, không dùng accent để không giành sự chú ý với chip ở nút. */
+.ppl-fam-tcount {
+  flex: none; padding: 1px 7px; border-radius: 999px;
+  background: var(--pp-card); color: var(--pp-muted);
+  font-size: 10px; font-weight: 800; line-height: 1.5; letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 .ppl-fam-empty { padding: 4px 14px 14px; font-size: 12.5px; color: var(--pp-muted); }
 /* max-height trên flex container + overflow-y trên body = cặp quy ước của repo
