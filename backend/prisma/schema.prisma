@@ -3454,6 +3454,7 @@ model PermissionGroup {
   id           String    @id @default(uuid())
   orgId        String    @map("org_id")
   name         String
+  description  String?   @db.Text
   parentId     String?   @map("parent_id") // tree UI grouping, mỗi node độc lập permission
   isSystem     Boolean   @default(false) @map("is_system") // Admin = protected, không xóa
   displayOrder Int       @default(0) @map("display_order")
