@@ -778,6 +778,7 @@ model Contact {
   posOrders   PosOrder[]        @relation("ContactPosOrders")
   posInvoices PosInvoice[]      @relation("ContactPosInvoices")
   posDebts    PosCustomerDebt[] @relation("ContactPosDebts")
+  posLinks    ContactPosLink[]
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
@@ -4429,6 +4430,21 @@ model PosCustomer {
   @@index([phone])
   @@index([createdAt])
   @@map("pos_customers")
+}
+
+model ContactPosLink {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  posCustomerId   Int      @map("pos_customer_id")
+  posCustomerCode String?  @map("pos_customer_code")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, posCustomerId])
+  @@index([contactId])
+  @@map("contact_pos_links")
 }
 
 /**

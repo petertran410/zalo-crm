@@ -11,6 +11,11 @@
 
 const VN_MOBILE = /^0[35789]\d{8}$/;
 
+function splitExtension(raw: string): { phone: string; extension: string } {
+  const match = raw.trim().match(/^(.*?)(\.\d+)$/);
+  return match ? { phone: match[1], extension: match[2] } : { phone: raw, extension: '' };
+}
+
 /** Đưa input bất kỳ về dạng '0xxxxxxxxx' nếu là VN mobile, ngược lại null. */
 function toLocal(raw: string | null | undefined): string | null {
   if (!raw) return null;
@@ -36,11 +41,12 @@ function toLocal(raw: string | null | undefined): string | null {
  */
 export function displayPhone(raw: string | null | undefined): string {
   if (!raw) return '';
-  const local = toLocal(raw);
+  const { phone, extension } = splitExtension(String(raw));
+  const local = toLocal(phone);
   if (!local) return String(raw).trim();
   // 0XXX XXX XXX — nhóm sau số 0: 3-3-3
   const body = local.slice(1); // 9 số
-  return `0${body.slice(0, 3)} ${body.slice(3, 6)} ${body.slice(6, 9)}`;
+  return `0${body.slice(0, 3)} ${body.slice(3, 6)} ${body.slice(6, 9)}${extension}`;
 }
 
 /**
@@ -49,10 +55,11 @@ export function displayPhone(raw: string | null | undefined): string {
  */
 export function displayPhoneIntl(raw: string | null | undefined): string {
   if (!raw) return '';
-  const local = toLocal(raw);
+  const { phone, extension } = splitExtension(String(raw));
+  const local = toLocal(phone);
   if (!local) return String(raw).trim();
   const body = local.slice(1); // 9 số (bỏ 0)
-  return `+84 ${body.slice(0, 3)} ${body.slice(3, 6)} ${body.slice(6, 9)}`;
+  return `+84 ${body.slice(0, 3)} ${body.slice(3, 6)} ${body.slice(6, 9)}${extension}`;
 }
 
 export function usePhoneFormat() {

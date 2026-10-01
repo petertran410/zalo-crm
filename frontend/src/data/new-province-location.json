@@ -1,0 +1,242 @@
+{
+  "provinces": [
+    {
+      "code": "01",
+      "name": "Thành phố Hà Nội",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": ""
+    },
+    {
+      "code": "04",
+      "name": "Tỉnh Cao Bằng",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "08",
+      "name": "Tỉnh Tuyên Quang",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "11",
+      "name": "Tỉnh Điện Biên",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "12",
+      "name": "Tỉnh Lai Châu",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "14",
+      "name": "Tỉnh Sơn La",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "15",
+      "name": "Tỉnh Lào Cai",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "19",
+      "name": "Tỉnh Thái Nguyên",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "20",
+      "name": "Tỉnh Lạng Sơn",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "22",
+      "name": "Tỉnh Quảng Ninh",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "24",
+      "name": "Tỉnh Bắc Ninh",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "25",
+      "name": "Tỉnh Phú Thọ",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "31",
+      "name": "Thành phố Hải Phòng",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "33",
+      "name": "Tỉnh Hưng Yên",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "37",
+      "name": "Tỉnh Ninh Bình",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "38",
+      "name": "Tỉnh Thanh Hóa",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "40",
+      "name": "Tỉnh Nghệ An",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "42",
+      "name": "Tỉnh Hà Tĩnh",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "44",
+      "name": "Tỉnh Quảng Trị",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "46",
+      "name": "Thành phố Huế",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "48",
+      "name": "Thành phố Đà Nẵng",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "51",
+      "name": "Tỉnh Quảng Ngãi",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "52",
+      "name": "Tỉnh Gia Lai",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "56",
+      "name": "Tỉnh Khánh Hòa",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "66",
+      "name": "Tỉnh Đắk Lắk",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "68",
+      "name": "Tỉnh Lâm Đồng",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "75",
+      "name": "Tỉnh Đồng Nai",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "79",
+      "name": "Thành phố Hồ Chí Minh",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "80",
+      "name": "Tỉnh Tây Ninh",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "82",
+      "name": "Tỉnh Đồng Tháp",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "86",
+      "name": "Tỉnh Vĩnh Long",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "91",
+      "name": "Tỉnh An Giang",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": ""
+    },
+    {
+      "code": "92",
+      "name": "Thành phố Cần Thơ",
+      "englishName": "",
+      "administrativeLevel": "Thành phố Trung ương",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    },
+    {
+      "code": "96",
+      "name": "Tỉnh Cà Mau",
+      "englishName": "",
+      "administrativeLevel": "Tỉnh",
+      "decree": "202/2025/QH15 - 12/06/2025"
+    }
+  ]
+}

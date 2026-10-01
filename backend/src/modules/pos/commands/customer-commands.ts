@@ -8,55 +8,41 @@ import { logger } from '../../../shared/utils/logger.js';
 import { handleMcpError, parsePosPublicApiError } from '../../../shared/commands/error-handler.js';
 import { normalizePhone, phoneVariants } from '../../../shared/utils/phone.js';
 import { v4 as uuidv4 } from 'uuid';
+import { assertPosCustomerCanLink, assertPosLinkStoreReady, linkPosCustomer } from '../contact-pos-links.js';
 
 /**
  * Địa chỉ mặc định khi sale không nhập — POS BẮT BUỘC ≥1 địa chỉ giao hàng
  * (verify thật 2026-08-25: thiếu addresses → 400 "Phải có ít nhất 1 địa chỉ").
  * Shape đúng đặc tả PUBLIC-API.md §6, không thêm field lạ (strict validation).
  */
-function buildAddresses(address?: string) {
+function buildAddresses(address?: string, cityCode?: string, cityName?: string, wardName?: string) {
   return [{
     address: address?.trim() || 'Chưa xác định',
-    newCityCode: '79',
-    newCityName: 'Thành phố Hồ Chí Minh',
-    newWardName: 'Phường Bến Thành',
+    ...(cityCode ? { newCityCode: cityCode } : {}),
+    ...(cityName ? { newCityName: cityName } : {}),
+    ...(wardName ? { newWardName: wardName } : {}),
     isDefault: true,
   }];
 }
 
-/**
- * Tìm khách trùng SĐT. Verify thật 2026-08-25: POS `search` KHÔNG khớp số điện
- * thoại (tìm "0899339387" → rỗng, tìm tên thì được) dù doc ghi có — nên tra
- * LOCAL pos_customers trước (đã sync kèm phone), chỉ fallback POS search sau.
- */
-async function findExistingByPhone(orgId: string, phone: string) {
+export async function findExistingByPhone(orgId: string, phone: string, excludePosId?: number) {
   const variants = new Set<string>([phone.trim()]);
   const norm = normalizePhone(phone);
   if (norm) variants.add(norm);
   for (const v of phoneVariants(phone)) {
+    variants.add(v);
     const n = normalizePhone(v);
     if (n) variants.add(n);
   }
 
   const local = await prisma.posCustomer.findFirst({
-    where: { orgId, phone: { in: [...variants] } },
+    where: { orgId, phone: { in: [...variants] }, ...(excludePosId ? { posId: { not: excludePosId } } : {}) },
     orderBy: { updatedAt: 'desc' },
   });
   if (local) {
     return { id: local.posId, code: local.code, name: local.name, phone: local.phone };
   }
 
-  // Fallback: hỏi POS trực tiếp (search khớp được tên/mã, SĐT thì không đáng tin).
-  try {
-    const res = await getHisweetiePublicApiClient().searchCustomers(phone.trim());
-    const found = (res as any).data || [];
-    if (found.length > 0) {
-      const c = found[0];
-      return { id: Number(c.id), code: c.code || null, name: c.name || '', phone: c.phone || c.contactNumber || null };
-    }
-  } catch (err: any) {
-    logger.warn('[CreateCustomerHandler] POS search fallback failed:', err.message || err);
-  }
   return null;
 }
 
@@ -66,13 +52,16 @@ export interface CreateCustomerPayload {
   phone: string;
   email?: string;
   address?: string;
+  cityCode?: string;
+  cityName?: string;
+  wardName?: string;
   groups?: string[];
   branchId?: number;
 }
 
 export class CreateCustomerValidator implements CommandValidator<Command<CreateCustomerPayload>> {
   validate(command: Command<CreateCustomerPayload>): ValidationResult {
-    const { name, phone } = command.payload;
+    const { name, phone, address } = command.payload;
     const errors: Record<string, string> = {};
 
     if (!name || !name.trim()) {
@@ -87,6 +76,9 @@ export class CreateCustomerValidator implements CommandValidator<Command<CreateC
         errors.phone = 'Số điện thoại không đúng định dạng (ví dụ: 0987654321)';
       }
     }
+    if (!address || !address.trim()) {
+      errors.address = 'Địa chỉ chi tiết không được để trống';
+    }
 
     return {
       isValid: Object.keys(errors).length === 0,
@@ -97,44 +89,23 @@ export class CreateCustomerValidator implements CommandValidator<Command<CreateC
 
 export class CreateCustomerHandler implements CommandHandler<Command<CreateCustomerPayload>, any> {
   async handle(command: Command<CreateCustomerPayload>, context: { orgId: string; userId: string }): Promise<any> {
-    const { contactId, name, phone, email, address } = command.payload;
+    const { contactId, name, phone, address, cityCode, cityName, wardName } = command.payload;
     // Public API thuần (PUBLIC-API.md §6) — MCP đã loại bỏ hoàn toàn khỏi luồng KH.
     const api = getHisweetiePublicApiClient();
+    if (contactId && !(await prisma.contact.findFirst({ where: { id: contactId, orgId: context.orgId }, select: { id: true } }))) {
+      throw new Error('Không tìm thấy Contact');
+    }
+    if (contactId) await assertPosLinkStoreReady();
 
     // 1. Kiểm tra xem số điện thoại đã tồn tại trên POS chưa (Tránh trùng lặp)
     try {
       logger.info(`[CreateCustomerHandler] Checking duplicate phone: ${phone} on POS`);
       const existing = await findExistingByPhone(context.orgId, phone);
       if (existing) {
-        // Tìm thấy khách hàng trùng SĐT -> Thực hiện liên kết thay vì tạo mới
-        logger.info(`[CreateCustomerHandler] Found existing customer on POS with ID: ${existing.id}. Linking instead of creating.`);
-
-        if (contactId) {
-          await prisma.contact.update({
-            where: { id: contactId },
-            data: {
-              posCustomerId: existing.id,
-              posCustomerCode: existing.code || null,
-            },
-          });
-        }
-
-        // Sync ngầm, chạy tăng dần thay vì kéo lại toàn bộ khách hàng.
-        void withPosSyncLock(context.orgId, 'Customer', async () =>
-          syncCustomerCohort(context.orgId),
-        ).catch(err => {
-          logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
-        });
-
-        return {
-          posCustomerId: existing.id,
-          posCustomerCode: existing.code,
-          name: existing.name,
-          phone: existing.phone,
-          linkedExisting: true,
-        };
+        throw new Error('Số điện thoại đã được liên kết với một tài khoản POS');
       }
     } catch (err: any) {
+      if (err.message === 'Số điện thoại đã được liên kết với một tài khoản POS') throw err;
       logger.warn('[CreateCustomerHandler] Search POS customer check failed:', err.message || err);
     }
 
@@ -142,89 +113,71 @@ export class CreateCustomerHandler implements CommandHandler<Command<CreateCusto
     const payload = {
       name: name.trim(),
       contactNumber: phone.trim(),
-      addresses: buildAddresses(address),
+      addresses: buildAddresses(address, cityCode, cityName, wardName),
     };
 
     const idempotencyKey = uuidv4();
+    let res: any;
     try {
       logger.info(`[CreateCustomerHandler] Creating new customer on POS via Public API: ${name}`);
-      const res = await api.createCustomer(payload, idempotencyKey);
-
-      const created = (res as any).data || res;
-      const posId = created.id;
-      const posCode = created.code;
-
-      if (!posId) {
-        throw new Error('POS API return invalid customer ID');
-      }
-
-      // 3. Liên kết với CRM Contact nếu có contactId
-      if (contactId) {
-        await prisma.contact.update({
-          where: { id: contactId },
-          data: {
-            posCustomerId: posId,
-            posCustomerCode: posCode || null,
-          },
-        });
-      }
-
-      // 4. Kích hoạt Background Sync
-      void withPosSyncLock(context.orgId, 'Customer', async () =>
-        syncCustomerCohort(context.orgId),
-      ).catch(err => {
-        logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
-      });
-
-      return {
-        posCustomerId: posId,
-        posCustomerCode: posCode,
-        name: created.name,
-        phone: created.phone || created.contactNumber,
-        linkedExisting: false,
-      };
+      res = await api.createCustomer(payload, idempotencyKey);
     } catch (err: any) {
-      // POS tự chặn trùng SĐT bằng 409 Conflict (verify thật 2026-08-25):
-      // 'Số điện thoại "xxx" đã được sử dụng bởi khách hàng "Tên"'.
-      // Local check bỏ lỡ vì sync chỉ lưu KH có phát sinh tài chính → KH mới
-      // chưa bao giờ mua không nằm trong pos_customers. Xử lý: tìm theo tên
-      // trong message (search POS khớp TÊN được) rồi LINK thay vì fail.
-      const { status, detail } = parsePosPublicApiError(err);
-      const dupMatch = status === 409
-        ? detail.match(/đã được sử dụng bởi khách hàng "([^"]+)"/)
-        : null;
-      if (dupMatch) {
-        const dupName = dupMatch[1];
-        try {
-          const res = await getHisweetiePublicApiClient().searchCustomers(dupName, 50);
-          const candidates = ((res as any).data || []) as any[];
-          const phoneDigits = phone.replace(/\D/g, '').slice(-9);
-          const match = candidates.find((c) => String(c.contactNumber || c.phone || '').replace(/\D/g, '').endsWith(phoneDigits))
-            || candidates.find((c) => c.name === dupName);
-          if (match) {
-            logger.info(`[CreateCustomerHandler] POS 409 duplicate → link existing customer ${match.id} (${match.name})`);
-            if (contactId) {
-              await prisma.contact.update({
-                where: { id: contactId },
-                data: { posCustomerId: Number(match.id), posCustomerCode: match.code || null },
-              });
-            }
-            return {
-              posCustomerId: Number(match.id),
-              posCustomerCode: match.code,
-              name: match.name,
-              phone: match.phone || match.contactNumber,
-              linkedExisting: true,
-            };
-          }
-        } catch (linkErr: any) {
-          logger.warn('[CreateCustomerHandler] 409 link-back failed:', linkErr.message || linkErr);
-        }
-        throw new Error(`Số điện thoại ${phone} đã tồn tại trên POS (khách "${dupName}"). Vui lòng liên kết thủ công trong panel khách hàng.`);
-      }
-      const mappedMsg = handleMcpError(err);
-      throw new Error(mappedMsg);
+      const { status } = parsePosPublicApiError(err);
+      if (status === 409) throw new Error('Số điện thoại đã được liên kết với một tài khoản POS');
+      throw new Error(handleMcpError(err));
     }
+
+    const created = res.data || res;
+    const posId = Number(created.id);
+    const posCode = created.code;
+    if (!Number.isSafeInteger(posId) || posId <= 0) {
+      throw new Error('POS đã phản hồi nhưng không trả mã khách hàng hợp lệ. Vui lòng kiểm tra POS trước khi thử lại.');
+    }
+
+    try {
+      await prisma.posCustomer.upsert({
+        where: { posId_orgId: { posId, orgId: context.orgId } },
+        create: {
+          orgId: context.orgId,
+          posId,
+          code: posCode || null,
+          name: created.name || name.trim(),
+          phone: created.phone || created.contactNumber || phone.trim(),
+          address: address?.trim() || null,
+        },
+        update: {
+          code: posCode || null,
+          name: created.name || name.trim(),
+          phone: created.phone || created.contactNumber || phone.trim(),
+          address: address?.trim() || null,
+        },
+      });
+    } catch (err) {
+      logger.error('[CreateCustomerHandler] Local POS customer projection failed:', err);
+    }
+
+    if (contactId) {
+      try {
+        await linkPosCustomer(context.orgId, contactId, posId, posCode);
+      } catch (err) {
+        logger.error(`[CreateCustomerHandler] POS customer ${posId} created without CRM link:`, err);
+        throw new Error(`Đã tạo khách hàng POS ${posCode || `#${posId}`} nhưng chưa liên kết CRM. Hãy dùng "Tìm & liên kết POS"; không tạo lại.`);
+      }
+    }
+
+    void withPosSyncLock(context.orgId, 'Customer', async () =>
+      syncCustomerCohort(context.orgId),
+    ).catch(err => {
+      logger.error('[CreateCustomerHandler] Background sync customers failed:', err);
+    });
+
+    return {
+      posCustomerId: posId,
+      posCustomerCode: posCode,
+      name: created.name,
+      phone: created.phone || created.contactNumber,
+      linkedExisting: false,
+    };
   }
 }
 
@@ -235,6 +188,9 @@ export interface UpdateCustomerPayload {
   phone: string;
   email?: string;
   address?: string;
+  cityCode?: string;
+  cityName?: string;
+  wardName?: string;
   branchId?: number;
 }
 
@@ -268,30 +224,50 @@ export class UpdateCustomerValidator implements CommandValidator<Command<UpdateC
 
 export class UpdateCustomerHandler implements CommandHandler<Command<UpdateCustomerPayload>, any> {
   async handle(command: Command<UpdateCustomerPayload>, context: { orgId: string; userId: string }): Promise<any> {
-    const { posCustomerId, contactId, name, phone, email, address } = command.payload;
+    const { posCustomerId, contactId, name, phone, address, cityCode, cityName, wardName } = command.payload;
+    if (contactId) await assertPosCustomerCanLink(context.orgId, contactId, posCustomerId);
     // Public API thuần (PUBLIC-API.md §6) — payload chỉ gồm các trường trong đặc tả.
     const api = getHisweetiePublicApiClient();
     const payload = {
       name: name.trim(),
       contactNumber: phone.trim(),
-      addresses: buildAddresses(address),
+      ...(address !== undefined || cityCode !== undefined || cityName !== undefined || wardName !== undefined
+        ? { addresses: buildAddresses(address, cityCode, cityName, wardName) }
+        : {}),
     };
 
     const idempotencyKey = uuidv4();
+    let posUpdated = false;
 
     try {
+      if (await findExistingByPhone(context.orgId, phone, posCustomerId)) {
+        throw new Error('Số điện thoại đã được liên kết với một tài khoản POS');
+      }
       logger.info(`[UpdateCustomerHandler] Updating customer ${posCustomerId} on POS via Public API`);
       const res = await api.updateCustomer(posCustomerId, payload, idempotencyKey);
+      posUpdated = true;
       const updated = (res as any).data || res;
+
+      await prisma.posCustomer.upsert({
+        where: { posId_orgId: { posId: posCustomerId, orgId: context.orgId } },
+        create: {
+          orgId: context.orgId,
+          posId: posCustomerId,
+          code: updated.code || null,
+          name: updated.name || name.trim(),
+          phone: updated.phone || updated.contactNumber || phone.trim(),
+          address: address?.trim() || null,
+        },
+        update: {
+          name: updated.name || name.trim(),
+          phone: updated.phone || updated.contactNumber || phone.trim(),
+          ...(address !== undefined ? { address: address.trim() || null } : {}),
+        },
+      }).catch((err) => logger.error('[UpdateCustomerHandler] Local POS customer projection failed:', err));
 
       // Đồng bộ thông tin về CRM Contact nếu liên kết khớp
       if (contactId) {
-        await prisma.contact.update({
-          where: { id: contactId },
-          data: {
-            posCustomerId: posCustomerId,
-          },
-        });
+        await linkPosCustomer(context.orgId, contactId, posCustomerId);
       }
 
       // Kích hoạt Background Sync
@@ -307,6 +283,15 @@ export class UpdateCustomerHandler implements CommandHandler<Command<UpdateCusto
         phone: updated.phone || updated.contactNumber || phone,
       };
     } catch (err: any) {
+      if (posUpdated) {
+        logger.error(`[UpdateCustomerHandler] POS customer ${posCustomerId} updated without CRM link:`, err);
+        throw new Error(`Đã cập nhật tài khoản POS #${posCustomerId} nhưng chưa hoàn tất liên kết CRM. Vui lòng tải lại và thử liên kết POS.`);
+      }
+      if (err.message === 'Số điện thoại đã được liên kết với một tài khoản POS') throw err;
+      const { status } = parsePosPublicApiError(err);
+      if (status === 409) {
+        throw new Error('Số điện thoại đã được liên kết với một tài khoản POS');
+      }
       const mappedMsg = handleMcpError(err);
       throw new Error(mappedMsg);
     }

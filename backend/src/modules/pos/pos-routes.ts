@@ -10,6 +10,9 @@ import { commandDispatcher } from '../../shared/commands/command-dispatcher.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { logActivity } from '../activity/activity-logger.js';
 import { assertContactVisible } from '../contacts/contact-scope.js';
+import { normalizeVnMobile } from '../../shared/utils/phone.js';
+import { findExistingByPhone } from './commands/customer-commands.js';
+import { getContactPosLinks, linkPosCustomer, unlinkPosCustomer, POS_LINK_CONFLICT, POS_LINK_STORAGE_UNAVAILABLE } from './contact-pos-links.js';
 
 // Import để đảm bảo các Commands được đăng ký vào Dispatcher
 import './commands/customer-commands.js';
@@ -175,6 +178,26 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 
+  app.get('/api/v1/pos/customers/check-phone', async (request: FastifyRequest, reply: FastifyReply) => {
+    const { phone, excludePosId, contactId } = request.query as { phone?: string; excludePosId?: string; contactId?: string };
+    if (!normalizeVnMobile(phone)) return reply.status(400).send({ error: 'Số điện thoại không đúng định dạng' });
+    const excluded = excludePosId ? Number(excludePosId) : undefined;
+    if (excludePosId && (!Number.isSafeInteger(excluded) || excluded! <= 0)) {
+      return reply.status(400).send({ error: 'ID khách hàng POS không hợp lệ' });
+    }
+    try {
+      if (contactId && !(await ensureContactVisible(request, reply, contactId))) return;
+      const customer = await findExistingByPhone(request.user!.orgId, phone!, excluded);
+      const linkedToContact = customer && contactId
+        ? (await getContactPosLinks(request.user!.orgId, contactId)).some((account) => account.id === customer.id)
+        : false;
+      return { exists: !!customer, customer, linkedToContact };
+    } catch (err) {
+      logger.error('[pos-routes] Check customer phone failed:', err);
+      return reply.status(500).send({ error: 'Không thể kiểm tra số điện thoại POS' });
+    }
+  });
+
   // GET /api/v1/pos/customers/:id — lấy hồ sơ khách hàng chi tiết trực tiếp từ POS
   app.get('/api/v1/pos/customers/:id', async (request: FastifyRequest, reply: FastifyReply) => {
     const { id } = request.params as { id: string };
@@ -183,6 +206,96 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     } catch (err: any) {
       logger.error(`[pos-routes] Fetch POS customer detail failed for id ${id}:`, err);
       return reply.status(500).send({ error: err.message || 'Failed to fetch detailed POS customer profile' });
+    }
+  });
+
+  app.get('/api/v1/pos/contacts/:contactId/summary', async (request: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const user = request.user!;
+      const { contactId } = request.params as { contactId: string };
+      const { posCustomerId: requestedPosCustomerId } = request.query as { posCustomerId?: string };
+      if (!(await ensureContactVisible(request, reply, contactId))) return;
+
+      const contact = await prisma.contact.findFirst({
+        where: { id: contactId, orgId: user.orgId, archivedAt: null },
+        select: { posCustomerId: true, posCustomerCode: true, fullName: true, crmName: true },
+      });
+      if (!contact) {
+        return reply.status(404).send({ error: 'POS account not found' });
+      }
+
+      const selectedPosCustomerId = requestedPosCustomerId == null ? contact.posCustomerId : Number(requestedPosCustomerId);
+      if (requestedPosCustomerId != null && (!Number.isSafeInteger(selectedPosCustomerId) || selectedPosCustomerId! <= 0)) {
+        return reply.status(400).send({ error: 'Invalid POS customer ID' });
+      }
+      const selectedAccount = selectedPosCustomerId != null
+        ? (await getContactPosLinks(user.orgId, contactId)).find((account) => account.id === selectedPosCustomerId)
+        : null;
+      if (selectedPosCustomerId != null) {
+        if (!selectedAccount) {
+          return reply.status(404).send({ error: 'POS account not linked to contact' });
+        }
+      } else if (!contact.posCustomerCode) {
+        return reply.status(404).send({ error: 'POS account not found' });
+      }
+
+      const posFilter = selectedPosCustomerId != null
+        ? { posCustomerId: selectedPosCustomerId }
+        : { posCustomerCode: contact.posCustomerCode! };
+      const [customer, debt, orders, invoices] = await Promise.all([
+        prisma.posCustomer.findFirst({
+          where: { orgId: user.orgId, ...(selectedPosCustomerId != null ? { posId: selectedPosCustomerId } : { code: contact.posCustomerCode! }) },
+          select: { code: true, name: true },
+        }),
+        prisma.posCustomerDebt.findFirst({
+          where: { orgId: user.orgId, ...posFilter },
+          select: { totalDebt: true, currentDebt: true, overdueDebt: true },
+        }),
+        prisma.posOrder.findMany({
+          where: { orgId: user.orgId, ...posFilter },
+          orderBy: { orderDate: 'desc' },
+          take: 5,
+          select: { id: true, code: true, orderDate: true, grandTotal: true, status: true },
+        }),
+        prisma.posInvoice.findMany({
+          where: { orgId: user.orgId, ...posFilter },
+          orderBy: { invoiceDate: 'desc' },
+          take: 5,
+          select: { id: true, invoiceCode: true, invoiceDate: true, totalAmount: true, remainingDebt: true, status: true },
+        }),
+      ]);
+
+      let totalDebt = debt?.totalDebt ?? 0;
+      let overdueDebt = debt?.overdueDebt ?? 0;
+      if (!debt) {
+        const unpaidFilter = {
+          orgId: user.orgId,
+          ...posFilter,
+          remainingDebt: { gt: 0 },
+          NOT: { status: { in: ['Đã hủy', 'Đã huỷ', 'Cancelled', 'Void'] } },
+        };
+        const [unpaid, overdue] = await Promise.all([
+          prisma.posInvoice.aggregate({ where: unpaidFilter, _sum: { remainingDebt: true } }),
+          prisma.posInvoice.aggregate({ where: { ...unpaidFilter, dueDate: { lt: new Date() } }, _sum: { remainingDebt: true } }),
+        ]);
+        totalDebt = unpaid._sum.remainingDebt ?? 0;
+        overdueDebt = overdue._sum.remainingDebt ?? 0;
+      }
+
+      return {
+        customerCode: customer?.code ?? selectedAccount?.code ?? (selectedPosCustomerId === contact.posCustomerId ? contact.posCustomerCode : null) ?? null,
+        fullName: customer?.name ?? selectedAccount?.name ?? (selectedPosCustomerId === contact.posCustomerId ? contact.fullName ?? contact.crmName : null) ?? 'Khách hàng POS',
+        debt: {
+          total: totalDebt,
+          current: debt?.currentDebt ?? Math.max(0, totalDebt - overdueDebt),
+          overdue: overdueDebt,
+        },
+        orders,
+        invoices,
+      };
+    } catch (err) {
+      logger.error('[pos-routes] Fetch POS account summary failed:', err);
+      return reply.status(500).send({ error: 'Failed to fetch POS account summary' });
     }
   });
 
@@ -208,12 +321,15 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['name', 'phone'],
+          required: ['name', 'phone', 'address'],
           properties: {
             name: { type: 'string', minLength: 1 },
             phone: { type: 'string', minLength: 1 },
             contactId: { type: 'string' },
             address: { type: 'string' },
+            cityCode: { type: 'string' },
+            cityName: { type: 'string' },
+            wardName: { type: 'string' },
             email: { type: 'string' },
             branchId: { type: 'integer' },
           },
@@ -231,12 +347,21 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           name: body.name,
           phone: body.phone,
           address: body.address,
+          cityCode: body.cityCode,
+          cityName: body.cityName,
+          wardName: body.wardName,
           email: body.email,
           branchId: body.branchId,
         },
       }, { orgId: user.orgId, userId: user.id });
 
       if (!result.success) {
+        if (result.message === 'Số điện thoại đã được liên kết với một tài khoản POS') {
+          return reply.status(409).send({ ...result, errors: { phone: result.message } });
+        }
+        if (result.message === POS_LINK_STORAGE_UNAVAILABLE) {
+          return reply.status(503).send(result);
+        }
         return reply.status(400).send(result);
       }
       return result;
@@ -263,6 +388,9 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
             phone: { type: 'string', minLength: 1 },
             contactId: { type: 'string' },
             address: { type: 'string' },
+            cityCode: { type: 'string' },
+            cityName: { type: 'string' },
+            wardName: { type: 'string' },
             email: { type: 'string' },
             branchId: { type: 'integer' },
           },
@@ -282,12 +410,21 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           name: body.name,
           phone: body.phone,
           address: body.address,
+          cityCode: body.cityCode,
+          cityName: body.cityName,
+          wardName: body.wardName,
           email: body.email,
           branchId: body.branchId,
         },
       }, { orgId: user.orgId, userId: user.id });
 
       if (!result.success) {
+        if (result.message === 'Số điện thoại đã được liên kết với một tài khoản POS') {
+          return reply.status(409).send({ ...result, errors: { phone: result.message } });
+        }
+        if (result.message === POS_LINK_STORAGE_UNAVAILABLE) {
+          return reply.status(503).send(result);
+        }
         return reply.status(400).send(result);
       }
       return result;
@@ -306,6 +443,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       if (!contact) {
         return reply.status(404).send({ error: 'Contact not found' });
       }
+      const accounts = await getContactPosLinks(request.user!.orgId, contactId);
 
       // Không dựng client POS ở đây: endpoint này vẫn trả được kết quả từ dữ liệu
       // local khi POS chưa cấu hình. Chỉ gọi live khi thực sự cần, và luôn có fallback.
@@ -321,6 +459,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
             posCustomerId: contact.posCustomerId,
             posCustomerCode: contact.posCustomerCode,
             posCustomer: (customerProfile as any).data || customerProfile,
+            accounts,
           };
         } catch (err: any) {
           logger.warn(`[pos-routes] Fetch POS profile failed for customer ${contact.posCustomerId}:`, err.message || err);
@@ -330,6 +469,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
             posCustomerId: contact.posCustomerId,
             posCustomerCode: contact.posCustomerCode,
             localFallback: true,
+            accounts,
             posCustomer: {
               id: contact.posCustomerId,
               code: contact.posCustomerCode,
@@ -351,6 +491,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
               linked: false,
               autoSuggest: true,
               posCustomer: found[0],
+              accounts,
             };
           }
         } catch (err: any) {
@@ -361,6 +502,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       return {
         linked: false,
         autoSuggest: false,
+        accounts,
       };
     } catch (err: any) {
       logger.error('[pos-routes] Fetch link status failed:', err);
@@ -420,10 +562,8 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // Cập nhật Contact: link + auto-sync các trường cơ bản từ POS
-        const updateData: any = {
-          posCustomerId,
-          posCustomerCode: posCustomerCode || null,
-        };
+        await linkPosCustomer(user.orgId, contactId, posCustomerId, posCustomerCode);
+        const updateData: any = {};
         // Chỉ update tên/sđt nếu Contact chưa có dữ liệu
         if (finalPosName && !existingContact?.fullName) {
           updateData.fullName = finalPosName;
@@ -464,6 +604,7 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
         };
       } catch (err: any) {
         logger.error('[pos-routes] Link contact to POS failed:', err);
+        if (err.message === POS_LINK_CONFLICT) return reply.status(409).send({ error: POS_LINK_CONFLICT });
         return reply.status(500).send({ error: 'Failed to link contact to POS' });
       }
     }
@@ -499,18 +640,13 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(404).send({ error: 'Contact not found' });
         }
 
-        if (!existingContact.posCustomerId) {
+        const query = request.query as { posCustomerId?: string };
+        const targetPosId = query.posCustomerId ? Number(query.posCustomerId) : existingContact.posCustomerId;
+        if (!targetPosId || !Number.isSafeInteger(targetPosId)) {
           return reply.status(400).send({ error: 'Contact chưa được liên kết POS' });
         }
 
-        // Set null — hủy liên kết
-        await prisma.contact.update({
-          where: { id: contactId },
-          data: {
-            posCustomerId: null,
-            posCustomerCode: null,
-          },
-        });
+        await unlinkPosCustomer(user.orgId, contactId, targetPosId);
 
         // Audit log (fire-and-forget)
         logActivity({

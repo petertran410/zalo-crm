@@ -46,6 +46,7 @@ import { normalizePhone } from "../../shared/utils/phone.js";
 import { logActivity, computeDiff } from "../activity/activity-logger.js";
 import { emitWebhook } from "../api/webhook-service.js";
 import { scheduleHisweetiePush } from "../integrations/hisweetie-push-queue.js";
+import { linkPosCustomer, POS_LINK_CONFLICT } from "../pos/contact-pos-links.js";
 
 type QueryParams = Record<string, string>;
 
@@ -1326,7 +1327,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // Race guard: 2 sale bấm liên kết cùng lúc → người sau nhận lại KH đã có.
-        const existing = await prisma.contact.findFirst({
+        const linked = await prisma.contactPosLink.findUnique({
+          where: { orgId_posCustomerId: { orgId: user.orgId, posCustomerId } },
+          include: { contact: { select: { id: true, fullName: true, crmName: true, phone: true } } },
+        });
+        const existing = linked?.contact || await prisma.contact.findFirst({
           where: { orgId: user.orgId, posCustomerId },
           select: { id: true, fullName: true, crmName: true, phone: true },
         });
@@ -1373,6 +1378,13 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             assignedUserId: true,
           },
         });
+        let linkedContact;
+        try {
+          linkedContact = await linkPosCustomer(user.orgId, contact.id, posCustomer.posId, posCustomer.code);
+        } catch (err) {
+          await prisma.contact.delete({ where: { id: contact.id } });
+          throw err;
+        }
 
         // ContactAccess primary cho sale liên kết (giống quick-create).
         await prisma.contactAccess.upsert({
@@ -1398,9 +1410,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           details: { via: "pos_link", posCustomerId: posCustomer.posId },
         });
 
-        return reply.status(201).send({ exists: false, contact });
-      } catch (err) {
+        return reply.status(201).send({ exists: false, contact: { ...contact, posCustomerId: linkedContact.posCustomerId } });
+      } catch (err: any) {
         logger.error("[contacts] link-pos error:", err);
+        if (err.message === POS_LINK_CONFLICT) return reply.status(409).send({ error: POS_LINK_CONFLICT });
         return reply.status(500).send({ error: "Failed to link POS customer" });
       }
     }
