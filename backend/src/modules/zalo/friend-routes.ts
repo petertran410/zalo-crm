@@ -415,6 +415,7 @@ export async function friendRoutes(app: FastifyInstance) {
     const user = request.user!;
     try {
       if (!await checkAccess(request, reply, accountId, 'read')) return;
+      if (userId.startsWith('virtual:')) return reply.status(400).send({ error: 'Virtual conversation has no Zalo user' });
       await resolveAccount(accountId, user.orgId);
       const data = await zaloOps.getFriendRequestStatus(accountId, userId);
       return { data };
