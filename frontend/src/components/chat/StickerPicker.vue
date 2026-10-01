@@ -6,10 +6,12 @@
     transition="scale-transition"
   >
     <template #activator="{ props: actProps }">
+      <slot name="activator" :props="actProps">
       <button v-bind="actProps" class="icon-tool" title="Gửi sticker">
         <!-- Anh chốt 2026-05-22: Lucide Smile đồng bộ với 7 nút Lucide khác trong toolbar -->
         <SmileIcon :size="18" :stroke-width="1.5" />
       </button>
+      </slot>
     </template>
 
     <div class="sticker-picker">

@@ -88,9 +88,20 @@ export interface FriendshipInfo {
   zaloDisplayName?: string | null;
 }
 
+export interface AssignedChatContact {
+  id: string;
+  fullName: string | null;
+  crmName: string | null;
+  phone: string | null;
+  avatarUrl: string | null;
+  hasZalo: boolean | null;
+  updatedAt: string;
+}
+
 export interface Conversation {
   id: string;
   threadType: 'user' | 'group';
+  channel?: 'zalo' | 'facebook';
   contact: Contact | null;
   zaloAccount: ZaloAccount | null;
   /** Tên nhóm Zalo (chỉ có khi threadType=group) — backend resolve qua getGroupInfo */
@@ -311,6 +322,11 @@ export function useChat() {
   const typingConvIds = ref<Map<string, number>>(new Map());
   const typingTimers = new Map<string, number>();
   const searchQuery = ref('');
+  const assignedContacts = ref<AssignedChatContact[]>([]);
+  const assignedContactsLoading = ref(false);
+  const assignedContactsHasMore = ref(false);
+  let assignedContactsRequestId = 0;
+  let conversationRequestId = 0;
   // STRANGLER FACADE (work-scope migration 2026-06-15): accountFilter giờ là LỚP VỎ
   // bắc qua workScope (nguồn chân lý mới). Mọi reader/writer cũ (.value get/set) chạy
   // nguyên KHÔNG đổi hành vi. Migrate dần readers sang useWorkScope trực tiếp; khi grep
@@ -360,6 +376,32 @@ export function useChat() {
   );
 
   const extraFilters = ref<Record<string, string>>({});
+  const profileAssignedUserId = ref<string | null>(null);
+
+  async function fetchAssignedContacts(profileUserId: string, append: boolean, profileAccountIds: string[]) {
+    const requestId = ++assignedContactsRequestId;
+    const page = append ? Math.floor(assignedContacts.value.length / 50) + 1 : 1;
+    if (!append) assignedContacts.value = [];
+    assignedContactsLoading.value = true;
+    const params: Record<string, string | number> = {
+      profileUserId,
+      page,
+      limit: 50,
+      search: searchQuery.value.trim(),
+    };
+    if (profileAccountIds.length) params.accountIds = profileAccountIds.join(',');
+    try {
+      const res = await api.get('/conversations/assigned-contacts', { params });
+      if (requestId !== assignedContactsRequestId) return;
+      const result = res.data as { contacts: AssignedChatContact[]; total: number; page: number; limit: number };
+      assignedContacts.value = append ? [...assignedContacts.value, ...result.contacts] : result.contacts;
+      assignedContactsHasMore.value = result.page * result.limit < result.total;
+    } catch (err) {
+      if (requestId === assignedContactsRequestId) console.error('Failed to fetch assigned contacts:', err);
+    } finally {
+      if (requestId === assignedContactsRequestId) assignedContactsLoading.value = false;
+    }
+  }
 
   function buildConversationQueryParams() {
     const scopeIds = workScope.accountIds.value;
@@ -368,6 +410,7 @@ export function useChat() {
       search: searchQuery.value,
       ...extraFilters.value,
     };
+    if (profileAssignedUserId.value) params.assignedUserId = profileAssignedUserId.value;
     if (scopeIds && scopeIds.length > 1) {
       params.accountIds = scopeIds.join(',');
     } else if (scopeIds && scopeIds.length === 1) {
@@ -393,6 +436,7 @@ export function useChat() {
   }
 
   async function fetchConversations(opts?: { bypassCache?: boolean; trustFreshCache?: boolean }) {
+    const requestId = ++conversationRequestId;
     const params = buildConversationQueryParams();
     const cacheKey = JSON.stringify(params);
     const cached = opts?.bypassCache ? null : conversationsCache.get(cacheKey);
@@ -438,6 +482,7 @@ export function useChat() {
 
     try {
       const res = await api.get('/conversations', { params });
+      if (requestId !== conversationRequestId) return;
       // Apply pending optimistic mutations (tag assigns chưa được BE confirm) trước khi
       // replace state — tránh fetchConversations chạy giữa lúc BE đang sync wipe UI optimistic.
       const fresh = applyPendingTags(res.data.conversations as Conversation[]);
@@ -448,9 +493,9 @@ export function useChat() {
       // không bị wipe bởi narrow list response (14 field).
       conversations.value = mergeConvListPreserveDetail(conversations.value, fresh, preserveIds);
     } catch (err) {
-      console.error('Failed to fetch conversations:', err);
+      if (requestId === conversationRequestId) console.error('Failed to fetch conversations:', err);
     } finally {
-      loadingConvs.value = false;
+      if (requestId === conversationRequestId) loadingConvs.value = false;
     }
   }
 
@@ -1162,9 +1207,14 @@ export function useChat() {
     loadingMsgs,
     sendingMsg,
     searchQuery,
+    assignedContacts,
+    assignedContactsLoading,
+    assignedContactsHasMore,
     accountFilter,
     extraFilters,
+    profileAssignedUserId,
     fetchConversations,
+    fetchAssignedContacts,
     fetchMessages,
     selectConversation,
     patchContactProfile,

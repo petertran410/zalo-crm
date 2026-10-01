@@ -5,7 +5,7 @@ import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { zaloPool } from '../zalo/zalo-pool.js';
-import { DISPLAYABLE_NICK_WHERE } from '../zalo/zalo-scope.js';
+import { DISPLAYABLE_NICK_WHERE, getZaloScope } from '../zalo/zalo-scope.js';
 
 export async function csRoutes(app: FastifyInstance) {
   app.addHook('preHandler', authMiddleware);
@@ -18,6 +18,15 @@ export async function csRoutes(app: FastifyInstance) {
    */
   app.get('/api/v1/cs/delegated-sales', async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
+    const currentUser = await prisma.user.findFirst({
+      where: { id: user.id, orgId: user.orgId },
+      select: {
+        fullName: true,
+        avatarUrl: true,
+        email: true,
+        permissionGroup: { select: { workspaceId: true } },
+      },
+    });
 
     // 1. Lấy danh sách nick của chính CSKH (CSKH Chung)
     const myAccounts = await prisma.zaloAccount.findMany({
@@ -72,6 +81,11 @@ export async function csRoutes(app: FastifyInstance) {
     }
 
     const cskhData = {
+      user: {
+        id: user.id,
+        fullName: currentUser?.fullName || currentUser?.email || 'Tôi',
+        avatarUrl: currentUser?.avatarUrl || null,
+      },
       totalAccounts: myAccounts.length,
       zaloAccounts: myAccounts.map((a) => ({
         ...a,
@@ -83,30 +97,53 @@ export async function csRoutes(app: FastifyInstance) {
     };
 
     const isOrgAdmin = user.role === 'owner' || user.role === 'admin';
+    const currentWorkspaceId = currentUser?.permissionGroup?.workspaceId
+      ?? (user.role === 'cskh' ? 'customer-care' : 'sales');
 
-    // 2. Lấy danh sách nick của các Sales
-    // Đối với Admin / Owner: lấy toàn bộ tài khoản trong org (ngoại trừ nick của chính mình đã có ở cskhData)
-    // Đối với nhân viên CSKH thường: lấy danh sách nick được cấp quyền qua ZaloAccountAccess
+    const peerUsers = await prisma.user.findMany({
+      where: {
+        orgId: user.orgId,
+        id: { not: user.id },
+        isActive: true,
+        ...(!isOrgAdmin ? {
+          OR: [
+            { permissionGroup: { workspaceId: currentWorkspaceId } },
+            ...(currentWorkspaceId === 'sales'
+              ? [{ permissionGroupId: null, role: 'member' }]
+              : []),
+            ...(currentWorkspaceId === 'customer-care'
+              ? [{ permissionGroupId: null, role: 'cskh' }]
+              : []),
+          ],
+        } : {}),
+      },
+      select: {
+        id: true,
+        fullName: true,
+        avatarUrl: true,
+        email: true,
+      },
+      orderBy: { fullName: 'asc' },
+    });
+
+    const peerUserIds = peerUsers.map((peer) => peer.id);
+    const scope = await getZaloScope(user.id, user.orgId, user.role);
+
     let targetAccounts: Array<{
       id: string;
       displayName: string | null;
       avatarUrl: string | null;
       status: string;
       ownerUserId: string | null;
-      owner: {
-        id: string;
-        fullName: string | null;
-        avatarUrl: string | null;
-        email: string | null;
-      } | null;
     }> = [];
 
-    if (isOrgAdmin) {
+    if (peerUserIds.length > 0) {
       targetAccounts = await prisma.zaloAccount.findMany({
         where: {
           orgId: user.orgId,
           ...DISPLAYABLE_NICK_WHERE,
-          ownerUserId: { not: user.id },
+          ownerUserId: { in: peerUserIds },
+          ...(!isOrgAdmin ? { id: { in: scope.displayableIds } } : {}),
         },
         select: {
           id: true,
@@ -114,51 +151,8 @@ export async function csRoutes(app: FastifyInstance) {
           avatarUrl: true,
           status: true,
           ownerUserId: true,
-          owner: {
-            select: {
-              id: true,
-              fullName: true,
-              avatarUrl: true,
-              email: true,
-            },
-          },
         },
       });
-    } else {
-      const delegatedAccesses = await prisma.zaloAccountAccess.findMany({
-        where: {
-          userId: user.id,
-          permission: { in: ['chat', 'admin'] },
-          zaloAccount: {
-            orgId: user.orgId,
-            ...DISPLAYABLE_NICK_WHERE,
-            ownerUserId: { not: user.id }, // Loại bỏ nick của chính mình
-          },
-        },
-        include: {
-          zaloAccount: {
-            select: {
-              id: true,
-              displayName: true,
-              avatarUrl: true,
-              status: true,
-              ownerUserId: true,
-              owner: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  avatarUrl: true,
-                  email: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      targetAccounts = delegatedAccesses
-        .map((a) => a.zaloAccount)
-        .filter((acct): acct is NonNullable<typeof acct> => !!acct);
     }
 
     // Nhóm theo Sales (ownerUserId)
@@ -176,24 +170,23 @@ export async function csRoutes(app: FastifyInstance) {
       }
     >();
 
-    for (const acct of targetAccounts) {
-      if (!acct) continue;
+    for (const peer of peerUsers) {
+      salesMap.set(peer.id, {
+        salesUser: {
+          id: peer.id,
+          fullName: peer.fullName || peer.email || 'Nhân viên',
+          avatarUrl: peer.avatarUrl || null,
+          email: peer.email || '',
+        },
+        zaloAccounts: [],
+      });
+    }
 
-      const salesUserId = acct.ownerUserId || 'unassigned';
-      if (!salesMap.has(salesUserId)) {
-        salesMap.set(salesUserId, {
-          salesUser: {
-            id: salesUserId,
-            fullName: acct.owner?.fullName || acct.owner?.email || (salesUserId === 'unassigned' ? 'Chưa gán nhân viên' : 'Nhân viên'),
-            avatarUrl: acct.owner?.avatarUrl || null,
-            email: acct.owner?.email || '',
-          },
-          zaloAccounts: [],
-        });
-      }
+    for (const acct of targetAccounts) {
+      if (!acct.ownerUserId || !salesMap.has(acct.ownerUserId)) continue;
 
       const isOnline = zaloPool.getInstance(acct.id)?.status === 'connected' || acct.status === 'connected';
-      salesMap.get(salesUserId)!.zaloAccounts.push({
+      salesMap.get(acct.ownerUserId)!.zaloAccounts.push({
         id: acct.id,
         displayName: acct.displayName,
         avatarUrl: acct.avatarUrl,

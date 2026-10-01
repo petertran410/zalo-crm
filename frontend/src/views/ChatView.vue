@@ -17,10 +17,58 @@
     @update:search="searchQuery = $event"
     @filter-account="onFilterAccount"
   />
-  <div v-else class="sl-app sales-theme chat-canvas-wrap">
+  <div
+    v-else
+    class="sl-app sales-theme chat-canvas-wrap"
+    :class="{
+      'chat-minimal': minimal,
+      'chat-minimal--info': showContactPanel && selectedConv?.contact,
+      'chat-minimal--profiles': minimal && profileRailOpen,
+      'chat-minimal--empty': minimal && !selectedConv,
+    }"
+  >
     <div class="smax-chat-grid" :style="gridStyle">
+      <nav v-if="minimal" class="minimal-chat-rail" aria-label="Điều hướng tin nhắn">
+        <button
+          type="button"
+          class="minimal-rail-item is-active"
+          aria-label="Hội thoại"
+          title="Hội thoại"
+          @click="closeProfileRail"
+        >
+          <MessageSquareText :size="21" :stroke-width="1.7" />
+          <span>Hội thoại</span>
+        </button>
+        <button
+          type="button"
+          class="minimal-rail-item"
+          :class="{ 'is-active': profileRailOpen }"
+          aria-label="Chuyển nhanh nhân viên"
+          :aria-expanded="profileRailOpen"
+          title="Chuyển nhanh nhân viên"
+          @click="toggleProfileRail"
+        >
+          <Layers :size="21" :stroke-width="1.7" />
+          <span>Kênh</span>
+        </button>
+        <button type="button" class="minimal-rail-item" @click="showFolderManagePopup = true" title="Quản lý thư mục và phạm vi xem">
+          <FolderClosed :size="21" :stroke-width="1.7" />
+          <span>Thư mục</span>
+        </button>
+        <button type="button" class="minimal-rail-current-user" :class="{ 'is-active': profileRailOpen }" :title="`Hộp thư của ${currentRailName}`" :aria-label="`Hộp thư của ${currentRailName}`" :aria-expanded="profileRailOpen" @click="toggleProfileRail">
+          <Avatar :src="currentRailAvatar" :name="currentRailName" :size="36" :platform="null" />
+        </button>
+      </nav>
+      <MinimalProfileRail
+        v-if="minimal && profileRailOpen"
+        :profiles="csWorkspace.switchableProfiles"
+        :active-profile-id="activeProfileId"
+        :loading="csWorkspace.loadingDelegated"
+        @select="selectProfile"
+      />
       <!-- COL 1: NEW Filter Sidebar (Phase 6+ Inbox Triage) -->
       <ConversationFilterSidebar
+        v-if="!minimal"
         class="smax-filter-rail"
         :compact-rail="true"
         :filters="inboxFilters"
@@ -42,7 +90,7 @@
            giữa CRM tag bar và conv list (đúng order user yêu cầu) -->
       <div class="smax-conv-col">
         <!-- Banner thông báo phạm vi xem khi Admin vào từ Kênh & Tin nhắn -->
-        <div v-if="activeScopeLabel" class="cs-scope-active-banner">
+        <div v-if="!minimal && activeScopeLabel" class="cs-scope-active-banner">
           <div class="cs-scope-left">
             <span class="cs-dot-live" />
             <span class="cs-scope-lbl">Đang xem:</span>
@@ -79,7 +127,14 @@
           <span class="oos-text">{{ outOfScopeTotal }} tin ở {{ outOfScopeNickCount }} nick khác</span>
         </button>
         <ConversationList
+          :minimal="minimal"
+          :can-create-group="accountList.length > 0"
+          :additional-filter-count="inboxFilters.activeFilterChips.value.length + inboxFilters.state.quickPills.size + (inboxFilters.state.sortMode !== 'recent' ? 1 : 0)"
           :conversations="conversations"
+          :assigned-contacts="minimal ? assignedContacts : []"
+          :assigned-contacts-loading="assignedContactsLoading"
+          :assigned-contacts-has-more="assignedContactsHasMore"
+          :assigned-contact-needs-account="assignedProfileAccountIds.length === 0"
           :selected-id="selectedConvId"
           :loading="loadingConvs"
           :accounts="accountList"
@@ -92,12 +147,16 @@
           v-model:search="searchQuery"
           @update:channel-filter="inboxFilters.setChannel($event)"
           @select="onSelectConv"
+          @select-contact="onSelectAssignedContact"
+          @load-more-contacts="loadMoreAssignedContacts"
           @filter-account="onFilterAccount"
           @update:filters="onFiltersUpdate"
           @conversation-moved="onConversationMoved"
           @conversation-deleted="onConversationDeleted"
           @compose-opened="onComposeOpened"
           @follow-changed="onFollowChanged"
+          @open-filters="minimalFiltersOpen = true"
+          @create-group="groupCreateOpen = true"
         >
           <template #filters>
             <ConversationFilterBar
@@ -123,6 +182,8 @@
 
       <!-- COL 3: message thread (giữ nguyên — handles header/messages/input bên trong) -->
       <MessageThread
+        ref="messageThreadRef"
+        :minimal="minimal"
         :conversation="selectedConv"
         :messages="messages"
         :loading="loadingMsgs"
@@ -173,6 +234,7 @@
 
       <!-- COL 4: contact info panel (chỉ hiện khi có contact) -->
       <ChatContactPanel
+        :minimal="minimal"
         v-if="showContactPanel && selectedConv?.contact"
         ref="contactPanelRef"
         :contact-id="selectedConv.contact.id"
@@ -190,23 +252,61 @@
         @close="showContactPanel = false"
         @saved="fetchConversations()"
         @status-changed="onPanelStatusChanged"
+        @switch-conversation="onSwitchToNickConv"
+        @open-zalo-profile="messageThreadRef?.openZaloProfile()"
       />
     </div>
+    <GroupCreateDialog v-model="groupCreateOpen" :accounts="accountList" :default-account-id="groupCreateDefaultAccountId" :busy="groupCreating" :auto-close="false" @create="onCreateGroup" />
+    <v-dialog v-if="minimal" v-model="minimalFiltersOpen" max-width="480" scrollable>
+      <v-card class="minimal-filters-dialog" rounded="lg">
+        <v-card-title class="minimal-dialog-heading">
+          <span>Bộ lọc nâng cao</span>
+          <button type="button" @click="minimalFiltersOpen = false">Xong</button>
+        </v-card-title>
+        <v-card-text class="minimal-dialog-body">
+          <div v-if="activeScopeLabel" class="minimal-filter-scope">
+            <span>Phạm vi: {{ activeScopeLabel }}</span>
+            <button type="button" @click="clearActiveScope">Xem tất cả kênh</button>
+          </div>
+          <ConversationFilterSidebar
+            :expanded="true"
+            :filters="inboxFilters"
+            :workspace-name="workspaceName"
+            :current-user-name="currentUserName"
+            :current-user-id="currentUserId"
+            :all-accounts-count="zaloAccounts?.length || 0"
+            :account-statuses="accountStatuses"
+            :total-unread="totalUnreadCount"
+            :current-account-id="accountFilter"
+            :current-account="currentAccount"
+            :current-role="currentRole"
+            @update:current-role="currentRole = $event"
+            @manage-folders="minimalFiltersOpen = false; showFolderManagePopup = true"
+            @clear-account-filter="onFilterAccount(null)"
+          />
+        </v-card-text>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, onActivated, watch, nextTick, provide } from 'vue';
+import { ref, computed, onMounted, onUnmounted, onActivated, onDeactivated, watch, nextTick, provide } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { FolderClosed, Layers, MessageSquareText } from 'lucide-vue-next';
 import { api } from '@/api/index';
 import { useToast } from '@/composables/use-toast';
 import '@/assets/sales-theme.css';
+import '@/assets/chat-minimal.css';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';
 import ChatContactPanel from '@/components/chat/ChatContactPanel.vue';
 import ConversationFilterSidebar from '@/components/chat/ConversationFilterSidebar.vue';
 import ConversationFilterBar from '@/components/chat/ConversationFilterBar.vue';
 import FolderManagePopup from '@/components/chat/FolderManagePopup.vue';
+import MinimalProfileRail from '@/components/chat/MinimalProfileRail.vue';
+import GroupCreateDialog from '@/components/groups/group-create-dialog.vue';
+import Avatar from '@/components/ui/Avatar.vue';
 import { useChat } from '@/composables/use-chat';
 import { useInboxFilters } from '@/composables/use-inbox-filters';
 import { useAuthStore } from '@/stores/auth';
@@ -218,17 +318,25 @@ import { shouldAdoptNickScope } from '@/composables/work-scope-logic';
 import MobileChatView from '@/views/MobileChatView.vue';
 import { useMobile } from '@/composables/use-mobile';
 
-import { useCsWorkspaceStore } from '@/stores/use-cs-workspace';
+import { useCsWorkspaceStore, type DelegatedSalesTarget, type SalesCardData } from '@/stores/use-cs-workspace';
 
 const { isMobile } = useMobile();
+const props = defineProps<{ minimal?: boolean }>();
+const chatRouteName = computed(() => props.minimal ? 'ChatMinimal' : 'Chat');
+const minimalFiltersOpen = ref(false);
+const groupCreateOpen = ref(false);
+const groupCreating = ref(false);
+const profileRailOpen = ref(false);
+const pendingProfileContactId = ref<string | null>(null);
 const route = useRoute();
 const router = useRouter();
 const csWorkspace = useCsWorkspaceStore();
 
 const {
   conversations, selectedConvId, selectedConv, messages,
-  loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters,
-  fetchConversations, fetchMessages, selectConversation, sendMessage, sendMessageTo,
+  assignedContacts, assignedContactsLoading, assignedContactsHasMore,
+  loadingConvs, loadingMsgs, sendingMsg, searchQuery, accountFilter, extraFilters, profileAssignedUserId,
+  fetchConversations, fetchAssignedContacts, fetchMessages, selectConversation, sendMessage, sendMessageTo,
   initSocket, destroySocket, getSocket,
   typingConvIds, realtimeOffline,
   outOfScopeCounts, clearOutOfScopeBadge,
@@ -272,12 +380,128 @@ const { accounts: zaloAccounts, fetchAccounts: fetchZaloAccounts } = useZaloAcco
 // work-scope (nguồn chân lý mới; accountFilter là facade bắc qua nó). Dùng validateAgainst
 // để lọc scope đã lưu chỉ còn nick CÓ QUYỀN — bảo mật, Anh nhấn mạnh 2026-06-15.
 const workScope = useWorkScope();
+const inboxFilters = useInboxFilters();
 // FIX 2026-06-23 (anh báo: chỉ mở 1 nick mà bộ tag cột 2 vẫn load ALL): selectedAccountIds
 // truyền xuống ConversationList để fetch /conversations/sidebar-tags theo PHẠM VI XEM.
 // TRƯỚC ĐÂY là ref CHẾT luôn [] (không gán bao giờ) → FE gửi accountIds rỗng → BE trả tag
 // của MỌI nick. Nối thẳng vào workScope.accountIds (nguồn chân lý PHẠM VI XEM): mở 1 nick →
 // chỉ tag nick đó; rỗng = tất cả nick có quyền (đúng thiết kế). Reactive → đổi nick tự refetch.
 const selectedAccountIds = computed(() => workScope.accountIds.value);
+
+const activeProfileId = computed(() => {
+  const routeProfileId = route.query.profile;
+  if (typeof routeProfileId === 'string' && routeProfileId) return routeProfileId;
+  return csWorkspace.activeSalesTarget?.id || authStore.user?.id || null;
+});
+const currentRailProfile = computed(() => csWorkspace.switchableProfiles.find((profile) => profile.salesUser.id === activeProfileId.value)?.salesUser);
+const currentRailName = computed(() => currentRailProfile.value?.fullName || csWorkspace.activeSalesTarget?.fullName || authStore.user?.fullName || 'Tôi');
+const currentRailAvatar = computed(() => currentRailProfile.value?.avatarUrl || csWorkspace.activeSalesTarget?.avatarUrl || authStore.user?.avatarUrl || null);
+
+function closeProfileRail() {
+  profileRailOpen.value = false;
+}
+
+function toggleProfileRail() {
+  profileRailOpen.value = !profileRailOpen.value;
+  if (profileRailOpen.value) {
+    void csWorkspace.fetchDelegatedSales();
+  }
+}
+
+function toProfileTarget(profile: SalesCardData): DelegatedSalesTarget {
+  return {
+    id: profile.salesUser.id,
+    fullName: profile.salesUser.fullName,
+    avatarUrl: profile.salesUser.avatarUrl,
+    zaloAccounts: profile.zaloAccounts.map((account) => ({
+      id: account.id,
+      displayName: account.displayName || undefined,
+      avatarUrl: account.avatarUrl,
+      isOnline: account.isOnline,
+    })),
+  };
+}
+
+async function selectProfile(profile: SalesCardData) {
+  if (activeProfileId.value === profile.salesUser.id) return;
+
+  pendingProfileContactId.value = selectedConv.value?.threadType === 'user'
+    ? selectedConv.value.contact?.id || null
+    : null;
+
+  const target = toProfileTarget(profile);
+
+  if (profile.salesUser.id === authStore.user?.id) {
+    csWorkspace.clearSalesTarget(target.zaloAccounts.map((account) => account.id));
+  } else {
+    csWorkspace.setSalesTarget(target);
+  }
+  if (target.zaloAccounts.length === 0) {
+    workScope.setScope([]);
+  }
+
+  selectedConvId.value = null;
+  messages.value = [];
+  conversations.value = [];
+  await router.replace({
+    name: chatRouteName.value,
+    query: { profile: target.id, name: target.fullName },
+  });
+}
+
+async function onSelectAssignedContact(contactId: string) {
+  const profileUserId = activeProfileId.value;
+  if (!profileUserId) return;
+  if (assignedProfileAccountIds.value.length === 0) {
+    toast.warning('Cần có ít nhất một nick Zalo trong hồ sơ này để mở hội thoại.');
+    return;
+  }
+  try {
+    const response = await api.post(`/contacts/${contactId}/virtual-conversation`, {
+      profileUserId,
+      accountId: assignedProfileAccountIds.value[0],
+      accountIds: assignedProfileAccountIds.value,
+    });
+    const conversationId = response.data?.conversationId;
+    if (!conversationId) return;
+    await fetchConversations({ bypassCache: true });
+    onSelectConv(conversationId);
+    await fetchAssignedContacts(profileUserId, false, assignedProfileAccountIds.value);
+  } catch (err: any) {
+    toast.error(err?.response?.data?.message || err?.response?.data?.error || 'Không thể mở hội thoại cho khách hàng này.');
+  }
+}
+
+function loadMoreAssignedContacts() {
+  if (activeProfileId.value && assignedContactsHasMore.value && !assignedContactsLoading.value) {
+    void fetchAssignedContacts(activeProfileId.value, true, assignedProfileAccountIds.value);
+  }
+}
+
+function onEscapeKey(event: KeyboardEvent) {
+  if (!event.isTrusted || !props.minimal || route.name !== 'ChatMinimal' || event.key !== 'Escape' || event.repeat) return;
+  if (minimalFiltersOpen.value || showFolderManagePopup.value) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+
+  if (selectedConvId.value || route.params.convId) {
+    selectedConvId.value = null;
+    messages.value = [];
+    clearReplyTo();
+    clearEditing();
+    if (route.params.convId) {
+      void router.replace({ name: chatRouteName.value, query: retainedScopeQuery.value });
+    }
+    return;
+  }
+
+  if (profileRailOpen.value) {
+    profileRailOpen.value = false;
+    return;
+  }
+
+  void router.push({ name: 'ChannelConnectionsMinimal' });
+}
 
 // ── Scope Label & Quản lý phạm vi xem từ Kênh & Tin nhắn ──
 const activeScopeLabel = computed(() => {
@@ -300,9 +524,11 @@ const activeScopeLabel = computed(() => {
 function clearActiveScope() {
   workScope.setScope([]);
   csWorkspace.clearSalesTarget([]);
+  accountFilter.value = null;
+  profileAssignedUserId.value = null;
   selectedConvId.value = null;
   lastAppliedQueryKey = '';
-  router.replace({ path: '/chat', query: {} });
+  router.replace({ name: chatRouteName.value, query: {} });
   void fetchConversations({ bypassCache: true });
 }
 
@@ -311,30 +537,60 @@ let lastAppliedQueryKey = '';
 async function applyRouteScope(force = false) {
   const acc = route.query.acc ? String(route.query.acc) : null;
   const sales = route.query.sales ? String(route.query.sales) : null;
-  const currentKey = `${acc || ''}__${sales || ''}`;
+  const profileId = route.query.profile ? String(route.query.profile) : null;
+  const currentKey = `${acc || ''}__${sales || ''}__${profileId || ''}`;
 
-  if (!acc && !sales) {
+  if (!acc && !sales && !profileId) {
+    profileAssignedUserId.value = null;
+    lastAppliedQueryKey = '';
     return;
   }
 
   if (currentKey !== lastAppliedQueryKey || force) {
     lastAppliedQueryKey = currentKey;
 
+    const isProfileSwitch = !!(sales || profileId);
+    const retainedContactId = isProfileSwitch
+      ? pendingProfileContactId.value ?? (selectedConv.value?.threadType === 'user' ? selectedConv.value.contact?.id || null : null)
+      : null;
     let targetIds: string[] = [];
+    let resolvedProfileId: string | null = null;
     if (acc) {
       targetIds = [acc];
+    } else if (profileId) {
+      if (csWorkspace.switchableProfiles.length === 0) {
+        await csWorkspace.fetchDelegatedSales();
+      }
+      const profile = csWorkspace.switchableProfiles.find((item) => item.salesUser.id === profileId);
+      if (profile) {
+        resolvedProfileId = profileId;
+        const target = toProfileTarget(profile);
+        targetIds = target.zaloAccounts.map((account) => account.id);
+        if (profile.salesUser.id === authStore.user?.id) {
+          csWorkspace.clearSalesTarget(targetIds);
+        } else {
+          csWorkspace.setSalesTarget(target);
+        }
+      }
     } else if (sales && csWorkspace.activeSalesTarget) {
       targetIds = csWorkspace.activeSalesTarget.zaloAccounts.map((a) => a.id);
     }
 
+    profileAssignedUserId.value = resolvedProfileId && targetIds.length === 0 ? resolvedProfileId : null;
+    if (profileId) {
+      inboxFilters.setFolder(null);
+      extraFilters.value = inboxFilters.buildQueryParams();
+    }
     if (targetIds.length > 0) {
       workScope.setScope(targetIds);
+    } else if (isProfileSwitch) {
+      workScope.setScope([]);
     }
 
     // Reset selected conversation nếu không thuộc targetIds của card mới
     if (selectedConv.value) {
       const convNick = (selectedConv.value as any)?.zaloAccountId || (selectedConv.value as any)?.zaloAccount?.id;
-      if (convNick && targetIds.length > 0 && !targetIds.includes(convNick)) {
+      if (isProfileSwitch && (targetIds.length === 0 || (convNick && !targetIds.includes(convNick)))) {
         selectedConvId.value = null;
       }
     } else {
@@ -342,17 +598,36 @@ async function applyRouteScope(force = false) {
     }
 
     // Tải lại danh sách hội thoại mới nhất từ server cho đúng card được bấm
+    conversations.value = [];
     await fetchConversations({ bypassCache: true });
 
-    // Tự động mở hội thoại đầu tiên của card nếu có hội thoại
-    if (!selectedConvId.value && conversations.value.length > 0) {
+    if (isProfileSwitch) {
+      const matchingConversation = retainedContactId
+        ? conversations.value.find((conversation) => (
+          conversation.threadType === 'user' && conversation.contact?.id === retainedContactId
+        ))
+        : null;
+      pendingProfileContactId.value = null;
+
+      if (matchingConversation) {
+        await router.replace({
+          name: chatRouteName.value,
+          params: { convId: matchingConversation.id },
+          query: {
+            ...(sales ? { sales } : {}),
+            ...(profileId ? { profile: profileId } : {}),
+            ...(route.query.name ? { name: route.query.name } : {}),
+          },
+        });
+      }
+    } else if (!selectedConvId.value && conversations.value.length > 0) {
       void selectConversation(conversations.value[0].id);
     }
   }
 }
 
 watch(
-  () => [route.query.acc, route.query.sales, zaloAccounts.value.length],
+  () => [route.query.acc, route.query.sales, route.query.profile, zaloAccounts.value.length],
   () => {
     void applyRouteScope();
   },
@@ -360,7 +635,12 @@ watch(
 );
 
 onActivated(() => {
+  document.addEventListener('keydown', onEscapeKey, true);
   void applyRouteScope(true);
+});
+
+onDeactivated(() => {
+  document.removeEventListener('keydown', onEscapeKey, true);
 });
 
 // 2026-06-09 (anh chốt) — NHỚ "Phạm vi xem" qua reload/tắt-mở tab. Lưu {folderId, accountId}
@@ -388,7 +668,7 @@ function restoreScope() {
   workScope.validateAgainst(accessibleIds); // lọc scope đã lưu chỉ còn nick có quyền
   // Folder: set vào inbox filter (sidebar tự bỏ nếu folder không tồn tại khi render).
   const saved = loadScopeRaw();
-  inboxFilters.setFolder(saved.folderId);
+  inboxFilters.setFolder(route.query.profile ? null : saved.folderId);
 }
 // work-scope 2026-06-15 — tóm tắt "N tin ở M nick khác" (anh chốt: 1 dòng, không liệt kê).
 // CHỈ đếm nick CÓ QUYỀN (join zaloAccounts đã qua getZaloScope) — bảo mật, không lộ/đếm
@@ -458,6 +738,51 @@ const accountList = computed(() =>
     zaloUid: (a as any).zaloUid ?? null,
   })),
 );
+const groupCreateDefaultAccountId = computed(() => {
+  if (accountFilter.value && accountList.value.some((account) => account.id === accountFilter.value)) return accountFilter.value;
+  if (selectedAccountIds.value.length === 1) return selectedAccountIds.value[0] || null;
+  return accountList.value.length === 1 ? accountList.value[0]!.id : null;
+});
+
+async function onCreateGroup(payload: { name: string; memberIds: string[]; accountId?: string }) {
+  if (!payload.accountId || groupCreating.value) return;
+  groupCreating.value = true;
+  try {
+    const created = await api.post<{ group: { groupId: string } }>(`/zalo-accounts/${payload.accountId}/groups`, {
+      name: payload.name,
+      memberIds: payload.memberIds,
+    });
+    groupCreateOpen.value = false;
+    toast.success(`Đã tạo nhóm "${payload.name}"`);
+    const groupId = created.data.group?.groupId;
+    if (!groupId) {
+      toast.warning('Nhóm đã được tạo nhưng chưa mở được hội thoại.');
+      return;
+    }
+    try {
+      const conversation = await api.post<{ conversationId: string }>(`/zalo-accounts/${payload.accountId}/groups/${groupId}/ensure-conversation`, {});
+      if (conversation.data.conversationId) {
+        await fetchConversations({ bypassCache: true });
+        await router.push({ name: chatRouteName.value, params: { convId: conversation.data.conversationId }, query: retainedScopeQuery.value });
+      } else toast.warning('Nhóm đã được tạo nhưng chưa mở được hội thoại.');
+    } catch {
+      toast.warning('Nhóm đã được tạo nhưng chưa mở được hội thoại.');
+    }
+  } catch (error: any) {
+    toast.error(error?.response?.data?.error || 'Không thể tạo nhóm Zalo.');
+  } finally {
+    groupCreating.value = false;
+  }
+}
+const assignedProfileAccountIds = computed(() => {
+  const profile = csWorkspace.switchableProfiles.find((item) => item.salesUser.id === activeProfileId.value);
+  const ownedIds = profile
+    ? profile.zaloAccounts.map((account) => account.id)
+    : accountList.value.filter((account) => account.ownerUserId === activeProfileId.value).map((account) => account.id);
+  return selectedAccountIds.value.length
+    ? ownedIds.filter((id) => selectedAccountIds.value.includes(id))
+    : ownedIds;
+});
 // 2026-06-11: trạng thái LIVE từng nick (liveStatus pool → fallback DB status) cho sidebar
 // đếm online/offline + chấm màu thay vì chỉ tổng "N nick".
 const accountStatuses = computed(() =>
@@ -468,7 +793,6 @@ const accountStatuses = computed(() =>
 );
 
 // ════════ Phase 6+ Inbox Triage Filters ════════
-const inboxFilters = useInboxFilters();
 const workspaceName = computed(() => authStore.user?.fullName?.split(' ')[0] || 'CRM');
 const currentUserName = computed(() => authStore.user?.fullName || 'Tôi');
 const currentUserId = computed(() => authStore.user?.id || '');
@@ -718,7 +1042,7 @@ function onConversationDeleted(id: string) {
   const idx = conversations.value.findIndex((c) => c.id === id);
   if (idx !== -1) conversations.value.splice(idx, 1);
   if (selectedConvId.value === id) {
-    router.push({ name: 'Chat' }).catch(() => {});
+    router.push({ name: chatRouteName.value }).catch(() => {});
   }
   fetchConversations({ bypassCache: true });
   void refreshPriorityUnread();
@@ -727,7 +1051,7 @@ function onConversationDeleted(id: string) {
 // Khi user tạo conv mới từ "Tin nhắn mới" dialog → refresh list + nav vào conv đó.
 async function onComposeOpened(conversationId: string) {
   await fetchConversations();
-  router.push({ name: 'Chat', params: { convId: conversationId } });
+  router.push({ name: chatRouteName.value, params: { convId: conversationId } });
 }
 
 // Sprint v3 Tuần 3 Row 6.9 (2026-06-03): sale switch nick trong header chat.
@@ -737,15 +1061,16 @@ async function onSwitchToNickConv(convId: string) {
   if (!conversations.value.find(c => c.id === convId)) {
     await fetchConversations();
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: chatRouteName.value, params: { convId } });
 }
 
 // Auto-show panel khi chọn conv có contact
-const showContactPanel = ref(true);
+const showContactPanel = ref(!props.minimal);
 
 // 2026-06-12 (anh chốt): nút "Chèn từ kho" ở composer cột 3 → mở cột 4 sang tab Media.
 // Panel render bằng v-if nên nếu đang ẩn phải bật + chờ nextTick rồi mới gọi setMainTab.
 const contactPanelRef = ref<{ setMainTab: (t: 'profile' | 'media' | 'ai' | 'followup') => void } | null>(null);
+const messageThreadRef = ref<{ openZaloProfile: () => void } | null>(null);
 async function onOpenMediaTab() {
   if (!showContactPanel.value) {
     showContactPanel.value = true;
@@ -757,6 +1082,11 @@ async function onOpenMediaTab() {
 // ════════ URL routing: /chat/:convId — deep-link hội thoại ════════
 /** Khi user click 1 conv → push URL /chat/:id (watcher bên dưới sẽ trigger selectConversation) */
 function onSelectConv(convId: string) {
+  closeProfileRail();
+  if (props.minimal && !route.params.convId) {
+    void selectConversation(convId).then(() => refreshPriorityUnread());
+    return;
+  }
   if (route.params.convId === convId) {
     // Click lại conv đang mở → vẫn refresh messages
     // 2026-06-12 — sau khi đọc (mark-read), refresh badge "Ưu tiên" để chấm đỏ/đậm
@@ -764,11 +1094,11 @@ function onSelectConv(convId: string) {
     void selectConversation(convId).then(() => refreshPriorityUnread());
     return;
   }
-  router.push({ name: 'Chat', params: { convId } });
+  router.push({ name: chatRouteName.value, params: { convId }, query: retainedScopeQuery.value });
 }
 
 function onMobileBack() {
-  router.push({ name: 'Chat' });
+  router.push({ name: chatRouteName.value, query: retainedScopeQuery.value });
 }
 
 // Watch route → select conv when convId changes (deep-link, back/forward, mới click): nếu hội thoại mở thuộc nick NGOÀI scope
@@ -786,8 +1116,9 @@ watch(
     if (typeof id === 'string' && id && id !== selectedConvId.value) {
       void selectConversation(id).then(() => {
         // Sau resolve: selectedConv đã có (từ list HOẶC selectedConvDetail). Đọc nick của nó.
-        const convNick = (selectedConv.value as any)?.zaloAccount?.id as string | undefined;
-        if (shouldAdoptNickScope(workScope.accountIds.value, convNick) && convNick) {
+        const activeConversation = selectedConv.value;
+        const convNick = activeConversation?.zaloAccount?.id;
+        if (activeConversation?.channel !== 'facebook' && shouldAdoptNickScope(workScope.accountIds.value, convNick) && convNick) {
           // setScope idempotent (đã check shouldAdopt → chắc chắn đổi). Persist localStorage
           // rồi reload → restoreScope nạp scope mới → cột 2 + cột 3 đều đúng nick B (hết split-brain).
           workScope.setScope([convNick]);
@@ -817,7 +1148,7 @@ watch(
     if (!Array.isArray(convs) || !convs.length) return;
     const match = convs.find(c => c.contact?.id === contactId && c.threadType === 'user');
     if (match) {
-      router.replace({ name: 'Chat', params: { convId: match.id } });
+      router.replace({ name: chatRouteName.value, params: { convId: match.id }, query: retainedScopeQuery.value });
     }
   },
   { deep: false, immediate: false },
@@ -891,6 +1222,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
   destroySocket();
+  document.removeEventListener('keydown', onEscapeKey, true);
   window.removeEventListener('zalo-labels-synced', onLabelsSynced);
   window.removeEventListener('chat:inbound-message', refreshPriorityUnread);
 });
@@ -905,15 +1237,28 @@ function onPanelStatusChanged(statusId: string | null) {
 let searchTimeout: ReturnType<typeof setTimeout>;
 watch(searchQuery, () => {
   clearTimeout(searchTimeout);
-  searchTimeout = setTimeout(() => fetchConversations(), 300);
+  searchTimeout = setTimeout(() => {
+    fetchConversations();
+    if (props.minimal && activeProfileId.value) void fetchAssignedContacts(activeProfileId.value, false, assignedProfileAccountIds.value);
+  }, 300);
 });
 
+watch([activeProfileId, () => assignedProfileAccountIds.value.join(','), () => props.minimal], () => {
+  if (props.minimal && activeProfileId.value) void fetchAssignedContacts(activeProfileId.value, false, assignedProfileAccountIds.value);
+}, { immediate: true });
+
 // ── Resizable Layout & LocalStorage Cache ──────────────────────────────────────
-const LAYOUT_CACHE_KEY = 'admin.chat.layout.v1';
+const layoutCacheKey = computed(() => props.minimal ? 'admin.chat.layout.minimal.v1' : 'admin.chat.layout.v1');
+const retainedScopeQuery = computed(() => props.minimal ? {
+  ...(route.query.acc ? { acc: route.query.acc } : {}),
+  ...(route.query.sales ? { sales: route.query.sales } : {}),
+  ...(route.query.profile ? { profile: route.query.profile } : {}),
+  ...(route.query.name ? { name: route.query.name } : {}),
+} : undefined);
 
 function loadCachedLayout(): { convWidth: number; infoWidth: number } {
   try {
-    const raw = localStorage.getItem(LAYOUT_CACHE_KEY);
+    const raw = localStorage.getItem(layoutCacheKey.value);
     if (raw) {
       const parsed = JSON.parse(raw);
       return {
@@ -922,17 +1267,24 @@ function loadCachedLayout(): { convWidth: number; infoWidth: number } {
       };
     }
   } catch { /* parse fallback */ }
-  return { convWidth: 380, infoWidth: 350 };
+  return { convWidth: props.minimal ? 320 : 380, infoWidth: props.minimal ? 320 : 350 };
 }
 
 const cachedLayout = loadCachedLayout();
 const convColWidth = ref<number>(cachedLayout.convWidth);
 const infoColWidth = ref<number>(cachedLayout.infoWidth);
+watch(() => props.minimal, () => {
+  const layout = loadCachedLayout();
+  convColWidth.value = layout.convWidth;
+  infoColWidth.value = layout.infoWidth;
+  minimalFiltersOpen.value = false;
+  if (props.minimal && window.innerWidth <= 1100) showContactPanel.value = false;
+});
 
 function saveCachedLayout() {
   try {
     localStorage.setItem(
-      LAYOUT_CACHE_KEY,
+      layoutCacheKey.value,
       JSON.stringify({ convWidth: convColWidth.value, infoWidth: infoColWidth.value })
     );
   } catch { /* storage full / blocked */ }
@@ -989,14 +1341,17 @@ function startResizeInfo(e: MouseEvent) {
 
 const gridStyle = computed(() => {
   const hasInfo = showContactPanel.value && selectedConv.value?.contact;
+  const navigationColumns = props.minimal
+    ? `64px${profileRailOpen.value ? ' 72px' : ''}`
+    : '76px';
   if (hasInfo) {
     return {
-      gridTemplateColumns: `76px ${convColWidth.value}px 6px 1fr 6px ${infoColWidth.value}px`,
+      gridTemplateColumns: `${navigationColumns} ${convColWidth.value}px 6px minmax(0, 1fr) 6px ${infoColWidth.value}px`,
       gap: '8px',
     };
   }
   return {
-    gridTemplateColumns: `76px ${convColWidth.value}px 6px 1fr`,
+    gridTemplateColumns: `${navigationColumns} ${convColWidth.value}px 6px minmax(0, 1fr)`,
     gap: '8px',
   };
 });
@@ -1008,7 +1363,7 @@ const gridStyle = computed(() => {
   width: 100%;
   height: calc(100vh - var(--smax-topnav-h, 48px));
   overflow: hidden;
-  background: var(--sales-bg-surface, #E8EEF5);
+  background-color: var(--sales-bg-surface, #E8EEF5);
   padding: 8px 10px 10px;
   box-sizing: border-box;
 }
@@ -1207,12 +1562,12 @@ const gridStyle = computed(() => {
    grid-template-columns, nếu không các cột còn lại trượt sang track sai (mất cột). */
 @media (max-width: 1200px) {
   /* Rail ẩn → 5 con hiển thị (conv, resizer, msg, resizer, info) → 5 track. */
-  .smax-chat-grid {
+  .chat-canvas-wrap:not(.chat-minimal) .smax-chat-grid {
     grid-template-columns: 320px 6px 1fr 6px 280px !important;
   }
   /* Không có cột info → resizer thứ hai không render (v-if cùng điều kiện với panel)
      → còn 3 con hiển thị (conv, resizer, msg) → 3 track. */
-  .smax-chat-grid:not(:has(.smax-info-col)) {
+  .chat-canvas-wrap:not(.chat-minimal) .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 320px 6px 1fr !important;
   }
   .smax-filter-rail {
@@ -1223,13 +1578,13 @@ const gridStyle = computed(() => {
 @media (max-width: 1024px) {
   /* Selector :not(:has(...)) đặc trưng hơn class trần; cả hai cùng !important thì
      specificity thắng bất kể thứ tự — phải lặp selector để rule 2 track này đè rule 3 track ở 1200px. */
-  .smax-chat-grid,
-  .smax-chat-grid:not(:has(.smax-info-col)) {
+  .chat-canvas-wrap:not(.chat-minimal) .smax-chat-grid,
+  .chat-canvas-wrap:not(.chat-minimal) .smax-chat-grid:not(:has(.smax-info-col)) {
     grid-template-columns: 320px 1fr !important;
   }
-  .smax-filter-rail,
-  .smax-info-col,
-  .sl-resizer {
+  .chat-canvas-wrap:not(.chat-minimal) .smax-filter-rail,
+  .chat-canvas-wrap:not(.chat-minimal) .smax-info-col,
+  .chat-canvas-wrap:not(.chat-minimal) .sl-resizer {
     display: none !important;
   }
 }

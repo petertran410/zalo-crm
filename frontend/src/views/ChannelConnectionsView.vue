@@ -1,10 +1,10 @@
 <template>
-  <div class="cs-home-canvas">
+  <div class="cs-home-canvas" :class="{ 'channels-minimal': minimal }">
     <!-- ════════ TOP COMMAND HEADER ════════ -->
     <header class="cs-top-bar">
       <div class="cs-title-group">
         <div class="cs-title-lead">
-          <h1 class="cs-page-title nowrap">Kênh & Tin nhắn</h1>
+          <h1 class="cs-page-title nowrap">{{ minimal ? 'Kênh & Tin nhắn 2' : 'Kênh & Tin nhắn' }}</h1>
           <div class="cs-page-sub">
             <span class="sub-stat"><b>{{ totalChannelsCount }}</b> kênh</span>
             <span class="sub-sep">·</span>
@@ -18,6 +18,9 @@
 
       <!-- Center / Right controls -->
       <div class="cs-top-controls">
+        <button v-if="minimal" class="cs-btn-add-channel nowrap" @click="openAllConversations">
+          Mở tất cả hội thoại
+        </button>
         <!-- Search input -->
         <div class="cs-search-input-wrap">
           <v-icon size="16" class="cs-search-icon">mdi-magnify</v-icon>
@@ -591,6 +594,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRouter } from 'vue-router';
+import '@/assets/chat-minimal.css';
 import { useToast } from '@/composables/use-toast';
 import { useChannelConnections, type ChannelAccount } from '@/composables/use-channel-connections';
 import { useZaloAccounts } from '@/composables/use-zalo-accounts';
@@ -608,6 +612,7 @@ interface CustomGroup {
 }
 
 const router = useRouter();
+const props = defineProps<{ minimal?: boolean }>();
 const toast = useToast();
 const authStore = useAuthStore();
 const workScope = useWorkScope();
@@ -826,7 +831,7 @@ function getGroupCount(group: CustomGroup): number {
 function enterChatWithChannel(ch: ChannelAccount) {
   workScope.setScope([ch.id]);
   router.push({
-    path: '/chat',
+    path: props.minimal ? '/chat-2' : '/chat',
     query: {
       acc: ch.id,
       name: ch.displayName || ch.phone || 'Kênh Zalo',
@@ -852,7 +857,7 @@ function enterChatWithSales(sales: SalesCardData) {
     workScope.setScope(accIds);
   }
   router.push({
-    path: '/chat',
+    path: props.minimal ? '/chat-2' : '/chat',
     query: {
       sales: sales.salesUser.id,
       name: sales.salesUser.fullName,
@@ -861,6 +866,12 @@ function enterChatWithSales(sales: SalesCardData) {
 }
 
 // ── RECONNECT & ACTIONS ──
+function openAllConversations() {
+  workScope.setScope([]);
+  csWorkspace.clearSalesTarget([]);
+  router.push({ name: 'ChatMinimal' });
+}
+
 function openQrFor(accountId: string, displayName?: string | null) {
   connectedNickName.value = displayName ?? null;
   qrWizardStep.value = 'qr';

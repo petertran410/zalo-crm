@@ -885,6 +885,7 @@ const props = defineProps<{
   currentRole?: string;
   /** Smax desktop inbox uses the compact action rail permanently. */
   compactRail?: boolean;
+  expanded?: boolean;
 }>();
 
 defineEmits<{
@@ -914,7 +915,7 @@ async function onLockBadgeClick(_wasUnlocked: boolean) {
 }
 
 // ─── Collapse state ──────────────────────────────────────
-const collapsed = ref(props.compactRail || localStorage.getItem('filter-sidebar-collapsed') === '1');
+const collapsed = ref(props.expanded ? false : props.compactRail || localStorage.getItem('filter-sidebar-collapsed') === '1');
 function toggleCollapsed() {
   if (props.compactRail) return;
   collapsed.value = !collapsed.value;

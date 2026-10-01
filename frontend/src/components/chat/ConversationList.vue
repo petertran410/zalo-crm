@@ -1,7 +1,68 @@
 <template>
-  <div class="conv-list">
+  <div class="conv-list" :class="{ 'conv-list--minimal': minimal }">
+    <header v-if="minimal" class="cl-minimal-header">
+      <div class="cl-minimal-heading">
+        <h2>Hội thoại</h2>
+        <button v-if="canCreateGroup" type="button" class="cl-create-group" title="Tạo nhóm chat Zalo" aria-label="Tạo nhóm chat Zalo" @click="emit('create-group')">
+          <span class="material-symbols-outlined">group_add</span>
+        </button>
+        <details
+          ref="minimalFiltersEl"
+          class="cl-minimal-filters"
+          :open="minimalFiltersOpen"
+          @toggle="minimalFiltersOpen = ($event.target as HTMLDetailsElement).open"
+          @keydown.esc.stop="minimalFiltersOpen = false"
+        >
+          <summary>
+            Bộ lọc
+            <span v-if="minimalFilterCount" class="cl-minimal-filter-count">{{ minimalFilterCount }}</span>
+          </summary>
+          <div class="cl-minimal-filter-panel">
+            <label v-if="channelFilter !== undefined" class="cl-minimal-field">
+              <span>Kênh nhắn tin</span>
+              <select :value="channelFilter ?? ''" @change="onMinimalChannelChange">
+                <option v-for="option in CHANNEL_OPTIONS" :key="option.value ?? 'all'" :value="option.value ?? ''" :disabled="option.disabled">
+                  {{ option.label }}{{ option.disabled ? ' · Sắp có' : '' }}
+                </option>
+              </select>
+            </label>
+            <label class="cl-minimal-field">
+              <span>Nhãn khách hàng</span>
+              <select :value="filters.tags[0] ?? ''" @change="onMinimalTagChange">
+                <option value="">Tất cả nhãn</option>
+                <option v-for="tag in availableTags" :key="tag" :value="tag">{{ resolveCrmTag(tag).name }}</option>
+              </select>
+            </label>
+            <div class="cl-minimal-slot-filters"><slot name="filters" /></div>
+            <button type="button" class="cl-minimal-action" @click="openAdvancedFilters">Bộ lọc nâng cao</button>
+            <div class="cl-minimal-compose">
+              <button ref="newMsgBtnEl" type="button" class="cl-minimal-action" @click="onClickNewMessage">Tin nhắn mới</button>
+              <p>Nhập số điện thoại vào ô tìm kiếm rồi nhấn Enter để bắt đầu.</p>
+            </div>
+          </div>
+        </details>
+      </div>
+      <div class="cl-search-box">
+        <span class="cl-search-icon" aria-hidden="true"><SearchIcon :size="17" /></span>
+        <input
+          ref="searchInputEl"
+          :value="search"
+          class="cl-search"
+          :class="{ 'has-text': search, 'cl-search--flash': searchFlash }"
+          type="search"
+          autocomplete="off"
+          placeholder="Tìm kiếm"
+          aria-label="Tìm kiếm"
+          @input="onSearchInput"
+          @keydown.enter.prevent="onSearchEnter"
+          @keydown.escape.prevent="clearSearch"
+          @animationend="searchFlash = false"
+        />
+        <button v-if="search" class="cl-search-clear" type="button" aria-label="Xóa tìm kiếm" title="Xóa tìm kiếm" @click="clearSearch"><XIcon :size="14" /></button>
+      </div>
+    </header>
     <!-- Smax-style inbox toolbar: search, label filter, and compact compose control. -->
-    <header class="cl-inbox-header">
+    <header v-else class="cl-inbox-header">
       <div class="cl-search-row">
         <div class="cl-search-box">
           <input
@@ -11,7 +72,7 @@
             :class="{ 'has-text': search, 'cl-search--flash': searchFlash }"
             type="search"
             autocomplete="off"
-            placeholder="Tìm kiếm..."
+            placeholder="Tìm kiếm"
             aria-label="Tìm hội thoại"
             @input="onSearchInput"
             @keydown.enter.prevent="onSearchEnter"
@@ -76,6 +137,14 @@
           </div>
         </v-menu>
         <button
+          v-if="canCreateGroup"
+          class="cl-create-group"
+          type="button"
+          title="Tạo nhóm chat Zalo"
+          aria-label="Tạo nhóm chat Zalo"
+          @click="emit('create-group')"
+        ><span class="material-symbols-outlined">group_add</span></button>
+        <button
           ref="newMsgBtnEl"
           class="cl-new-msg"
           type="button"
@@ -88,13 +157,13 @@
       </div>
     </header>
 
-    <div class="cl-header">
+    <div v-if="!minimal" class="cl-header">
       <slot name="filters" />
     </div>
 
     <!-- ════════ Conv items ════════ -->
     <div ref="scrollContainer" class="conv-scroll">
-      <div v-if="loading && conversations.length === 0" class="loading">Đang tải…</div>
+      <div v-if="loading && conversations.length === 0 && !(assignedContacts?.length)" class="loading">Đang tải…</div>
 
       <!-- Perf 2026-07 — BỎ :key=activeTabKey (remount ~100 rows mỗi tab = lag).
            Giữ 1 TransitionGroup; khi tab đổi → class no-move (tắt FLIP cross-tab).
@@ -119,6 +188,15 @@
         @click="$emit('select', conv.id)"
         @contextmenu.prevent="openContextMenu($event, conv)"
       >
+        <button
+          v-if="minimal"
+          class="ci-select-control"
+          type="button"
+          :aria-label="conversationLabel(conv)"
+          :aria-pressed="conv.id === selectedId"
+          @click.stop="$emit('select', conv.id)"
+          @keydown.shift.f10.prevent="openKeyboardContextMenu($event, conv)"
+        />
         <div class="ci-avatar-wrap">
           <Avatar
             :src="avatarSrcOf(conv)"
@@ -137,13 +215,13 @@
         <div class="ci-body">
           <div class="ci-name-row">
             <div class="ci-name">
-              <span v-if="conv.threadType === 'group'" class="group-icon">👥</span>
-              <span v-if="conv.isVirtual" class="virtual-chip" title="Chat nội bộ — KH chưa có Zalo, tin nhắn KHÔNG gửi đi">🔒</span>
+              <span v-if="!minimal && conv.threadType === 'group'" class="group-icon">👥</span>
+              <span v-if="!minimal && conv.isVirtual" class="virtual-chip" title="Chat nội bộ — KH chưa có Zalo, tin nhắn KHÔNG gửi đi">🔒</span>
               {{ displayName(conv) }}
               <!-- Theo dõi (anh chốt 2026-06-15): khách đang trong "theo dõi" → chuông ngay sau tên.
                    Icon hệ thống mdi (đồng bộ), không emoji. -->
               <v-icon
-                v-if="isFollowingConv(conv)"
+                v-if="!minimal && isFollowingConv(conv)"
                 size="13"
                 class="ci-follow-bell"
                 title="Đang theo dõi khách hàng này"
@@ -170,33 +248,39 @@
                Merge Contact.tags + Friend.crmTagsPerNick (Zalo-mirrored 🔵 X).
                Show 3 tag đầu + "+N" chip click xem rest qua v-menu. -->
           <div class="ci-tag-row">
+            <span v-if="minimal && conv.isVirtual" class="ci-type-label" title="Tin nhắn nội bộ, không gửi ra Zalo">Nội bộ</span>
+            <span v-if="minimal && conv.threadType === 'group'" class="ci-type-label">Nhóm</span>
+            <span v-if="minimal && isFollowingConv(conv)" class="ci-type-label">Theo dõi</span>
             <span
-              v-for="tag in displayTags(conv).slice(0, 3)"
+              v-for="tag in displayTags(conv).slice(0, visibleTagLimit)"
               :key="tag.key"
               class="tag-mini"
               :class="{ 'tag-zalo': tag.isZalo, 'tag-crm': !tag.isZalo, 'tag-auto': tag.isAuto }"
               :style="{ '--tag-color': tag.color }"
             >
-              <ZaloBrandIcon v-if="tag.isZalo" :size="11" /><span v-else-if="tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
+              <ZaloBrandIcon v-if="!minimal && tag.isZalo" :size="11" /><span v-else-if="!minimal && tag.emoji" class="tag-mini-emoji">{{ tag.emoji }}</span>{{ tag.name }}
             </span>
 
             <v-menu
-              v-if="displayTags(conv).length > 3"
+              v-if="displayTags(conv).length > visibleTagLimit"
               :close-on-content-click="false"
               location="top start"
               open-on-hover
             >
               <template #activator="{ props: actProps }">
-                <span
+                <component
+                  :is="minimal ? 'button' : 'span'"
                   v-bind="actProps"
+                  :type="minimal ? 'button' : undefined"
                   class="tag-overflow"
-                  :title="`Còn ${displayTags(conv).length - 3} tag khác`"
+                  :title="`Còn ${displayTags(conv).length - visibleTagLimit} nhãn khác`"
+                  :aria-label="minimal ? `Xem ${displayTags(conv).length - visibleTagLimit} nhãn khác của ${displayName(conv)}` : undefined"
                   @click.stop
-                >+{{ displayTags(conv).length - 3 }}</span>
+                >+{{ displayTags(conv).length - visibleTagLimit }}</component>
               </template>
               <div class="tag-overflow-popup">
                 <span
-                  v-for="tag in displayTags(conv).slice(3)"
+                  v-for="tag in displayTags(conv).slice(visibleTagLimit)"
                   :key="tag.key"
                   class="tag-popup-pill"
                   :class="{ 'tag-zalo': tag.isZalo, 'tag-crm': !tag.isZalo, 'tag-auto': tag.isAuto }"
@@ -214,9 +298,39 @@
         </div>
 
       </div>
+      <div
+        v-for="contact in assignedContacts || []"
+        :key="`contact:${contact.id}`"
+        class="contact-only-row"
+        role="button"
+        tabindex="0"
+        @click="$emit('select-contact', contact.id)"
+        @keydown.enter.prevent="$emit('select-contact', contact.id)"
+        @keydown.space.prevent="$emit('select-contact', contact.id)"
+      >
+        <div class="ci-avatar-wrap">
+          <Avatar :src="contact.avatarUrl || undefined" :name="contact.crmName || contact.fullName || 'Khách hàng'" :size="41" />
+        </div>
+        <div class="ci-body">
+          <div class="ci-name-row">
+            <div class="ci-name">{{ contact.crmName || contact.fullName || 'Khách hàng' }}</div>
+            <span class="contact-only-state">Chưa có hội thoại</span>
+          </div>
+          <div class="ci-preview">{{ assignedContactNeedsAccount ? 'Cần nick Zalo để mở hội thoại' : (contact.phone || 'Chọn để mở chat') }}</div>
+        </div>
+      </div>
       </TransitionGroup>
 
-      <div v-if="!loading && conversations.length === 0" class="empty-state">
+      <button
+        v-if="assignedContactsHasMore"
+        class="contact-load-more"
+        type="button"
+        :disabled="assignedContactsLoading"
+        @click="$emit('load-more-contacts')"
+      >{{ assignedContactsLoading ? 'Đang tải…' : 'Tải thêm khách hàng' }}</button>
+      <div v-else-if="assignedContactsLoading && assignedContacts?.length" class="contact-load-state">Đang tìm khách hàng…</div>
+
+      <div v-if="!loading && conversations.length === 0 && !(assignedContacts?.length) && !assignedContactsLoading" class="empty-state">
         Chưa có hội thoại nào
       </div>
     </div>
@@ -263,7 +377,7 @@
     <NickPickerPopup
       v-model="newMsgPickerOpen"
       :accounts="composeAccounts"
-      :trigger-el="newMsgBtnEl"
+      :trigger-el="minimal && !minimalFiltersOpen ? searchInputEl : newMsgBtnEl"
       title="Chọn nick để nhắn tin"
       @pick="onPickNickForNewMsg"
     />
@@ -282,10 +396,10 @@
 
 <script setup lang="ts">
 import { ref, reactive, watch, onMounted, onBeforeUnmount, computed, nextTick } from 'vue';
-import type { Conversation } from '@/composables/use-chat';
+import type { AssignedChatContact, Conversation } from '@/composables/use-chat';
 import { api } from '@/api/index';
 // Icon chrome — Lucide line (anh chốt 2026-06-08, bỏ ký tự thô).
-import { ChevronUp as ChevronUpIcon, X as XIcon, ChevronDown as ChevronDownIcon, Check as CheckIcon, Layers as LayersIcon } from 'lucide-vue-next';
+import { ChevronUp as ChevronUpIcon, X as XIcon, ChevronDown as ChevronDownIcon, Check as CheckIcon, Layers as LayersIcon, Search as SearchIcon } from 'lucide-vue-next';
 import Avatar from '@/components/ui/Avatar.vue';
 import NewMessageDialog from '@/components/chat/NewMessageDialog.vue';
 import ConversationContextMenu from '@/components/chat/conversation-context-menu.vue';
@@ -301,7 +415,14 @@ import { usePrivacyVisibility } from '@/composables/use-privacy-visibility';
 const privacyVisibility = usePrivacyVisibility();
 
 const props = defineProps<{
+  minimal?: boolean;
+  canCreateGroup?: boolean;
+  additionalFilterCount?: number;
   conversations: Conversation[];
+  assignedContacts?: AssignedChatContact[];
+  assignedContactsLoading?: boolean;
+  assignedContactsHasMore?: boolean;
+  assignedContactNeedsAccount?: boolean;
   selectedId: string | null;
   loading: boolean;
   search: string;
@@ -355,6 +476,8 @@ watch(() => props.activeTabKey, () => { onConvTabSwitch(); });
 
 const emit = defineEmits<{
   select: [id: string];
+  'select-contact': [contactId: string];
+  'load-more-contacts': [];
   'update:search': [value: string];
   'filter-account': [accountId: string | null];
   'update:filters': [params: Record<string, string>];
@@ -365,7 +488,24 @@ const emit = defineEmits<{
   'compose-opened': [conversationId: string];
   /** Theo dõi (anh chốt 2026-06-15) — toggle follow từ menu → cập nhật chuông cột 2 ngay. */
   'follow-changed': [contactId: string, nickId: string, following: boolean];
+  'open-filters': [];
+  'create-group': [];
 }>();
+
+const minimalFiltersEl = ref<HTMLDetailsElement | null>(null);
+const minimalFiltersOpen = ref(false);
+const visibleTagLimit = computed(() => props.minimal ? 2 : 3);
+
+function openAdvancedFilters() {
+  minimalFiltersOpen.value = false;
+  emit('open-filters');
+}
+
+function closeMinimalFiltersOnOutsideClick(event: PointerEvent) {
+  if (minimalFiltersOpen.value && event.target instanceof Node && !minimalFiltersEl.value?.contains(event.target)) {
+    minimalFiltersOpen.value = false;
+  }
+}
 
 // ── Compose new message ─────────────────────────────────────────────────────
 // Wedge A 2026-05-28 (anh chốt): nút "Tin nhắn mới" hành xử theo 2 state.
@@ -429,6 +569,12 @@ const activeChannelOption = computed<ChannelOption>(
 function selectChannel(value: ChannelOption['value']) {
   if (value === props.channelFilter) return;
   emit('update:channelFilter', value);
+}
+
+function onMinimalChannelChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  const option = CHANNEL_OPTIONS.find((item) => (item.value ?? '') === value);
+  if (option && !option.disabled) selectChannel(option.value);
 }
 
 // 2026-06-20 (anh báo: nhập SĐT vào ô tìm kiếm + Enter phải mở "Tin nhắn mới", đỡ phải click):
@@ -498,6 +644,21 @@ const filters = reactive({
 
 const counts = reactive({ unread: 0, unreplied: 0, total: 0 });
 const availableTags = ref<string[]>([]);
+const minimalFilterCount = computed(() => filters.tags.length + (props.channelFilter ? 1 : 0) + (props.additionalFilterCount ?? 0));
+
+function onMinimalTagChange(event: Event) {
+  const value = (event.target as HTMLSelectElement).value;
+  filters.tags = value ? [value] : [];
+}
+
+function conversationLabel(conv: Conversation): string {
+  return [
+    displayName(conv),
+    conv.threadType === 'group' ? 'Nhóm' : '',
+    conv.isVirtual ? 'Nội bộ' : '',
+    conv.unreadCount > 0 ? `${conv.unreadCount} tin chưa đọc` : '',
+  ].filter(Boolean).join(', ');
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 function onSearchInput(e: Event) {
@@ -718,6 +879,11 @@ function openContextMenu(event: MouseEvent, conv: Conversation) {
   void fetchListenStatusForMenu();
 }
 
+function openKeyboardContextMenu(event: KeyboardEvent, conv: Conversation) {
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  openContextMenu(new MouseEvent('contextmenu', { clientX: bounds.left + 24, clientY: bounds.top + 24 }), conv);
+}
+
 async function moveConversation(convId: string, targetTab: string) {
   contextMenu.show = false;
   try {
@@ -865,10 +1031,12 @@ onMounted(async () => {
   // Load CrmTag defs (color + managedBy) cho TagIcon render — share cache toàn app
   // loadTagTaxonomy: slug→{name,color,emoji} cho tag v2 (crmTagsPerNick/contact.tags lưu slug).
   window.addEventListener('conv-tab-switch', onConvTabSwitch);
+  document.addEventListener('pointerdown', closeMinimalFiltersOnOutsideClick);
   await Promise.all([fetchCounts(), fetchAvailableTags(), loadTagDefs(), loadTagTaxonomy()]);
 });
 onBeforeUnmount(() => {
   window.removeEventListener('conv-tab-switch', onConvTabSwitch);
+  document.removeEventListener('pointerdown', closeMinimalFiltersOnOutsideClick);
   if (suppressMoveTimer) clearTimeout(suppressMoveTimer);
 });
 
@@ -1305,6 +1473,9 @@ function onPatternLeave() {
   .cl-channel-filter .cl-channel-text { display: none; }
 }
 .cl-new-msg-more { font-size: 24px; line-height: .65; transform: translateY(-1px); }
+.cl-create-group { display: inline-flex; flex: none; align-items: center; justify-content: center; width: 32px; height: 32px; border: 0; border-radius: 8px; background: transparent; color: var(--app-text-secondary); cursor: pointer; }
+.cl-create-group:hover { background: var(--app-surface-hover); color: var(--app-accent); }
+.cl-create-group .material-symbols-outlined { font-size: 21px; }
 .cl-title-row,
 .cl-eyebrow,
 .cl-title,
@@ -1332,6 +1503,7 @@ function onPatternLeave() {
   display: flex;
 }
 .cl-search-box .cl-search { flex: 1; }
+.cl-search-icon { position: absolute; left: 11px; top: 50%; z-index: 1; display: inline-flex; transform: translateY(-50%); color: var(--app-text-muted); pointer-events: none; }
 .cl-search-clear {
   position: absolute;
   right: 8px;
@@ -1546,6 +1718,40 @@ function onPatternLeave() {
   box-sizing: border-box;
   transition: background-color .14s ease, box-shadow .14s ease, border-color .14s ease;
 }
+.contact-only-row {
+  padding: 10px 12px;
+  display: flex;
+  gap: 11px;
+  align-items: flex-start;
+  cursor: pointer;
+  border-bottom: 1px solid var(--app-border-subtle);
+  min-height: 66px;
+  box-sizing: border-box;
+}
+.contact-only-row:hover { background: var(--app-surface-hover); }
+.contact-only-state {
+  flex-shrink: 0;
+  margin-left: 6px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-hover);
+  font-size: 10px;
+  line-height: 16px;
+}
+.contact-load-more,
+.contact-load-state {
+  display: block;
+  width: 100%;
+  padding: 11px;
+  border: 0;
+  color: var(--app-text-secondary);
+  background: transparent;
+  font-size: 12px;
+  text-align: center;
+}
+.contact-load-more { cursor: pointer; }
+.contact-load-more:disabled { cursor: default; opacity: .6; }
 /* Avatar dịch xuống nhẹ để canh giữa với name + preview (bỏ qua tag row) */
 .conv-item :deep(.smax-av) { margin-top: 2px; flex-shrink: 0; }
 

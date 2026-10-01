@@ -1,23 +1,29 @@
 <template>
-  <aside class="info-panel">
+  <aside class="info-panel" :class="{ 'info-panel--minimal': props.minimal }">
     <!-- ════════ Modern Sales & Customer Service Panel ════════ -->
       <!-- ══════════════════════════════════════════
            SP COMPACT HEADER — Glass Minimalist
            ══════════════════════════════════════════ -->
       <div class="sp-compact-header">
+        <div v-if="props.minimal" class="minimal-panel-heading">
+          <span>Thông tin khách hàng</span>
+          <button type="button" class="minimal-panel-close" title="Ẩn thông tin khách hàng" aria-label="Ẩn thông tin khách hàng" @click="$emit('close')">
+            <span class="material-symbols-outlined">close</span>
+          </button>
+        </div>
         <!-- Top Row: Avatar (38px) + Info Block (Row 1: Name + Actions, Row 2: Phone + UID) -->
         <div class="sp-compact-main">
           <div class="sp-avatar-wrap">
             <Avatar
               :src="panelAvatarSrc"
               :name="headerFullName"
-              :size="38"
+              :size="props.minimal ? 44 : 38"
               :is-group="isGroupChat"
               :gender="isGroupChat ? undefined : props.contact?.gender"
               :gradient-seed="props.contact?.id || headerFullName"
               class="sp-avatar" />
             <span
-              v-if="customerType === 'VIP'"
+              v-if="!props.minimal && customerType === 'VIP'"
               class="sp-vip-ring-mini"
               title="Khách VIP"></span>
           </div>
@@ -25,7 +31,9 @@
           <div class="sp-compact-info">
             <!-- Row 1: Name + Integrated Actions Cluster ([POS] [⋮] [✕]) -->
             <div class="sp-compact-top-row">
+              <strong v-if="props.minimal" class="minimal-contact-name">{{ headerFullName }}</strong>
               <input
+                v-else
                 v-model="form.fullName"
                 placeholder="Tên Zalo"
                 class="sp-name-input-compact"
@@ -34,33 +42,47 @@
               <!-- Right Actions Cluster: [ ⋮ Menu ] [ ✕ Close ] -->
               <div class="sp-header-actions">
                 <!-- Menu thao tác tập trung cho Khách hàng & POS — Inline DOM Panel tránh mọi lỗi VOverlay -->
-                <div ref="posMenuRef" class="sp-pos-menu-wrap">
+                <div ref="posMenuRef" class="sp-pos-menu-wrap" @keydown.esc.stop="posMenuOpen = false">
                   <button
                     class="sp-action-icon-btn"
                     :class="{ 'is-active': posMenuOpen }"
                     type="button"
                     title="Tùy chọn khách hàng & POS"
-                    @click.stop="posMenuOpen = !posMenuOpen">
+                    :aria-expanded="posMenuOpen"
+                    @click.stop="posMenuOpen = !posMenuOpen; relatedPosOpen = false; relatedPosMenuOpen = false">
                     <span class="material-symbols-outlined">more_vert</span>
                   </button>
 
                   <div v-if="posMenuOpen" class="sp-pos-menu-panel" @click.stop>
+                    <template v-if="props.minimal">
+                      <div class="sp-pos-menu-group-label">Hồ sơ khách hàng</div>
+                      <button type="button" class="sp-pos-menu-item" @click="posMenuOpen = false; minimalSection = 'details'">
+                        Chỉnh sửa thông tin & giai đoạn
+                      </button>
+                      <button type="button" class="sp-pos-menu-item" @click="posMenuOpen = false; openFullProfile()">
+                        Mở hồ sơ đầy đủ
+                      </button>
+                      <button v-if="displayPosCode" type="button" class="sp-pos-menu-item" @click="posMenuOpen = false; copyPosCode()">
+                        Sao chép mã POS
+                      </button>
+                      <button v-if="posLinkStatus.autoSuggest && !posLinkStatus.linked" type="button" class="sp-pos-menu-item" :disabled="linking" @click="posMenuOpen = false; performQuickLink()">
+                        Liên kết POS được gợi ý
+                      </button>
+                      <div class="sp-pos-menu-divider" />
+                    </template>
                     <!-- Nhóm 1: Quản trị POS -->
                     <div class="sp-pos-menu-group-label">KiotViet POS</div>
                     <template v-if="posLinkStatus.linked">
-                      <button
-                        type="button"
-                        class="sp-pos-menu-item"
-                        @click="posMenuOpen = false; openEditCustomerForm()">
-                        <span class="material-symbols-outlined text-primary">edit</span>
-                        <span>Sửa thông tin POS</span>
+                      <button type="button" class="sp-pos-menu-item" @click="posMenuOpen = false; openCreateCustomerForm()">
+                        <span class="material-symbols-outlined text-success">person_add</span>
+                        <span>Tạo khách mới trên POS</span>
                       </button>
                       <button
                         type="button"
                         class="sp-pos-menu-item"
                         @click="posMenuOpen = false; posLinkSearchOpen = true">
                         <span class="material-symbols-outlined text-primary">sync_alt</span>
-                        <span>Đổi liên kết POS</span>
+                        <span>Liên kết thêm POS</span>
                       </button>
                       <button
                         type="button"
@@ -97,7 +119,7 @@
                       class="sp-pos-menu-item"
                       @click="posMenuOpen = false; showLinkParentDialog = true">
                       <span class="material-symbols-outlined text-purple">merge</span>
-                      <span>Gắn vào KH Cha (Merge)</span>
+                      <span>{{ props.minimal ? 'Gộp vào khách hàng chính' : 'Gắn vào KH Cha (Merge)' }}</span>
                     </button>
                     <button
                       type="button"
@@ -106,11 +128,15 @@
                       <span class="material-symbols-outlined text-amber">edit_note</span>
                       <span>Ghi chú nhanh</span>
                     </button>
+                    <button v-if="props.minimal" type="button" class="sp-pos-menu-item" @click="posMenuOpen = false; $emit('close')">
+                      Ẩn thông tin khách hàng
+                    </button>
                   </div>
                 </div>
 
                 <!-- Nút đóng Sidebar tích hợp thẳng vào action cluster -->
                 <button
+                  v-if="!props.minimal"
                   class="sp-action-icon-btn sp-close-btn"
                   title="Đóng bảng thông tin"
                   @click="$emit('close')">
@@ -122,15 +148,17 @@
             <!-- Row 2: Micro-context (Giai đoạn deal + SĐT + Ô POS) -->
             <div class="sp-compact-sub-row">
               <ContactDealStageSelector
-                v-if="props.contactId"
+                v-if="props.contactId && !props.minimal"
                 :contact-id="props.contactId"
                 :current-status-id="(props.contact as any)?.statusId ?? null"
                 :org-id="orgId"
                 @updated="onDealStageUpdatedPanel" />
 
-              <div class="sp-compact-phone" title="Số điện thoại khách hàng">
-                <span class="material-symbols-outlined sp-phone-icon">call</span>
+              <div v-if="!isGroupChat" class="sp-compact-phone" title="Số điện thoại khách hàng">
+                <span v-if="props.minimal" class="minimal-contact-phone">{{ form.phone ? displayPhone(form.phone) : 'Chưa có số điện thoại' }}</span>
+                <span v-else class="material-symbols-outlined sp-phone-icon">call</span>
                 <input
+                  v-if="!props.minimal"
                   v-model="form.phone"
                   placeholder="Chưa có SĐT"
                   class="sp-phone-input-compact"
@@ -138,18 +166,80 @@
               </div>
 
               <!-- POS Status & Code Pill: Kéo xuống cùng hàng Row 2 -->
+              <div v-if="props.minimal && !isGroupChat" class="minimal-profile-pos-row">
+                <button v-if="!props.conversation?.isVirtual && (props.conversation?.externalThreadId || props.contact?.zaloUid)" type="button" class="minimal-zalo-profile-icon" title="Xem hồ sơ Zalo" aria-label="Xem hồ sơ Zalo" @click="$emit('open-zalo-profile')">
+                  <span class="material-symbols-outlined">account_circle</span>
+                </button>
+                <div ref="relatedPosRef" class="minimal-pos-wrap">
+                <div class="minimal-pos-chip" @click="toggleRelatedPos">
+                  <button type="button" class="minimal-pos-trigger" title="Xem tài khoản POS liên quan" aria-label="Xem tài khoản POS liên quan" :aria-expanded="relatedPosOpen" @click.stop="toggleRelatedPos">
+                    <span class="minimal-pos-status">{{ relatedPosAccounts.length > 0 ? `POS · ${relatedPosAccounts.length}` : 'Chưa liên kết POS' }}</span>
+                  </button>
+                  <button type="button" class="minimal-pos-icon" title="Tùy chọn POS" aria-label="Tùy chọn POS" :aria-expanded="relatedPosMenuOpen" @click.stop="toggleRelatedPosMenu">
+                    <span class="material-symbols-outlined">more_vert</span>
+                  </button>
+                </div>
+                <div v-if="relatedPosOpen" class="minimal-related-popover" @click.stop>
+                  <strong>Tài khoản POS liên quan</strong>
+                  <p v-if="loadingStatus" class="minimal-related-empty">Đang tải…</p>
+                  <p v-else-if="relatedPosAccounts.length === 0" class="minimal-related-empty">Chưa có tài khoản POS liên quan.</p>
+                  <div v-else class="minimal-related-list">
+                    <div v-for="item in relatedPosAccounts" :key="item.id" class="minimal-related-row minimal-pos-account-row" :class="{ 'is-current': item.id === posLinkStatus.posCustomerId }">
+                      <span class="minimal-related-avatar minimal-related-avatar--pos">POS</span>
+                      <span class="minimal-related-copy">
+                        <strong>{{ item.name || item.code || `POS #${item.id}` }}</strong>
+                        <small>{{ item.code || `#${item.id}` }}<template v-if="item.phone"> · {{ item.phone }}</template></small>
+                      </span>
+                      <div class="minimal-pos-account-actions">
+                        <span v-if="item.id === posLinkStatus.posCustomerId" class="minimal-related-current">Chính</span>
+                        <button type="button" class="minimal-member-icon" :aria-label="`Xem thông tin POS của ${item.name || item.code || `#${item.id}`}`" @click="openPosSummary(props.contactId!, item.name, item.id)">
+                          <span class="material-symbols-outlined">visibility</span>
+                        </button>
+                        <v-menu location="bottom end">
+                          <template #activator="{ props: menuProps }">
+                            <button type="button" v-bind="menuProps" class="minimal-member-icon" :aria-label="`Tùy chọn POS ${item.code || `#${item.id}`}`">
+                              <span class="material-symbols-outlined">more_vert</span>
+                            </button>
+                          </template>
+                          <v-list density="compact">
+                            <v-list-item title="Sửa thông tin POS" @click="relatedPosOpen = false; openEditCustomerForm(item.id)" />
+                            <v-list-item title="Sao chép mã POS" :disabled="!item.code" @click="copyRelatedPosCode(item.code)" />
+                          </v-list>
+                        </v-menu>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div v-if="relatedPosMenuOpen" class="sp-pos-menu-panel minimal-pos-actions" @click.stop @keydown.esc.stop="relatedPosMenuOpen = false">
+                  <div class="sp-pos-menu-group-label">KiotViet POS</div>
+                  <template v-if="posLinkStatus.linked">
+                    <button v-if="displayPosCode" type="button" class="sp-pos-menu-item" @click="relatedPosMenuOpen = false; copyPosCode()">Sao chép mã POS</button>
+                    <button type="button" class="sp-pos-menu-item" @click="relatedPosMenuOpen = false; openCreateCustomerForm()">Tạo khách mới trên POS</button>
+                    <button type="button" class="sp-pos-menu-item" @click="relatedPosMenuOpen = false; posLinkSearchOpen = true">Liên kết thêm POS</button>
+                    <button type="button" class="sp-pos-menu-item text-error" :disabled="unlinking" @click="relatedPosMenuOpen = false; performUnlink()">Hủy liên kết POS</button>
+                  </template>
+                  <template v-else>
+                    <button v-if="posLinkStatus.autoSuggest" type="button" class="sp-pos-menu-item" :disabled="linking" @click="relatedPosMenuOpen = false; performQuickLink()">Liên kết POS được gợi ý</button>
+                    <button type="button" class="sp-pos-menu-item" @click="relatedPosMenuOpen = false; posLinkSearchOpen = true">Tìm & liên kết POS</button>
+                    <button type="button" class="sp-pos-menu-item" @click="relatedPosMenuOpen = false; openCreateCustomerForm()">Tạo khách mới trên POS</button>
+                  </template>
+                </div>
+              </div>
+              </div>
               <span
-                v-if="posLinkStatus.linked || displayPosCode"
+                v-else-if="!isGroupChat && (posLinkStatus.linked || displayPosCode)"
                 class="sp-pos-code-badge linked"
                 :title="displayPosCode ? `Mã KiotViet: ${displayPosCode} (Click để sao chép)` : (posLinkStatus.posCustomerCode ? `POS: ${posLinkStatus.posCustomerCode}` : 'Đã liên kết POS')"
                 @click="copyPosCode">
                 <span class="material-symbols-outlined sp-pos-icon">verified</span>
                 <span class="sp-pos-prefix">POS</span>
+                <span v-if="posLinkStatus.posCustomer?.name" class="sp-pos-customer-name">{{ posLinkStatus.posCustomer.name }}</span>
+                <span v-if="posLinkStatus.posCustomer?.phone || posLinkStatus.posCustomer?.contactNumber" class="sp-pos-customer-phone">{{ posLinkStatus.posCustomer.phone || posLinkStatus.posCustomer.contactNumber }}</span>
                 <span v-if="displayPosCode" class="sp-pos-code-text">{{ displayPosCode }}</span>
               </span>
 
               <span
-                v-else-if="posLinkStatus.autoSuggest"
+                v-else-if="!isGroupChat && posLinkStatus.autoSuggest"
                 class="sp-pos-chip-sub suggest"
                 title="Tìm thấy trùng SĐT trên POS (Click để liên kết)"
                 @click="performQuickLink">
@@ -158,7 +248,7 @@
               </span>
 
               <span
-                v-else
+                v-else-if="!isGroupChat"
                 class="sp-pos-chip-sub unlinked"
                 title="Chưa liên kết POS (Click để tìm và liên kết)"
                 @click="posLinkSearchOpen = true">
@@ -170,7 +260,7 @@
         </div>
 
         <!-- Banner Auto Suggest nếu có trùng SĐT -->
-        <div v-if="posLinkStatus.autoSuggest && posLinkStatus.posCustomer && !posLinkStatus.linked" class="sp-compact-suggest-bar">
+        <div v-if="!isGroupChat && !props.minimal && posLinkStatus.autoSuggest && posLinkStatus.posCustomer && !posLinkStatus.linked" class="sp-compact-suggest-bar">
           <span class="sp-suggest-text">Trùng SĐT: <strong>{{ posLinkStatus.posCustomer.name }}</strong></span>
           <button class="sp-btn-link-now" @click="performQuickLink" :disabled="linking">Liên kết</button>
         </div>
@@ -192,7 +282,7 @@
               : 'Mở bảng tạo đơn hàng'
           "
           @click="openOrderForContact">
-          <span class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
+          <span v-if="!props.minimal" class="material-symbols-outlined sp-cta-icon">add_shopping_cart</span>
           <span>Tạo đơn hàng</span>
         </button>
       </div>
@@ -200,7 +290,26 @@
       <!-- ══════════════════════════════════════════
            SP GRID LAUNCHER (2 hàng x 3 cột)
            ══════════════════════════════════════════ -->
-      <nav class="sp-launcher-nav">
+      <div v-if="props.minimal" class="minimal-section-picker">
+        <label for="minimal-contact-section">Thông tin & công cụ</label>
+        <select id="minimal-contact-section" v-model="minimalSection">
+          <option value="summary">Tổng quan khách hàng</option>
+          <option value="details">Hồ sơ & giai đoạn</option>
+          <option value="inventory">Tồn kho</option>
+          <option value="orders">Đơn hàng</option>
+          <option value="debt">Công nợ</option>
+          <option value="appointment">Lịch hẹn</option>
+          <option value="notes">Ghi chú & lịch sử chăm sóc</option>
+          <option value="purchased">Sản phẩm đã mua</option>
+          <option value="journey">Hành trình mua hàng</option>
+          <option value="ai_interests">Sản phẩm quan tâm (AI)</option>
+          <option value="activity">Hoạt động gần đây</option>
+          <option value="groups">Nhóm đang tham gia</option>
+          <option value="media">Ảnh, tệp & kịch bản</option>
+          <option value="followup">Luồng chăm sóc</option>
+        </select>
+      </div>
+      <nav v-else class="sp-launcher-nav">
         <div class="sp-launcher-grid">
           <button
             class="sp-launcher-btn"
@@ -271,10 +380,58 @@
            SP TAB CONTENT
            ══════════════════════════════════════════ -->
       <div class="sp-tab-content">
+        <template v-if="props.minimal && mainTab !== 'profile'">
+          <section v-if="mainTab === 'groups'" class="minimal-groups-pane">
+            <div class="minimal-pane-heading">
+              <div><h3>Nhóm đang tham gia</h3><p>Dữ liệu từ lần quét thành viên gần nhất.</p></div>
+              <button type="button" :disabled="groupMembershipsLoading" @click="fetchGroupMemberships">Làm mới</button>
+            </div>
+            <p v-if="groupMembershipsLoading" class="minimal-related-empty">Đang tải danh sách nhóm…</p>
+            <p v-else-if="groupMembershipsError" class="minimal-related-error">{{ groupMembershipsError }}</p>
+            <p v-else-if="groupMemberships.length === 0" class="minimal-related-empty">Chưa tìm thấy nhóm nào từ dữ liệu quét.</p>
+            <div v-else class="minimal-group-list">
+              <button v-for="group in groupMemberships" :key="`${group.zaloAccountId}:${group.groupId}`" type="button" class="minimal-group-row" @click="openGroupConversation(group)">
+                <Avatar :src="group.avatarUrl" :name="group.name || 'Nhóm Zalo'" :size="38" :is-group="true" />
+                <span class="minimal-related-copy">
+                  <strong>{{ group.name || 'Nhóm Zalo' }}</strong>
+                  <small>{{ group.zaloAccountName || 'Tài khoản Zalo' }}<template v-if="group.memberCount"> · {{ group.memberCount }} thành viên</template></small>
+                  <small>Kiểm tra {{ formatRelatedTime(group.lastVerifiedAt) }}</small>
+                </span>
+                <span class="material-symbols-outlined">chevron_right</span>
+              </button>
+            </div>
+          </section>
+          <form v-else-if="mainTab === 'details'" class="minimal-contact-form" @submit.prevent="saveContact">
+            <h3>Hồ sơ khách hàng</h3>
+            <label>Tên khách hàng<input v-model="form.fullName" autocomplete="off" /></label>
+            <label>Tên gọi trong CRM<input v-model="form.crmName" autocomplete="off" /></label>
+            <label>Số điện thoại<input v-model="form.phone" type="tel" /></label>
+            <label>Email<input v-model="form.email" type="email" /></label>
+            <label>Địa chỉ<textarea v-model="form.addressLine" rows="2" /></label>
+            <label>Nghề nghiệp<input v-model="form.occupation" /></label>
+            <label>Ngày sinh<input v-model="form.birthDate" type="date" /></label>
+            <label>Giới tính
+              <select v-model="form.gender"><option :value="null">Chưa cập nhật</option><option value="male">Nam</option><option value="female">Nữ</option><option value="other">Khác</option></select>
+            </label>
+            <div v-if="props.contactId" class="minimal-contact-stage">
+              <span>Giai đoạn chăm sóc</span>
+              <ContactDealStageSelector :contact-id="props.contactId" :current-status-id="(props.contact as any)?.statusId ?? null" :org-id="orgId" @updated="onDealStageUpdatedPanel" />
+            </div>
+            <label>Ghi chú hồ sơ<textarea v-model="form.notes" rows="4" /></label>
+            <p v-if="saveSuccess" class="minimal-form-success" role="status">Đã lưu thông tin khách hàng.</p>
+            <p v-if="saveError" class="minimal-form-error" role="alert">Chưa lưu được thông tin. Vui lòng thử lại.</p>
+            <button type="submit" class="minimal-save-button" :disabled="saving">{{ saving ? 'Đang lưu…' : 'Lưu thông tin' }}</button>
+          </form>
+          <MediaTabPanel v-else-if="mainTab === 'media' && props.conversationId" :conversation-id="props.conversationId" :contact="props.contact" :owner-nick-id="props.activeZaloAccountId" :nick-name="props.activeZaloAccountName" />
+          <div v-else-if="mainTab === 'followup' && props.contactId" class="sp-pane">
+            <AutomationCardList ref="automationCardListRef" :contact-id="props.contactId" :nick-id="props.activeZaloAccountId" :nick-name="props.activeZaloAccountName" @add-flow="openAddFlowModal" />
+          </div>
+        </template>
+        <template v-else>
         <!-- ─── OVERVIEW TAB ─── -->
         <div v-show="salesTab === 'overview'" class="sp-pane sp-overview-pane">
           <!-- Dãy Icon tròn mini có nhãn chữ (5 Sub-items) -->
-          <div class="sp-sub-circle-nav">
+          <div v-if="!props.minimal" class="sp-sub-circle-nav">
             <button
               class="sp-circle-item"
               :class="{ active: overviewSubTab === '360' }"
@@ -331,8 +488,68 @@
           <div v-show="overviewSubTab === '360'" class="sp-sub-pane">
             <div class="sp-section-header">
               <span class="material-symbols-outlined sp-section-icon">monitoring</span>
-              <span class="sp-section-title">Chỉ số 360 & Hồ sơ</span>
+              <span class="sp-section-title">{{ props.minimal ? 'Tổng quan' : 'Chỉ số 360 & Hồ sơ' }}</span>
             </div>
+
+            <section v-if="props.minimal && isGroupChat" ref="groupMembersRef" class="minimal-summary-section minimal-members-section">
+              <button type="button" class="minimal-members-trigger" :aria-expanded="groupMembersOpen" @click.stop="toggleGroupMembers">
+                <span class="material-symbols-outlined">person</span>
+                <span>Thành viên</span>
+                <span class="material-symbols-outlined">expand_more</span>
+              </button>
+              <div v-if="groupMembersOpen" class="minimal-related-popover minimal-members-popover" @click.stop>
+                <strong>Thành viên nhóm</strong>
+                <p v-if="groupMembersLoading" class="minimal-related-empty">Đang tải thành viên…</p>
+                <p v-else-if="groupMembersError" class="minimal-related-error">{{ groupMembersError }}</p>
+                <p v-else-if="groupMembers.length === 0" class="minimal-related-empty">Chưa có thành viên.</p>
+                <template v-else>
+                  <div v-for="category in groupMemberCategories" :key="category.label" class="minimal-member-category">
+                    <div class="minimal-member-category-label">{{ category.label }} · {{ category.members.length }}</div>
+                    <div v-for="member in category.members" :key="member.uid" class="minimal-member-entry">
+                      <div class="minimal-related-row">
+                        <Avatar :src="member.avatar" :name="member.displayName" :size="34" />
+                        <span class="minimal-related-copy">
+                          <strong>{{ member.displayName }}</strong>
+                          <small>Đã liên kết: <span :class="{ 'minimal-member-pos-count--linked': member.posAccounts.length >= 1 }">{{ member.posAccounts.length }}</span> POS</small>
+                        </span>
+                        <button type="button" class="minimal-member-icon" :aria-label="`Xem POS của ${member.displayName}`" :aria-expanded="memberPosUid === member.uid" @click="memberPosUid = memberPosUid === member.uid ? null : member.uid">
+                          <span class="material-symbols-outlined">visibility</span>
+                        </button>
+                        <button type="button" class="minimal-member-icon" :aria-label="`Cài đặt cho ${member.displayName}`" disabled>
+                          <span class="material-symbols-outlined">more_vert</span>
+                        </button>
+                      </div>
+                      <div v-if="memberPosUid === member.uid" class="minimal-member-pos-list">
+                        <p v-if="member.posAccounts.length === 0" class="minimal-related-empty">Chưa có tài khoản POS liên quan.</p>
+                        <div v-for="account in member.posAccounts" :key="account.id" class="minimal-related-row minimal-pos-account-row minimal-member-pos-card">
+                          <span class="minimal-related-avatar minimal-related-avatar--pos">POS</span>
+                          <span class="minimal-related-copy">
+                            <strong>{{ account.posName || account.posCode || 'Tài khoản POS' }}</strong>
+                            <small>{{ account.posCode }}<template v-if="account.posSaleName"> · {{ account.posSaleName }}</template></small>
+                          </span>
+                          <div class="minimal-pos-account-actions">
+                            <button type="button" class="minimal-member-icon" :aria-label="`Xem thông tin POS của ${account.posName || member.displayName}`" @click="openPosSummary(account.contactId, account.posName || member.displayName)">
+                              <span class="material-symbols-outlined">visibility</span>
+                            </button>
+                            <v-menu location="bottom end">
+                              <template #activator="{ props: menuProps }">
+                                <button type="button" v-bind="menuProps" class="minimal-member-icon" aria-label="Tùy chọn tài khoản POS">
+                                  <span class="material-symbols-outlined">more_vert</span>
+                                </button>
+                              </template>
+                              <v-list density="compact">
+                                <v-list-item title="Sao chép mã POS" :disabled="!account.posCode" @click="copyRelatedPosCode(account.posCode)" />
+                                <v-list-item title="Mở hồ sơ khách hàng" @click="openRelatedPosProfile(account.contactId)" />
+                              </v-list>
+                            </v-menu>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </section>
 
           <div v-if="customer360Loading" class="sp-c360-loading">
             <v-progress-circular indeterminate size="18" width="2" color="primary" />
@@ -358,7 +575,7 @@
             </div>
 
             <div class="sp-c360-stat">
-              <span class="sp-c360-label">LTV / Doanh số</span>
+              <span class="sp-c360-label">{{ props.minimal ? 'Tổng mua hàng' : 'LTV / Doanh số' }}</span>
               <span class="sp-c360-val sp-val-primary">{{ fmtVnd(customer360.commerce.orders.lifetimeValue) }}</span>
               <span class="sp-c360-sublabel">
                 {{ customer360.commerce.orders.total }} đơn
@@ -383,7 +600,7 @@
               </span>
             </div>
             <div class="sp-c360-stat sp-c360-full">
-              <span class="sp-c360-label">Sale phụ trách</span>
+              <span class="sp-c360-label">{{ props.minimal ? 'Nhân viên phụ trách' : 'Sale phụ trách' }}</span>
               <span class="sp-c360-val">{{ customer360.access.assignedUser?.fullName || 'Chưa phân công' }}</span>
               <span class="sp-c360-sublabel">
                 {{ customer360.service.tickets.length }} khiếu nại · {{ customer360.service.appointments.length }} lịch hẹn
@@ -502,6 +719,48 @@
               Liên kết khách hàng POS để xem thống kê đơn hàng
             </div>
           </div>
+          <template v-if="props.minimal">
+            <section class="minimal-summary-section">
+              <h3>Lịch hẹn sắp tới</h3>
+              <div v-if="minimalNextAppointment" class="minimal-summary-copy">
+                <strong>{{ minimalNextAppointment.title || minimalNextAppointment.type || 'Lịch hẹn khách hàng' }}</strong>
+                <span>{{ new Date(minimalNextAppointment.appointmentDate).toLocaleDateString('vi-VN') }}<template v-if="minimalNextAppointment.appointmentTime"> · {{ minimalNextAppointment.appointmentTime }}</template></span>
+                <p v-if="minimalNextAppointment.notes">{{ minimalNextAppointment.notes }}</p>
+              </div>
+              <p v-else class="minimal-summary-muted">Chưa có lịch hẹn sắp tới.</p>
+            </section>
+            <section class="minimal-summary-section">
+              <h3>Ghi chú</h3>
+              <p v-if="form.notes" class="minimal-summary-note">{{ form.notes }}</p>
+              <p v-else class="minimal-summary-muted">Chưa có ghi chú hồ sơ. Mở Ghi chú & lịch sử chăm sóc để thêm.</p>
+            </section>
+            <section class="minimal-summary-section">
+              <div class="minimal-summary-heading-row">
+                <h3>Tài khoản Zalo liên quan</h3>
+                <span>{{ relatedZaloAccounts.length }}</span>
+              </div>
+              <p v-if="relatedAccountsLoading" class="minimal-summary-muted">Đang tải…</p>
+              <p v-else-if="relatedZaloAccounts.length === 0" class="minimal-summary-muted">Chưa có tài khoản Zalo liên quan.</p>
+              <div v-else class="minimal-related-list">
+                <button
+                  v-for="item in relatedZaloAccounts"
+                  :key="item.key"
+                  type="button"
+                  class="minimal-related-row minimal-related-row--button"
+                  :disabled="!item.accessible || !item.friendId || relatedOpeningKey === item.key"
+                  @click="openRelatedZalo(item)">
+                  <Avatar :src="item.avatarUrl" :name="item.name" :size="34" />
+                  <span class="minimal-related-copy">
+                    <strong>{{ item.name }}</strong>
+                    <small>{{ item.zaloAccountName || item.phone || 'Zalo' }}</small>
+                  </span>
+                  <span v-if="item.current" class="minimal-related-current">Hiện tại</span>
+                  <span v-else-if="!item.accessible" class="minimal-related-current">Không có quyền</span>
+                  <span v-else class="material-symbols-outlined">chevron_right</span>
+                </button>
+              </div>
+            </section>
+          </template>
         </div>
         <!-- 1. /SUB-VIEW 360 -->
 
@@ -827,6 +1086,7 @@
             :contact-name="headerFullName"
             @appointment-created="onAppointmentCreated" />
         </div>
+        </template>
       </div>
       <!-- /sp-tab-content -->
 
@@ -860,6 +1120,8 @@
       <OrderDetailModal
         v-model="showOrderDetailDialog"
         :order="selectedOrderForDetail" />
+      <PosAccountSummaryDialog v-model="posSummaryOpen" :contact-id="posSummaryContactId" :pos-customer-id="posSummaryCustomerId" :fallback-name="posSummaryFallbackName" />
+      <AddFlowModal v-if="props.minimal && showAddFlowModal && props.contactId" :contact-id="props.contactId" :contact-name="headerFullName" :nick-id="props.activeZaloAccountId || ''" :nick-name="props.activeZaloAccountName || ''" @close="closeAddFlowModal" @enrolled="onEnrolled" />
   </aside>
 </template>
 
@@ -878,9 +1140,11 @@ import { useChatContactPanel } from "@/composables/use-chat-contact-panel";
 import { useCustomer360 } from "@/composables/use-customer-360";
 import { displayPhone, displayPhoneIntl } from "@/composables/use-phone-format";
 import ChatAppointments from "./ChatAppointments.vue";
+import CustomerTimelineSection from "./CustomerTimelineSection.vue";
 import { usePosCommands } from "@/composables/use-pos-commands";
 import PosCustomerForm from "@/components/pos/PosCustomerForm.vue";
 import PosLinkSearchDialog from "@/components/pos/PosLinkSearchDialog.vue";
+import PosAccountSummaryDialog from "@/components/pos/PosAccountSummaryDialog.vue";
 import CustomerDebtWidget from "@/components/pos/CustomerDebtWidget.vue";
 import BranchInventoryWidget from "@/components/pos/BranchInventoryWidget.vue";
 import ChatProductInterestsSection from "./ChatProductInterestsSection.vue";
@@ -918,13 +1182,16 @@ const props = defineProps<{
   // Friendship per-pair (nick × KH) — chứa aliasInNick để sync 2-way với Zalo Real.
   friendship?: { id?: string; aliasInNick?: string | null; zaloAvatarUrl?: string | null } | null;
   currentRole?: string;
+  minimal?: boolean;
 }>();
 
 const emit = defineEmits<{
   close: [];
   saved: [];
+  'open-zalo-profile': [];
   "insert-suggestion": [text: string];
   "status-changed": [statusId: string | null];
+  "switch-conversation": [conversationId: string];
 }>();
 
 // orgId cho ContactDealStageSelector (trạng thái cột 4 cạnh UID — sync với cột 3).
@@ -942,6 +1209,7 @@ function onDealStageUpdatedPanel(newStatusId: string | null) {
 
 const {
   form,
+  saving,
   saveSuccess,
   saveError,
   contactAppointments,
@@ -963,10 +1231,59 @@ const customerFormOpen = ref(false);
 const posLinkSearchOpen = ref(false);
 const posMenuRef = ref<HTMLElement | null>(null);
 const posMenuOpen = ref(false);
+const relatedPosRef = ref<HTMLElement | null>(null);
+const relatedPosOpen = ref(false);
+const relatedPosMenuOpen = ref(false);
+const posSummaryOpen = ref(false);
+const posSummaryContactId = ref<string | null>(null);
+const posSummaryCustomerId = ref<number | null>(null);
+const posSummaryFallbackName = ref<string | null>(null);
+const groupMembersRef = ref<HTMLElement | null>(null);
+const groupMembersOpen = ref(false);
+
+function openPosSummary(contactId: string, fallbackName: string | null, posCustomerId: number | null = null) {
+  posSummaryContactId.value = contactId;
+  posSummaryCustomerId.value = posCustomerId;
+  posSummaryFallbackName.value = fallbackName;
+  posSummaryOpen.value = true;
+}
+
+async function copyRelatedPosCode(code: string | null) {
+  if (!code) return;
+  try {
+    await navigator.clipboard.writeText(code);
+    toast.success('Đã sao chép mã POS');
+  } catch {
+    toast.error('Không thể sao chép mã POS');
+  }
+}
+
+function openRelatedPosProfile(contactId: string) {
+  void router.push({ path: '/contacts', query: { focus: contactId } });
+}
+
+function toggleRelatedPos() {
+  relatedPosOpen.value = !relatedPosOpen.value;
+  relatedPosMenuOpen.value = false;
+  posMenuOpen.value = false;
+}
+
+function toggleRelatedPosMenu() {
+  relatedPosMenuOpen.value = !relatedPosMenuOpen.value;
+  relatedPosOpen.value = false;
+  posMenuOpen.value = false;
+}
 
 function onDocClickForPosMenu(e: MouseEvent) {
   if (posMenuOpen.value && posMenuRef.value && !posMenuRef.value.contains(e.target as Node)) {
     posMenuOpen.value = false;
+  }
+  if ((relatedPosOpen.value || relatedPosMenuOpen.value) && relatedPosRef.value && !relatedPosRef.value.contains(e.target as Node)) {
+    relatedPosOpen.value = false;
+    relatedPosMenuOpen.value = false;
+  }
+  if (groupMembersOpen.value && groupMembersRef.value && !groupMembersRef.value.contains(e.target as Node)) {
+    groupMembersOpen.value = false;
   }
 }
 const posLinkStatus = ref<{
@@ -975,7 +1292,114 @@ const posLinkStatus = ref<{
   posCustomerId?: number;
   posCustomerCode?: string;
   posCustomer?: any;
+  accounts?: Array<{ id: number; code: string | null; name?: string | null; phone?: string | null }>;
 }>({ linked: false, autoSuggest: false });
+
+interface PhoneFamilyContact {
+  id: string;
+  phone: string | null;
+  isCurrent: boolean;
+  accessible: boolean;
+  crmName: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+  zaloDisplayName: string | null;
+  aliasInNick: string | null;
+  friendId: string | null;
+  zaloAccountId: string | null;
+  zaloAccountName: string | null;
+  zaloAccounts?: Array<{
+    friendId: string;
+    zaloAccountId: string;
+    zaloAccountName: string | null;
+    displayName: string | null;
+    aliasInNick: string | null;
+    avatarUrl: string | null;
+  }>;
+  posName: string | null;
+  posCode: string | null;
+  posSaleName: string | null;
+}
+
+interface ContactGroupMembership {
+  zaloAccountId: string;
+  zaloAccountName: string | null;
+  groupId: string;
+  conversationId: string | null;
+  name: string | null;
+  avatarUrl: string | null;
+  memberCount: number | null;
+  lastVerifiedAt: string;
+}
+
+const phoneFamilyContacts = ref<PhoneFamilyContact[]>([]);
+const relatedAccountsLoading = ref(false);
+const relatedOpeningKey = ref<string | null>(null);
+const groupMemberships = ref<ContactGroupMembership[]>([]);
+const groupMembershipsLoading = ref(false);
+const groupMembershipsError = ref("");
+
+interface GroupMemberPosAccount {
+  id: string;
+  contactId: string;
+  posName: string | null;
+  posCode: string | null;
+  posSaleName: string | null;
+}
+
+interface GroupChatMember {
+  uid: string;
+  displayName: string;
+  avatar: string | null;
+  kind: "employee" | "customer";
+  posAccounts: GroupMemberPosAccount[];
+}
+
+const groupMembers = ref<GroupChatMember[]>([]);
+const groupMembersLoading = ref(false);
+const groupMembersError = ref("");
+const memberPosUid = ref<string | null>(null);
+const groupMemberCategories = computed(() => [
+  { label: "Nhân viên", members: groupMembers.value.filter((member) => member.kind === "employee") },
+  { label: "Khách hàng", members: groupMembers.value.filter((member) => member.kind === "customer") },
+]);
+
+let groupMembersRequestId = 0;
+async function fetchGroupMembers() {
+  const accountId = props.activeZaloAccountId;
+  const groupId = props.conversation?.externalThreadId;
+  if (!accountId || !groupId) {
+    groupMembersError.value = "Chưa xác định được nhóm Zalo.";
+    return;
+  }
+  const requestId = ++groupMembersRequestId;
+  groupMembersLoading.value = true;
+  groupMembersError.value = "";
+  try {
+    const response = await api.get<{ members: GroupChatMember[] }>(`/zalo-accounts/${accountId}/groups/${encodeURIComponent(groupId)}/members`);
+    if (requestId === groupMembersRequestId) groupMembers.value = response.data.members || [];
+  } catch {
+    if (requestId === groupMembersRequestId) groupMembersError.value = "Không tải được thành viên. Vui lòng thử lại.";
+  } finally {
+    if (requestId === groupMembersRequestId) groupMembersLoading.value = false;
+  }
+}
+
+function toggleGroupMembers() {
+  groupMembersOpen.value = !groupMembersOpen.value;
+  memberPosUid.value = null;
+  if (groupMembersOpen.value) void fetchGroupMembers();
+}
+
+watch(
+  () => [props.activeZaloAccountId, props.conversation?.externalThreadId],
+  () => {
+    groupMembersRequestId++;
+    groupMembers.value = [];
+    groupMembersOpen.value = false;
+    memberPosUid.value = null;
+  },
+);
 
 const displayPosCode = computed(() => {
   return (
@@ -986,10 +1410,7 @@ const displayPosCode = computed(() => {
 });
 
 function copyPosCode() {
-  if (!displayPosCode.value) {
-    openEditCustomerForm();
-    return;
-  }
+  if (!displayPosCode.value) return;
   navigator.clipboard
     .writeText(displayPosCode.value)
     .then(() => {
@@ -1006,6 +1427,7 @@ function onLinkedParent() {
 }
 
 function openQuickNote() {
+  if (props.minimal) mainTab.value = 'profile';
   salesTab.value = 'notes';
   toast.push('Đã chuyển sang tab Ghi chú');
 }
@@ -1019,12 +1441,15 @@ const {
   fetchCustomer360,
 } = useCustomer360(() => props.contactId);
 
+let posStatusRequestId = 0;
 async function checkPosStatus() {
-  if (!props.contactId) return;
+  const contactId = props.contactId;
+  const requestId = ++posStatusRequestId;
+  if (!contactId) return;
   loadingStatus.value = true;
   try {
-    const res = await getLinkStatus(props.contactId);
-    if (res) {
+    const res = await getLinkStatus(contactId);
+    if (res && requestId === posStatusRequestId && props.contactId === contactId) {
       posLinkStatus.value = res;
       // Auto-inherit phone from POS into CRM Contact form if empty
       if (res.linked && res.posCustomer) {
@@ -1038,7 +1463,7 @@ async function checkPosStatus() {
   } catch (err) {
     console.error("checkPosStatus failed:", err);
   } finally {
-    loadingStatus.value = false;
+    if (requestId === posStatusRequestId) loadingStatus.value = false;
   }
 }
 
@@ -1054,6 +1479,9 @@ const overviewSubTab = ref<
 watch(
   () => props.contactId,
   (newId) => {
+    posStatusRequestId++;
+    posLinkStatus.value = { linked: false, autoSuggest: false };
+    loadingStatus.value = false;
     if (newId) {
       checkPosStatus();
       salesTab.value = "overview";
@@ -1074,7 +1502,13 @@ function openCreateCustomerForm() {
   customerFormOpen.value = true;
 }
 
-function openEditCustomerForm() {
+function openEditCustomerForm(posCustomerId = posLinkStatus.value.posCustomerId) {
+  if (posCustomerId && posCustomerId !== posLinkStatus.value.posCustomerId) {
+    const account = posLinkStatus.value.accounts?.find((item) => item.id === posCustomerId);
+    selectedPosCustomer.value = { id: posCustomerId, code: account?.code || "" };
+    customerFormOpen.value = true;
+    return;
+  }
   if (posLinkStatus.value.linked && posLinkStatus.value.posCustomer) {
     selectedPosCustomer.value = {
       id: posLinkStatus.value.posCustomerId,
@@ -1085,6 +1519,7 @@ function openEditCustomerForm() {
         posLinkStatus.value.posCustomer.contactNumber,
       email: posLinkStatus.value.posCustomer.email || "",
       address: posLinkStatus.value.posCustomer.address || "",
+      addresses: posLinkStatus.value.posCustomer.addresses || [],
     };
     customerFormOpen.value = true;
   }
@@ -1125,18 +1560,25 @@ function onPosLinked(data: {
   posCustomerCode?: string;
   posCustomerName?: string;
 }) {
-  // Cập nhật local state ngay (không cần gọi lại API)
-  posLinkStatus.value = {
-    linked: true,
-    autoSuggest: false,
-    posCustomerId: data.posCustomerId,
-    posCustomerCode: data.posCustomerCode || undefined,
-    posCustomer: {
-      id: data.posCustomerId,
-      name: data.posCustomerName || "",
-      code: data.posCustomerCode || "",
-    },
-  };
+  if (posLinkStatus.value.linked) {
+    const accounts = posLinkStatus.value.accounts || [];
+    if (!accounts.some((item) => item.id === data.posCustomerId)) {
+      posLinkStatus.value.accounts = [...accounts, { id: data.posCustomerId, code: data.posCustomerCode || null }];
+    }
+  } else {
+    posLinkStatus.value = {
+      linked: true,
+      autoSuggest: false,
+      posCustomerId: data.posCustomerId,
+      posCustomerCode: data.posCustomerCode || undefined,
+      posCustomer: {
+        id: data.posCustomerId,
+        name: data.posCustomerName || "",
+        code: data.posCustomerCode || "",
+      },
+      accounts: [{ id: data.posCustomerId, code: data.posCustomerCode || null }],
+    };
+  }
   checkPosStatus(); // Reload để lấy thông tin đầy đủ
   emit("saved");
 }
@@ -1215,8 +1657,37 @@ async function saveAlias() {
 // 2026-06-01: Refactor cột 4 4-tab — bottom strip Profile/Media/AI/Follow-up.
 // 2026-06-12 (anh chốt): tab 'automation' → 'media' (gộp Picker Media + Automation:
 //   Ảnh/Video/Tệp/Khối trong MediaTabPanel). `activeTab` (sub-tab) chỉ active scope 'profile'.
-const mainTab = ref<"profile" | "media" | "followup">("profile");
+const mainTab = ref<"profile" | "media" | "followup" | "details" | "groups">("profile");
 const activeTab = ref<"profile" | "crm" | "activity">("profile");
+
+const minimalSection = computed({
+  get(): string {
+    if (mainTab.value !== "profile") return mainTab.value;
+    if (salesTab.value !== "overview") return salesTab.value;
+    return overviewSubTab.value === "360" ? "summary" : overviewSubTab.value;
+  },
+  set(section: string) {
+    if (section === "media" || section === "followup" || section === "details" || section === "groups") {
+      mainTab.value = section;
+      if (section === "groups" && groupMemberships.value.length === 0) void fetchGroupMemberships();
+      return;
+    }
+    mainTab.value = "profile";
+    if (["inventory", "orders", "debt", "appointment", "notes"].includes(section)) {
+      salesTab.value = section as typeof salesTab.value;
+      return;
+    }
+    salesTab.value = "overview";
+    overviewSubTab.value = section === "summary" ? "360" : section as typeof overviewSubTab.value;
+  },
+});
+
+const minimalNextAppointment = computed(() => {
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  return [...contactAppointments.value]
+    .filter((appointment) => new Date(appointment.appointmentDate).getTime() >= startOfToday && !["cancelled", "canceled", "completed", "done"].includes(appointment.status.toLowerCase()))
+    .sort((a, b) => a.appointmentDate.localeCompare(b.appointmentDate))[0] ?? null;
+});
 
 // Sales & Customer Service Workspace Optimization state: khai báo đã dời lên trên
 // watch immediate (TDZ) — xem block `const salesTab` phía trên.
@@ -1524,6 +1995,7 @@ interface FriendItem {
   becameFriendAt: string | null;
   lastInboundAt: string | null;
   leadScore: number;
+  aliasInNick: string | null;
   zaloDisplayName: string | null;
   zaloAvatarUrl: string | null;
   crmTagsPerNick: string[];
@@ -1544,6 +2016,131 @@ interface RelationsState {
   friends: FriendItem[];
 }
 const relations = ref<RelationsState>({ friends: [] });
+
+const relatedPosAccounts = computed(() => {
+  const accounts = posLinkStatus.value.accounts || [];
+  const primaryId = posLinkStatus.value.posCustomerId;
+  const primary = primaryId && !accounts.some((account) => account.id === primaryId)
+    ? [{ id: primaryId, code: posLinkStatus.value.posCustomerCode || null, name: null, phone: null }]
+    : [];
+  return [...primary, ...accounts].map((account) => ({
+    ...account,
+    name: account.name || (account.id === primaryId ? posLinkStatus.value.posCustomer?.name || null : null),
+    phone: account.phone || (account.id === primaryId ? posLinkStatus.value.posCustomer?.phone || posLinkStatus.value.posCustomer?.contactNumber || null : null),
+  }));
+});
+
+const relatedZaloAccounts = computed(() => {
+  const items = phoneFamilyContacts.value.flatMap((item) => {
+    const accounts = item.zaloAccounts?.length
+      ? item.zaloAccounts
+      : item.friendId
+        ? [{
+            friendId: item.friendId,
+            zaloAccountId: item.zaloAccountId || "",
+            zaloAccountName: item.zaloAccountName,
+            displayName: item.zaloDisplayName,
+            aliasInNick: item.aliasInNick,
+            avatarUrl: item.avatarUrl,
+          }]
+        : [];
+    return accounts.map((account) => ({
+      key: account.friendId || `${item.id}:${account.zaloAccountId}`,
+      friendId: account.friendId,
+      name: account.aliasInNick || account.displayName || item.fullName || item.crmName || "Khách hàng Zalo",
+      avatarUrl: account.avatarUrl || item.avatarUrl,
+      zaloAccountName: account.zaloAccountName,
+      phone: item.phone,
+      accessible: item.accessible,
+      current: item.isCurrent && account.zaloAccountId === props.activeZaloAccountId,
+    }));
+  });
+  for (const friend of relations.value.friends) {
+    const key = friend.id;
+    if (items.some((item) => item.key === key)) continue;
+    items.push({
+      key,
+      friendId: friend.id,
+      name: friend.aliasInNick || friend.zaloDisplayName || props.contact?.fullName || "Khách hàng Zalo",
+      avatarUrl: friend.zaloAvatarUrl || props.contact?.avatarUrl || null,
+      zaloAccountName: friend.zaloAccount.displayName,
+      phone: props.contact?.phone ?? null,
+      accessible: true,
+      current: friend.zaloAccount.id === props.activeZaloAccountId,
+    });
+  }
+  return items;
+});
+
+let relatedRequestId = 0;
+async function fetchRelatedAccounts(contactId: string) {
+  const requestId = ++relatedRequestId;
+  relatedAccountsLoading.value = true;
+  try {
+    const response = await api.get<{ contacts?: PhoneFamilyContact[] }>(`/contacts/${contactId}/phone-family`);
+    if (requestId === relatedRequestId && props.contactId === contactId) {
+      phoneFamilyContacts.value = response.data.contacts || [];
+    }
+  } catch (err) {
+    console.error("[ChatContactPanel] fetchRelatedAccounts error:", err);
+    if (requestId === relatedRequestId) phoneFamilyContacts.value = [];
+  } finally {
+    if (requestId === relatedRequestId) relatedAccountsLoading.value = false;
+  }
+}
+
+async function fetchGroupMemberships() {
+  const contactId = props.contactId;
+  if (!contactId || isGroupChat.value) return;
+  groupMembershipsLoading.value = true;
+  groupMembershipsError.value = "";
+  try {
+    const response = await api.get<{ groups?: ContactGroupMembership[] }>(`/contacts/${contactId}/group-memberships`);
+    if (props.contactId === contactId) groupMemberships.value = response.data.groups || [];
+  } catch (err) {
+    console.error("[ChatContactPanel] fetchGroupMemberships error:", err);
+    if (props.contactId === contactId) {
+      groupMemberships.value = [];
+      groupMembershipsError.value = "Không tải được danh sách nhóm. Vui lòng thử lại.";
+    }
+  } finally {
+    if (props.contactId === contactId) groupMembershipsLoading.value = false;
+  }
+}
+
+async function openRelatedZalo(item: { key: string; friendId: string | null; accessible: boolean }) {
+  if (!item.friendId || !item.accessible) return;
+  relatedOpeningKey.value = item.key;
+  try {
+    const response = await api.post<{ conversationId: string }>(`/friends/${item.friendId}/ensure-conversation`);
+    emit("switch-conversation", response.data.conversationId);
+  } catch {
+    toast.error("Không thể mở hội thoại bằng tài khoản Zalo này");
+  } finally {
+    relatedOpeningKey.value = null;
+  }
+}
+
+async function openGroupConversation(group: ContactGroupMembership) {
+  try {
+    let conversationId = group.conversationId;
+    if (!conversationId) {
+      const response = await api.post<{ conversationId: string }>(
+        `/zalo-accounts/${group.zaloAccountId}/groups/${encodeURIComponent(group.groupId)}/ensure-conversation`,
+      );
+      conversationId = response.data.conversationId;
+    }
+    emit("switch-conversation", conversationId);
+  } catch {
+    toast.error("Không thể mở hội thoại nhóm này");
+  }
+}
+
+function formatRelatedTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "gần đây";
+  return date.toLocaleString("vi-VN", { dateStyle: "short", timeStyle: "short" });
+}
 
 async function fetchRelations(contactId: string) {
   try {
@@ -1695,8 +2292,17 @@ watch(
     // KHÔNG persist sticky giữa các conv (theo spec: sticky chỉ trong cùng conv).
     expandMode.value = "auto";
     startAutoCollapse();
-    if (id) void fetchRelations(id);
-    else relations.value = { friends: [] };
+    if (id) {
+      void fetchRelations(id);
+      if (props.minimal && !isGroupChat.value) void fetchRelatedAccounts(id);
+    } else {
+      relations.value = { friends: [] };
+      phoneFamilyContacts.value = [];
+    }
+    groupMemberships.value = [];
+    groupMembershipsError.value = "";
+    relatedPosOpen.value = false;
+    relatedPosMenuOpen.value = false;
     // Tab CRM cockpit data — fetch chỉ khi tab CRM được mở (xem watch(activeTab) bên dưới)
     if (!id) {
       cockpit.value = null;
@@ -3807,8 +4413,11 @@ function onInsertSuggestionText(text: string) {
 .sp-pos-code-badge {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 4px;
-  height: 24px;
+  min-height: 24px;
+  height: auto;
+  max-width: 100%;
   padding: 0 8px;
   border-radius: 12px;
   border: 1px solid #a7f3d0;
@@ -3837,6 +4446,10 @@ function onInsertSuggestionText(text: string) {
 }
 .sp-pos-code-text {
   font-family: ui-monospace, monospace;
+}
+.sp-pos-customer-name,
+.sp-pos-customer-phone {
+  overflow-wrap: anywhere;
 }
 .sp-pos-chip-sub {
   display: inline-flex;

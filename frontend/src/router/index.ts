@@ -45,6 +45,20 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, resource: "zalo_account" },
   },
   {
+    path: "/channels-2",
+    name: "ChannelConnectionsMinimal",
+    component: () => import("@/views/ChannelConnectionsView.vue"),
+    props: { minimal: true },
+    meta: { requiresAuth: true, resource: "zalo_account", minimalChat: true },
+  },
+  {
+    path: "/chat-2/:convId?",
+    name: "ChatMinimal",
+    component: () => import("@/views/ChatView.vue"),
+    props: { minimal: true },
+    meta: { requiresAuth: true, resource: "conversation", minimalChat: true },
+  },
+  {
     path: "/chat/:convId?",
     name: "Chat",
     component: () => import("@/views/ChatView.vue"),

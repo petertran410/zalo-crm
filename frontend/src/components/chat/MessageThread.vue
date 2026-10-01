@@ -1,7 +1,7 @@
 <template>
   <div
     class="message-thread"
-    :class="{ 'drag-over': isDraggingFiles }"
+    :class="{ 'drag-over': isDraggingFiles, 'message-thread--minimal': minimal }"
     @dragenter="onDragEnter"
     @dragover="onDragOver"
     @dragleave="onDragLeave"
@@ -9,11 +9,9 @@
   >
     <!-- Empty state -->
     <div v-if="!conversation" class="empty-state">
-      <div class="empty-chat-mark" aria-hidden="true">
+      <div v-if="!minimal" class="empty-chat-mark" aria-hidden="true">
         <v-icon icon="mdi-chat-outline" size="66" />
       </div>
-      <p class="empty-title">Have a good day <span aria-hidden="true">☺</span></p>
-      <p class="empty-subtitle">Chọn một hội thoại để bắt đầu xử lý tin nhắn</p>
     </div>
 
     <template v-else>
@@ -72,8 +70,38 @@
             </template>
           </div>
         </div>
-        <!-- ch-actions: nút Kết bạn / menu ⋮ / ⓘ — đẩy phải dòng 1 (gom 2 dòng 2026-06-06) -->
-        <div class="ch-actions">
+        <div v-if="minimal" class="ch-actions minimal-header-actions">
+          <span v-if="friendshipState === 'friend'" class="minimal-friend-status">Đã kết bạn</span>
+          <span v-else-if="friendshipState === 'pending_sent' || friendshipState === 'pending_friend'" class="minimal-friend-status">Đã gửi lời mời</span>
+          <span v-else-if="friendshipState === 'pending_received'" class="minimal-friend-status">Có lời mời kết bạn</span>
+          <div class="minimal-header-icon-row">
+            <button type="button" class="minimal-header-icon" title="Tải lại tin nhắn" aria-label="Tải lại tin nhắn" @click="$emit('refresh-thread')">
+              <RefreshCwIcon :size="18" :stroke-width="1.8" />
+            </button>
+            <v-menu v-if="!isVirtualConv && conversation.threadType === 'user' && (friendshipState === 'friend' || friendshipState === 'pending_sent' || friendshipState === 'pending_friend' || friendshipState === 'pending_received')" location="bottom end">
+              <template #activator="{ props: menuProps }">
+                <button type="button" class="minimal-header-icon" :disabled="actionLoading" :title="friendshipState === 'friend' ? 'Quản lý kết bạn' : 'Quản lý lời mời kết bạn'" :aria-label="friendshipState === 'friend' ? 'Quản lý kết bạn' : 'Quản lý lời mời kết bạn'" v-bind="menuProps">
+                  <UserPlusIcon :size="18" :stroke-width="1.8" />
+                </button>
+              </template>
+              <v-list density="compact" class="minimal-thread-menu" aria-label="Kết bạn">
+                <v-list-item v-if="friendshipState === 'friend'" title="Hủy kết bạn" :disabled="actionLoading" @click="onRemoveFriend" />
+                <v-list-item v-else-if="friendshipState === 'pending_sent' || friendshipState === 'pending_friend'" title="Thu hồi lời mời kết bạn" :disabled="actionLoading" @click="onCancelInvite" />
+                <template v-else-if="friendshipState === 'pending_received'">
+                  <v-list-item title="Chấp nhận lời mời kết bạn" :disabled="actionLoading" @click="onAcceptInvite" />
+                  <v-list-item title="Từ chối lời mời kết bạn" :disabled="actionLoading" @click="onRejectInvite" />
+                </template>
+              </v-list>
+            </v-menu>
+            <button v-else-if="!isVirtualConv && conversation.threadType === 'user'" type="button" class="minimal-header-icon" :disabled="actionLoading" :title="friendshipState === 'ghost' ? 'Gửi lại lời mời kết bạn' : 'Gửi lời mời kết bạn'" :aria-label="friendshipState === 'ghost' ? 'Gửi lại lời mời kết bạn' : 'Gửi lời mời kết bạn'" @click="onOpenInviteDialog">
+              <UserPlusIcon :size="18" :stroke-width="1.8" />
+            </button>
+            <button type="button" class="minimal-header-icon" :class="{ 'is-active': showContactPanel }" :title="showContactPanel ? 'Ẩn thông tin khách hàng' : 'Hiện thông tin khách hàng'" :aria-label="showContactPanel ? 'Ẩn thông tin khách hàng' : 'Hiện thông tin khách hàng'" :aria-pressed="!!showContactPanel" @click="$emit('toggle-contact-panel')">
+              <InfoIcon :size="18" :stroke-width="1.8" />
+            </button>
+          </div>
+        </div>
+        <div v-else class="ch-actions">
           <!-- Smart friendship button: state-aware -->
           <!-- Đã kết bạn: hover hiện thêm nút Huỷ kết bạn (destructive secondary) -->
           <div v-if="friendshipState === 'friend'" class="friend-hover-group">
@@ -139,7 +167,7 @@
             <span class="ic"><RotateCcwIcon :size="14" :stroke-width="2" /></span> Mời lại
           </button>
           <button
-            v-else-if="conversation.threadType === 'user'"
+            v-else-if="!isVirtualConv && conversation.threadType === 'user'"
             class="btn-action btn-add-friend"
             title="Gửi lời mời kết bạn"
             :disabled="actionLoading"
@@ -362,6 +390,8 @@
              Đọc/ghi qua endpoint /api/v1/friends/:id/tags (Tag v2 junction). -->
         <TagCrmBar
           v-if="conversation.contact && conversation.threadType === 'user' && conversation.friendship?.id"
+          ref="tagBarRef"
+          :minimal="minimal"
           :friend-id="conversation.friendship.id"
           :contact-id="conversation.contact.id"
         />
@@ -373,7 +403,7 @@
         />
 
         <!-- Compact toolbar — Lucide icons (anh chốt 2026-05-22 — bộ icon đồng bộ line 1.5px) -->
-        <div class="input-toolbar-top">
+        <div v-if="!minimal" class="input-toolbar-top">
           <!-- Group 1: Media -->
           <StickerPicker @select="onSendSticker" />
           <button class="icon-tool" title="Gửi ảnh" @click="onPickImage">
@@ -429,9 +459,24 @@
         </div>
 
         <div class="input-row">
+          <v-menu v-if="minimal" v-model="minimalAttachmentOpen" location="top start" :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <button type="button" class="minimal-attach-button" aria-label="Đính kèm" title="Đính kèm" v-bind="menuProps" :disabled="isArchivedNick || !privacyVisibility.canSendInConv(conversation)">+</button>
+            </template>
+            <v-list density="compact" class="minimal-thread-menu" aria-label="Đính kèm">
+              <v-list-item title="Ảnh từ máy tính" @click="minimalAttachmentOpen = false; onPickImage()" />
+              <v-list-item title="Tệp & video" @click="minimalAttachmentOpen = false; onPickFile()" />
+              <v-list-item title="Ảnh, tệp từ kho" @click="minimalAttachmentOpen = false; $emit('open-media-tab')" />
+              <StickerPicker @select="onSendSticker($event); minimalAttachmentOpen = false">
+                <template #activator="{ props: pickerProps }">
+                  <button type="button" v-bind="pickerProps" class="minimal-menu-picker">Nhãn dán</button>
+                </template>
+              </StickerPicker>
+            </v-list>
+          </v-menu>
           <!-- Avatar nick đang gửi — OUTSIDE editor (góc trái), halo gradient cam-đỏ-vàng -->
           <NickAvatarLock
-            v-if="conversation.zaloAccount"
+            v-if="conversation.zaloAccount && !minimal"
             :privacy-mode="conversation.zaloAccount.privacyMode"
           >
           <div
@@ -495,17 +540,34 @@
           </div>
 
           <!-- Emoji picker (hover) — sát nút Gửi -->
-          <EmojiPicker @pick="onPickEmoji" />
+          <EmojiPicker v-if="!minimal" @pick="onPickEmoji" />
+          <v-menu v-if="minimal" v-model="minimalToolsOpen" location="top end" :close-on-content-click="false">
+            <template #activator="{ props: menuProps }">
+              <button type="button" class="minimal-text-button minimal-tools-button" v-bind="menuProps">Công cụ</button>
+            </template>
+            <v-list density="compact" class="minimal-thread-menu" aria-label="Công cụ soạn tin">
+              <v-list-item title="Mẫu tin nhắn" subtitle="Gõ / để tìm nhanh" @click="minimalToolsOpen = false; openTemplatePopup()" />
+              <v-list-item :title="formatBarVisible ? 'Ẩn định dạng văn bản' : 'Định dạng văn bản'" @click="minimalToolsOpen = false; toggleFormat()" />
+              <EmojiPicker @pick="onPickEmoji">
+                <template #activator="{ props: pickerProps }">
+                  <button type="button" v-bind="pickerProps" class="minimal-menu-picker">Biểu tượng cảm xúc</button>
+                </template>
+              </EmojiPicker>
+              <v-list-item title="Tạo lịch hẹn" :disabled="!conversation.contact" @click="minimalToolsOpen = false; showAppointmentDialog = true" />
+              <v-list-item v-if="conversation.threadType === 'user'" title="Chèn khối tin nhắn" :disabled="!privacyVisibility.canSendInConv(conversation) || !!editingMessage || isArchivedNick" @click="minimalToolsOpen = false; openBlockPicker()" />
+            </v-list>
+          </v-menu>
 
           <!-- M53 2026-05-30: virtual conv → nút "Lưu nội bộ" màu cam thay vì "Gửi" xanh -->
           <button
             class="send-btn"
             :class="{ 'send-btn-virtual': isVirtualConv }"
-            :disabled="!inputText.trim() || sending || isArchivedNick"
+            :disabled="!inputText.trim() || sending || isArchivedNick || (minimal && !privacyVisibility.canSendInConv(conversation))"
             @click="handleSend"
             :title="isArchivedNick ? 'Nick đã xóa — không gửi được.' : isVirtualConv ? 'Lưu nội bộ (Enter) — KHÔNG gửi đi Zalo' : 'Gửi (Enter)'"
           >
-            <v-icon v-if="sending" size="20">mdi-loading mdi-spin</v-icon>
+            <span v-if="minimal">{{ sending ? 'Đang gửi…' : editingMessage ? 'Lưu sửa' : isVirtualConv ? 'Lưu nội bộ' : 'Gửi' }}</span>
+            <v-icon v-else-if="sending" size="20">mdi-loading mdi-spin</v-icon>
             <template v-else-if="isVirtualConv">
               <v-icon size="18">mdi-pencil</v-icon>
               <span class="send-btn-virtual-label">Lưu nội bộ</span>
@@ -890,6 +952,7 @@ interface TemplateItem {
 }
 
 const props = defineProps<{
+  minimal?: boolean;
   conversation: Conversation | null;
   messages: Message[];
   loading: boolean;
@@ -928,9 +991,9 @@ const emit = defineEmits<{
 }>();
 
 const toast = useToast();
-// Header overflow menu state. Rendered inline (not through Vuetify overlays) so the
-// chat shell keeps its grid context while the menu is open.
-const headerMoreOpen = ref(false);
+const minimalAttachmentOpen = ref(false);
+const minimalToolsOpen = ref(false);
+const tagBarRef = ref<InstanceType<typeof TagCrmBar> | null>(null);
 const inputText = ref('');
 const messagesContainer = ref<HTMLElement | null>(null);
 const previewImageUrl = ref('');
@@ -1356,7 +1419,7 @@ watch(() => props.conversation?.id, (newId, oldId) => {
   allLabels.value = [];
   const accId = props.conversation?.zaloAccount?.id;
   const threadId = props.conversation?.externalThreadId;
-  if (accId) {
+  if (accId && !props.conversation?.isVirtual) {
     void fetchAllLabels(accId, threadId);  // BE trả assignedTo flag cho thread hiện tại
     void touchAccountSync(accId, threadId);
     void touchConversationProfile(newId);  // refresh contact profile from SDK
@@ -1517,7 +1580,7 @@ const contactTotalOut = computed(() => props.conversation?.contact?.totalOutboun
 const presence = useZaloPresence(
   () => props.conversation?.zaloAccount?.id || null,
   () => {
-    if (props.conversation?.threadType === 'group') return null;
+    if (props.conversation?.threadType === 'group' || props.conversation?.isVirtual) return null;
     // Per-account UID: dùng externalThreadId (UID KH từ POV nick này),
     // KHÔNG dùng contact.zaloUid (UID từ nick khác, Zalo reject "Tham số không hợp lệ").
     return props.conversation?.externalThreadId || props.conversation?.contact?.zaloUid || null;
@@ -1675,17 +1738,18 @@ function onSenderClick(msg: Message) {
 // khác trong file đã dùng externalThreadId (dòng 1459/1706).
 const canClickHeader = computed(() => {
   const conv = props.conversation;
-  return !!(conv && conv.threadType !== 'group' && (conv.externalThreadId || conv.contact?.zaloUid));
+  return !!(conv && !conv.isVirtual && conv.threadType !== 'group' && (conv.externalThreadId || conv.contact?.zaloUid));
 });
 function onHeaderAvatarClick() {
   const conv = props.conversation;
-  if (!conv || conv.threadType === 'group') return;
+  if (!conv || conv.isVirtual || conv.threadType === 'group') return;
   // Per-account UID: ưu tiên externalThreadId (đúng nick đang xem), fallback contact.zaloUid.
   const uid = conv.externalThreadId || conv.contact?.zaloUid;
   if (!uid) return;
   userInfoUid.value = uid;
   userInfoDialog.value = true;
 }
+defineExpose({ openZaloProfile: onHeaderAvatarClick });
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sprint v3 Tuần 3 Row 6.9 (2026-06-03): Nick switcher dropdown trong chat header.
@@ -1807,7 +1871,7 @@ type FriendshipState = 'friend' | 'pending_sent' | 'pending_received' | 'pending
 const zaloFriend = useZaloFriendStatus(
   () => props.conversation?.zaloAccount?.id || null,
   () => {
-    if (props.conversation?.threadType !== 'user') return null;
+    if (props.conversation?.threadType !== 'user' || props.conversation?.isVirtual) return null;
     // Per-account UID: externalThreadId là UID KH FROM POV nick này.
     // contact.zaloUid có thể là UID từ nick khác → getFriendRequestStatus trả sai/empty.
     return props.conversation?.externalThreadId || props.conversation?.contact?.zaloUid || null;
@@ -1881,7 +1945,7 @@ watch(() => props.conversation?.id, () => {
 });
 
 const friendshipState = computed<FriendshipState>(() => {
-  if (props.conversation?.threadType !== 'user') return null;
+  if (props.conversation?.threadType !== 'user' || props.conversation?.isVirtual) return null;
 
   const fs = props.conversation?.friendship;
   // "Was once friend" = có becameFriendAt hoặc friendshipStatus đã từng 'accepted'/'removed'.
@@ -2002,6 +2066,7 @@ const actionLoading = ref(false);
 const showInviteDialog = ref(false);
 
 function getActionContext() {
+  if (props.conversation?.isVirtual) return { accountId: null, uid: null };
   const accountId = props.conversation?.zaloAccount?.id;
   const uid = props.conversation?.externalThreadId || props.conversation?.contact?.zaloUid;
   return { accountId, uid };
@@ -2145,6 +2210,7 @@ const inputPlaceholder = computed(() => {
   if (isVirtualConv.value) {
     return 'Ghi nội dung trao đổi...';
   }
+  if (props.minimal) return 'Nhập tin nhắn…';
   // Bỏ "Đang nhắn từ nick" vì đã có avatar nick bên trái input — gọn hơn.
   // Hint phím tắt giữ ngắn gọn.
   return 'Gõ tin nhắn… ("/" template, "@" mention, "#" tag)';
@@ -2852,6 +2918,8 @@ watch(() => props.messages.length, async () => {
 // + Auto-focus input editor → gõ tin được ngay không cần click thêm
 //   (matching Zalo/Messenger native behavior). Skip mobile để tránh bật bàn phím ảo.
 watch(() => props.conversation?.id, async (newId) => {
+  minimalAttachmentOpen.value = false;
+  minimalToolsOpen.value = false;
   if (!newId) return;
   await nextTick();
   scrollToBottom();
@@ -3064,6 +3132,18 @@ watch(() => props.editingMessage?.id, async (id) => {
   border-radius: 50%;
   color: #132044;
   background: rgba(255, 255, 255, .18);
+}
+.minimal-empty-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 18px 24px;
+  border: 1px solid rgba(255, 255, 255, .82);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 10px 35px rgba(64, 86, 113, .12);
+  backdrop-filter: blur(5px);
 }
 .empty-title {
   margin: 0;
