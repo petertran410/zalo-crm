@@ -473,7 +473,7 @@ async function getPinConversations(accountId: string) {
 // ─── Group Management ───────────────────────────────────────────────────────
 async function createGroup(accountId: string, options: { name: string; memberIds: string[] }) {
   return exec({ accountId, category: 'group_admin', operation: 'createGroup' },
-    (api) => api.createGroup(options));
+    (api) => api.createGroup({ name: options.name, members: options.memberIds }));
 }
 
 async function renameGroup(accountId: string, name: string, groupId: string) {
