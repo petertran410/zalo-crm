@@ -15,6 +15,7 @@ import { seedDefaultPermissionGroups } from './seed-default-groups.js';
 export interface PermissionGroupNode {
   id: string;
   name: string;
+  description: string | null;
   parentId: string | null;
   isSystem: boolean;
   displayOrder: number;
@@ -60,6 +61,7 @@ export async function getOrgPermissionGroups(orgId: string): Promise<PermissionG
     nodeMap.set(g.id, {
       id: g.id,
       name: g.name,
+      description: g.description,
       parentId: g.parentId,
       isSystem: g.isSystem,
       displayOrder: g.displayOrder,
@@ -85,6 +87,7 @@ export async function getOrgPermissionGroups(orgId: string): Promise<PermissionG
 export async function getPermissionGroup(orgId: string, id: string): Promise<{
   id: string;
   name: string;
+  description: string | null;
   parentId: string | null;
   isSystem: boolean;
   grants: GrantsJson;
@@ -100,6 +103,7 @@ export async function getPermissionGroup(orgId: string, id: string): Promise<{
   return {
     id: g.id,
     name: g.name,
+    description: g.description,
     parentId: g.parentId,
     isSystem: g.isSystem,
     grants: (g.grants ?? {}) as GrantsJson,
@@ -110,11 +114,13 @@ export async function getPermissionGroup(orgId: string, id: string): Promise<{
 export async function createPermissionGroup(input: {
   orgId: string;
   name: string;
+  description?: string | null;
   parentId: string | null;
   cloneFromId?: string;
   grants?: GrantsJson;
-}): Promise<{ id: string; name: string; grants: GrantsJson }> {
+}): Promise<{ id: string; name: string; description: string | null; grants: GrantsJson }> {
   if (!input.name?.trim()) throw new Error('Tên nhóm quyền không được trống');
+  if ((input.description?.length ?? 0) > 1000) throw new Error('Mô tả vai trò không được vượt quá 1000 ký tự');
 
   let grants: GrantsJson = sanitizeGrants(input.grants ?? {});
 
@@ -143,22 +149,24 @@ export async function createPermissionGroup(input: {
       id,
       orgId: input.orgId,
       name: input.name.trim(),
+      description: input.description?.trim() || null,
       parentId: input.parentId,
       isSystem: false, // Custom group, không phải system
       grants: grants as object,
     },
   });
-  return { id, name: input.name.trim(), grants };
+  return { id, name: input.name.trim(), description: input.description?.trim() || null, grants };
 }
 
 export async function updatePermissionGroup(input: {
   orgId: string;
   id: string;
   name?: string;
+  description?: string | null;
   parentId?: string | null;
   grants?: GrantsJson;
   displayOrder?: number;
-}): Promise<{ id: string; name: string; grants: GrantsJson }> {
+}): Promise<{ id: string; name: string; description: string | null; grants: GrantsJson }> {
   const existing = await prisma.permissionGroup.findFirst({
     where: { id: input.id, orgId: input.orgId, archivedAt: null },
   });
@@ -177,6 +185,7 @@ export async function updatePermissionGroup(input: {
   if (input.name !== undefined && !input.name?.trim()) {
     throw new Error('Tên nhóm quyền không được trống');
   }
+  if ((input.description?.length ?? 0) > 1000) throw new Error('Mô tả vai trò không được vượt quá 1000 ký tự');
   if (input.parentId === input.id) {
     throw new Error('Nhóm quyền không thể là cha của chính nó');
   }
@@ -198,6 +207,7 @@ export async function updatePermissionGroup(input: {
 
     const data: Record<string, unknown> = {};
     if (input.name !== undefined) data.name = input.name.trim();
+    if (input.description !== undefined) data.description = input.description?.trim() || null;
     if (input.parentId !== undefined) data.parentId = input.parentId;
     if (input.displayOrder !== undefined) data.displayOrder = input.displayOrder;
     if (input.grants !== undefined) data.grants = sanitizeGrants(input.grants) as object;
@@ -209,6 +219,7 @@ export async function updatePermissionGroup(input: {
     return {
       id: updated.id,
       name: updated.name,
+      description: updated.description,
       grants: (updated.grants ?? {}) as GrantsJson,
     };
   });

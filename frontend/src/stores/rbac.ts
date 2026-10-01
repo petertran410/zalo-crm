@@ -28,6 +28,7 @@ export interface DepartmentNode {
 export interface PermissionGroupNode {
   id: string;
   name: string;
+  description?: string | null;
   parentId: string | null;
   isSystem: boolean;
   displayOrder: number;
@@ -166,8 +167,22 @@ export const useRbacStore = defineStore('rbac', {
       await api.post(`/departments/${deptId}/members`, { userId, deptRole });
       await Promise.all([this.loadDepartments(), this.loadUsers()]);
     },
-    async createPermissionGroup(input: { name: string; parentId: string | null; cloneFromId?: string }) {
-      await api.post('/permission-groups', input);
+    async createPermissionGroup(input: { name: string; description?: string; parentId: string | null; cloneFromId?: string }) {
+      const { data } = await api.post('/permission-groups', input);
+      await this.loadPermissionGroups();
+      return data.group as { id: string };
+    },
+    async updatePermissionGroup(id: string, input: { name?: string; description?: string | null }) {
+      const { data } = await api.patch(`/permission-groups/${id}`, input);
+      const node = findGroupNode(this.permissionGroups, id);
+      if (node) {
+        if (input.name !== undefined) node.name = data.group.name;
+        if (input.description !== undefined) node.description = data.group.description;
+      }
+      return data.group;
+    },
+    async archivePermissionGroup(id: string) {
+      await api.delete(`/permission-groups/${id}`);
       await this.loadPermissionGroups();
     },
     async updateGroupGrants(id: string, grants: Record<string, Record<string, boolean>>) {
