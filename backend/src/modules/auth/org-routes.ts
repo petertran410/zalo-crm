@@ -73,30 +73,6 @@ function normalizeEmailDomain(raw: unknown): BrandingResult {
 export async function orgRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
 
-  // GET /api/v1/organization — get current org info
-  app.get('/api/v1/organization', async (request: FastifyRequest, reply: FastifyReply) => {
-    const user = request.user!;
-    try {
-      const org = await prisma.organization.findUnique({
-        where: { id: user.orgId },
-        select: {
-          id: true, name: true, timezone: true, createdAt: true, updatedAt: true,
-          // Login branding 2026-06-12
-          logoUrl: true, slogan: true, copyright: true, emailDomain: true,
-          // Phase Privacy v2 2026-05-23 — system notify nick (org-wide sender)
-          systemNotifyZaloAccountId: true,
-          systemNotifyNick: {
-            select: { id: true, displayName: true, avatarUrl: true, zaloUid: true, status: true },
-          },
-        },
-      });
-      if (!org) return reply.status(404).send({ error: 'Organization not found' });
-      return org;
-    } catch {
-      return reply.status(500).send({ error: 'Failed to fetch organization' });
-    }
-  });
-
   // Phase Privacy v2 2026-05-23 — admin pick nick chuyên gửi system notification cho cả org.
   // PATCH /api/v1/organization/system-notify-nick { zaloAccountId: string | null }
   // Admin pick bất kỳ nick org có. Validation: nick exists, in same org. KHÔNG yêu cầu admin own.
@@ -127,79 +103,6 @@ export async function orgRoutes(app: FastifyInstance): Promise<void> {
       });
 
       return { ok: true, systemNotifyZaloAccountId: accountId };
-    },
-  );
-
-  // PUT /api/v1/organization — update org info (owner only). name + timezone đều optional,
-  // nhưng phải có ít nhất 1 field hợp lệ.
-  app.put(
-    '/api/v1/organization',
-    { preHandler: requireGrant('settings', 'edit') },
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const user = request.user!;
-      const body = (request.body ?? {}) as {
-        name?: string; timezone?: string;
-        logoUrl?: string; slogan?: string; copyright?: string; emailDomain?: string;
-      };
-
-      const data: {
-        name?: string; timezone?: string;
-        logoUrl?: string | null; slogan?: string | null;
-        copyright?: string | null; emailDomain?: string | null;
-      } = {};
-
-      if (body.name !== undefined) {
-        const trimmed = String(body.name).trim();
-        if (!trimmed) return reply.status(400).send({ error: 'Tên tổ chức là bắt buộc' });
-        data.name = trimmed;
-      }
-
-      if (body.timezone !== undefined) {
-        const tz = normalizeTimezone(body.timezone);
-        if (!tz) {
-          return reply
-            .status(400)
-            .send({ error: 'Múi giờ không hợp lệ. Định dạng: +HH:MM hoặc -HH:MM (vd +07:00).' });
-        }
-        data.timezone = tz;
-      }
-
-      // ── Login branding — slogan/copyright tự do (rỗng → xóa); logoUrl/emailDomain validate.
-      if (body.slogan !== undefined) data.slogan = normalizeText(body.slogan, 200);
-      if (body.copyright !== undefined) data.copyright = normalizeText(body.copyright, 200);
-
-      if (body.logoUrl !== undefined) {
-        const r = normalizeLogoUrl(body.logoUrl);
-        if ('error' in r) return reply.status(400).send({ error: r.error });
-        data.logoUrl = r.value;
-      }
-
-      if (body.emailDomain !== undefined) {
-        const r = normalizeEmailDomain(body.emailDomain);
-        if ('error' in r) return reply.status(400).send({ error: r.error });
-        data.emailDomain = r.value;
-      }
-
-      if (Object.keys(data).length === 0) {
-        return reply.status(400).send({ error: 'Không có thay đổi nào để lưu' });
-      }
-
-      try {
-        const org = await prisma.organization.update({
-          where: { id: user.orgId },
-          data,
-          select: {
-            id: true, name: true, timezone: true, createdAt: true, updatedAt: true,
-            logoUrl: true, slogan: true, copyright: true, emailDomain: true,
-          },
-        });
-        logger.info(
-          `Organization updated: ${org.name} (tz=${org.timezone}) by ${user.email}`,
-        );
-        return org;
-      } catch {
-        return reply.status(500).send({ error: 'Failed to update organization' });
-      }
     },
   );
 

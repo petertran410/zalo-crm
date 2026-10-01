@@ -57,11 +57,6 @@
             <span class="cds-list-dot" :style="`background: ${opt.color || '#9CA3AF'}`" />
           </template>
         </v-list-item>
-        <v-divider />
-        <v-list-item
-          title="⚙ Quản lý giai đoạn…"
-          @click="goToSettings"
-        />
       </template>
     </v-list>
   </v-menu>
@@ -147,7 +142,7 @@ async function fetchStatuses() {
     const res = await api.get<{ statuses: Status[] }>('/settings/statuses');
     const list = res.data?.statuses || [];
     if (!list.length) {
-      loadError.value = 'Tổ chức chưa có giai đoạn nào — vào /settings/statuses để tạo';
+      loadError.value = 'Tổ chức chưa có giai đoạn nào';
     }
     options.value = list.sort((a, b) => a.order - b.order);
   } catch (err: any) {
@@ -187,10 +182,6 @@ async function select(newId: string | null) {
     toast.error(msg);
     console.error('[ContactDealStageSelector] update statusId error', err);
   }
-}
-
-function goToSettings() {
-  window.location.assign('/settings/crm/statuses');
 }
 
 onMounted(() => {

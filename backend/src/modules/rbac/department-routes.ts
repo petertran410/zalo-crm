@@ -8,9 +8,6 @@ import type { FastifyInstance } from 'fastify';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import {
   getOrgDepartmentTree,
-  createDepartment,
-  updateDepartment,
-  archiveDepartment,
   assignUserToDepartment,
   removeUserFromDepartment,
   getUsersUnderDepartment,
@@ -24,65 +21,6 @@ export async function registerDepartmentRoutes(app: FastifyInstance): Promise<vo
     if (!user) return reply.status(401).send({ error: 'unauthorized' });
     const tree = await getOrgDepartmentTree(user.orgId);
     return reply.send({ tree });
-  });
-
-  // POST /api/v1/departments — tạo dept mới
-  app.post('/api/v1/departments', { preHandler: [authMiddleware, requireGrant('department', 'create')] }, async (request, reply) => {
-    const user = (request as any).user;
-    if (!user) return reply.status(401).send({ error: 'unauthorized' });
-    const body = (request.body ?? {}) as {
-      name?: string;
-      parentId?: string | null;
-      displayOrder?: number;
-    };
-    try {
-      const dept = await createDepartment({
-        orgId: user.orgId,
-        name: body.name ?? '',
-        parentId: body.parentId ?? null,
-        displayOrder: body.displayOrder,
-      });
-      return reply.send({ ok: true, department: dept });
-    } catch (e: any) {
-      return reply.status(400).send({ error: e.message });
-    }
-  });
-
-  // PATCH /api/v1/departments/:id — rename, move parent, reorder
-  app.patch('/api/v1/departments/:id', { preHandler: [authMiddleware, requireGrant('department', 'edit')] }, async (request, reply) => {
-    const user = (request as any).user;
-    if (!user) return reply.status(401).send({ error: 'unauthorized' });
-    const { id } = request.params as { id: string };
-    const body = (request.body ?? {}) as {
-      name?: string;
-      parentId?: string | null;
-      displayOrder?: number;
-    };
-    try {
-      const dept = await updateDepartment({
-        orgId: user.orgId,
-        id,
-        name: body.name,
-        parentId: body.parentId,
-        displayOrder: body.displayOrder,
-      });
-      return reply.send({ ok: true, department: dept });
-    } catch (e: any) {
-      return reply.status(400).send({ error: e.message });
-    }
-  });
-
-  // DELETE /api/v1/departments/:id — archive (soft delete)
-  app.delete('/api/v1/departments/:id', { preHandler: [authMiddleware, requireGrant('department', 'delete')] }, async (request, reply) => {
-    const user = (request as any).user;
-    if (!user) return reply.status(401).send({ error: 'unauthorized' });
-    const { id } = request.params as { id: string };
-    try {
-      await archiveDepartment(user.orgId, id);
-      return reply.send({ ok: true });
-    } catch (e: any) {
-      return reply.status(400).send({ error: e.message });
-    }
   });
 
   // POST /api/v1/departments/:id/members — add/move user vào dept với role

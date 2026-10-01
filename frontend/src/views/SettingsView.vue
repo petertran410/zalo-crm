@@ -8,8 +8,6 @@
     <v-tabs v-model="tab" class="mb-4">
       <v-tab value="users">Nhân viên</v-tab>
       <v-tab value="teams">Đội nhóm</v-tab>
-      <v-tab value="org">Tổ chức</v-tab>
-      <v-tab value="statuses">Trạng thái KH</v-tab>
       <v-tab value="crm-tags">🏷 Tag CRM</v-tab>
       <v-tab value="zalo-labels">⚑ Tag Zalo</v-tab>
     </v-tabs>
@@ -118,19 +116,8 @@
         </v-dialog>
       </v-window-item>
 
-      <!-- Tab 2: Team management -->
       <v-window-item value="teams">
         <TeamManagement />
-      </v-window-item>
-
-      <!-- Tab 3: Organization settings -->
-      <v-window-item value="org">
-        <OrgSettings />
-      </v-window-item>
-
-      <!-- Tab 4: Status (Trạng thái KH) -->
-      <v-window-item value="statuses">
-        <StatusManagement />
       </v-window-item>
 
       <v-window-item value="crm-tags">
@@ -150,8 +137,6 @@ import { useRoute, useRouter } from 'vue-router';
 import { useUsers, type OrgUser } from '@/composables/use-users';
 import { useAuthStore } from '@/stores/auth';
 import TeamManagement from '@/components/settings/TeamManagement.vue';
-import OrgSettings from '@/components/settings/OrgSettings.vue';
-import StatusManagement from '@/components/settings/StatusManagement.vue';
 import CrmTagManagement from '@/components/settings/CrmTagManagement.vue';
 import ZaloLabelsManagement from '@/components/settings/ZaloLabelsManagement.vue';
 

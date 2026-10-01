@@ -164,13 +164,6 @@ const routes: RouteRecordRaw[] = [
         props: { feature: "sessions" },
       },
 
-      // 🏢 Org
-      {
-        path: "org/profile",
-        name: "Settings.OrgProfile",
-        component: () => import("@/components/settings/OrgSettings.vue"),
-        meta: { resource: "settings" },
-      },
       {
         path: "org/system-notifications",
         name: "Settings.SystemNotifications",
@@ -194,15 +187,8 @@ const routes: RouteRecordRaw[] = [
       // Team: legacy team/* redirect sang rbac/*
       // Em giữ 3 route legacy nhưng redirect sang RBAC pages mới để không break deep link.
       { path: "team/users", redirect: "/settings/rbac/users" },
-      { path: "team/teams", redirect: "/settings/rbac/departments" },
       { path: "team/roles", redirect: "/settings/rbac/permission-groups" },
       // RBAC Phase Phân Quyền 2026-05-21 (HS internal, branch private-hs)
-      {
-        path: "rbac/departments",
-        name: "Settings.RbacDepartments",
-        component: () => import("@/views/rbac/DepartmentsView.vue"),
-        meta: { resource: "department" },
-      },
       {
         path: "rbac/permission-groups",
         name: "Settings.RbacPermissionGroups",
@@ -242,12 +228,6 @@ const routes: RouteRecordRaw[] = [
       // trong /settings/channels/zalo). Quản lý Riêng tư giờ DUY NHẤT ở tab Privacy.
 
       // CRM Config: toàn bộ là cấu hình admin-level nên dùng resource settings
-      {
-        path: "crm/statuses",
-        name: "Settings.Statuses",
-        component: () => import("@/components/settings/StatusManagement.vue"),
-        meta: { resource: "settings" },
-      },
       // Dò-gộp trùng, chuyển từ menu "Công cụ" của ContactsView cũ (2026-07-29).
       {
         path: "crm/data-quality",
@@ -282,13 +262,6 @@ const routes: RouteRecordRaw[] = [
         name: "Settings.ZaloLabels",
         component: () =>
           import("@/components/settings/ZaloLabelsManagement.vue"),
-        meta: { resource: "settings" },
-      },
-      // Lịch hẹn → nhắc hẹn Zalo (2026-06-16) — bật/tắt + delay phút gửi link đánh dấu.
-      {
-        path: "crm/appointments",
-        name: "Settings.Appointments",
-        component: () => import("@/views/settings/AppointmentSettingsPage.vue"),
         meta: { resource: "settings" },
       },
       {
@@ -494,10 +467,7 @@ export const router = createRouter({
 // Legacy /settings?tab=X → /settings/<group>/<sub> redirect map
 const LEGACY_TAB_MAP: Record<string, string> = {
   users: "/settings/team/users",
-  teams: "/settings/team/teams",
   roles: "/settings/team/roles",
-  org: "/settings/org/profile",
-  statuses: "/settings/crm/statuses",
   "crm-tags": "/settings/crm/tags",
   "zalo-labels": "/settings/crm/zalo-labels",
 };
@@ -621,6 +591,8 @@ const ROUTE_TITLES: Record<string, string> = {
   Setup: "Khởi tạo",
   Dashboard: "Tổng quan",
   ChannelConnections: "Kênh Kết Nối",
+  ChannelConnectionsMinimal: "Kênh & Tin nhắn 2",
+  ChatMinimal: "Hội thoại · Kênh & Tin nhắn 2",
   Chat: "Hội thoại",
   SalesChat: "Hội thoại (Sales)",
   CsHome: "Trang chủ điều phối",
@@ -643,19 +615,15 @@ const ROUTE_TITLES: Record<string, string> = {
   "Settings.Notifications": "Thông báo",
   "Settings.Theme": "Giao diện",
   "Settings.Sessions": "Phiên đăng nhập",
-  "Settings.OrgProfile": "Hồ sơ tổ chức",
   "Settings.SystemNotifications": "Thông báo hệ thống",
   "Settings.Billing": "Thanh toán",
   "Settings.Audit": "Nhật ký kiểm toán",
-  "Settings.RbacDepartments": "Phòng ban",
   "Settings.RbacPermissionGroups": "Nhóm quyền",
   "Settings.RbacUsers": "Người dùng",
   "Settings.RbacNetwork": "Phân quyền mạng lưới",
-  "Settings.Statuses": "Trạng thái",
   "Settings.Tags": "Thẻ (tag)",
   "Settings.TagsV2": "Thẻ (taxonomy)",
   "Settings.ZaloLabels": "Nhãn Zalo",
-  "Settings.Appointments": "Lịch hẹn & Nhắc hẹn",
   "Settings.Stuck": "KH bị kẹt",
   "Settings.Folders": "Thư mục",
   "Settings.Templates": "Mẫu tin",
