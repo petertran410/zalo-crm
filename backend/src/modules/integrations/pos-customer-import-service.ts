@@ -207,45 +207,15 @@ export async function projectCustomerCohort(
       continue;
     }
     const phoneNormalized = normalizePhone(mapped.phone);
-    const existing = byPosId.get(mapped.posCustomerId)
-      ?? (phoneNormalized ? byPhone.get(phoneNormalized) : undefined);
+    const existing = byPosId.get(mapped.posCustomerId);
 
-    if (!existing) {
-      const created = await prisma.contact.create({
-        data: {
-          orgId,
-          source: 'POS',
-          posCustomerId: mapped.posCustomerId,
-          posCustomerCode: mapped.posCustomerCode,
-          posSyncedAt: syncedAt,
-          fullName: mapped.name,
-          phone: mapped.phone,
-          email: mapped.email,
-          addressLine: mapped.address,
-        },
-        select: {
-          id: true,
-          posCustomerId: true,
-          posCustomerCode: true,
-          phoneNormalized: true,
-          fullName: true,
-          phone: true,
-          email: true,
-          addressLine: true,
-          archivedAt: true,
-        },
-      });
-      byPosId.set(mapped.posCustomerId, created);
-      if (created.phoneNormalized) byPhone.set(created.phoneNormalized, created);
-      stats.created++;
+    if (!existing || existing.archivedAt) {
+      // POS mirrors remain searchable; a human chooses the CRM customer.
+      stats.unchanged++;
       continue;
     }
 
     const patch: Record<string, unknown> = { posSyncedAt: syncedAt };
-    if (existing.archivedAt) {
-      patch.archivedAt = null;
-      patch.archivedById = null;
-    }
     if (existing.posCustomerId == null) patch.posCustomerId = mapped.posCustomerId;
     if (existing.posCustomerCode == null && mapped.posCustomerCode) {
       patch.posCustomerCode = mapped.posCustomerCode;
@@ -311,15 +281,8 @@ export async function runInitialCustomerImport(
         create: { orgId, settingKey: STATE_KEY, valuePlain: JSON.stringify(archivingState) },
         update: { valuePlain: JSON.stringify(archivingState) },
       });
-      const archived = await tx.contact.updateMany({
-        where: { orgId, archivedAt: null },
-        data: { archivedAt: archiveTimestamp, archivedById: ownerUserId },
-      });
-      if (archived.count !== activePreflightCount) {
-        throw new Error(
-          `Archive verification failed: expected ${activePreflightCount}, archived ${archived.count}.`,
-        );
-      }
+      // A directory sync must never archive existing CRM contacts.
+      const archived = { count: 0 };
       archivingState.import.status = 'projecting';
       archivingState.import.archivedCount = archived.count;
       await tx.appSetting.update({

@@ -10,6 +10,8 @@
  *   - Task link KH: assertContactVisible như notes (404 nếu không thấy KH).
  */
 import type { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
+import { validateWorkContext } from '../contacts/customer-workspace-service.js';
+import { assertConversationReadAccess } from '../chat/conversation-access.js';
 import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
@@ -168,6 +170,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       title?: string; description?: string; assigneeUserId?: string; contactId?: string | null;
       ticketId?: string | null; dueAt?: string | null; dueHasTime?: boolean; sourceMessageId?: string | null;
       sourceMessageIds?: string[] | null; mediaAssetIds?: string[] | null;
+      posCustomerId?: number | null; conversationId?: string | null;
       attachments?: Array<{ mediaAssetId: string; variantBlobId?: string | null; sourceMessageId?: string | null }> | null;
     };
   }>, reply: FastifyReply) => {
@@ -207,7 +210,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       if (sourceMessageId) {
         const src = await resolveWorkItemFromMessage(request, reply, sourceMessageId);
         if (!src) return; // reply đã gửi
-        if (src.contactId) contactId = src.contactId; // đã cấp quyền trong helper → bỏ qua visibility
+        contactId = src.contactId; // Only the explicitly linked, authorized customer.
       } else if (contactId) {
         const visible = await assertContactVisible({
           userId: user.id, orgId: user.orgId, legacyRole: user.role, contactId,
@@ -226,6 +229,8 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
         if (!ticket) return reply.status(404).send({ error: 'Ticket not found' });
       }
 
+      await validateWorkContext(user.orgId, contactId, request.body?.posCustomerId, request.body?.conversationId);
+      if (request.body?.conversationId && !await assertConversationReadAccess(request, reply, request.body.conversationId)) return;
       const task = await prisma.task.create({
         data: {
           orgId: user.orgId,
@@ -234,6 +239,8 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
           assigneeUserId,
           createdByUserId: user.id,
           contactId,
+          posCustomerId: request.body?.posCustomerId,
+          conversationId: request.body?.conversationId,
           ticketId,
           sourceMessageId,
           dueAt,

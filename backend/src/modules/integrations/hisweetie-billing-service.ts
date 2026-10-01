@@ -89,7 +89,8 @@ export async function createBillingDraft(args: CreateBillingDraftArgs): Promise<
  * Lưu ý: đây CHỈ là tầng 1 — tầng 2 (sandbox guard) vẫn chặn nếu URL sai môi trường.
  */
 export function isPosBillingDispatchEnabled(): boolean {
-  return process.env.HISWEETIE_BILLING_DISPATCH === 'enabled';
+  // Old dispatch does not require an explicit shop/address. Use the CRM draft form.
+  return false;
 }
 
 export type DispatchBillingResult =

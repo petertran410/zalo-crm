@@ -246,6 +246,11 @@ export async function batchUpsertProducts(orgId: string, products: any[]): Promi
 // ── Customers Batch Upsert ───────────────────────────────────────────────────
 
 export async function batchUpsertCustomers(orgId: string, customers: any[]): Promise<number> {
+  const { applyPosSnapshots } = await import('../../modules/pos/pos-snapshot-service.js');
+  return applyPosSnapshots(orgId, 'customers', customers);
+}
+
+async function legacyBatchUpsertCustomers(orgId: string, customers: any[]): Promise<number> {
   if (!customers || customers.length === 0) return 0;
 
   const posIds: number[] = [];
@@ -365,11 +370,8 @@ export async function batchUpsertCustomers(orgId: string, customers: any[]): Pro
 // ── Batch Upsert Orders (PostgreSQL UNNEST Vectorized) ──────────────────────
 
 export async function batchUpsertOrders(orgId: string, orders: any[]): Promise<number> {
-  if (!orders || orders.length === 0) return 0;
-  if (orders.length > 2500) {
-    return batchUpsertInChunks(orders, 2500, (chunk) => batchUpsertOrdersChunk(orgId, chunk));
-  }
-  return batchUpsertOrdersChunk(orgId, orders);
+  const { applyPosSnapshots } = await import('../../modules/pos/pos-snapshot-service.js');
+  return applyPosSnapshots(orgId, 'orders', orders);
 }
 
 async function batchUpsertOrdersChunk(orgId: string, orders: any[]): Promise<number> {
@@ -660,11 +662,8 @@ async function batchUpsertOrdersChunk(orgId: string, orders: any[]): Promise<num
 // ── Batch Upsert Invoices (PostgreSQL UNNEST Vectorized) ────────────────────
 
 export async function batchUpsertInvoices(orgId: string, invoices: any[]): Promise<number> {
-  if (!invoices || invoices.length === 0) return 0;
-  if (invoices.length > 2500) {
-    return batchUpsertInChunks(invoices, 2500, (chunk) => batchUpsertInvoicesChunk(orgId, chunk));
-  }
-  return batchUpsertInvoicesChunk(orgId, invoices);
+  const { applyPosSnapshots } = await import('../../modules/pos/pos-snapshot-service.js');
+  return applyPosSnapshots(orgId, 'invoices', invoices);
 }
 
 async function batchUpsertInvoicesChunk(orgId: string, invoices: any[]): Promise<number> {

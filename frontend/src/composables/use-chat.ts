@@ -99,6 +99,7 @@ export interface AssignedChatContact {
 }
 
 export interface Conversation {
+  dissolvedAt?: string | null;
   id: string;
   threadType: 'user' | 'group';
   channel?: 'zalo' | 'facebook';

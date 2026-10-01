@@ -32,7 +32,7 @@ export const adminMenu: MenuItemConfig[] = [
     key: 'contacts',
     title: 'Khách hàng',
     icon: 'mdi-account-outline',
-    to: '/contacts',
+    to: '/customers',
     resource: 'contact',
   },
   {

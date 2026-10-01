@@ -82,7 +82,7 @@ function cohort() {
 }
 
 describe('projectCustomerCohort', () => {
-  it('restores a normalized-phone match, retains CRM-entered fields, and attaches the POS identity', async () => {
+  it('does not restore, link, or edit a contact on a phone match', async () => {
     prisma.contact.findMany.mockResolvedValue([archivedContact]);
     prisma.contact.update.mockResolvedValue({});
 
@@ -91,26 +91,13 @@ describe('projectCustomerCohort', () => {
     expect(result).toEqual({
       selected: 1,
       created: 0,
-      updated: 1,
-      restored: 1,
-      unchanged: 0,
+      updated: 0,
+      restored: 0,
+      unchanged: 1,
       skippedMalformed: 0,
     });
-    expect(prisma.contact.update).toHaveBeenCalledWith({
-      where: { id: archivedContact.id },
-      data: expect.objectContaining({
-        posCustomerId: 77,
-        posCustomerCode: 'POS-77',
-        archivedAt: null,
-        archivedById: null,
-        posSyncedAt: expect.any(Date),
-      }),
-    });
-    const patch = prisma.contact.update.mock.calls[0][0].data;
-    expect(patch.fullName).toBeUndefined();
-    expect(patch.phone).toBeUndefined();
-    expect(patch.email).toBeUndefined();
-    expect(patch.addressLine).toBeUndefined();
+    expect(prisma.contact.update).not.toHaveBeenCalled();
+    expect(prisma.contact.create).not.toHaveBeenCalled();
   });
 
   it('prefers POS ID over a conflicting normalized-phone match', async () => {
@@ -126,7 +113,7 @@ describe('projectCustomerCohort', () => {
     }));
   });
 
-  it('creates only when neither POS ID nor normalized phone matches', async () => {
+  it('keeps unlinked POS shops in the directory without creating people automatically', async () => {
     prisma.contact.findMany.mockResolvedValue([]);
     prisma.contact.create.mockResolvedValue({
       ...archivedContact,
@@ -138,21 +125,13 @@ describe('projectCustomerCohort', () => {
 
     const result = await projectCustomerCohort(orgId, cohort().customers);
 
-    expect(result.created).toBe(1);
-    expect(prisma.contact.create).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        orgId,
-        source: 'POS',
-        posCustomerId: 77,
-        posCustomerCode: 'POS-77',
-      }),
-      select: expect.any(Object),
-    });
+    expect(result.created).toBe(0);
+    expect(prisma.contact.create).not.toHaveBeenCalled();
   });
 });
 
 describe('runInitialCustomerImport', () => {
-  it('archives every active contact with one timestamp before local read-model projection', async () => {
+  it('imports POS read models without archiving any existing CRM contact', async () => {
     const selectedCohort = cohort();
     prisma.appSetting.findUnique.mockResolvedValue({
       valuePlain: JSON.stringify({
@@ -167,10 +146,11 @@ describe('runInitialCustomerImport', () => {
       }),
     });
     collectInvoiceBackedCustomerCohort.mockResolvedValue(selectedCohort);
+    const archiveContacts = vi.fn().mockRejectedValue(new Error('Archiving is forbidden'));
     tenantTransaction.mockImplementation(async (operation) => operation({
       contact: {
         count: vi.fn().mockResolvedValue(2),
-        updateMany: vi.fn().mockResolvedValue({ count: 2 }),
+        updateMany: archiveContacts,
       },
       appSetting: { upsert: vi.fn(), update: vi.fn() },
       activityLog: { create: vi.fn() },
@@ -193,7 +173,8 @@ describe('runInitialCustomerImport', () => {
     const tx = tenantTransaction.mock.calls[0][0];
     expect(tx).toBeTypeOf('function');
     const transactionResult = await tenantTransaction.mock.results[0].value;
-    expect(transactionResult.archivedCount).toBe(2);
+    expect(transactionResult.archivedCount).toBe(0);
+    expect(archiveContacts).not.toHaveBeenCalled();
     const transactionClient = undefined;
     expect(batchUpsertInvoices).toHaveBeenCalledWith(orgId, selectedCohort.invoices);
     expect(batchUpsertCustomers).toHaveBeenCalledWith(orgId, selectedCohort.customers);

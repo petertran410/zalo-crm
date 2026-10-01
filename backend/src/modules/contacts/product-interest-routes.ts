@@ -18,6 +18,18 @@ import { logger } from '../../shared/utils/logger.js';
 
 export async function productInterestRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+  app.addHook('preHandler', async (request, reply) => {
+    if (request.url.split('?')[0]?.endsWith('/scan')) {
+      return reply.code(410).send({ error: 'AI đã tắt. Ghi nhận nhu cầu thủ công trong hồ sơ khách hàng.' });
+    }
+    const { contactId, interestId } = request.params as { contactId?: string; interestId?: string };
+    if (contactId && interestId) {
+      const item = await prisma.customerProductInterest.findFirst({
+        where: { id: interestId, contactId, orgId: request.user!.orgId },
+      });
+      if (!item) return reply.code(404).send({ error: 'Không tìm thấy nhu cầu của khách hàng này.' });
+    }
+  });
 
   // ── 1. POST /api/v1/contacts/:contactId/product-interests/scan ─────────────
   app.post(

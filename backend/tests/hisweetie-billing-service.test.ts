@@ -83,75 +83,30 @@ describe('dispatchBillingToPos — gửi POS qua Public API', () => {
     expect(ordersCreateMock).not.toHaveBeenCalled();
   });
 
-  it('Public API chưa cấu hình → PUBLIC_API_NOT_CONFIGURED, không gọi POS', async () => {
+  it('legacy dispatch remains disabled when Public API is not configured', async () => {
     isPublicApiSyncEnabledMock.mockReturnValue(false);
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
-    expect(r).toMatchObject({ ok: false, code: 'PUBLIC_API_NOT_CONFIGURED' });
+    expect(r).toMatchObject({ ok: false, code: 'DISPATCH_DISABLED' });
     expect(ordersCreateMock).not.toHaveBeenCalled();
     expect(prismaMock.posBillingDraft.updateMany).not.toHaveBeenCalled();
   });
 
-  it('happy path: payload đúng đặc tả Public API, DÙNG LẠI idempotencyKey, status→sent', async () => {
-    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
+  it.each(['draft', 'pending_dispatch', 'failed', 'sent'])('legacy %s drafts cannot bypass the new explicit-shop flow', async status => {
+    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow({ status }));
     ordersCreateMock.mockResolvedValue({ id: 777, code: 'DH777' });
 
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
 
-    expect(r).toEqual({ ok: true, posOrderId: 777 });
-    const [payload, idem] = ordersCreateMock.mock.calls[0];
-    expect(idem).toBe(IDEM); // key sinh lúc tạo draft — retry không nhân đôi đơn
-    expect(payload.customerId).toBe(65550);
-    expect(payload.branchId).toBe(2);
-    // Public API strict: chỉ gửi đúng các trường trong đặc tả §6 — khuyến mãi
-    // do máy chủ POS tính lại, không gửi description/discount/note.
-    expect(Object.keys(payload).sort()).toEqual(['branchId', 'customerId', 'items']);
-    expect(Object.keys(payload.items[0]).sort()).toEqual(['productId', 'quantity', 'unitPrice']);
-
-    const sentUpdate = prismaMock.posBillingDraft.update.mock.calls[0][0];
-    expect(sentUpdate.data.status).toBe('sent');
-    expect(sentUpdate.data.posOrderId).toBe(777);
-    expect(sentUpdate.data.dispatchedAt).toBeInstanceOf(Date);
-  });
-
-  it('draft đã sent → ALREADY_SENT kèm posOrderId, không gửi lại', async () => {
-    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow({ status: 'sent', posOrderId: 555 }));
-    const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
-    expect(r).toMatchObject({ ok: false, code: 'ALREADY_SENT', posOrderId: 555 });
+    expect(r).toMatchObject({ ok: false, code: 'DISPATCH_DISABLED' });
     expect(ordersCreateMock).not.toHaveBeenCalled();
-  });
-
-  it('thua race claim (updateMany count=0) → IN_FLIGHT, không gửi', async () => {
-    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
-    prismaMock.posBillingDraft.updateMany.mockResolvedValue({ count: 0 });
-    const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
-    expect(r).toMatchObject({ ok: false, code: 'IN_FLIGHT' });
-    expect(ordersCreateMock).not.toHaveBeenCalled();
-  });
-
-  it('POS lỗi → status=failed + dispatchError lưu lại, trả POS_ERROR', async () => {
-    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
-    ordersCreateMock.mockRejectedValue(new Error('Hisweetie Public API 500: branch closed'));
-
-    const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
-
-    expect(r).toMatchObject({ ok: false, code: 'POS_ERROR' });
-    const failUpdate = prismaMock.posBillingDraft.update.mock.calls[0][0];
-    expect(failUpdate.data.status).toBe('failed');
-    expect(failUpdate.data.dispatchError).toContain('branch closed');
+    expect(prismaMock.posBillingDraft.updateMany).not.toHaveBeenCalled();
+    expect(prismaMock.posBillingDraft.update).not.toHaveBeenCalled();
   });
 
   it('draft khác org → NOT_FOUND (org-scoped)', async () => {
     prismaMock.posBillingDraft.findFirst.mockResolvedValue(null);
     const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: 'org-KHAC' });
-    expect(r).toMatchObject({ ok: false, code: 'NOT_FOUND' });
-    expect(prismaMock.posBillingDraft.findFirst.mock.calls[0][0].where.orgId).toBe('org-KHAC');
-  });
-
-  it('response POS không có id nhận ra được → vẫn sent, posOrderId=null', async () => {
-    prismaMock.posBillingDraft.findFirst.mockResolvedValue(draftRow());
-    ordersCreateMock.mockResolvedValue({ weird: 'shape' });
-    const r = await dispatchBillingToPos({ draftId: 'draft-1', orgId: ORG });
-    expect(r).toEqual({ ok: true, posOrderId: null });
-    expect(prismaMock.posBillingDraft.update.mock.calls[0][0].data.status).toBe('sent');
+    expect(r).toMatchObject({ ok: false, code: 'DISPATCH_DISABLED' });
+    expect(prismaMock.posBillingDraft.findFirst).not.toHaveBeenCalled();
   });
 });

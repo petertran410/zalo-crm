@@ -1,5 +1,7 @@
 import { config } from '../../config/index.js';
 import { logger } from '../../shared/utils/logger.js';
+import { assertDraftContractVerified, assertPosWritesEnabled, verifiedDraftResponse } from '../pos/pos-write-policy.js';
+import { getTenantContext } from '../../shared/tenant/tenant-context.js';
 
 export type PublicApiListResponse<T> = {
   total?: number;
@@ -39,6 +41,7 @@ export type PublicApiListParams = {
 export type PublicApiCustomerWrite = {
   name: string;
   contactNumber: string;
+  salePicId?: number;
   addresses?: Array<{
     address: string;
     newCityCode?: string;
@@ -65,6 +68,13 @@ export class PublicApiRateLimitError extends Error {
     // Giữ chuỗi 'rate_limit_exceeded' vì pos-sync-service dò lỗi theo message.
     super(`rate_limit_exceeded: POS Public API trả 429, chờ ${Math.round(retryAfterMs / 1000)}s`);
     this.name = 'PublicApiRateLimitError';
+  }
+}
+
+export class PublicApiHttpError extends Error {
+  constructor(public readonly status: number, detail: string) {
+    super(`Hisweetie Public API ${status}: ${detail}`);
+    this.name = 'PublicApiHttpError';
   }
 }
 
@@ -179,6 +189,14 @@ export class HisweetiePublicApiClient {
     return this.list('invoices', params);
   }
 
+  listReturnOrders(params: PublicApiListParams = {}) {
+    return this.list('return-orders', params);
+  }
+
+  listCashflows(params: PublicApiListParams = {}) {
+    return this.list('cashflows', params);
+  }
+
   listBranches(params: PublicApiListParams = {}) {
     return this.list('branches', params);
   }
@@ -196,6 +214,16 @@ export class HisweetiePublicApiClient {
     return this.request<Record<string, unknown>>(`/customers/${id}`);
   }
 
+  getCustomerLedger(id: number, currentItem = 0, pageSize = 30) {
+    return this.request<PublicApiListResponse<Record<string, unknown>>>(
+      `/customers/${id}/ledger?currentItem=${currentItem}&pageSize=${pageSize}`,
+    );
+  }
+
+  getCustomerAddresses(id: number) {
+    return this.request<unknown>(`/customers/${id}/addresses`);
+  }
+
   /* ── Ghi dữ liệu (doc §6, §7) ─────────────────────────────────────────────
    * POS bật kiểm tra nghiêm ngặt: gửi thừa trường không có trong đặc tả → 400.
    * Vì repo không có public-api.openapi.yaml, payload chỉ gửi ĐÚNG các trường
@@ -206,12 +234,17 @@ export class HisweetiePublicApiClient {
 
   /** POST /customers — trả 201. Payload: {name, contactNumber, addresses?}. */
   createCustomer(payload: PublicApiCustomerWrite, idempotencyKey: string) {
+    assertPosWritesEnabled();
+    if (!Number.isSafeInteger(payload.salePicId) || Number(payload.salePicId) <= 0
+      || !payload.addresses?.length || payload.addresses.some(a => !a.address?.trim())) {
+      throw new Error('Tạo khách POS cần salePicId hợp lệ và địa chỉ thật.');
+    }
     return this.write<Record<string, unknown>>('POST', '/customers', payload, idempotencyKey);
   }
 
   /** PUT /customers/{id} — trả 200. Cùng shape với create. */
   updateCustomer(id: number, payload: PublicApiCustomerWrite, idempotencyKey: string) {
-    return this.write<Record<string, unknown>>('PUT', `/customers/${id}`, payload, idempotencyKey);
+    throw new Error('Chỉ được sửa hồ sơ khách hàng tại POS.');
   }
 
   /**
@@ -219,17 +252,20 @@ export class HisweetiePublicApiClient {
    * An toàn khi gọi lại nên KHÔNG cần Idempotency-Key (doc §7).
    */
   deactivateCustomer(id: number) {
-    return this.write<Record<string, unknown>>('DELETE', `/customers/${id}`, undefined, '');
+    throw new Error('Chỉ được ngừng hoạt động khách hàng tại POS.');
   }
 
   /** POST /orders — trả 201. Payload tối thiểu: {branchId, customerId, items}. */
-  createOrder(payload: PublicApiOrderWrite, idempotencyKey: string) {
-    return this.write<Record<string, unknown>>('POST', '/orders', payload, idempotencyKey);
+  async createOrder(payload: PublicApiOrderWrite, idempotencyKey: string) {
+    assertDraftContractVerified();
+    const response = await this.write<Record<string, unknown>>('POST', '/orders', payload, idempotencyKey);
+    verifiedDraftResponse(response);
+    return response;
   }
 
   /** PUT /orders/{id}/cancel — trả 200. cancelPayments: huỷ kèm phiếu thu. */
   cancelOrder(id: number, idempotencyKey: string, cancelPayments = false) {
-    return this.write<Record<string, unknown>>('PUT', `/orders/${id}/cancel`, { cancelPayments }, idempotencyKey);
+    throw new Error('Chỉ được hủy hoặc xác nhận đơn hàng tại POS.');
   }
 
   /**
@@ -311,7 +347,7 @@ export class HisweetiePublicApiClient {
       // Token hết hạn hoặc bị xoay vòng → lấy token mới rồi thử đúng một lần.
       this.accessToken = null;
       this.tokenExpiresAt = 0;
-      return this.executeThrottled<T>(path, false);
+      return this.executeThrottled<T>(path, false, method, body, idempotencyKey);
     }
 
     if (response.status === 429) {
@@ -384,7 +420,7 @@ export class HisweetiePublicApiClient {
     try { body = text ? JSON.parse(text) : undefined; } catch { body = text; }
     if (!response.ok) {
       const detail = typeof body === 'object' && body !== null ? JSON.stringify(body) : String(body ?? '');
-      throw new Error(`Hisweetie Public API ${response.status}: ${detail}`);
+      throw new PublicApiHttpError(response.status, detail);
     }
     return body as T;
   }
@@ -416,6 +452,10 @@ function parseRetryAfter(value: string | null): number | null {
 let singleton: HisweetiePublicApiClient | null = null;
 
 export function getHisweetiePublicApiClient(): HisweetiePublicApiClient {
+  const tenant = getTenantContext();
+  if (tenant && tenant.orgId !== '*' && !tenant.bypassTenantGuard && tenant.orgId !== config.posWebhookOrgId) {
+    throw new Error('Tổ chức chưa được gắn với kết nối POS này.');
+  }
   if (!singleton) singleton = new HisweetiePublicApiClient();
   return singleton;
 }

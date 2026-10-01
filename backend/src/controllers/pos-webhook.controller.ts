@@ -83,6 +83,13 @@ async function resolveOrgId(_request: FastifyRequest, _body: any): Promise<strin
  * Processes a saved PosWebhookLog record by ID.
  * Increments attempts, executes batch sync via pos-sync-service.ts, updates status.
  */
+export function normalizePosResource(value: string): string {
+  const normalized = value.toLowerCase().replace(/\.sync$/, '');
+  const legacy = normalized.match(/^(?:pos\.)?(order|customer|product|invoice|inventory|stock|debt)\.(created|updated|cancelled)$/);
+  if (!legacy) return normalized;
+  return ({ order: 'orders', customer: 'customers', product: 'products', invoice: 'invoices', inventory: 'inventories', stock: 'inventories', debt: 'debt' } as Record<string, string>)[legacy[1]!]!;
+}
+
 export async function processPosWebhookLog(logId: string): Promise<boolean> {
   const log = await prisma.posWebhookLog.findUnique({
     where: { id: logId },
@@ -95,13 +102,16 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
 
   const currentAttempts = log.attempts + 1;
   const payload = (log.payload || {}) as Record<string, any>;
-  const eventType = (log.eventType || payload.resource || payload.event || payload.eventType || '').toLowerCase();
+  const eventType = normalizePosResource(String(payload.resource || log.eventType || payload.event || payload.eventType || ''));
   const orgId = log.orgId;
 
   try {
     const entityData = payload.data || payload.payload || payload;
 
-    if (eventType.includes('order')) {
+    if (eventType === 'return-orders' || eventType === 'cashflows') {
+      const { applyPosSnapshots } = await import('../modules/pos/pos-snapshot-service.js');
+      await applyPosSnapshots(orgId, eventType, Array.isArray(entityData) ? entityData : [entityData]);
+    } else if (eventType === 'orders') {
       const orderList = Array.isArray(entityData) ? entityData : [entityData];
       await batchUpsertOrders(orgId, orderList);
       emitPosDataUpdated(orgId, {
@@ -110,42 +120,13 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
         summary: `Đã cập nhật dữ liệu POS từ Webhook (Đơn hàng #${orderList[0]?.code || orderList[0]?.id || ''})`,
         data: orderList[0],
       });
-    } else if (eventType.includes('customer')) {
+    } else if (eventType === 'customers') {
       const customerList = Array.isArray(entityData) ? entityData : [entityData];
-      const cohortState = await getCustomerCohortState(orgId);
-      if (cohortState.import.status !== 'completed') {
-        logger.warn(
-          `[pos-webhook-controller] Ignoring customer webhook before initial cohort import for org ${orgId}`,
-        );
-      } else {
-        const eligibleCustomers: Record<string, any>[] = [];
-        for (const customer of customerList) {
-          const customerId = Number(customer?.id ?? customer?.customerId);
-          if (!Number.isInteger(customerId) || customerId <= 0 || !customerPhone(customer)) {
-            continue;
-          }
-          const invoice = await prisma.posInvoice.findFirst({
-            where: { orgId, posCustomerId: customerId },
-            select: { posCustomerId: true },
-          });
-          if (invoice && isInvoiceBackedCustomer(customer, new Set([customerId]))) {
-            eligibleCustomers.push(customer);
-          }
-        }
-        if (eligibleCustomers.length > 0) {
-          await batchUpsertCustomers(orgId, eligibleCustomers);
-          emitPosDataUpdated(orgId, {
-            type: 'customer',
-            action: 'synced',
-            summary: `Đã cập nhật dữ liệu POS từ Webhook (Khách hàng ${eligibleCustomers[0]?.name || eligibleCustomers[0]?.code || ''})`,
-            data: eligibleCustomers[0],
-          });
-        } else {
-          logger.info(
-            `[pos-webhook-controller] Customer webhook contained no eligible cohort records for org ${orgId}`,
-          );
-        }
-      }
+      await batchUpsertCustomers(orgId, customerList);
+      emitPosDataUpdated(orgId, {
+        type: 'customer', action: 'synced',
+        summary: `Đã cập nhật khách POS ${customerList[0]?.name || customerList[0]?.code || ''}`,
+      });
     } else if (eventType.includes('product')) {
       const productList = Array.isArray(entityData) ? entityData : [entityData];
       await batchUpsertProducts(orgId, productList);
@@ -155,7 +136,7 @@ export async function processPosWebhookLog(logId: string): Promise<boolean> {
         summary: `Đã cập nhật dữ liệu POS từ Webhook (Sản phẩm ${productList[0]?.name || productList[0]?.code || ''})`,
         data: productList[0],
       });
-    } else if (eventType.includes('inventory') || eventType.includes('stock')) {
+    } else if (eventType === 'inventories' || eventType.includes('inventory') || eventType.includes('stock')) {
       const inventoryList = Array.isArray(entityData) ? entityData : [entityData];
       await batchUpsertBranchInventory(orgId, inventoryList);
       emitPosDataUpdated(orgId, {

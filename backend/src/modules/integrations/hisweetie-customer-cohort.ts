@@ -9,7 +9,7 @@ import {
 import type { ShouldCancel } from '../pos/pos-sync-lock.js';
 import { SyncCancelledError } from '../pos/pos-sync-lock.js';
 
-export const POS_CUSTOMER_COHORT_RULE = 'active_phone_invoice_v1';
+export const POS_CUSTOMER_COHORT_RULE = 'manual_link_directory_v2';
 const PAGE_SIZE = 100;
 const MAX_PAGES = 2_000;
 const MAX_RATE_LIMIT_RETRIES = 6;
@@ -191,6 +191,7 @@ export async function collectInvoiceBackedCustomerCohort(
       () => client.listCustomers({
         currentItem,
         pageSize: PAGE_SIZE,
+        includeInactive: true,
         ...(customerUpperBound ? { toDate: customerUpperBound } : {}),
       }),
       sleep,
@@ -207,11 +208,9 @@ export async function collectInvoiceBackedCustomerCohort(
       if (id === null || seenCustomerIds.has(id)) continue;
       seenCustomerIds.add(id);
       customerRows++;
-      if (row.isActive !== true) continue;
-      activeCustomers++;
-      if (customerPhone(row) === null) continue;
-      activeWithPhone++;
-      if (!isInvoiceBackedCustomer(row, invoiceCustomerIds)) continue;
+      if (row.isActive === true) activeCustomers++;
+      if (row.isActive === true && customerPhone(row) !== null) activeWithPhone++;
+      // Directory includes prospects and inactive linked shops. No automatic CRM ownership.
       customers.push(row);
       if (Number(row.totalDebt ?? 0) > 0) debtPositive++;
     }

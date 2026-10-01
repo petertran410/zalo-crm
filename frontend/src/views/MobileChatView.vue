@@ -24,12 +24,20 @@
         </span>
       </div>
 
+      <CustomerWorkspacePanel
+        v-if="showProfile && activeSelectedConvId"
+        :key="activeSelectedConvId"
+        :conversation-id="activeSelectedConvId"
+        @close="showProfile = false"
+      />
       <MessageThread
+        v-else
         :conversation="activeSelectedConv"
         :messages="allMessages"
         :loading="activeLoadingMsgs"
         :sending="activeSendingMsg"
-        :show-contact-panel="false"
+        :show-contact-panel="showProfile"
+        @toggle-contact-panel="showProfile = true"
         @send="handleSend"
         @refresh-thread="activeSelectedConvId && activeFetchMessages(activeSelectedConvId)"
         style="flex: 1; min-height: 0;"
@@ -39,7 +47,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import CustomerWorkspacePanel from '@/components/contacts/CustomerWorkspacePanel.vue';
 import ConversationList from '@/components/chat/ConversationList.vue';
 import MessageThread from '@/components/chat/MessageThread.vue';
 import type { Conversation, Message } from '@/composables/use-chat';
@@ -75,6 +84,8 @@ const { pendingMessages, enqueue, flush } = useOfflineQueue();
 
 const activeConversations = computed(() => props.conversations);
 const activeSelectedConvId = computed(() => props.selectedConvId);
+const showProfile = ref(false);
+watch(activeSelectedConvId, () => { showProfile.value = false; });
 const activeSelectedConv = computed(() => props.selectedConv);
 const activeLoadingConvs = computed(() => props.loadingConvs);
 const activeLoadingMsgs = computed(() => props.loadingMsgs);

@@ -13,6 +13,8 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { authMiddleware } from '../auth/auth-middleware.js';
 import { logger } from '../../shared/utils/logger.js';
 import { assertContactVisible } from './contact-scope.js';
+import { validateWorkContext } from './customer-workspace-service.js';
+import { assertConversationReadAccess } from '../chat/conversation-access.js';
 
 const NOTE_INCLUDE = {
   author:    { select: { id: true, fullName: true, email: true } },
@@ -65,7 +67,7 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
   // ── POST /api/v1/contacts/:contactId/notes ────────────────────────────────
   app.post('/api/v1/contacts/:contactId/notes', async (request: FastifyRequest<{
     Params: { contactId: string };
-    Body: { body: string; parentNoteId?: string | null };
+    Body: { body: string; parentNoteId?: string | null; posCustomerId?: number | null; conversationId?: string | null };
   }>, reply: FastifyReply) => {
     try {
       const user = request.user!;
@@ -94,10 +96,14 @@ export async function notesRoutes(app: FastifyInstance): Promise<void> {
         if (parent.parentNoteId) return reply.status(400).send({ error: 'Cannot reply to a reply (flat thread only)' });
       }
 
+      await validateWorkContext(user.orgId, contactId, request.body?.posCustomerId, request.body?.conversationId);
+      if (request.body?.conversationId && !await assertConversationReadAccess(request, reply, request.body.conversationId)) return;
       const note = await prisma.note.create({
         data: {
           orgId: user.orgId,
           contactId,
+          posCustomerId: request.body?.posCustomerId,
+          conversationId: request.body?.conversationId,
           parentNoteId,
           authorUserId: user.id,
           body,

@@ -13,6 +13,7 @@ import { assertContactVisible } from '../contacts/contact-scope.js';
 import { normalizeVnMobile } from '../../shared/utils/phone.js';
 import { findExistingByPhone } from './commands/customer-commands.js';
 import { getContactPosLinks, linkPosCustomer, unlinkPosCustomer, POS_LINK_CONFLICT, POS_LINK_STORAGE_UNAVAILABLE } from './contact-pos-links.js';
+import { addPosLinks, removePosLink, requireCustomer, linkedPosIds, authoritativeBalances, summarizeDebt } from '../contacts/customer-workspace-service.js';
 
 // Import để đảm bảo các Commands được đăng ký vào Dispatcher
 import './commands/customer-commands.js';
@@ -47,6 +48,53 @@ async function ensureContactVisible(
 
 export async function posRoutes(app: FastifyInstance): Promise<void> {
   app.addHook('preHandler', authMiddleware);
+  // Compatibility boundary: old clients must not overwrite a multi-shop relationship.
+  app.addHook('preHandler', async (request, reply) => {
+    const path = request.url.split('?')[0]!;
+    const debtMatch = path.match(/^\/api\/v1\/pos\/customers\/([^/]+)\/debts$/);
+    if (request.method === 'GET' && debtMatch) {
+      const actor = request.user!;
+      const contactId = debtMatch[1]!;
+      await requireCustomer(actor, contactId);
+      const ids = await linkedPosIds(actor.orgId, contactId);
+      const balance = summarizeDebt(await authoritativeBalances(actor.orgId, ids), ids.length);
+      return reply.send({ success: true, data: {
+        contactId, totalDebt: balance.amount, currentDebt: null, overdueDebt: null, dueDate: null,
+        status: balance.state, lastSyncedAt: balance.updatedAt, invoices: [], source: 'POS',
+      } });
+    }
+    const detailMatch = path.match(/^\/api\/v1\/pos\/customers\/(\d+)$/);
+    if (request.method === 'GET' && detailMatch) {
+      const actor = request.user!;
+      const link = await prisma.contactPosLink.findFirst({
+        where: { orgId: actor.orgId, posCustomerId: Number(detailMatch[1]) },
+      });
+      if (!link) return reply.code(404).send({ error: 'Hồ sơ POS chưa được liên kết.' });
+      await requireCustomer(actor, link.contactId);
+    }
+    if (request.method === 'PUT' && /^\/api\/v1\/pos\/customers\/[^/]+$/.test(path)) {
+      return reply.code(403).send({ error: 'Sửa khách hàng tại POS.' });
+    }
+    const match = path.match(/^\/api\/v1\/pos\/contacts\/([^/]+)\/link$/);
+    if (match && (request.method === 'POST' || request.method === 'DELETE')) {
+      try {
+        const actor = request.user!;
+        const contactId = match[1]!;
+        if (request.method === 'POST') {
+          const { posCustomerId } = request.body as { posCustomerId: number };
+          const items = await addPosLinks(actor, contactId, [posCustomerId]);
+          return reply.send({ success: true, data: { contactId, posCustomerId }, items });
+        }
+        await requireCustomer(actor, contactId, true);
+        const ids = await linkedPosIds(actor.orgId, contactId);
+        if (ids.length !== 1) return reply.code(409).send({ error: 'Chọn chính xác mã POS cần bỏ liên kết trong hồ sơ CRM.' });
+        await removePosLink(actor, contactId, ids[0]!);
+        return reply.send({ success: true });
+      } catch (error) {
+        return reply.code((error as any).statusCode ?? 500).send({ error: (error as Error).message });
+      }
+    }
+  });
 
   // GET /api/v1/pos/products — list products from local Read Model with cursor pagination
   app.get('/api/v1/pos/products', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -321,8 +369,10 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['name', 'phone', 'address'],
+          required: ['name', 'phone', 'contactId', 'address', 'salePicId', 'operationKey'],
           properties: {
+            salePicId: { type: 'integer', minimum: 1 },
+            operationKey: { type: 'string', minLength: 16, maxLength: 100 },
             name: { type: 'string', minLength: 1 },
             phone: { type: 'string', minLength: 1 },
             contactId: { type: 'string' },
@@ -352,6 +402,8 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
           wardName: body.wardName,
           email: body.email,
           branchId: body.branchId,
+          salePicId: body.salePicId,
+          operationKey: body.operationKey,
         },
       }, { orgId: user.orgId, userId: user.id });
 
@@ -699,8 +751,11 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
       schema: {
         body: {
           type: 'object',
-          required: ['posCustomerId', 'branchId', 'items'],
+          required: ['contactId', 'operationKey', 'posCustomerId', 'branchId', 'items', 'delivery'],
           properties: {
+            operationKey: { type: 'string', minLength: 16, maxLength: 100 },
+            status: { type: 'integer', const: 1 },
+            orderStatus: { type: 'integer', const: 1 },
             contactId: { type: 'string' },
             posCustomerId: { type: 'integer' },
             branchId: { type: 'integer' },
@@ -1189,4 +1244,3 @@ export async function posRoutes(app: FastifyInstance): Promise<void> {
     }
   });
 }
-
