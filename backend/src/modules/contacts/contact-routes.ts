@@ -1473,7 +1473,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             orgId: user.orgId,
             contactId,
             isVirtual: false,
-            zaloAccountId: { in: scope.accessibleIds },
+            zaloAccountId: { in: allowedNickIds },
           },
           orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
           select: { id: true },
@@ -3016,6 +3016,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         if (!friend)
           return reply.status(404).send({ error: "Friend not found" });
 
+        const zaloScope = await getZaloScope(user.id, user.orgId, user.role);
+        if (!zaloScope.accessibleIds.includes(friend.zaloAccountId)) {
+          return reply.status(403).send({ error: "Không có quyền truy cập tài khoản Zalo này" });
+        }
+
         // Find-or-create conversation for (zaloAccount, externalThreadId=zaloUidInNick).
         // threadType='user' vì Friend = 1-1 Zalo identity (group conv không qua đây).
         // CHỐNG XÉ globalId-aware (anh chốt 2026-06-22): mở chat theo Friend → nếu KH này đã có
@@ -3078,6 +3083,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(404).send({ error: "Zalo account not found" });
         if (!groupId)
           return reply.status(400).send({ error: "groupId required" });
+
+        const zaloScope = await getZaloScope(user.id, user.orgId, user.role);
+        if (!zaloScope.accessibleIds.includes(accountId)) {
+          return reply.status(403).send({ error: "Không có quyền truy cập tài khoản Zalo này" });
+        }
 
         // Find existing — group conv uniqueness: (zaloAccountId, externalThreadId, threadType='group')
         const existing = await prisma.conversation.findFirst({
