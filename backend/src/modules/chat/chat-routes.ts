@@ -19,7 +19,8 @@ import { sendFacebookMessage } from '../channels/facebook/facebook-outbound-serv
 import { applyContactAggregateFromMessage, applyFriendAggregate } from '../contacts/contact-aggregate.js';
 import { normalizePhone } from '../../shared/utils/phone.js';
 // M55 2026-05-30 — Auto-attach collaborator khi sale gửi tin virtual conv
-import { attachContactCollaboratorByUser } from '../contacts/contact-scope.js';
+import { attachContactCollaboratorByUser, canAccessAssignedProfile, getContactScope } from '../contacts/contact-scope.js';
+import { getZaloScope } from '../zalo/zalo-scope.js';
 // Fix 2026-06-03 — M11 optimistic badge cache (Anh báo "Sale CRM · Staff")
 import { getUserFullName, buildReplyQuote } from './chat-helpers.js';
 // 2026-07-27 — offline-send queue (nick mất kết nối Zalo → lưu 'pending', flush khi reconnect).
@@ -356,6 +357,66 @@ export async function chatRoutes(app: FastifyInstance) {
   });
 
   // List conversations (paginated, filterable)
+  app.get('/api/v1/conversations/assigned-contacts', { preHandler: requireGrant('conversation', 'access') }, async (request: FastifyRequest, reply: FastifyReply) => {
+    const user = request.user!;
+    const query = request.query as QueryParams;
+    const profileUserId = String(query.profileUserId || user.id);
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
+    const search = String(query.search || '').trim();
+    const requestedAccountIds = String(query.accountIds || '').split(',').map((id) => id.trim()).filter(Boolean);
+    if (!await canAccessAssignedProfile({ userId: user.id, orgId: user.orgId, legacyRole: user.role, profileUserId })) {
+      return reply.status(403).send({ error: 'Profile is outside your contact scope' });
+    }
+    const contactScope = await getContactScope(user.id, user.orgId, user.role);
+    const profile = await prisma.user.findFirst({
+      where: { id: profileUserId, orgId: user.orgId },
+      select: { id: true },
+    });
+    if (!profile) return reply.status(404).send({ error: 'Profile not found' });
+
+    const zaloScope = await getZaloScope(user.id, user.orgId, user.role);
+    const profileAccounts = await prisma.zaloAccount.findMany({
+      where: { orgId: user.orgId, ownerUserId: profileUserId, id: { in: zaloScope.displayableIds } },
+      select: { id: true },
+    });
+    const profileAccountIds = new Set(profileAccounts.map((account) => account.id));
+    if (requestedAccountIds.some((id) => !profileAccountIds.has(id))) {
+      return reply.status(403).send({ error: 'Account is outside the selected profile' });
+    }
+    const visibleAccountIds = requestedAccountIds.length
+      ? requestedAccountIds
+      : profileAccountIds.size ? [...profileAccountIds] : zaloScope.displayableIds;
+    const where: any = { orgId: user.orgId, assignedUserId: profileUserId };
+    if (contactScope.accessibleContactIds !== null) where.id = { in: contactScope.accessibleContactIds };
+    if (search) where.OR = [
+      { fullName: { contains: search, mode: 'insensitive' } },
+      { crmName: { contains: search, mode: 'insensitive' } },
+      { phone: { contains: search } },
+    ];
+    if (visibleAccountIds.length) {
+      where.conversations = {
+        none: {
+          orgId: user.orgId,
+          deletedAt: null,
+          threadType: 'user',
+          zaloAccountId: { in: visibleAccountIds },
+        },
+      };
+    }
+    const [contacts, total] = await Promise.all([
+      prisma.contact.findMany({
+        where,
+        orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        select: { id: true, fullName: true, crmName: true, phone: true, avatarUrl: true, hasZalo: true, updatedAt: true },
+      }),
+      prisma.contact.count({ where }),
+    ]);
+    return { contacts, total, page, limit };
+  });
+
   app.get('/api/v1/conversations', { preHandler: requireGrant('conversation', 'access') }, async (request: FastifyRequest, reply: FastifyReply) => {
     const user = request.user!;
     const {

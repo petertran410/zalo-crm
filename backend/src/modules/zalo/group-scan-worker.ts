@@ -233,6 +233,8 @@ async function scanOneGroup(
         avatarUrl: prof?.avatarUrl ?? null,
         isAdmin: adminIds.has(uid),
         isFriend,
+        isActive: true,
+        leftAt: null,
         friendCheckedAt: now,
         lastSeenAt: now,
       };
@@ -245,6 +247,18 @@ async function scanOneGroup(
       });
       upserted++;
     }
+  }
+
+  if (!truncated) {
+    await prisma.groupMember.updateMany({
+      where: {
+        zaloAccountId,
+        groupId,
+        isActive: true,
+        ...(memberIds.length > 0 ? { memberUid: { notIn: memberIds } } : {}),
+      },
+      data: { isActive: false, leftAt: now },
+    });
   }
 
   // Roster thiếu (community lớn, SDK không phân trang member): KHÔNG ném — thành viên

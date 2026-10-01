@@ -1,7 +1,7 @@
 <template>
   <v-app
     class="smax-app"
-    :class="navMode === 'rail' ? 'nv-mode-rail' : 'nv-mode-bar'">
+    :class="[navMode === 'rail' ? 'nv-mode-rail' : 'nv-mode-bar', { 'minimal-chat-shell': route.meta.minimalChat }]">
     <!-- Nav có 2 chế độ theo bề rộng màn hình:
          >=1440px  → thanh ngang đầy đủ (tab nằm ngay trong header này)
          < 1440px  → header thu thành dải tiện ích 44px, tab chuyển xuống rail dọc
@@ -30,11 +30,12 @@
           class="nav-tab"
           :class="{ active: isActive(tab) }">
           <component
+            v-if="!route.meta.minimalChat"
             :is="tab.icon"
             class="ic-svg"
             :size="18"
             :stroke-width="1.9" /><span class="nav-tab-text">{{
-            tab.label
+            route.meta.minimalChat && tab.path === '/' ? 'Tổng quan' : tab.label
           }}</span>
           <span
             v-if="tab.path === '/appointments' && todayCount > 0"
@@ -50,10 +51,11 @@
       <div class="topnav-spacer" />
 
       <div class="topnav-actions">
-        <SyncHeaderWidget />
+        <SyncHeaderWidget v-if="!route.meta.minimalChat" />
         <GlobalSearch class="topnav-search" />
         <!-- 2026-06-13: trỏ tới trang quản lý nick Zalo. -->
         <RouterLink
+          v-if="!route.meta.minimalChat"
           to="/settings/channels/zalo"
           class="icon-btn"
           title="Quản lý nick Zalo"
@@ -65,6 +67,7 @@
              Token tối hiện chỉ có ở màn Khách hàng nên cờ này chỉ đổi màu những màn
              đã khai báo [data-theme='dark']; xem stores/ui-theme.ts. -->
         <button
+          v-if="!route.meta.minimalChat"
           class="icon-btn"
           :title="uiTheme.isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'"
           :aria-label="uiTheme.isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'"
@@ -92,6 +95,15 @@
               :title="authStore.user?.fullName || ''"
               :subtitle="authStore.user?.email || ''" />
             <v-divider />
+            <template v-if="route.meta.minimalChat">
+              <v-list-item to="/settings/channels/zalo" title="Quản lý kênh Zalo" />
+              <v-list-item @click="uiTheme.toggle()" :title="uiTheme.isDark ? 'Chuyển nền sáng' : 'Chuyển nền tối'" />
+              <v-list-item>
+                <span class="minimal-sync-label">Đồng bộ POS</span>
+                <SyncHeaderWidget />
+              </v-list-item>
+              <v-divider />
+            </template>
             <v-list-item
               to="/settings/personal/profile"
               title="Hồ sơ"
@@ -358,16 +370,17 @@ const { todayCount } = useAppointmentBadge();
 // đổi kích thước khung nhìn, sự kiện resize có lúc không bắn, còn hộp của phần tử
 // gốc thì luôn đổi nên observer bắt được mọi trường hợp.
 const NAV_RAIL_MAX = 1440;
-const navMode = ref<"bar" | "rail">(
+const viewportNavMode = ref<"bar" | "rail">(
   typeof window !== "undefined" && window.innerWidth < NAV_RAIL_MAX
     ? "rail"
     : "bar"
 );
+const navMode = computed(() => route.meta.minimalChat ? 'bar' : viewportNavMode.value);
 let navObserver: ResizeObserver | null = null;
 let navMediaQuery: MediaQueryList | null = null;
 let navPollTimer: number | null = null;
 function syncNavMode() {
-  navMode.value = window.innerWidth < NAV_RAIL_MAX ? "rail" : "bar";
+  viewportNavMode.value = window.innerWidth < NAV_RAIL_MAX ? "rail" : "bar";
 }
 // Cố tình nghe cả ResizeObserver lẫn window resize dù hàm này idempotent: ResizeObserver
 // bắt được zoom và cắm rút màn hình, window resize là lưới an toàn. Cả hai cùng câm thì
@@ -376,7 +389,7 @@ function syncNavMode() {
 // khiển qua CDP, một số đường snap cửa sổ): mq change bắn đúng lúc vượt ngưỡng 1440,
 // poll chỉ ghi khi bucket thật sự đổi nên gần như miễn phí.
 function onNavMediaChange(e: MediaQueryListEvent) {
-  navMode.value = e.matches ? "bar" : "rail";
+  viewportNavMode.value = e.matches ? "bar" : "rail";
 }
 
 const SHOW_MARKETING_NAV = false;
@@ -406,6 +419,14 @@ const primaryTabs: NavTab[] = [
     short: "Kênh & Chat",
     icon: MessageSquareText,
     matchAny: ["/channels", "/chat"],
+    resource: "zalo_account",
+  },
+  {
+    path: "/channels-2",
+    label: "Kênh & Tin nhắn 2",
+    short: "Tin nhắn 2",
+    icon: MessageSquareText,
+    matchAny: ["/channels-2", "/chat-2"],
     resource: "zalo_account",
   },
   // 2026-07-29: gộp "Bạn bè" + "Khách hàng" thành 1 tab. /friends redirect sang

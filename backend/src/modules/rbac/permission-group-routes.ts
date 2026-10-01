@@ -52,6 +52,7 @@ export async function registerPermissionGroupRoutes(app: FastifyInstance): Promi
     if (!user) return reply.status(401).send({ error: 'unauthorized' });
     const body = (request.body ?? {}) as {
       name?: string;
+      description?: string | null;
       parentId?: string | null;
       cloneFromId?: string;
       grants?: any;
@@ -60,6 +61,7 @@ export async function registerPermissionGroupRoutes(app: FastifyInstance): Promi
       const group = await createPermissionGroup({
         orgId: user.orgId,
         name: body.name ?? '',
+        description: body.description,
         parentId: body.parentId ?? null,
         cloneFromId: body.cloneFromId,
         grants: body.grants,
@@ -77,6 +79,7 @@ export async function registerPermissionGroupRoutes(app: FastifyInstance): Promi
     const { id } = request.params as { id: string };
     const body = (request.body ?? {}) as {
       name?: string;
+      description?: string | null;
       parentId?: string | null;
       displayOrder?: number;
       grants?: any;
@@ -86,6 +89,7 @@ export async function registerPermissionGroupRoutes(app: FastifyInstance): Promi
         orgId: user.orgId,
         id,
         name: body.name,
+        description: body.description,
         parentId: body.parentId,
         displayOrder: body.displayOrder,
         grants: body.grants,

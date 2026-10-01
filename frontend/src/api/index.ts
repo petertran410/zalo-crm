@@ -35,7 +35,7 @@ api.interceptors.request.use((config) => {
   }
 
   // Progress bar — track mọi API request
-  useProgress().increment();
+  if (!config._skipProgress) useProgress().increment();
 
   return config;
 });
@@ -136,7 +136,7 @@ function isAuthEndpoint(url: string): boolean {
 // Response interceptor — global handle 401(refresh)/404/5xx
 api.interceptors.response.use(
   (response) => {
-    useProgress().decrement();
+    if (!response.config._skipProgress) useProgress().decrement();
     return response;
   },
   async (error) => {
@@ -158,7 +158,8 @@ api.interceptors.response.use(
         const newToken = await ensureFreshToken();
         original.headers = original.headers ?? {};
         original.headers.Authorization = `Bearer ${newToken}`;
-        return api(original); // retry request gốc với token mới
+        original._skipProgress = true;
+        return await api(original).finally(() => useProgress().decrement());
       } catch {
         clearAuthAndRedirect();
         return Promise.reject(error);
@@ -199,7 +200,7 @@ api.interceptors.response.use(
 api.interceptors.response.use(
   undefined,
   (error) => {
-    useProgress().decrement();
+    if (!error.config?._skipProgress) useProgress().decrement();
     return Promise.reject(error);
   }
 );

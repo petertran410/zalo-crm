@@ -51,8 +51,9 @@ export function useZaloFriendStatus(
   async function fetchStatus() {
     const acc = accountId();
     const uid = friendUid();
-    if (!acc || !uid) {
+    if (!acc || !uid || uid.startsWith('virtual:')) {
       status.value = null;
+      error.value = null;
       return;
     }
 
@@ -103,7 +104,10 @@ export function useZaloFriendStatus(
       // Skip nếu socket vừa cập nhật state — tránh override pending_received bằng
       // stale getFriendRequestStatus của UID cũ (per-account UID race).
       if (Date.now() - lastSocketAt < SOCKET_STICKY_MS) return;
-      const k = cacheKey(accountId() || '', friendUid() || '');
+      const acc = accountId();
+      const uid = friendUid();
+      if (!acc || !uid || uid.startsWith('virtual:')) return;
+      const k = cacheKey(acc, uid);
       cache.delete(k); // force refresh
       fetchStatus();
     }, AUTO_REFRESH_MS);
@@ -120,7 +124,10 @@ export function useZaloFriendStatus(
     if (typeof document !== 'undefined' && !document.hidden) {
       // Tab regain focus → invalidate + refresh ngay, NHƯNG vẫn tôn trọng socket sticky
       if (Date.now() - lastSocketAt < SOCKET_STICKY_MS) return;
-      const k = cacheKey(accountId() || '', friendUid() || '');
+      const acc = accountId();
+      const uid = friendUid();
+      if (!acc || !uid || uid.startsWith('virtual:')) return;
+      const k = cacheKey(acc, uid);
       cache.delete(k);
       fetchStatus();
     }
@@ -148,7 +155,7 @@ export function useZaloFriendStatus(
   function setStatus(s: Partial<Omit<FriendStatus, 'fetchedAt'>>) {
     const acc = accountId();
     const uid = friendUid();
-    if (!acc || !uid) return;
+    if (!acc || !uid || uid.startsWith('virtual:')) return;
     const next: FriendStatus = {
       isFriend: s.isFriend ?? false,
       isRequesting: s.isRequesting ?? false,
@@ -164,7 +171,7 @@ export function useZaloFriendStatus(
   function invalidate() {
     const acc = accountId();
     const uid = friendUid();
-    if (!acc || !uid) return;
+    if (!acc || !uid || uid.startsWith('virtual:')) return;
     cache.delete(cacheKey(acc, uid));
     status.value = null;
   }

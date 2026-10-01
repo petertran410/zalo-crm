@@ -32,6 +32,7 @@ import {
 } from "./contact-aggregate-display.js";
 import {
   getContactScope,
+  canAccessAssignedProfile,
   assertContactVisible,
   attachContactCollaboratorByUser,
   assertContactEditable,
@@ -46,6 +47,7 @@ import { normalizePhone } from "../../shared/utils/phone.js";
 import { logActivity, computeDiff } from "../activity/activity-logger.js";
 import { emitWebhook } from "../api/webhook-service.js";
 import { scheduleHisweetiePush } from "../integrations/hisweetie-push-queue.js";
+import { linkPosCustomer, POS_LINK_CONFLICT } from "../pos/contact-pos-links.js";
 
 type QueryParams = Record<string, string>;
 
@@ -1331,7 +1333,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // Race guard: 2 sale bấm liên kết cùng lúc → người sau nhận lại KH đã có.
-        const existing = await prisma.contact.findFirst({
+        const linked = await prisma.contactPosLink.findUnique({
+          where: { orgId_posCustomerId: { orgId: user.orgId, posCustomerId } },
+          include: { contact: { select: { id: true, fullName: true, crmName: true, phone: true } } },
+        });
+        const existing = linked?.contact || await prisma.contact.findFirst({
           where: { orgId: user.orgId, posCustomerId },
           select: { id: true, fullName: true, crmName: true, phone: true },
         });
@@ -1355,8 +1361,6 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           data: {
             orgId: user.orgId,
             source: "POS",
-            posCustomerId: posCustomer.posId,
-            posCustomerCode: posCustomer.code,
             posSyncedAt: new Date(),
             fullName: posCustomer.name,
             phone: posCustomer.phone,
@@ -1378,6 +1382,13 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             assignedUserId: true,
           },
         });
+        let linkedContact;
+        try {
+          linkedContact = await linkPosCustomer(user.orgId, contact.id, posCustomer.posId, posCustomer.code);
+        } catch (err) {
+          await prisma.contact.delete({ where: { id: contact.id } });
+          throw err;
+        }
 
         // ContactAccess primary cho sale liên kết (giống quick-create).
         await prisma.contactAccess.upsert({
@@ -1403,9 +1414,10 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           details: { via: "pos_link", posCustomerId: posCustomer.posId },
         });
 
-        return reply.status(201).send({ exists: false, contact });
-      } catch (err) {
+        return reply.status(201).send({ exists: false, contact: { ...contact, posCustomerId: linkedContact.posCustomerId } });
+      } catch (err: any) {
         logger.error("[contacts] link-pos error:", err);
+        if (err.message === POS_LINK_CONFLICT) return reply.status(409).send({ error: POS_LINK_CONFLICT });
         return reply.status(500).send({ error: "Failed to link POS customer" });
       }
     }
@@ -1436,23 +1448,53 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         });
         if (!contact)
           return reply.status(404).send({ error: "Contact không tồn tại" });
-        await assertContactVisible({
+        const contactVisible = await assertContactVisible({
           userId: user.id,
           orgId: user.orgId,
           legacyRole: user.role,
           contactId,
         });
+        if (!contactVisible) return reply.status(403).send({ error: "Contact is outside your access scope" });
 
-        // 2. Pick nick — M55 2026-05-30: ưu tiên nick mình sở hữu, fallback nick org
+        const body = (request.body || {}) as { profileUserId?: string; accountId?: string; accountIds?: string[] };
         // (sale mới chưa có nick Zalo vẫn mở được virtual chat — vì virtual ko gửi SDK,
         // chỉ cần 1 zaloAccountId hợp lệ trong org để satisfy schema FK).
         const scope = await getZaloScope(user.id, user.orgId, user.role);
-        let myNickId: string | null =
-          scope.accessibleIds.find((id) => scope.ownedIds.has(id)) ??
-          scope.accessibleIds[0] ??
-          null;
+        let allowedNickIds = scope.accessibleIds;
+        let myNickId: string | null = null;
 
-        if (!myNickId) {
+        if (body.profileUserId) {
+          if (!await canAccessAssignedProfile({ userId: user.id, orgId: user.orgId, legacyRole: user.role, profileUserId: body.profileUserId })) {
+            return reply.status(403).send({ error: "Profile is outside your contact scope" });
+          }
+          if (contact.assignedUserId !== body.profileUserId) {
+            return reply.status(403).send({ error: "Contact is not assigned to the selected profile" });
+          }
+          const requestedIds = Array.isArray(body.accountIds) ? body.accountIds.map(String) : [];
+          const profileAccounts = await prisma.zaloAccount.findMany({
+            where: {
+              orgId: user.orgId,
+              ownerUserId: body.profileUserId,
+              id: { in: scope.accessibleIds },
+            },
+            select: { id: true },
+          });
+          const profileIds = new Set(profileAccounts.map((account) => account.id));
+          if (requestedIds.some((id) => !profileIds.has(id))
+            || (body.accountId && !profileIds.has(body.accountId))
+            || (body.accountId && requestedIds.length > 0 && !requestedIds.includes(body.accountId))) {
+            return reply.status(403).send({ error: "Account is outside the selected profile" });
+          }
+          allowedNickIds = requestedIds.length ? requestedIds : [...profileIds];
+          myNickId = body.accountId || allowedNickIds[0] || null;
+        } else {
+          myNickId =
+            scope.accessibleIds.find((id) => scope.ownedIds.has(id)) ??
+            scope.accessibleIds[0] ??
+            null;
+        }
+
+        if (!myNickId && !body.profileUserId) {
           // Fallback: pick bất kỳ ZaloAccount nào trong org (virtual chat ko cần nick thật)
           const anyNick = await prisma.zaloAccount.findFirst({
             where: { orgId: user.orgId },
@@ -1464,8 +1506,9 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         if (!myNickId) {
           return reply.status(400).send({
             error: "no_nick",
-            message:
-              "Tổ chức chưa có nick Zalo nào. Vui lòng kết nối ít nhất 1 nick để dùng chat nội bộ.",
+            message: body.profileUserId
+              ? "Hồ sơ này cần có ít nhất một nick Zalo để mở hội thoại."
+              : "Tổ chức chưa có nick Zalo nào. Vui lòng kết nối ít nhất 1 nick để dùng chat nội bộ.",
           });
         }
 
@@ -1478,7 +1521,7 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
             orgId: user.orgId,
             contactId,
             isVirtual: false,
-            zaloAccountId: { in: scope.accessibleIds },
+            zaloAccountId: { in: allowedNickIds },
           },
           orderBy: { lastMessageAt: { sort: "desc", nulls: "last" } },
           select: { id: true },
@@ -3021,6 +3064,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
         if (!friend)
           return reply.status(404).send({ error: "Friend not found" });
 
+        const zaloScope = await getZaloScope(user.id, user.orgId, user.role);
+        if (!zaloScope.accessibleIds.includes(friend.zaloAccountId)) {
+          return reply.status(403).send({ error: "Không có quyền truy cập tài khoản Zalo này" });
+        }
+
         // Find-or-create conversation for (zaloAccount, externalThreadId=zaloUidInNick).
         // threadType='user' vì Friend = 1-1 Zalo identity (group conv không qua đây).
         // CHỐNG XÉ globalId-aware (anh chốt 2026-06-22): mở chat theo Friend → nếu KH này đã có
@@ -3083,6 +3131,11 @@ export async function contactRoutes(app: FastifyInstance): Promise<void> {
           return reply.status(404).send({ error: "Zalo account not found" });
         if (!groupId)
           return reply.status(400).send({ error: "groupId required" });
+
+        const zaloScope = await getZaloScope(user.id, user.orgId, user.role);
+        if (!zaloScope.accessibleIds.includes(accountId)) {
+          return reply.status(403).send({ error: "Không có quyền truy cập tài khoản Zalo này" });
+        }
 
         // Find existing — group conv uniqueness: (zaloAccountId, externalThreadId, threadType='group')
         const existing = await prisma.conversation.findFirst({

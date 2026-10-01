@@ -136,6 +136,26 @@ export async function getContactScope(
   };
 }
 
+export async function canAccessAssignedProfile(args: {
+  userId: string;
+  orgId: string;
+  legacyRole: string;
+  profileUserId: string;
+}): Promise<boolean> {
+  const scope = await getContactScope(args.userId, args.orgId, args.legacyRole);
+  if (scope.visibleUserIds.has(args.profileUserId) || scope.accessibleContactIds === null) return true;
+  const users = await prisma.user.findMany({
+    where: { id: { in: [args.userId, args.profileUserId] }, orgId: args.orgId },
+    select: { id: true, role: true, permissionGroup: { select: { workspaceId: true } } },
+  });
+  if (users.length !== 2) return false;
+  const workspaceFor = (user: typeof users[number]) => user.permissionGroup?.workspaceId
+    ?? (user.role === 'cskh' ? 'customer-care' : 'sales');
+  const viewer = users.find((user) => user.id === args.userId)!;
+  const profile = users.find((user) => user.id === args.profileUserId)!;
+  return workspaceFor(viewer) === workspaceFor(profile);
+}
+
 /**
  * Quick gate cho route detail/sub-resource: user có quyền access Contact này không?
  * Throws/returns false nếu không. Dùng đầu mỗi handler `GET /contacts/:id/*`.

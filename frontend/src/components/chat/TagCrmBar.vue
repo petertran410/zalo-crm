@@ -1,6 +1,11 @@
 <template>
-  <div class="tag-crm-bar" v-if="friendId">
-    <div class="qt-chips-wrapper">
+  <div class="tag-crm-bar" :class="{ 'tag-crm-bar-minimal': minimal }" v-if="friendId">
+    <button v-if="minimal" type="button" class="minimal-tag-summary" aria-label="Quản lý nhãn hội thoại" @click="managementOpen = true">
+      <span v-for="tag in assignedTags.slice(0, 3)" :key="tag.slug" class="minimal-assigned-tag">{{ tag.name }}</span>
+      <span v-if="assignedTags.length > 3" class="minimal-tag-count" :title="assignedTags.slice(3).map(tag => tag.name).join(', ')">+{{ assignedTags.length - 3 }}</span>
+      <span v-if="assignedTags.length === 0" class="minimal-tag-empty">Chưa có nhãn</span>
+    </button>
+    <div v-else class="qt-chips-wrapper">
       <button
         v-for="tag in displayTags"
         :key="tag.slug"
@@ -17,6 +22,31 @@
       </button>
 
     </div>
+    <v-dialog v-if="minimal" v-model="managementOpen" max-width="440">
+      <v-card rounded="lg">
+        <v-card-title class="pt-5 px-6">Nhãn hội thoại</v-card-title>
+        <v-card-subtitle class="px-6">Chọn nhãn để dễ theo dõi và tìm lại khách hàng.</v-card-subtitle>
+        <v-card-text class="minimal-tag-options">
+          <button
+            v-for="tag in displayTags"
+            :key="tag.slug"
+            type="button"
+            class="minimal-tag-option"
+            :class="{ selected: activeTagSlugs.has(tag.slug) }"
+            :aria-pressed="activeTagSlugs.has(tag.slug)"
+            :disabled="pendingSlugs.has(tag.slug)"
+            @click="toggleTag(tag)"
+          >
+            <span>{{ tag.name }}</span>
+            <span v-if="activeTagSlugs.has(tag.slug)">Đã chọn</span>
+          </button>
+        </v-card-text>
+        <v-card-actions class="px-6 pb-4">
+          <v-spacer />
+          <v-btn color="primary" variant="flat" @click="managementOpen = false">Xong</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -50,9 +80,12 @@ interface FriendTagAssignment {
 const props = defineProps<{
   friendId: string | null;
   contactId?: string | null;
+  minimal?: boolean;
 }>();
 
 const toast = useToast();
+const managementOpen = ref(false);
+defineExpose({ openManager: () => { managementOpen.value = true; } });
 
 
 // ── UI Source of Truth ────────────────────────────────────────────────────────
@@ -114,6 +147,8 @@ const displayTags = computed((): TagV2[] => {
   const extras = DEFAULT_PRESET_TAGS.filter((t) => !dbSlugs.has(t.slug));
   return [...mergedDefs, ...extras].sort((a, b) => (a.priority || 99) - (b.priority || 99));
 });
+
+const assignedTags = computed(() => displayTags.value.filter(tag => activeTagSlugs.value.has(tag.slug)));
 
 // Helper parse hex màu an toàn tránh NaN
 function hexToRgb(hexColor: string): { r: number; g: number; b: number } {
@@ -193,6 +228,7 @@ onMounted(() => {
 });
 
 watch(() => props.friendId, () => {
+  managementOpen.value = false;
   // Reset khi chuyển sang friend khác
   activeTagSlugs.value = new Set();
   pendingSlugs.value = new Set();
@@ -306,6 +342,22 @@ async function toggleTag(tag: TagV2) {
 </script>
 
 <style scoped>
+.tag-crm-bar-minimal {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  min-width: 0;
+}
+.minimal-tag-summary { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; border: 0; padding: 0; background: transparent; cursor: pointer; }
+.minimal-assigned-tag, .minimal-tag-count { padding: 4px 9px; border-radius: 6px; background: #edf3fb; color: #45638a; font-size: 11px; line-height: 1.4; }
+.minimal-tag-empty { color: #8896a9; font-size: 11px; }
+.minimal-tag-options { display: flex; flex-direction: column; gap: 6px; max-height: 55vh; overflow-y: auto; padding-top: 20px; }
+.minimal-tag-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 40px; border: 1px solid #e4eaf2; padding: 9px 12px; border-radius: 8px; font: inherit; font-size: 13px; text-align: left; background: #fff; color: #344766; cursor: pointer; }
+.minimal-tag-option.selected { background: #edf5ff; border-color: #b9d4fa; color: #1b5ab3; }
+.minimal-tag-option > span + span { font-size: 11px; flex-shrink: 0; }
+.minimal-tag-option:hover { background: #f3f7fc; }
+.minimal-tag-option:disabled { opacity: .6; cursor: wait; }
+.minimal-tag-option:focus-visible { outline: 2px solid #2870dd; outline-offset: 2px; }
 .tag-crm-bar {
   padding: 6px 10px 8px;
   background: #ffffff;

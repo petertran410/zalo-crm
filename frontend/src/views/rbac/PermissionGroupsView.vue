@@ -1,909 +1,607 @@
 <template>
-  <div class="dept-page rbac-permissions">
-    <header class="page-hero">
-      <div class="hero-left">
-        <!-- Bỏ hero-sub 2026-08-06 (gọn giao diện): bố cục 2 cột đã tự nói "chọn
-             nhóm trái → tích quyền phải", còn kích thước ma trận hiện ngay trên
-             bảng. Nút sao chép quyền vẫn nằm trong panel bên phải. -->
-        <h1 class="hero-title">Phân quyền</h1>
+  <div class="dept-page roles-page">
+    <header class="roles-page-header">
+      <div>
+        <h1 class="hero-title">Vai trò &amp; Quyền</h1>
+        <p class="roles-page-subtitle">Quản lý vai trò và quyền truy cập của nhân viên.</p>
       </div>
-      <div class="hero-actions">
-        <button class="btn-ghost" :disabled="seeding" @click="seedDefaults">
-          {{ seeding ? 'Đang seed...' : '⚙ Seed 7 nhóm mặc định' }}
-        </button>
-        <button class="btn-primary" @click="openCreate(null)">
-          <span class="btn-icon">+</span> Thêm nhóm
-        </button>
-      </div>
+      <button
+        v-if="canCreate"
+        class="roles-button roles-button-primary"
+        type="button"
+        @click="openForm()"
+      >
+        Thêm vai trò
+      </button>
     </header>
 
-    <section class="stats-row" v-if="!loading && stats.total > 0">
-      <div class="stat-card stat-primary">
-        <div class="stat-label">Tổng nhóm</div>
-        <div class="stat-value">{{ stats.total }}</div>
-      </div>
-      <div class="stat-card stat-forest">
-        <div class="stat-label">Nhóm hệ thống</div>
-        <div class="stat-value">{{ stats.system }}<span class="stat-unit"> / {{ stats.total }}</span></div>
-      </div>
-      <div class="stat-card stat-mustard">
-        <div class="stat-label">Tổng user đã gán</div>
-        <div class="stat-value">{{ stats.totalMembers }}</div>
-      </div>
-      <div class="stat-card stat-cream">
-        <div class="stat-label">Slot quyền tối đa</div>
-        <div class="stat-value">{{ totalSlots }}<span class="stat-unit"> / nhóm</span></div>
-      </div>
-    </section>
+    <div v-if="loading" class="roles-loading" role="status">Đang tải vai trò…</div>
+    <div v-else class="roles-layout">
+      <aside class="roles-sidebar" aria-label="Danh sách vai trò">
+        <header class="roles-sidebar-header">
+          <div>
+            <h2>Danh sách vai trò</h2>
+            <span>{{ flatGroups.length }} vai trò</span>
+          </div>
+        </header>
 
-    <div v-if="loading" class="loading-state">
-      <div class="skel-card" v-for="i in 3" :key="i" style="height: 60px"></div>
-    </div>
-
-    <div v-else-if="store.permissionGroups.length === 0" class="empty-state">
-      <div class="empty-icon">🛡</div>
-      <h3>Chưa có nhóm quyền nào</h3>
-      <p>Bắt đầu bằng seed 7 nhóm mặc định (CEO, Trưởng phòng, Sale Senior, Sale, Marketing, Kế toán, Khách).</p>
-      <button class="btn-primary" :disabled="seeding" @click="seedDefaults">
-        {{ seeding ? 'Đang seed...' : '⚙ Seed 7 nhóm mặc định' }}
-      </button>
-    </div>
-
-    <!-- 2-COLUMN LAYOUT: list groups + matrix -->
-    <div v-else class="pg-layout">
-      <!-- LEFT: groups list -->
-      <aside class="pg-sidebar">
-        <div class="pg-sidebar-head">
-          <div class="search-box at-search">
-            <span class="search-icon">🔍</span>
-            <input v-model="searchQ" placeholder="Tìm nhóm..." />
-            <button v-if="searchQ" class="search-clear" @click="searchQ = ''">×</button>
+        <div v-if="flatGroups.length" class="roles-list">
+          <div
+            v-for="group in flatGroups"
+            :key="group.id"
+            class="roles-list-row"
+            :class="{ selected: selectedId === group.id }"
+            :style="{ '--role-depth': group._depth }"
+          >
+            <button
+              type="button"
+              class="roles-list-select"
+              :aria-current="selectedId === group.id ? 'true' : undefined"
+              @click="selectGroup(group.id)"
+            >
+              <span class="roles-list-copy">
+                <strong>{{ group.name }}</strong>
+                <span v-if="group.description" class="roles-list-description">{{ group.description }}</span>
+                <span class="roles-list-meta">
+                  <span v-if="isDeprecatedGroup(group.name)" class="roles-status-deprecated">Ngừng dùng</span>
+                  <span v-else-if="group.isSystem" class="roles-status-system">Hệ thống</span>
+                  <span v-else class="roles-status-custom">Tùy chỉnh</span>
+                  <span>{{ group.memberCount }} người dùng</span>
+                </span>
+              </span>
+            </button>
+            <div class="roles-row-actions">
+              <button
+                v-if="canEdit"
+                type="button"
+                class="roles-row-action"
+                title="Sửa vai trò"
+                :aria-label="`Sửa vai trò ${group.name}`"
+                @click.stop="openForm(group)"
+              >Sửa</button>
+              <button
+                v-if="canDelete && !group.isSystem"
+                type="button"
+                class="roles-row-action roles-delete-button"
+                title="Xóa vai trò"
+                :aria-label="`Xóa vai trò ${group.name}`"
+                @click.stop="archiveGroup(group)"
+              >Xóa</button>
+            </div>
           </div>
         </div>
-        <ul class="pg-group-list">
-          <li
-            v-for="g in filteredGroups"
-            :key="g.id"
-            class="pg-group-item"
-            :class="{ active: selectedId === g.id }"
-            @click="selectedId = g.id"
-          >
-            <span class="pg-accent-strip" :style="{ background: accentByDepth(g._depth) }"></span>
-            <div class="pg-group-body">
-              <div class="pg-group-name">
-                <span v-if="g._depth > 0" class="pg-indent-arrow">└</span>{{ g.name }}
-              </div>
-              <div class="pg-group-meta">
-                <!-- 2026-08-06: nhãn "ngừng dùng" cho 4 nhóm ngoài phạm vi (Trưởng phòng,
-                     Sale Senior, Marketing, HC-NS). Vẫn sửa được, chỉ là không dùng nữa. -->
-                <span v-if="isDeprecatedGroup(g.name)" class="at-chip chip-xs pg-chip-deprecated">⏸ Ngừng dùng</span>
-                <span v-else-if="g.isSystem" class="at-chip chip-system chip-xs">🛡 Hệ thống</span>
-                <span v-else class="at-chip chip-custom chip-xs">✎ Tùy chỉnh</span>
-                <span class="pg-count">👥 {{ memberCountsLive[g.id] ?? 0 }}</span>
-                <span class="pg-grants-mini" :style="{ color: grantsColor(grantsPct(g)) }">
-                  {{ grantsActive(g) }}/{{ totalSlots }}
-                </span>
-              </div>
-            </div>
-          </li>
-        </ul>
-        <button class="pg-add-btn" @click="openCreate(null)">+ Thêm nhóm quyền</button>
+        <p v-else class="roles-empty-list">Chưa có vai trò nào</p>
+
+        <button
+          v-if="canCreate"
+          class="roles-seed-button"
+          type="button"
+          :disabled="seeding"
+          @click="seedDefaults"
+        >{{ seeding ? 'Đang tải vai trò mặc định…' : 'Tạo vai trò mặc định' }}</button>
       </aside>
 
-      <!-- RIGHT: matrix -->
-      <section class="pg-main">
-        <div v-if="!selected" class="empty-state" style="margin: 0">
-          <div class="empty-icon">⬅</div>
-          <h3>Chọn nhóm quyền bên trái</h3>
-          <p>Click vào 1 nhóm để xem và chỉnh sửa ma trận quyền.</p>
+      <main class="roles-editor">
+        <div v-if="!selected" class="roles-editor-empty">
+          <p>Chọn một vai trò để xem và chỉnh sửa quyền</p>
         </div>
 
         <template v-else>
-          <!-- Matrix header bar -->
-          <div class="pg-matrix-head">
-            <div class="pg-matrix-title">
-              <span class="pg-accent-strip" :style="{ background: accentByDepth(selected._depth ?? 0) }"></span>
-              <div>
-                <h2 class="pg-name-big">{{ selected.name }}</h2>
-                <div class="pg-name-meta">
-                  <span v-if="selected.isSystem" class="at-chip chip-system">🛡 Hệ thống</span>
-                  <span v-else class="at-chip chip-custom">✎ Tùy chỉnh</span>
-                  <span class="at-chip chip-dept">👥 {{ memberCountsLive[selected.id] ?? 0 }} user</span>
-                  <span class="at-chip chip-active">✓ {{ grantsActive(selected) }} / {{ totalSlots }} quyền</span>
-                </div>
-              </div>
+          <header class="roles-editor-header">
+            <div class="roles-editor-title">
+              <h2>{{ selected.name }}</h2>
+              <p>{{ grantsCount }} / {{ totalPermissions }} quyền</p>
             </div>
-            <div class="pg-matrix-actions">
-              <select class="filter-select pg-copy-select" v-model="copyFromId">
-                <option value="">📋 Sao chép quyền từ...</option>
-                <option v-for="g in copyableGroups" :key="g.id" :value="g.id">
-                  {{ '— '.repeat(g._depth) }}{{ g.name }} ({{ grantsActive(g) }}/{{ totalSlots }})
-                </option>
-              </select>
-              <button class="btn-ghost btn-sm" :disabled="!copyFromId" @click="doCopyFrom">
-                ↓ Áp dụng
-              </button>
-              <button class="btn-ghost btn-sm" @click="tickAll(true)">✓ Tick tất cả</button>
-              <button class="btn-ghost btn-sm" @click="tickAll(false)">✗ Bỏ tất cả</button>
+            <div class="roles-editor-buttons">
+              <button
+                v-if="canEdit && dirty"
+                class="roles-button roles-button-secondary"
+                type="button"
+                :disabled="saving"
+                @click="cancelChanges"
+              >Hủy thay đổi</button>
+              <button
+                v-if="canEdit && dirty"
+                class="roles-button roles-button-primary"
+                type="button"
+                :disabled="saving"
+                @click="saveChanges"
+              >{{ saving ? 'Đang lưu…' : 'Lưu quyền' }}</button>
+            </div>
+          </header>
+
+          <div v-if="copyableGroups.length && canEdit" class="roles-copy-tools">
+            <label for="roles-copy-select">Sao chép quyền từ</label>
+            <select id="roles-copy-select" v-model="copyFromId">
+              <option value="">Chọn vai trò</option>
+              <option v-for="group in copyableGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
+            </select>
+            <button type="button" class="roles-button roles-button-secondary" :disabled="!copyFromId" @click="copyGrants">
+              Áp dụng
+            </button>
+          </div>
+
+          <div class="roles-permission-toolbar">
+            <label class="roles-search">
+              <input v-model="searchQuery" type="search" placeholder="Tìm quyền..." aria-label="Tìm quyền" />
+              <button v-if="searchQuery" type="button" aria-label="Xóa tìm kiếm" @click="searchQuery = ''">Xóa</button>
+            </label>
+            <div class="roles-category-filters" aria-label="Lọc theo danh mục">
+              <button
+                v-for="category in categories"
+                :key="category.key"
+                type="button"
+                :class="{ active: activeCategory === category.key }"
+                @click="activeCategory = category.key"
+              >{{ category.label }}</button>
             </div>
           </div>
 
-          <!-- Matrix table -->
-          <div class="pg-matrix-wrap">
-            <table class="pg-matrix">
-              <thead>
-                <tr>
-                  <th class="th-resource">Chức năng</th>
-                  <th v-for="a in actions" :key="a" class="th-action">
-                    <div class="th-action-label">{{ actionLabel(a) }}</div>
-                    <button
-                      class="th-bulk-btn"
-                      :title="`Tick toàn bộ cột ${actionLabel(a)}`"
-                      @click="tickColumn(a)"
-                    >⇧ All</button>
-                  </th>
-                  <th class="th-row-bulk">Tất cả</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in resources" :key="r" :class="{ 'row-full': rowFull(r), 'row-empty': rowEmpty(r) }">
-                  <td class="cell-resource">
-                    <span class="resource-icon">{{ resourceIcon(r) }}</span>
-                    <span class="resource-label">{{ resourceLabel(r) }}</span>
-                    <span class="resource-count">{{ rowCount(r) }}/{{ (resourceActions[r] ?? []).length }}</span>
-                  </td>
-                  <td v-for="a in actions" :key="a" class="cell-check">
-                    <label
-                      v-if="(resourceActions[r] ?? []).includes(a)"
-                      class="at-checkbox"
-                      :class="{ checked: !!localGrants[r]?.[a] }"
-                    >
+          <div v-if="displayedCategories.length" class="roles-permission-list">
+            <section v-for="category in displayedCategories" :key="category.key" class="roles-category-card">
+              <header class="roles-category-header">
+                <label class="roles-check-row">
+                  <input
+                    type="checkbox"
+                    :checked="arePermissionsChecked(category.permissionKeys)"
+                    :disabled="!canEdit"
+                    @change="togglePermissions(category.permissionKeys, ($event.target as HTMLInputElement).checked)"
+                  />
+                </label>
+                <h3>{{ category.label }}</h3>
+                <span>{{ checkedCount(category.permissionKeys) }}/{{ category.permissionKeys.length }}</span>
+              </header>
+
+              <div v-for="resource in category.resources" :key="resource.key" class="roles-resource-row">
+                <div class="roles-resource-header">
+                  <label class="roles-check-row">
+                    <input
+                      type="checkbox"
+                      :checked="arePermissionsChecked(resource.permissionKeys)"
+                      :disabled="!canEdit"
+                      @change="togglePermissions(resource.permissionKeys, ($event.target as HTMLInputElement).checked)"
+                    />
+                  </label>
+                  <strong>{{ resourceLabel(resource.key) }}</strong>
+                  <span class="roles-resource-count">{{ checkedCount(resource.permissionKeys) }}/{{ resource.permissionKeys.length }}</span>
+                </div>
+                <div class="roles-action-grid">
+                  <label v-for="permission in resource.permissions" :key="permission.key" class="roles-action-option">
+                    <span class="roles-check-row">
                       <input
                         type="checkbox"
-                        :checked="!!localGrants[r]?.[a]"
-                        @change="toggleGrant(r, a, ($event.target as HTMLInputElement).checked)"
+                        :checked="localGrants[resource.key]?.[permission.action] === true"
+                        :disabled="!canEdit"
+                        @change="toggleGrant(resource.key, permission.action, ($event.target as HTMLInputElement).checked)"
                       />
-                      <span class="at-checkbox-box">✓</span>
-                    </label>
-                    <span v-else class="cell-na">—</span>
-                  </td>
-                  <td class="cell-row-bulk">
-                    <button class="th-bulk-btn" :title="`Tick toàn bộ hàng ${resourceLabel(r)}`" @click="tickRow(r)">⇨ All</button>
-                  </td>
-                </tr>
-              </tbody>
-            </table>
+                    </span>
+                    <span>{{ actionLabel(permission.action) }}</span>
+                  </label>
+                </div>
+              </div>
+            </section>
           </div>
+          <div v-else class="roles-no-matches">Không tìm thấy quyền phù hợp.</div>
 
-          <!-- Save indicator -->
-          <div class="pg-save-bar" :class="{ 'is-saving': saving, 'is-saved': justSaved }">
-            <span v-if="saving">💾 Đang lưu...</span>
-            <span v-else-if="justSaved">✅ Đã lưu</span>
-            <span v-else class="pg-save-hint">Mọi thay đổi được tự động lưu</span>
-          </div>
-
-          <!-- Danger zone for custom groups -->
-          <div v-if="!selected.isSystem" class="pg-danger-zone">
-            <div>
-              <strong>Xóa nhóm "{{ selected.name }}"</strong>
-              <p class="pg-danger-hint">Chỉ xóa được khi nhóm rỗng (không user, không nhóm con).</p>
-            </div>
-            <button class="btn-danger" @click="confirmArchive">🗑 Xóa nhóm</button>
-          </div>
+          <footer class="roles-save-footer" :class="{ dirty }" aria-live="polite">
+            <span v-if="saving">Đang lưu quyền…</span>
+            <span v-else-if="dirty">Có thay đổi chưa lưu</span>
+            <span v-else>Quyền đã được lưu</span>
+          </footer>
         </template>
-      </section>
+      </main>
     </div>
 
-    <!-- Create modal -->
     <Transition name="modal-fade">
-      <div v-if="showCreate" class="modal-backdrop" @click.self="showCreate = false">
-        <div class="modal-card">
-          <header class="modal-head">
-            <h3>{{ createParentId ? 'Thêm nhóm con' : 'Thêm nhóm quyền gốc' }}</h3>
-            <button class="modal-close" @click="showCreate = false">×</button>
+      <div v-if="formOpen" class="roles-modal-backdrop">
+        <form class="roles-modal" @submit.prevent="submitForm">
+          <header class="roles-modal-header">
+            <h2>{{ editingGroup ? 'Sửa vai trò' : 'Thêm vai trò mới' }}</h2>
+            <button type="button" class="roles-modal-close" @click="closeForm">Đóng</button>
           </header>
-          <div class="modal-body">
-            <p v-if="createParentName" class="parent-hint">
-              <span class="hint-label">Thuộc:</span><strong>{{ createParentName }}</strong>
-            </p>
-            <label class="form-label">Tên nhóm quyền</label>
+          <div class="roles-modal-body">
+            <label for="role-name">Tên vai trò <span>*</span></label>
             <input
-              ref="nameInput"
-              v-model="newName"
-              placeholder="VD: Sale Cấp Cao"
-              class="form-input"
-              @keyup.enter="submitCreate"
+              id="role-name"
+              v-model.trim="formName"
+              type="text"
+              maxlength="100"
+              required
+              :disabled="!!editingGroup?.isSystem"
+              placeholder="Ví dụ: Quản lý, Nhân viên bán hàng..."
             />
-            <label class="form-label" style="margin-top: 14px">Sao chép quyền từ</label>
-            <select v-model="cloneFromId" class="form-input">
-              <option value="">— Tạo mới (chưa có quyền) —</option>
-              <option v-for="g in flatGroupsList" :key="g.id" :value="g.id">
-                {{ '— '.repeat(g._depth) }}{{ g.name }} ({{ grantsActive(g) }}/{{ totalSlots }})
-              </option>
+            <label for="role-description">Mô tả</label>
+            <textarea
+              id="role-description"
+              v-model="formDescription"
+              maxlength="1000"
+              rows="3"
+              placeholder="Mô tả về vai trò này..."
+            />
+            <label v-if="!editingGroup" for="role-clone">Sao chép quyền từ <span class="roles-optional">(tùy chọn)</span></label>
+            <select v-if="!editingGroup" id="role-clone" v-model="cloneFromId">
+              <option value="">Tạo vai trò mới chưa có quyền</option>
+              <option v-for="group in flatGroups" :key="group.id" :value="group.id">{{ group.name }}</option>
             </select>
-            <p v-if="createError" class="form-error">{{ createError }}</p>
+            <p v-if="formError" class="roles-form-error" role="alert">{{ formError }}</p>
           </div>
-          <footer class="modal-foot">
-            <button class="btn-ghost" @click="showCreate = false">Hủy</button>
-            <button class="btn-primary" :disabled="!newName.trim()" @click="submitCreate">
-              Tạo nhóm
+          <footer class="roles-modal-footer">
+            <button class="roles-button roles-button-secondary" type="button" :disabled="formSaving" @click="closeForm">Hủy</button>
+            <button class="roles-button roles-button-primary" type="submit" :disabled="formSaving || !formName.trim()">
+              {{ formSaving ? 'Đang lưu…' : editingGroup ? 'Cập nhật' : 'Tạo mới' }}
             </button>
           </footer>
-        </div>
+        </form>
       </div>
     </Transition>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-import { useRbacStore, type PermissionGroupNode, type RbacUser } from '@/stores/rbac';
-import { api } from '@/api/index';
-import { resourceLabel, resourceIcon, actionLabel, isDeprecatedGroup } from '@/constants/permission-meta';
+import { computed, onMounted, ref, watch } from 'vue';
+import { useRbacStore, type PermissionGroupNode } from '@/stores/rbac';
+import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/composables/use-toast';
+import { RESOURCE_CATEGORIES, actionLabel, isDeprecatedGroup, resourceLabel } from '@/constants/permission-meta';
+
+type Grants = Record<string, Record<string, boolean>>;
+type FlatGroup = PermissionGroupNode & { _depth: number };
+type PermissionLeaf = { key: string; action: string };
+type ResourceView = { key: string; permissions: PermissionLeaf[]; permissionKeys: string[] };
+type CategoryView = { key: string; label: string; resources: ResourceView[]; permissionKeys: string[] };
 
 const store = useRbacStore();
-const allUsers = ref<RbacUser[]>([]);
-const searchQ = ref('');
-const seeding = ref(false);
-const saving = ref(false);
-const justSaved = ref(false);
-const copyFromId = ref('');
-
+const auth = useAuthStore();
+const toast = useToast();
 const selectedId = ref<string | null>(null);
-// Bản nháp grants của nhóm đang chọn — checkbox bind vào đây để tick mượt, không phụ
-// thuộc reload store. Đồng bộ từ store khi đổi nhóm (watch ở mục Grant mutations).
-const localGrants = ref<Record<string, Record<string, boolean>>>({});
+const localGrants = ref<Grants>({});
+const baselineGrants = ref<Grants>({});
+const searchQuery = ref('');
+const activeCategory = ref('all');
+const copyFromId = ref('');
+const saving = ref(false);
+const seeding = ref(false);
+const formOpen = ref(false);
+const formSaving = ref(false);
+const formError = ref('');
+const formName = ref('');
+const formDescription = ref('');
+const cloneFromId = ref('');
+const editingGroup = ref<FlatGroup | null>(null);
+
+const canCreate = computed(() => auth.canAccess('permission_group', 'create'));
+const canEdit = computed(() => auth.canAccess('permission_group', 'edit'));
+const canDelete = computed(() => auth.canAccess('permission_group', 'delete'));
+const loading = computed(() => store.loading);
+const resources = computed(() => store.matrixMeta?.resources ?? []);
+const resourceActions = computed(() => store.matrixMeta?.resourceActions ?? {});
+const flatGroups = computed<FlatGroup[]>(() => {
+  const result: FlatGroup[] = [];
+  const walk = (nodes: PermissionGroupNode[], depth: number) => {
+    for (const node of nodes) {
+      result.push({ ...node, _depth: depth });
+      if (node.children?.length) walk(node.children, depth + 1);
+    }
+  };
+  walk(store.permissionGroups, 0);
+  return result;
+});
+const selected = computed(() => flatGroups.value.find((group) => group.id === selectedId.value) ?? null);
+const dirty = computed(() => JSON.stringify(localGrants.value) !== JSON.stringify(baselineGrants.value));
+const categories = computed(() => [
+  { key: 'all', label: 'Tất cả' },
+  ...RESOURCE_CATEGORIES.map(({ key, label }) => ({ key, label })),
+]);
+const copyableGroups = computed(() => flatGroups.value.filter((group) => group.id !== selectedId.value));
+
+const categoryViews = computed<CategoryView[]>(() => {
+  const query = searchQuery.value.trim().toLocaleLowerCase('vi');
+  return RESOURCE_CATEGORIES
+    .filter((category) => activeCategory.value === 'all' || category.key === activeCategory.value)
+    .map((category) => {
+      const categoryResources = category.resources
+        .filter((resource) => resources.value.includes(resource))
+        .map((resource): ResourceView => {
+          const permissions = (resourceActions.value[resource] ?? [])
+            .filter((action) => {
+              if (!query) return true;
+              const text = `${actionLabel(action)} ${resourceLabel(resource)} ${action} ${resource}`.toLocaleLowerCase('vi');
+              return text.includes(query);
+            })
+            .map((action) => ({ key: `${resource}.${action}`, action }));
+          return {
+            key: resource,
+            permissions,
+            permissionKeys: permissions.map((permission) => permission.key),
+          };
+        })
+        .filter((resource) => resource.permissions.length > 0);
+      return {
+        key: category.key,
+        label: category.label,
+        resources: categoryResources,
+        permissionKeys: categoryResources.flatMap((resource) => resource.permissionKeys),
+      };
+    })
+    .filter((category) => category.resources.length > 0);
+});
+const displayedCategories = computed(() => categoryViews.value);
+const totalPermissions = computed(() => resources.value.reduce((sum, resource) => sum + (resourceActions.value[resource]?.length ?? 0), 0));
+const grantsCount = computed(() => resources.value.reduce(
+  (sum, resource) => sum + (resourceActions.value[resource] ?? []).filter((action) => localGrants.value[resource]?.[action] === true).length,
+  0,
+));
 
 onMounted(async () => {
-  await Promise.all([
-    store.loadPermissionGroups(),
-    api.get('/rbac/users').then((r) => { allUsers.value = r.data.users ?? []; }).catch(() => {}),
-  ]);
-  // Auto-select first group
-  if (store.permissionGroups.length > 0 && !selectedId.value) {
-    selectedId.value = flatGroupsList.value[0]?.id ?? null;
+  try {
+    await store.loadPermissionGroups();
+  } catch (error: any) {
+    toast.error(error?.response?.data?.error || 'Không tải được danh sách vai trò');
   }
 });
 
-const resources = computed(() => store.matrixMeta?.resources ?? []);
-const actions = computed(() => store.matrixMeta?.actions ?? []);
-const resourceActions = computed(() => store.matrixMeta?.resourceActions ?? {});
-const totalSlots = computed(() => {
-  let total = 0;
-  for (const r of resources.value) total += (resourceActions.value[r] ?? []).length;
-  return total;
+watch(selectedId, (id) => {
+  const group = flatGroups.value.find((entry) => entry.id === id);
+  const grants = JSON.parse(JSON.stringify(group?.grants ?? {})) as Grants;
+  localGrants.value = grants;
+  baselineGrants.value = JSON.parse(JSON.stringify(grants));
+  searchQuery.value = '';
+  activeCategory.value = 'all';
+  copyFromId.value = '';
 });
 
-const memberCountsLive = computed(() => {
-  const m: Record<string, number> = {};
-  for (const u of allUsers.value) {
-    if (u.permissionGroupId) m[u.permissionGroupId] = (m[u.permissionGroupId] ?? 0) + 1;
-  }
-  return m;
-});
-
-const flatGroupsList = computed(() => {
-  const out: Array<PermissionGroupNode & { _depth: number }> = [];
-  function walk(nodes: PermissionGroupNode[], depth: number) {
-    for (const n of nodes) {
-      out.push({ ...n, _depth: depth });
-      if (n.children?.length) walk(n.children, depth + 1);
-    }
-  }
-  walk(store.permissionGroups, 0);
-  return out;
-});
-
-const filteredGroups = computed(() => {
-  const q = searchQ.value.trim().toLowerCase();
-  if (!q) return flatGroupsList.value;
-  return flatGroupsList.value.filter((g) => g.name.toLowerCase().includes(q));
-});
-
-const selected = computed(() => flatGroupsList.value.find((g) => g.id === selectedId.value));
-
-const copyableGroups = computed(() =>
-  flatGroupsList.value.filter((g) => g.id !== selectedId.value)
-);
-
-const stats = computed(() => {
-  let total = 0, system = 0, totalMembers = 0;
-  for (const g of flatGroupsList.value) {
-    total++;
-    if (g.isSystem) system++;
-    totalMembers += memberCountsLive.value[g.id] ?? 0;
-  }
-  return { total, system, totalMembers };
-});
-
-const loading = computed(() => store.loading);
-
-watch(
-  () => store.permissionGroups,
-  async () => {
-    try {
-      const { data } = await api.get('/rbac/users');
-      allUsers.value = data.users ?? [];
-    } catch {}
-  }
-);
-
-// ─── Grants helpers ───
-function grantsActive(g: PermissionGroupNode): number {
-  let count = 0;
-  for (const r of resources.value) {
-    const row = g.grants?.[r];
-    if (!row) continue;
-    for (const a of resourceActions.value[r] ?? []) {
-      if (row[a]) count++;
-    }
-  }
-  return count;
-}
-function grantsPct(g: PermissionGroupNode): number {
-  if (totalSlots.value === 0) return 0;
-  return Math.round((grantsActive(g) / totalSlots.value) * 100);
-}
-function grantsColor(pct: number): string {
-  if (pct >= 80) return '#aa2d00';
-  if (pct >= 50) return '#d9a441';
-  if (pct >= 20) return '#1b61c9';
-  if (pct > 0) return '#0a2e0e';
-  return '#9297a0';
-}
-function accentByDepth(d: number): string {
-  return ['#181d26', '#aa2d00', '#0a2e0e', '#d9a441', '#1b61c9'][Math.min(d, 4)];
+function cloneGrants(grants: Grants): Grants {
+  return JSON.parse(JSON.stringify(grants ?? {}));
 }
 
-function rowCount(r: string): number {
-  const row = localGrants.value?.[r];
-  if (!row) return 0;
-  let c = 0;
-  for (const a of resourceActions.value[r] ?? []) if (row[a]) c++;
-  return c;
-}
-function rowFull(r: string): boolean {
-  const max = (resourceActions.value[r] ?? []).length;
-  return max > 0 && rowCount(r) === max;
-}
-function rowEmpty(r: string): boolean {
-  return rowCount(r) === 0;
+function selectGroup(id: string) {
+  if (id === selectedId.value) return;
+  if (dirty.value && !window.confirm('Bạn có thay đổi chưa lưu. Chuyển vai trò sẽ mất thay đổi.')) return;
+  selectedId.value = id;
 }
 
-// ─── Grant mutations (bản nháp local + debounce auto-save, KHÔNG reload cả cây) ───
-// Fix 2026-06-20: trước đây mỗi tick gọi updateGroupGrants → loadPermissionGroups()
-// reload toàn bộ cây quyền (màn nhảy về đầu trang) + :disabled="saving" khóa checkbox
-// (không tick liên tục được) + dựng lại newGrants từ selected.grants mỗi lần (click nhanh
-// làm mất tick trước). Nay: tick cập nhật localGrants tức thì, lưu gộp sau 500ms, store
-// cập nhật grants TẠI CHỖ nên không re-render cả cây.
-// Fix#2 (code-review 2026-06-20): (a) CHỤP snapshot grants theo nhóm NGAY lúc tick (không
-// đọc lại localGrants lúc flush) → đổi nhóm giữa chừng không lưu nhầm/mất tick; (b) re-sync
-// localGrants ĐỒNG BỘ khi đổi nhóm (không await trước khi nạp) → không có khoảng hiện sai;
-// (c) nối CHUỖI save (saveChain) → các PATCH chạy tuần tự, không đè ngược thứ tự.
-let saveTimer: any;
-let pendingGroupId: string | null = null;
-let pendingGrants: Record<string, Record<string, boolean>> | null = null;
-let saveChain: Promise<void> = Promise.resolve();
-
-function scheduleSave() {
-  if (!selected.value) return;
-  pendingGroupId = selected.value.id;
-  // Chụp nguyên trạng bản nháp tại đúng thời điểm tick — flush sau dùng snapshot này.
-  pendingGrants = JSON.parse(JSON.stringify(localGrants.value));
-  saving.value = true;
-  justSaved.value = false;
-  clearTimeout(saveTimer);
-  saveTimer = setTimeout(flushSave, 500);
-}
-
-function flushSave() {
-  clearTimeout(saveTimer);
-  const gid = pendingGroupId;
-  const grants = pendingGrants;
-  pendingGroupId = null;
-  pendingGrants = null;
-  if (!gid || !grants) { saving.value = false; return; }
-  // Nối chuỗi: PATCH chạy lần lượt theo thứ tự lên lịch (snapshot sau ⊇ snapshot trước).
-  saveChain = saveChain.then(async () => {
-    try {
-      await store.updateGroupGrants(gid, grants);
-      justSaved.value = true;
-      setTimeout(() => { justSaved.value = false; }, 1500);
-    } catch (e: any) {
-      alert(e?.response?.data?.error || 'Lỗi cập nhật quyền');
-      // Lưu lỗi → nếu vẫn đang ở đúng nhóm đó, khôi phục bản nháp từ store.
-      if (selected.value?.id === gid) {
-        localGrants.value = JSON.parse(JSON.stringify(selected.value?.grants ?? {}));
-      }
-    } finally {
-      // Chỉ tắt "Đang lưu..." khi không còn lần lưu nào đang chờ.
-      if (!pendingGroupId) saving.value = false;
-    }
+function arePermissionsChecked(keys: string[]): boolean {
+  return keys.length > 0 && keys.every((key) => {
+    const [resource, action] = key.split('.');
+    return localGrants.value[resource]?.[action] === true;
   });
 }
 
-// Đổi nhóm → lưu nốt nhóm trước (dùng snapshot đã chụp, không cần await) rồi nạp bản nháp
-// nhóm mới NGAY (đồng bộ) — không còn khoảng "header nhóm mới + tick nhóm cũ".
-watch(selectedId, (_newId, oldId) => {
-  if (oldId && pendingGroupId) flushSave();
-  localGrants.value = JSON.parse(JSON.stringify(selected.value?.grants ?? {}));
-}, { immediate: true });
-
-// Rời trang khi còn thay đổi chưa lưu → lưu nốt.
-onBeforeUnmount(() => { if (pendingGroupId) flushSave(); });
-
-function toggleGrant(r: string, a: string, v: boolean) {
-  if (!selected.value) return;
-  if (!localGrants.value[r]) localGrants.value[r] = {};
-  localGrants.value[r][a] = v;
-  scheduleSave();
+function checkedCount(keys: string[]): number {
+  return keys.filter((key) => {
+    const [resource, action] = key.split('.');
+    return localGrants.value[resource]?.[action] === true;
+  }).length;
 }
 
-function tickAll(value: boolean) {
-  if (!selected.value) return;
-  if (value && !confirm(`Tick TẤT CẢ quyền cho nhóm "${selected.value.name}"?`)) return;
-  if (!value && !confirm(`Bỏ tick TẤT CẢ quyền cho nhóm "${selected.value.name}"?`)) return;
-  const ng: Record<string, Record<string, boolean>> = {};
-  for (const r of resources.value) {
-    ng[r] = {};
-    for (const a of resourceActions.value[r] ?? []) ng[r][a] = value;
+function toggleGrant(resource: string, action: string, checked: boolean) {
+  if (!canEdit.value) return;
+  if (!localGrants.value[resource]) localGrants.value[resource] = {};
+  localGrants.value[resource][action] = checked;
+}
+
+function togglePermissions(keys: string[], checked: boolean) {
+  if (!canEdit.value) return;
+  for (const key of keys) {
+    const [resource, action] = key.split('.');
+    if (!localGrants.value[resource]) localGrants.value[resource] = {};
+    localGrants.value[resource][action] = checked;
   }
-  localGrants.value = ng;
-  scheduleSave();
 }
 
-function tickRow(r: string) {
-  if (!selected.value) return;
-  const allOn = rowFull(r);
-  if (!localGrants.value[r]) localGrants.value[r] = {};
-  for (const a of resourceActions.value[r] ?? []) localGrants.value[r][a] = !allOn;
-  scheduleSave();
-}
-
-function tickColumn(a: string) {
-  if (!selected.value) return;
-  // Cột đang bật hết chưa?
-  let allOn = true;
-  for (const r of resources.value) {
-    if (!(resourceActions.value[r] ?? []).includes(a)) continue;
-    if (!localGrants.value[r]?.[a]) { allOn = false; break; }
-  }
-  for (const r of resources.value) {
-    if (!(resourceActions.value[r] ?? []).includes(a)) continue;
-    if (!localGrants.value[r]) localGrants.value[r] = {};
-    localGrants.value[r][a] = !allOn;
-  }
-  scheduleSave();
-}
-
-async function doCopyFrom() {
-  if (!selected.value || !copyFromId.value) return;
-  const src = flatGroupsList.value.find((g) => g.id === copyFromId.value);
-  if (!src) return;
-  if (!confirm(`Sao chép quyền từ "${src.name}" sang "${selected.value.name}"? Sẽ ghi đè quyền hiện tại của ${selected.value.name}.`)) return;
-  localGrants.value = JSON.parse(JSON.stringify(src.grants ?? {}));
-  scheduleSave();
+function copyGrants() {
+  const source = flatGroups.value.find((group) => group.id === copyFromId.value);
+  if (!source || !canEdit.value) return;
+  localGrants.value = cloneGrants(source.grants);
   copyFromId.value = '';
 }
 
-async function confirmArchive() {
-  if (!selected.value) return;
-  if (!confirm(`Xóa nhóm "${selected.value.name}"? Chỉ xóa được khi nhóm rỗng.`)) return;
+async function saveChanges() {
+  if (!selected.value || !dirty.value || !canEdit.value || saving.value) return;
+  saving.value = true;
   try {
-    await api.delete(`/permission-groups/${selected.value.id}`);
-    await store.loadPermissionGroups();
-    selectedId.value = flatGroupsList.value[0]?.id ?? null;
-  } catch (e: any) {
-    alert(e?.response?.data?.error || 'Lỗi xóa nhóm');
+    const snapshot = cloneGrants(localGrants.value);
+    await store.updateGroupGrants(selected.value.id, snapshot);
+    baselineGrants.value = cloneGrants(snapshot);
+    toast.success('Cập nhật quyền vai trò thành công');
+  } catch (error: any) {
+    toast.error(error?.response?.data?.error || 'Không thể lưu quyền');
+  } finally {
+    saving.value = false;
   }
 }
 
-// ─── Create modal ───
-const showCreate = ref(false);
-const createParentId = ref<string | null>(null);
-const createParentName = ref('');
-const newName = ref('');
-const cloneFromId = ref('');
-const createError = ref('');
-const nameInput = ref<HTMLInputElement | null>(null);
-
-function openCreate(parent: PermissionGroupNode | null) {
-  createParentId.value = parent?.id ?? null;
-  createParentName.value = parent?.name ?? '';
-  newName.value = '';
-  cloneFromId.value = '';
-  createError.value = '';
-  showCreate.value = true;
-  setTimeout(() => nameInput.value?.focus(), 50);
+function cancelChanges() {
+  localGrants.value = cloneGrants(baselineGrants.value);
 }
-async function submitCreate() {
-  if (!newName.value.trim()) return;
+
+function openForm(group?: FlatGroup) {
+  if (group && !canEdit.value) return;
+  if (!group && !canCreate.value) return;
+  editingGroup.value = group ?? null;
+  formName.value = group?.name ?? '';
+  formDescription.value = group?.description ?? '';
+  cloneFromId.value = '';
+  formError.value = '';
+  formOpen.value = true;
+}
+
+function closeForm() {
+  if (formSaving.value) return;
+  formOpen.value = false;
+}
+
+async function submitForm() {
+  const name = formName.value.trim();
+  if (!name) return;
+  formSaving.value = true;
+  formError.value = '';
   try {
-    await store.createPermissionGroup({
-      name: newName.value.trim(),
-      parentId: createParentId.value,
-      cloneFromId: cloneFromId.value || undefined,
-    });
-    showCreate.value = false;
-    // Auto-select newly created group
-    const newest = flatGroupsList.value[flatGroupsList.value.length - 1];
-    if (newest) selectedId.value = newest.id;
-  } catch (e: any) {
-    createError.value = e?.response?.data?.error || 'Lỗi tạo nhóm';
+    if (editingGroup.value) {
+      const group = editingGroup.value;
+      await store.updatePermissionGroup(group.id, {
+        name: group.isSystem ? group.name : name,
+        description: formDescription.value.trim() || null,
+      });
+      if (selectedId.value === group.id) selectedId.value = group.id;
+      toast.success('Cập nhật vai trò thành công');
+    } else {
+      const created = await store.createPermissionGroup({
+        name,
+        description: formDescription.value.trim(),
+        parentId: null,
+        cloneFromId: cloneFromId.value || undefined,
+      });
+      selectedId.value = created.id;
+      toast.success('Tạo vai trò thành công');
+    }
+    formOpen.value = false;
+  } catch (error: any) {
+    formError.value = error?.response?.data?.error || 'Không thể lưu vai trò';
+  } finally {
+    formSaving.value = false;
+  }
+}
+
+async function archiveGroup(group: FlatGroup) {
+  if (!canDelete.value || group.isSystem) return;
+  if (!window.confirm(`Bạn có chắc chắn muốn xóa vai trò “${group.name}” không?`)) return;
+  try {
+    await store.archivePermissionGroup(group.id);
+    if (selectedId.value === group.id) selectedId.value = null;
+    toast.success('Đã xóa vai trò');
+  } catch (error: any) {
+    toast.error(error?.response?.data?.error || 'Không thể xóa vai trò');
   }
 }
 
 async function seedDefaults() {
+  if (!canCreate.value || seeding.value) return;
   seeding.value = true;
   try {
     await store.seedDefaultGroups();
-    const { data } = await api.get('/rbac/users');
-    allUsers.value = data.users ?? [];
-    if (!selectedId.value) selectedId.value = flatGroupsList.value[0]?.id ?? null;
-  } catch (e: any) {
-    alert(e?.response?.data?.error || 'Lỗi seed');
+    toast.success('Đã tải vai trò mặc định');
+  } catch (error: any) {
+    toast.error(error?.response?.data?.error || 'Không thể tải vai trò mặc định');
   } finally {
     seeding.value = false;
   }
 }
 </script>
 
-<style>
-/* PermissionGroupsView — Getfly-style 2-col layout + Airtable theme */
-
-.rbac-permissions .hero-actions  { display: flex; gap: 8px; }
-
-.rbac-permissions .pg-layout  {
-  display: grid;
-  grid-template-columns: 290px 1fr;
-  gap: 16px;
-  background: var(--app-surface-panel);
-  border: 1px solid var(--app-border-subtle);
-  border-radius: var(--app-radius-lg);
-  overflow: hidden;
-  min-height: 600px;
-  box-shadow: var(--app-shadow-sm);
+<style scoped>
+.roles-page { --roles-cyan: #00b7cc; --roles-cyan-soft: rgba(0, 183, 204, .08); }
+.roles-page-header { display:flex; align-items:center; justify-content:space-between; gap:20px; margin:0 0 20px; }
+.roles-page-header .hero-title { margin:0; font-family:var(--app-font-heading); }
+.roles-page-subtitle { margin:6px 0 0; color:var(--app-text-secondary); font-size:13px; }
+.roles-layout { display:grid; grid-template-columns:320px minmax(0,1fr); grid-template-rows:minmax(0,1fr); height:min(75vh,860px); min-height:620px; overflow:hidden; background:#fff; border:1px solid var(--app-border-subtle); border-radius:12px; box-shadow:var(--app-shadow-sm); }
+.roles-sidebar { display:flex; min-width:0; flex-direction:column; border-right:1px solid var(--app-border-subtle); background:#fafbfc; }
+.roles-sidebar-header { display:flex; align-items:center; justify-content:space-between; padding:18px 16px; border-bottom:1px solid var(--app-border-subtle); }
+.roles-sidebar-header h2 { margin:0 0 4px; font-size:15px; font-weight:650; }
+.roles-sidebar-header span { color:var(--app-text-secondary); font-size:12px; }
+.roles-list { min-height:0; flex:1; overflow:auto; padding:8px; }
+.roles-list-row { display:flex; align-items:center; gap:4px; margin:3px 0; padding:0 5px 0 calc(5px + var(--role-depth) * 10px); border:1px solid transparent; border-left:4px solid transparent; border-radius:8px; background:#fff; }
+.roles-list-row.selected { border-color:rgba(0,183,204,.2); border-left-color:var(--roles-cyan); background:var(--roles-cyan-soft); }
+.roles-list-select { display:flex; min-width:0; flex:1; align-items:flex-start; gap:10px; padding:10px 5px; border:0; background:transparent; color:inherit; text-align:left; cursor:pointer; }
+.roles-list-copy { display:flex; min-width:0; flex-direction:column; gap:4px; }
+.roles-list-copy strong { overflow:hidden; color:var(--app-text-primary); font-size:13px; font-weight:600; text-overflow:ellipsis; white-space:nowrap; }
+.roles-list-description { overflow:hidden; color:var(--app-text-secondary); font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+.roles-list-meta { display:flex; flex-wrap:wrap; align-items:center; gap:7px; color:var(--app-text-secondary); font-size:10px; }
+.roles-status-system,.roles-status-custom,.roles-status-deprecated { padding:2px 6px; border-radius:999px; background:#e8f7f9; color:#087e8b; }
+.roles-status-custom { background:#f2f3f5; color:#59616d; }
+.roles-status-deprecated { background:#f3f4f6; color:#6b7280; }
+.roles-row-actions { display:flex; flex:0 0 auto; gap:4px; }
+.roles-row-action { padding:5px; border:0; border-radius:5px; background:transparent; color:var(--roles-cyan); cursor:pointer; font:inherit; font-size:11px; }
+.roles-row-action:hover { background:#effbfc; }
+.roles-delete-button { color:#ba3a35; }
+.roles-delete-button:hover { background:#fff0ef; }
+.roles-empty-list { margin:auto; padding:24px; color:var(--app-text-secondary); text-align:center; font-size:13px; }
+.roles-seed-button { margin:0 12px 12px; padding:7px; border:0; background:transparent; color:var(--app-text-muted); cursor:pointer; font:inherit; font-size:11px; }
+.roles-seed-button:hover { color:var(--roles-cyan); }
+.roles-seed-button:disabled { cursor:wait; opacity:.6; }
+.roles-editor { display:flex; min-width:0; min-height:0; flex-direction:column; overflow:hidden; background:#f7f9fa; }
+.roles-editor-empty { display:flex; flex:1; min-height:400px; flex-direction:column; align-items:center; justify-content:center; gap:12px; padding:32px; color:#87909a; text-align:center; }
+.roles-editor-empty p { max-width:320px; margin:0; font-size:14px; }
+.roles-editor-header { display:flex; align-items:center; justify-content:space-between; gap:16px; padding:18px 22px; border-bottom:1px solid var(--app-border-subtle); background:#fff; }
+.roles-editor-title h2 { margin:0 0 5px; color:#183d43; font-size:20px; font-weight:650; }
+.roles-editor-title p { margin:0; color:var(--app-text-secondary); font-size:12px; }
+.roles-editor-buttons { display:flex; flex-wrap:wrap; gap:8px; }
+.roles-button { display:inline-flex; min-height:36px; align-items:center; justify-content:center; gap:6px; padding:8px 13px; border:1px solid var(--app-border-default); border-radius:8px; background:#fff; color:var(--app-text-primary); cursor:pointer; font:inherit; font-size:12px; font-weight:600; }
+.roles-button:disabled { cursor:not-allowed; opacity:.55; }
+.roles-button-primary { border-color:var(--roles-cyan); background:var(--roles-cyan); color:#fff; }
+.roles-button-primary:hover:not(:disabled) { border-color:#009bad; background:#009bad; }
+.roles-button-secondary:hover:not(:disabled) { border-color:var(--roles-cyan); color:#007e8a; }
+.roles-copy-tools { display:flex; align-items:center; gap:8px; padding:10px 22px; border-bottom:1px solid var(--app-border-subtle); background:#fff; }
+.roles-copy-tools label { color:var(--app-text-secondary); font-size:11px; }
+.roles-copy-tools select { min-width:170px; flex:1; max-width:300px; padding:7px 9px; border:1px solid var(--app-border-default); border-radius:7px; background:#fff; color:var(--app-text-primary); font:inherit; font-size:12px; }
+.roles-permission-toolbar { display:flex; flex-direction:column; gap:12px; padding:15px 22px 12px; }
+.roles-search { display:flex; max-width:460px; align-items:center; gap:8px; padding:0 11px; border:1px solid var(--app-border-default); border-radius:8px; background:#fff; color:var(--app-text-muted); }
+.roles-search:focus-within { border-color:var(--roles-cyan); box-shadow:0 0 0 3px rgba(0,183,204,.1); }
+.roles-search input { width:100%; min-width:0; padding:9px 0; border:0; outline:0; background:transparent; color:var(--app-text-primary); font:inherit; font-size:12px; }
+.roles-search input::-webkit-search-cancel-button { cursor:pointer; }
+.roles-search button { border:0; background:transparent; color:var(--app-text-muted); cursor:pointer; font:inherit; font-size:11px; }
+.roles-category-filters { display:flex; flex-wrap:wrap; gap:7px; }
+.roles-category-filters button { padding:6px 11px; border:1px solid var(--app-border-default); border-radius:999px; background:#fff; color:var(--app-text-secondary); cursor:pointer; font:inherit; font-size:11px; }
+.roles-category-filters button.active { border-color:var(--roles-cyan); background:var(--roles-cyan); color:#fff; }
+.roles-permission-list { min-height:0; flex:1; display:flex; flex-direction:column; gap:12px; overflow:auto; padding:0 22px 18px; }
+.roles-category-card { flex:0 0 auto; overflow:hidden; border:1px solid var(--app-border-subtle); border-radius:10px; background:#fff; }
+.roles-category-header { display:flex; align-items:center; gap:10px; padding:11px 14px; background:#f0f3f4; }
+.roles-category-header h3 { flex:1; margin:0; color:#35484d; font-size:12px; font-weight:700; }
+.roles-category-header > span:last-child { color:var(--app-text-secondary); font-size:10px; }
+.roles-check-row { display:inline-flex; align-items:center; cursor:pointer; }
+.roles-check-row input { width:16px; height:16px; margin:0; accent-color:var(--roles-cyan); cursor:pointer; }
+.roles-check-row input:disabled { cursor:not-allowed; }
+.roles-resource-row + .roles-resource-row { border-top:1px solid #edf0f1; }
+.roles-resource-header { display:flex; min-height:39px; align-items:center; gap:8px; padding:7px 14px 3px; }
+.roles-resource-header strong { flex:1; color:#526168; font-size:10px; font-weight:700; letter-spacing:.045em; text-transform:uppercase; }
+.roles-resource-count { color:var(--app-text-muted); font-size:10px; }
+.roles-action-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:2px 14px; padding:4px 18px 11px 58px; }
+.roles-action-option { display:flex; min-height:30px; align-items:center; gap:8px; color:var(--app-text-primary); cursor:pointer; font-size:12px; }
+.roles-action-option:has(input:disabled) { cursor:default; }
+.roles-no-matches { margin:0 22px 20px; padding:34px; border:1px dashed var(--app-border-default); border-radius:10px; color:var(--app-text-secondary); text-align:center; font-size:13px; }
+.roles-save-footer { padding:10px 22px; border-top:1px solid var(--app-border-subtle); background:#f1f4f5; color:var(--app-text-secondary); font-size:11px; }
+.roles-save-footer.dirty { background:#effbfc; color:#087e8b; }
+.roles-loading { min-height:300px; display:grid; place-items:center; color:var(--app-text-secondary); }
+.roles-modal-backdrop { position:fixed; z-index:2500; inset:0; display:grid; place-items:center; padding:20px; background:rgba(0,0,0,.5); }
+.roles-modal { width:min(100%,448px); overflow:hidden; border:1px solid rgba(0,0,0,.06); border-radius:12px; background:#fff; box-shadow:0 18px 60px rgba(0,0,0,.24); }
+.roles-modal-header { display:flex; align-items:center; justify-content:space-between; padding:17px 20px; border-bottom:1px solid #edf0f1; }
+.roles-modal-header h2 { margin:0; color:#153c43; font-size:18px; font-weight:650; }
+.roles-modal-close { padding:5px 8px; border:1px solid var(--app-border-default); border-radius:6px; background:#fff; color:var(--app-text-secondary); cursor:pointer; font:inherit; font-size:11px; }
+.roles-modal-close:hover { border-color:var(--roles-cyan); color:#007e8a; }
+.roles-modal-body { display:flex; flex-direction:column; gap:8px; padding:19px 20px 22px; }
+.roles-modal-body label { margin-top:5px; color:#34484d; font-size:12px; font-weight:600; }
+.roles-modal-body label span { color:#c43f3b; }
+.roles-modal-body label .roles-optional { color:var(--app-text-muted); font-weight:400; }
+.roles-modal-body input,.roles-modal-body textarea,.roles-modal-body select { width:100%; box-sizing:border-box; padding:10px 11px; border:1px solid var(--app-border-default); border-radius:8px; background:#fff; color:var(--app-text-primary); font:inherit; font-size:12px; }
+.roles-modal-body textarea { resize:vertical; }
+.roles-modal-body input:focus,.roles-modal-body textarea:focus,.roles-modal-body select:focus { border-color:var(--roles-cyan); outline:3px solid rgba(0,183,204,.12); }
+.roles-modal-body input:disabled { background:#f2f4f5; color:var(--app-text-secondary); }
+.roles-form-error { margin:5px 0 0; color:#b42318; font-size:12px; }
+.roles-modal-footer { display:flex; justify-content:flex-end; gap:8px; padding:13px 20px; background:#f7f9fa; }
+@media (min-width:900px) { .roles-action-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (min-width:1200px) { .roles-action-grid { grid-template-columns:repeat(4,minmax(0,1fr)); } }
+@media (max-width:850px) {
+  .roles-layout { grid-template-columns:260px minmax(0,1fr); }
+  .roles-editor-header { align-items:flex-start; flex-direction:column; }
 }
-
-/* ── Left sidebar ── */
-.rbac-permissions .pg-sidebar  {
-  background: var(--app-surface-sunken);
-  border-right: 1px solid var(--app-border-subtle);
-  display: flex;
-  flex-direction: column;
+@media (max-width:650px) {
+  .roles-page-header { align-items:flex-start; }
+  .roles-page-header .roles-button-primary { flex:0 0 auto; }
+  .roles-layout { grid-template-columns:minmax(0,1fr); height:auto; min-height:0; overflow:visible; }
+  .roles-sidebar { max-height:330px; border-right:0; border-bottom:1px solid var(--app-border-subtle); }
+  .roles-list { max-height:230px; }
+  .roles-editor { min-height:460px; }
+  .roles-editor-header,.roles-copy-tools,.roles-permission-toolbar { padding-right:14px; padding-left:14px; }
+  .roles-permission-list { padding-right:12px; padding-left:12px; }
+  .roles-category-filters { flex-wrap:nowrap; overflow:auto; padding-bottom:3px; }
+  .roles-category-filters button { flex:0 0 auto; }
+  .roles-action-grid { padding-left:50px; }
+  .roles-copy-tools { flex-wrap:wrap; }
+  .roles-copy-tools select { min-width:120px; }
 }
-.rbac-permissions .pg-sidebar-head  {
-  padding: 14px 14px 10px;
-  border-bottom: 1px solid var(--app-border-subtle);
-}
-.rbac-permissions .pg-group-list  {
-  list-style: none;
-  padding: 8px;
-  margin: 0;
-  flex: 1;
-  overflow-y: auto;
-}
-.rbac-permissions .pg-group-item  {
-  display: flex;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.1s;
-  align-items: stretch;
-  margin-bottom: 4px;
-  background: white;
-  border: 1px solid transparent;
-}
-.rbac-permissions .pg-group-item:hover  { background: #fdfdfd; border-color: var(--app-border-subtle); }
-/* 2026-08-06 — nhóm ngừng dùng: chip xám, không nổi như chip Hệ thống/Tùy chỉnh */
-.rbac-permissions .pg-chip-deprecated  { background: #f3f4f6; color: #6b7280; border: 1px solid #e5e7eb; }
-.rbac-permissions .pg-group-item.active  {
-  background: white;
-  border-color: var(--app-accent);
-  box-shadow: 0 2px 8px rgba(24,29,38,0.08);
-}
-.rbac-permissions .pg-accent-strip  {
-  width: 4px;
-  border-radius: 2px;
-  flex-shrink: 0;
-}
-.rbac-permissions .pg-group-body  { flex: 1; min-width: 0; }
-.rbac-permissions .pg-group-name  {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--app-text-primary);
-  line-height: 1.3;
-  margin-bottom: 4px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rbac-permissions .pg-indent-arrow  {
-  color: #c9ccd1;
-  font-family: 'JetBrains Mono', monospace;
-  margin-right: 4px;
-}
-.rbac-permissions .pg-group-meta  {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.rbac-permissions .chip-xs  { font-size: 9px !important; padding: 2px 6px !important; }
-.rbac-permissions .pg-count  { font-size: 10px; color: var(--app-text-secondary); font-weight: 500; }
-.rbac-permissions .pg-grants-mini  { font-size: 10px; font-weight: 700; font-variant-numeric: tabular-nums; }
-
-.rbac-permissions .pg-add-btn  {
-  margin: 12px;
-  background: white;
-  border: 1px dashed var(--app-text-muted);
-  color: var(--app-text-secondary);
-  padding: 10px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-.rbac-permissions .pg-add-btn:hover  { border-color: var(--app-accent); color: var(--app-text-primary); background: var(--app-surface-sunken); }
-
-/* ── Right pane ── */
-.rbac-permissions .pg-main  {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-.rbac-permissions .pg-matrix-head  {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--app-border-subtle);
-  background: white;
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.rbac-permissions .pg-matrix-title  {
-  display: flex;
-  gap: 12px;
-  align-items: stretch;
-  min-width: 0;
-}
-.rbac-permissions .pg-matrix-title .pg-accent-strip  { width: 5px; height: 44px; }
-.rbac-permissions .pg-name-big  {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 6px;
-  color: var(--app-text-primary);
-  letter-spacing: -0.01em;
-}
-.rbac-permissions .pg-name-meta  {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-.rbac-permissions .pg-matrix-actions  {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-wrap: wrap;
-}
-.rbac-permissions .pg-copy-select  {
-  min-width: 220px;
-  font-size: 12px;
-}
-.rbac-permissions .btn-sm  {
-  font-size: 12px !important;
-  padding: 7px 12px !important;
-}
-
-/* ── Matrix table ── */
-.rbac-permissions .pg-matrix-wrap  {
-  overflow: auto;
-  flex: 1;
-  background: white;
-}
-.rbac-permissions .pg-matrix  {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  font-size: 12px;
-}
-.rbac-permissions .pg-matrix thead th  {
-  position: sticky;
-  top: 0;
-  background: var(--app-surface-sunken);
-  padding: 10px 8px;
-  font-weight: 600;
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  color: var(--app-text-secondary);
-  border-bottom: 2px solid var(--app-border-subtle);
-  text-align: center;
-  white-space: nowrap;
-  z-index: 2;
-}
-.rbac-permissions .pg-matrix thead .th-resource  {
-  text-align: left;
-  padding-left: 20px;
-  min-width: 220px;
-  position: sticky;
-  left: 0;
-  z-index: 3;
-  background: var(--app-surface-sunken);
-}
-.rbac-permissions .pg-matrix thead .th-action  {
-  min-width: 96px;
-}
-.rbac-permissions .th-action-label  {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--app-text-primary);
-  margin-bottom: 4px;
-}
-.rbac-permissions .th-bulk-btn  {
-  background: white;
-  border: 1px solid var(--app-border-default);
-  color: var(--app-text-secondary);
-  font-size: 9px;
-  font-weight: 500;
-  padding: 2px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  transition: all 0.1s;
-}
-.rbac-permissions .th-bulk-btn:hover  { background: var(--app-accent); color: var(--app-text-inverse); border-color: var(--app-accent); }
-.rbac-permissions .pg-matrix thead .th-row-bulk  { min-width: 70px; }
-
-.rbac-permissions .pg-matrix tbody tr  {
-  transition: background 0.1s;
-}
-.rbac-permissions .pg-matrix tbody tr:hover  { background: var(--app-surface-sunken); }
-.rbac-permissions .pg-matrix tbody tr.row-full  { background: #f0f9f1; }
-.rbac-permissions .pg-matrix tbody tr.row-full:hover  { background: #e6f3e7; }
-.rbac-permissions .pg-matrix tbody tr.row-empty .cell-resource  { color: var(--app-text-muted); }
-
-.rbac-permissions .pg-matrix tbody td  {
-  padding: 8px;
-  border-bottom: 1px solid var(--app-surface-hover);
-  text-align: center;
-  vertical-align: middle;
-}
-.rbac-permissions .pg-matrix tbody tr:last-child td  { border-bottom: 0; }
-
-.rbac-permissions .cell-resource  {
-  text-align: left !important;
-  padding: 10px 20px !important;
-  position: sticky;
-  left: 0;
-  background: white;
-  font-weight: 500;
-  color: var(--app-text-primary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 1;
-}
-.rbac-permissions .pg-matrix tbody tr:hover .cell-resource  { background: var(--app-surface-sunken); }
-.rbac-permissions .pg-matrix tbody tr.row-full .cell-resource  { background: #f0f9f1; }
-.rbac-permissions .pg-matrix tbody tr.row-full:hover .cell-resource  { background: #e6f3e7; }
-.rbac-permissions .resource-icon  { font-size: 14px; width: 22px; text-align: center; flex-shrink: 0; }
-.rbac-permissions .resource-label  { flex: 1; }
-.rbac-permissions .resource-count  {
-  font-size: 10px;
-  color: var(--app-text-muted);
-  font-variant-numeric: tabular-nums;
-  background: var(--app-surface-hover);
-  padding: 2px 8px;
-  border-radius: 9999px;
-  font-weight: 500;
-}
-.rbac-permissions .pg-matrix tbody tr.row-full .resource-count  {
-  background: #d8ecda;
-  color: #0a2e0e;
-  font-weight: 600;
-}
-
-/* Airtable checkbox */
-.rbac-permissions .at-checkbox  {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  position: relative;
-}
-.rbac-permissions .at-checkbox input  { position: absolute; opacity: 0; pointer-events: none; }
-.rbac-permissions .at-checkbox-box  {
-  width: 22px;
-  height: 22px;
-  border: 1.5px solid #c9ccd1;
-  border-radius: 5px;
-  background: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: transparent;
-  font-size: 14px;
-  font-weight: 700;
-  transition: all 0.1s;
-}
-.rbac-permissions .at-checkbox:hover .at-checkbox-box  { border-color: var(--app-text-muted); }
-.rbac-permissions .at-checkbox.checked .at-checkbox-box  {
-  background: #0a2e0e;
-  border-color: #0a2e0e;
-  color: white;
-}
-.rbac-permissions .at-checkbox.checked:hover .at-checkbox-box  { background: #07210a; }
-.rbac-permissions .at-checkbox input:disabled + .at-checkbox-box  { opacity: 0.5; cursor: not-allowed; }
-.rbac-permissions .cell-na  { color: #c9ccd1; font-size: 14px; }
-
-.rbac-permissions .cell-row-bulk  { width: 70px; }
-
-/* Save bar */
-.rbac-permissions .pg-save-bar  {
-  padding: 10px 20px;
-  border-top: 1px solid var(--app-border-subtle);
-  background: var(--app-surface-sunken);
-  font-size: 12px;
-  color: var(--app-text-secondary);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.rbac-permissions .pg-save-bar.is-saving  { color: #1b61c9; background: #eef4fc; }
-.rbac-permissions .pg-save-bar.is-saved  { color: #0a2e0e; background: #e3ede4; }
-.rbac-permissions .pg-save-hint  { color: var(--app-text-muted); font-style: italic; }
-
-/* Danger zone */
-.rbac-permissions .pg-danger-zone  {
-  margin: 0 20px 20px;
-  padding: 16px;
-  background: #fbe6dc;
-  border: 1px solid rgba(170,45,0,0.2);
-  border-radius: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-}
-.rbac-permissions .pg-danger-zone strong  { color: #7a2000; font-size: 13px; }
-.rbac-permissions .pg-danger-hint  { font-size: 11px; color: var(--app-text-secondary); margin: 4px 0 0; }
-.rbac-permissions .btn-danger  {
-  background: white;
-  border: 1px solid #aa2d00;
-  color: #aa2d00;
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.rbac-permissions .btn-danger:hover  { background: #aa2d00; color: white; }
-
-/* Matrix scroll remains the ONLY horizontal scrolling parent on desktop: sticky
-   resource column/header rely on it. On narrow screens the group sidebar stacks
-   above it, preventing the 290px column from crushing the permission matrix. */
-@media (max-width: 960px) {
-  .rbac-permissions .page-hero { align-items: flex-start; flex-wrap: wrap; gap: var(--app-space-3); }
-  .rbac-permissions .pg-layout { grid-template-columns: 220px minmax(0, 1fr); gap: 0; }
-  .rbac-permissions .pg-sidebar { min-width: 0; }
-  .rbac-permissions .pg-main { min-width: 0; }
-}
-@media (max-width: 720px) {
-  .rbac-permissions .pg-layout { grid-template-columns: 1fr; min-height: 0; overflow: visible; }
-  .rbac-permissions .pg-sidebar {
-    border-right: 0;
-    border-bottom: 1px solid var(--app-border-subtle);
-    max-height: 260px;
-  }
-  .rbac-permissions .pg-main { min-height: 480px; }
-  .rbac-permissions .pg-matrix-wrap { max-width: 100%; }
-  .rbac-permissions .pg-save-bar { flex-wrap: wrap; }
-  .rbac-permissions .pg-danger-zone { flex-direction: column; align-items: flex-start; }
+@media (max-width:400px) {
+  .roles-page-header { flex-direction:column; }
+  .roles-action-grid { grid-template-columns:minmax(0,1fr); }
+  .roles-list-row { padding-left:5px; }
 }
 </style>

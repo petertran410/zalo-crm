@@ -781,6 +781,7 @@ model Contact {
   posOrders   PosOrder[]        @relation("ContactPosOrders")
   posInvoices PosInvoice[]      @relation("ContactPosInvoices")
   posDebts    PosCustomerDebt[] @relation("ContactPosDebts")
+  posLinks    ContactPosLink[]
 
   @@unique([orgId, zaloGlobalId])
   @@index([orgId, phone])
@@ -2113,6 +2114,8 @@ model GroupMember {
   avatarUrl       String?   @map("avatar_url")
   isAdmin         Boolean   @default(false) @map("is_admin")
   isFriend        Boolean   @default(false) @map("is_friend") // join Friend lúc quét
+  isActive        Boolean   @default(true) @map("is_active")
+  leftAt          DateTime? @map("left_at")
   friendCheckedAt DateTime? @map("friend_checked_at")
   harvestedAt     DateTime  @default(now()) @map("harvested_at")
   lastSeenAt      DateTime  @default(now()) @map("last_seen_at") // lần quét gần nhất còn thấy
@@ -2126,6 +2129,7 @@ model GroupMember {
   @@unique([zaloAccountId, groupId, memberUid]) // dedup trong-group per nick
   @@index([zaloAccountId, groupId]) // list member 1 group
   @@index([orgId, memberUid]) // member ở những group nào (cross-group)
+  @@index([zaloAccountId, memberUid, isActive])
   @@index([zaloAccountId, isFriend]) // filter audience an toàn
   @@map("group_members")
 }
@@ -3461,6 +3465,7 @@ model PermissionGroup {
   id           String    @id @default(uuid())
   orgId        String    @map("org_id")
   name         String
+  description  String?   @db.Text
   parentId     String?   @map("parent_id") // tree UI grouping, mỗi node độc lập permission
   isSystem     Boolean   @default(false) @map("is_system") // Admin = protected, không xóa
   displayOrder Int       @default(0) @map("display_order")
@@ -4435,6 +4440,21 @@ model PosCustomer {
   @@index([phone])
   @@index([createdAt])
   @@map("pos_customers")
+}
+
+model ContactPosLink {
+  id              String   @id @default(uuid())
+  orgId           String   @map("org_id")
+  contactId       String   @map("contact_id")
+  posCustomerId   Int      @map("pos_customer_id")
+  posCustomerCode String?  @map("pos_customer_code")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([orgId, posCustomerId])
+  @@index([contactId])
+  @@map("contact_pos_links")
 }
 
 /**

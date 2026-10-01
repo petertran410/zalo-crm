@@ -5,6 +5,23 @@ import { prisma } from '../../../shared/database/prisma-client.js';
 import { addPosLinks, requireCustomer, workspaceError } from '../../contacts/customer-workspace-service.js';
 import { runPosWrite } from '../pos-write-operation.js';
 import { assertPosWritesEnabled, assertPosOrganization } from '../pos-write-policy.js';
+import { normalizePhone, phoneVariants } from '../../../shared/utils/phone.js';
+
+export async function findExistingByPhone(orgId: string, phone: string, excludePosId?: number) {
+  const variants = new Set<string>([phone.trim()]);
+  const normalized = normalizePhone(phone);
+  if (normalized) variants.add(normalized);
+  for (const variant of phoneVariants(phone)) {
+    variants.add(variant);
+    const normalizedVariant = normalizePhone(variant);
+    if (normalizedVariant) variants.add(normalizedVariant);
+  }
+  const customer = await prisma.posCustomer.findFirst({
+    where: { orgId, phone: { in: [...variants] }, ...(excludePosId ? { posId: { not: excludePosId } } : {}) },
+    orderBy: { updatedAt: 'desc' },
+  });
+  return customer ? { id: customer.posId, code: customer.code, name: customer.name, phone: customer.phone } : null;
+}
 
 export interface CreateCustomerPayload {
   contactId: string;

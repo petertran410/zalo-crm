@@ -28,6 +28,7 @@ import {
 import { getContactScope } from "./contact-scope.js";
 import { requireGrant } from "../rbac/rbac-middleware.js";
 import { FRIEND_INCLUDE } from "../../shared/friend-serializer.js";
+import { getZaloScope } from "../zalo/zalo-scope.js";
 
 /** Giới hạn cứng cho 1 family — thực tế max 2-3 dòng, cap để chặn data bẩn. */
 const FAMILY_LIMIT = 50;
@@ -107,6 +108,18 @@ export interface PhoneFamilyMember {
   zaloDisplayName: string | null;
   aliasInNick: string | null;
   zaloUid: string | null;
+  friendId: string | null;
+  zaloAccountId: string | null;
+  zaloAccountName: string | null;
+  zaloAccounts: Array<{
+    friendId: string;
+    zaloAccountId: string;
+    zaloAccountName: string | null;
+    displayName: string | null;
+    aliasInNick: string | null;
+    zaloUid: string;
+    avatarUrl: string | null;
+  }>;
   posName: string | null;
   posCode: string | null;
   posSaleName: string | null;
@@ -141,6 +154,8 @@ async function buildFamilyMembers(
   const posByPosId = new Map(posRows.map((p) => [p.posId, p]));
 
   const cScope = await getContactScope(user.id, user.orgId, user.role);
+  const zScope = await getZaloScope(user.id, user.orgId, user.role);
+  const visibleZaloIds = new Set(zScope.displayableIds);
   const accessibleIds =
     cScope.accessibleContactIds === null
       ? null
@@ -168,6 +183,22 @@ async function buildFamilyMembers(
       zaloDisplayName: fr?.zaloDisplayName ?? null,
       aliasInNick: fr?.aliasInNick ?? null,
       zaloUid: fr?.zaloUidInNick ?? c.zaloUid ?? null,
+      friendId: fr?.id ?? null,
+      zaloAccountId: fr?.zaloAccountId ?? null,
+      zaloAccountName: fr?.zaloAccount?.displayName ?? null,
+      zaloAccounts: canOpen(c.id)
+        ? (c.friends ?? [])
+            .filter((friend) => visibleZaloIds.has(friend.zaloAccountId))
+            .map((friend) => ({
+              friendId: friend.id,
+              zaloAccountId: friend.zaloAccountId,
+              zaloAccountName: friend.zaloAccount?.displayName ?? null,
+              displayName: friend.zaloDisplayName ?? null,
+              aliasInNick: friend.aliasInNick ?? null,
+              zaloUid: friend.zaloUidInNick,
+              avatarUrl: friend.zaloAvatarUrl ?? null,
+            }))
+        : [],
       posName: pos?.name ?? null,
       posCode: pos?.code ?? c.posCustomerCode ?? null,
       posSaleName: pos?.assignedSaleName ?? null,

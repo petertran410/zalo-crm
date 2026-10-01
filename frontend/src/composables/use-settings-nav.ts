@@ -70,9 +70,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     permission: 'admin',
     description: 'Thiết lập tổ chức, nhân viên và quyền truy cập cơ bản.',
     items: [
-      { id: 'profile', label: 'Hồ sơ tổ chức', icon: 'mdi-office-building-outline', route: '/settings/org/profile', permission: 'admin', resource: 'settings' },
       { id: 'users', label: 'Nhân viên', icon: 'mdi-account-group-outline', route: '/settings/rbac/users', permission: 'admin', resource: 'user', aliases: ['user', 'sale', 'nhân sự'] },
-      { id: 'departments', label: 'Sơ đồ tổ chức', icon: 'mdi-file-tree-outline', route: '/settings/rbac/departments', permission: 'admin', resource: 'department', aliases: ['phòng ban', 'department', 'tree', 'đội nhóm', 'team', 'sơ đồ tổ chức'] },
       { id: 'permission-groups', label: 'Phân quyền', icon: 'mdi-shield-account-outline', route: '/settings/rbac/permission-groups', permission: 'owner', resource: 'permission_group', aliases: ['phân quyền', 'permission', 'role', 'vai trò', 'nhóm quyền'] },
     ],
   },
@@ -85,9 +83,7 @@ export const SETTINGS_GROUPS: SettingsGroup[] = [
     permission: 'admin',
     description: 'Quản lý pipeline, nhãn và dữ liệu khách hàng.',
     items: [
-      { id: 'statuses', label: 'Trạng thái khách hàng', icon: 'mdi-flag-outline', route: '/settings/crm/statuses', permission: 'admin', resource: 'settings', aliases: ['stage', 'pipeline', 'trạng thái'] },
       { id: 'tags-v2', label: 'Nhãn khách hàng', icon: 'mdi-tag-multiple-outline', route: '/settings/crm/tags-v2', permission: 'admin', resource: 'settings', aliases: ['tag', 'tag mới', 'tag taxonomy', 'friend tag', 'crm tag', 'nhãn'] },
-      { id: 'appointments', label: 'Lịch hẹn & nhắc hẹn', icon: 'mdi-calendar-clock-outline', route: '/settings/crm/appointments', permission: 'admin', resource: 'settings', aliases: ['lịch hẹn', 'appointment', 'nhắc hẹn', 'reminder', 'zalo reminder', 'nhắc lịch'] },
     ],
   },
 

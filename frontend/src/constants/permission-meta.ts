@@ -50,6 +50,14 @@ export const RESOURCE_META: Record<string, ResourceMeta> = {
   engagement_score: { icon: '📊', label: 'Engagement / Score' },
 };
 
+export const RESOURCE_CATEGORIES: Array<{ key: string; label: string; resources: string[] }> = [
+  { key: 'organization', label: 'Hệ thống & tổ chức', resources: ['department', 'user', 'permission_group', 'settings', 'audit_log'] },
+  { key: 'customers', label: 'Khách hàng & hội thoại', resources: ['contact', 'friend', 'conversation', 'customer_list', 'appointment'] },
+  { key: 'marketing', label: 'Marketing & tự động hóa', resources: ['trigger', 'sequence', 'broadcast', 'block', 'care_session'] },
+  { key: 'channels', label: 'Kênh & tài nguyên', resources: ['zalo_account', 'media', 'webhook'] },
+  { key: 'reports', label: 'Báo cáo', resources: ['engagement_score'] },
+];
+
 export const ACTION_META: Record<string, ActionMeta> = {
   access:   { label: 'Truy cập',    shortLabel: 'Acc'  },
   create:   { label: 'Thêm mới',    shortLabel: 'Add'  },

@@ -148,8 +148,10 @@
   display: flex; align-items: center; gap: 4px;
   min-width: 0;
   flex: 1 1 auto;
-  overflow: hidden;
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.smax-topnav .nav-tabs::-webkit-scrollbar { display: none; }
 .smax-topnav .nav-tab {
   display: inline-flex; align-items: center; gap: 7px;
   height: 38px; padding: 0 12px;

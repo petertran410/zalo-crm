@@ -4,6 +4,7 @@ import { prisma } from '../../shared/database/prisma-client.js';
 import { logger } from '../../shared/utils/logger.js';
 import { normalizePhone, phoneVariants } from '../../shared/utils/phone.js';
 import { getHisweetiePublicApiClient, isPublicApiSyncEnabled } from '../integrations/hisweetie-public-api-client.js';
+import { linkPosCustomer, POS_LINK_CONFLICT } from '../pos/contact-pos-links.js';
 import { addPosLinks, requireCustomer } from './customer-workspace-service.js';
 
 export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
@@ -167,13 +168,7 @@ export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
         }
 
         // Update Contact with posCustomerId and posCustomerCode
-        const updatedContact = await prisma.contact.update({
-          where: { id },
-          data: {
-            posCustomerId,
-            posCustomerCode: body.posCustomerCode || contact.posCustomerCode,
-          },
-        });
+        const updatedContact = await linkPosCustomer(orgId, id, posCustomerId, body.posCustomerCode);
 
         // Link existing pos_orders for this customer to this contact
         const orderLinkResult = await prisma.$executeRawUnsafe(
@@ -198,6 +193,7 @@ export async function contactPosRoutes(app: FastifyInstance): Promise<void> {
         };
       } catch (err: any) {
         logger.error('[contact-pos] Link POS customer failed:', err);
+        if (err.message === POS_LINK_CONFLICT) return reply.status(409).send({ error: POS_LINK_CONFLICT });
         return reply.status(500).send({ error: 'Lỗi khi xác nhận liên kết POS' });
       }
     }
